@@ -1,0 +1,8 @@
+{
+  "disabledMcpjsonServers": [
+    "supabase",
+    "context7",
+    "executeautomation-playwright-server",
+    "postgresql"
+  ]
+}
