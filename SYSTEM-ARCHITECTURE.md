@@ -45,35 +45,35 @@ Long articles, essays, blogs, newsletters, documentation — any page with dense
 
 ### Extension (Client)
 
-| Layer | Technology |
-|---|---|
-| Platform | Chrome MV3 (service worker + content scripts) |
-| Language | TypeScript |
-| Build | Vite + CRXJS |
-| Content Script UI | Vanilla TS (no framework) |
-| CSS Isolation | Shadow DOM for popovers; overlay layer for highlights |
-| Content Extraction | @mozilla/readability + custom heuristic override |
-| Annotation Anchoring | W3C Web Annotation Text-Quote Selectors |
+| Layer                | Technology                                            |
+| -------------------- | ----------------------------------------------------- |
+| Platform             | Chrome MV3 (service worker + content scripts)         |
+| Language             | TypeScript                                            |
+| Build                | Vite + CRXJS                                          |
+| Content Script UI    | Vanilla TS (no framework)                             |
+| CSS Isolation        | Shadow DOM for popovers; overlay layer for highlights |
+| Content Extraction   | @mozilla/readability + custom heuristic override      |
+| Annotation Anchoring | W3C Web Annotation Text-Quote Selectors               |
 
 ### Backend (Server)
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js |
-| Framework | Express |
-| Database & Auth | Supabase (managed Postgres + Auth + Row Level Security) |
-| LLM Provider | OpenAI (single provider for MVP) |
-| Hosting | Serverless — Vercel Functions or AWS Lambda |
-| Prompt Config | Server-side config file (JSON), hot-reloadable without redeployment |
+| Layer           | Technology                                                          |
+| --------------- | ------------------------------------------------------------------- |
+| Runtime         | Node.js                                                             |
+| Framework       | Express                                                             |
+| Database & Auth | Supabase (managed Postgres + Auth + Row Level Security)             |
+| LLM Provider    | OpenAI (single provider for MVP)                                    |
+| Hosting         | Serverless — AWS Lambda                                             |
+| Prompt Config   | Server-side config file (JSON), hot-reloadable without redeployment |
 
 ### Infrastructure
 
-| Concern | Technology |
-|---|---|
-| Auth | Supabase Auth (Email + OAuth — Google, GitHub) |
-| Annotation Cache | Supabase Postgres with TTL-based invalidation |
+| Concern               | Technology                                        |
+| --------------------- | ------------------------------------------------- |
+| Auth                  | Supabase Auth (Email + OAuth — Google, GitHub)    |
+| Annotation Cache      | Supabase Postgres with TTL-based invalidation     |
 | Site Adapter Registry | Supabase table, fetched by extension periodically |
-| Export | Client-side PDF/Markdown generation |
+| Export                | Client-side PDF/Markdown generation               |
 
 ## 5. System Context
 
@@ -249,10 +249,10 @@ Schema:
 ```ts
 type SiteAdapter = {
   id: string;
-  hostname_pattern: string;        // glob: "chat.openai.com", "*.substack.com"
-  content_selectors: string[];     // CSS selectors for reading regions
+  hostname_pattern: string; // glob: "chat.openai.com", "*.substack.com"
+  content_selectors: string[]; // CSS selectors for reading regions
   stability_signal: StabilitySignal | null;
-  excluded_selectors: string[];    // regions to never annotate (nav, sidebar, etc.)
+  excluded_selectors: string[]; // regions to never annotate (nav, sidebar, etc.)
   extraction_mode: "adapter" | "readability" | "custom_heuristic";
   updated_at: string;
 };
@@ -369,7 +369,14 @@ Prompts are stored in a JSON config file on the server, not in code. Structure:
       "max_annotations_per_1000_chars": 10
     }
   },
-  "annotation_types": ["highlight", "underline", "question", "insight", "caveat", "vocabulary"],
+  "annotation_types": [
+    "highlight",
+    "underline",
+    "question",
+    "insight",
+    "caveat",
+    "vocabulary"
+  ],
   "output_schema": "<<see section 8.2>>"
 }
 ```
@@ -454,32 +461,32 @@ type AnnotationResponse = {
 };
 
 type Annotation = {
-  id: string;                        // unique within response
+  id: string; // unique within response
   type: AnnotationType;
   anchor: TextQuoteSelector;
   content: AnnotationContent;
 };
 
 type AnnotationType =
-  | "highlight"      // key phrase emphasis
-  | "underline"      // important statement
-  | "question"       // probing question about the text
-  | "insight"        // "why this matters" note
-  | "caveat"         // counterpoint or limitation
-  | "vocabulary";    // term definition or clarification
+  | "highlight" // key phrase emphasis
+  | "underline" // important statement
+  | "question" // probing question about the text
+  | "insight" // "why this matters" note
+  | "caveat" // counterpoint or limitation
+  | "vocabulary"; // term definition or clarification
 
 type TextQuoteSelector = {
   type: "TextQuoteSelector";
-  exact: string;         // the exact text span to annotate
-  prefix?: string;       // ~30 chars before for disambiguation
-  suffix?: string;       // ~30 chars after for disambiguation
+  exact: string; // the exact text span to annotate
+  prefix?: string; // ~30 chars before for disambiguation
+  suffix?: string; // ~30 chars after for disambiguation
 };
 
 type AnnotationContent = {
-  note: string;                    // primary annotation text (1-3 lines)
-  why_it_matters?: string;         // optional deeper context
-  question?: string;               // optional question to prompt thinking
-  suggestions?: string[];          // optional alternatives (like Grammarly's word suggestions)
+  note: string; // primary annotation text (1-3 lines)
+  why_it_matters?: string; // optional deeper context
+  question?: string; // optional question to prompt thinking
+  suggestions?: string[]; // optional alternatives (like Grammarly's word suggestions)
 };
 ```
 
@@ -596,9 +603,9 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
    c. On `regionStable`, extract text content.
    d. Compute SHA-256 content hash.
    e. Check word count:
-      - ≤ 5000 words → annotate immediately (eager).
-      - \> 5000 words → annotate only if region intersects viewport proximity (lazy).
-   f. Send `requestAnnotations` to service worker.
+   - ≤ 5000 words → annotate immediately (eager).
+   - \> 5000 words → annotate only if region intersects viewport proximity (lazy).
+     f. Send `requestAnnotations` to service worker.
 7. Service worker calls backend `POST /api/annotate`.
 8. Backend checks cache → returns cached or generates new annotations.
 9. Service worker relays annotations to content script.
@@ -656,14 +663,14 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
 
 ### 10.1 Visual Treatment by Annotation Type
 
-| Type | Inline Visual | Color | Popover Header |
-|---|---|---|---|
-| `highlight` | Background highlight rectangle (overlay) | Soft yellow | KEY PHRASE |
-| `underline` | Underline rectangle (overlay) | Teal/green | IMPORTANT |
-| `question` | Dotted underline + small `?` icon in gutter | Purple | QUESTION |
-| `insight` | Background highlight rectangle (overlay) | Soft blue | INSIGHT |
-| `caveat` | Wavy underline rectangle (overlay) | Orange | CAVEAT |
-| `vocabulary` | Dotted underline (overlay) | Green | VOCABULARY |
+| Type         | Inline Visual                               | Color       | Popover Header |
+| ------------ | ------------------------------------------- | ----------- | -------------- |
+| `highlight`  | Background highlight rectangle (overlay)    | Soft yellow | KEY PHRASE     |
+| `underline`  | Underline rectangle (overlay)               | Teal/green  | IMPORTANT      |
+| `question`   | Dotted underline + small `?` icon in gutter | Purple      | QUESTION       |
+| `insight`    | Background highlight rectangle (overlay)    | Soft blue   | INSIGHT        |
+| `caveat`     | Wavy underline rectangle (overlay)          | Orange      | CAVEAT         |
+| `vocabulary` | Dotted underline (overlay)                  | Green       | VOCABULARY     |
 
 ### 10.2 Intensity Levels
 
@@ -954,26 +961,26 @@ npx supabase gen types ts      # Generate TypeScript types from schema
 
 ## 16. Performance Budget
 
-| Metric | Target |
-|---|---|
-| Time to first annotation visible (cached) | < 500ms after page stable |
-| Time to first annotation visible (uncached) | < 3s after page stable |
-| Overlay reposition latency on scroll | < 16ms (60fps) |
-| Popover show time on hover | < 250ms perceived |
-| Content script bundle size | < 100KB gzipped |
-| Memory overhead per page | < 20MB for 100 annotations |
+| Metric                                      | Target                     |
+| ------------------------------------------- | -------------------------- |
+| Time to first annotation visible (cached)   | < 500ms after page stable  |
+| Time to first annotation visible (uncached) | < 3s after page stable     |
+| Overlay reposition latency on scroll        | < 16ms (60fps)             |
+| Popover show time on hover                  | < 250ms perceived          |
+| Content script bundle size                  | < 100KB gzipped            |
+| Memory overhead per page                    | < 20MB for 100 annotations |
 
 ## 17. Failure Modes and Mitigations
 
-| Failure | Detection | Mitigation |
-|---|---|---|
-| Backend unreachable | Fetch error/timeout | Show subtle "offline" badge in overlay. Cache hit still works. |
-| OpenAI API error/timeout | Backend error response | Return cached if available; otherwise surface "annotations unavailable" in popup. Retry with backoff. |
-| Malformed LLM JSON output | Schema validation failure | Retry once with corrective prompt. If retry fails, return partial annotations (valid subset). |
-| TextQuoteSelector can't resolve | Fuzzy match score below threshold | Skip that annotation silently. Log for debugging. |
-| Content script killed by page | Service worker gets no response | Re-inject content script on next user interaction. |
-| Adapter registry stale | Version/timestamp check | Stale-while-revalidate: use cached, fetch fresh in background. |
-| User's session expired | 401 from backend | Attempt token refresh. If refresh fails, prompt re-login via popup. |
+| Failure                         | Detection                         | Mitigation                                                                                            |
+| ------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Backend unreachable             | Fetch error/timeout               | Show subtle "offline" badge in overlay. Cache hit still works.                                        |
+| OpenAI API error/timeout        | Backend error response            | Return cached if available; otherwise surface "annotations unavailable" in popup. Retry with backoff. |
+| Malformed LLM JSON output       | Schema validation failure         | Retry once with corrective prompt. If retry fails, return partial annotations (valid subset).         |
+| TextQuoteSelector can't resolve | Fuzzy match score below threshold | Skip that annotation silently. Log for debugging.                                                     |
+| Content script killed by page   | Service worker gets no response   | Re-inject content script on next user interaction.                                                    |
+| Adapter registry stale          | Version/timestamp check           | Stale-while-revalidate: use cached, fetch fresh in background.                                        |
+| User's session expired          | 401 from backend                  | Attempt token refresh. If refresh fails, prompt re-login via popup.                                   |
 
 ## 18. Known Constraints and Trade-offs
 

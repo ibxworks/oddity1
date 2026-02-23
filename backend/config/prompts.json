@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "intensity_profiles": {
+    "light": {
+      "system_prompt": "<<PLACEHOLDER>>",
+      "annotation_density": "low",
+      "max_annotations_per_1000_chars": 2
+    },
+    "default": {
+      "system_prompt": "<<PLACEHOLDER>>",
+      "annotation_density": "medium",
+      "max_annotations_per_1000_chars": 5
+    },
+    "heavy": {
+      "system_prompt": "<<PLACEHOLDER>>",
+      "annotation_density": "high",
+      "max_annotations_per_1000_chars": 10
+    }
+  },
+  "annotation_types": [
+    "highlight",
+    "underline",
+    "question",
+    "insight",
+    "caveat",
+    "vocabulary"
+  ]
+}

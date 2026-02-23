@@ -1,0 +1,167 @@
+// ─── Annotation Types (LLM Output Contract) ───
+
+export type AnnotationType =
+  | 'highlight'
+  | 'underline'
+  | 'question'
+  | 'insight'
+  | 'caveat'
+  | 'vocabulary';
+
+export type TextQuoteSelector = {
+  type: 'TextQuoteSelector';
+  exact: string;
+  prefix?: string;
+  suffix?: string;
+};
+
+export type AnnotationContent = {
+  note: string;
+  why_it_matters?: string;
+  question?: string;
+  suggestions?: string[];
+};
+
+export type Annotation = {
+  id: string;
+  type: AnnotationType;
+  anchor: TextQuoteSelector;
+  content: AnnotationContent;
+};
+
+export type AnnotationResponse = {
+  success: boolean;
+  cached: boolean;
+  annotations: Annotation[];
+};
+
+// ─── Intensity ───
+
+export type Intensity = 'light' | 'default' | 'heavy';
+
+// ─── Site Adapter Registry ───
+
+export type StabilitySignal = {
+  type: 'selector_appears' | 'selector_disappears' | 'attribute_change';
+  target_selector: string;
+  attribute?: string;
+  value?: string;
+};
+
+export type SiteAdapter = {
+  id: string;
+  hostname_pattern: string;
+  content_selectors: string[];
+  stability_signal: StabilitySignal | null;
+  excluded_selectors: string[];
+  extraction_mode: 'adapter' | 'readability' | 'custom_heuristic';
+  enabled: boolean;
+  updated_at: string;
+};
+
+// ─── User ───
+
+export type UserTier = 'free' | 'pro';
+
+export type UserProfile = {
+  id: string;
+  display_name: string | null;
+  tier: UserTier;
+  preferences: UserPreferences;
+  created_at: string;
+};
+
+export type UserPreferences = {
+  enabled?: boolean;
+  intensity?: Intensity;
+  visible_types?: AnnotationType[];
+  disabled_sites?: string[];
+};
+
+// ─── API Request/Response ───
+
+export type AnnotateRequest = {
+  url: string;
+  content_hash: string;
+  text: string;
+  intensity: Intensity;
+  word_count: number;
+};
+
+export type ReadingRegion = {
+  id: string;
+  element: string; // CSS selector or description for debugging
+  text: string;
+  wordCount: number;
+  contentHash: string;
+};
+
+// ─── Extension Internal Messaging ───
+
+export type ExtensionMessage =
+  | {
+      action: 'requestAnnotations';
+      payload: {
+        url: string;
+        contentHash: string;
+        text: string;
+        intensity: Intensity;
+        wordCount: number;
+      };
+    }
+  | {
+      action: 'annotationsReady';
+      payload: {
+        regionId: string;
+        annotations: Annotation[];
+      };
+    }
+  | {
+      action: 'saveManualAnnotation';
+      payload: {
+        url: string;
+        contentHash: string;
+        annotation: Annotation;
+      };
+    }
+  | {
+      action: 'deleteAnnotation';
+      payload: {
+        annotationId: string;
+      };
+    }
+  | {
+      action: 'settingsUpdated';
+      payload: {
+        enabled: boolean;
+        intensity: Intensity;
+        visibleTypes: AnnotationType[];
+      };
+    }
+  | {
+      action: 'getAdapters';
+      payload: Record<string, never>;
+    }
+  | {
+      action: 'adaptersResponse';
+      payload: {
+        adapters: SiteAdapter[];
+      };
+    }
+  | {
+      action: 'exportAnnotations';
+      payload: {
+        url: string;
+      };
+    }
+  | {
+      action: 'getAuthStatus';
+      payload: Record<string, never>;
+    }
+  | {
+      action: 'authStatusResponse';
+      payload: {
+        authenticated: boolean;
+        user: { id: string; email: string } | null;
+      };
+    };
