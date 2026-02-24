@@ -190,6 +190,8 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   const region = regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
 
+  // Pass 1: resolve all selectors BEFORE any DOM mutation
+  const resolved: { annotation: Annotation; range: Range }[] = [];
   for (const annotation of annotations) {
     if (!visibleTypes.includes(annotation.type)) continue;
 
@@ -200,15 +202,25 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
       );
       continue;
     }
+    resolved.push({ annotation, range });
+  }
 
-    // Draw overlay rectangles
-    renderAnnotation(annotation, range);
+  // Pass 2: render (anchors first to get stable spans, then overlay + margin notes)
+  for (const { annotation, range } of resolved) {
+    const anchors = injectAnchors(annotation, range);
 
-    // Inject inline anchors for keyboard navigation
-    injectAnchors(annotation, range);
+    // Create stable range from anchor spans (survives DOM mutations from other annotations)
+    const stableRange = document.createRange();
+    if (anchors.length > 0) {
+      stableRange.setStartBefore(anchors[0]!);
+      stableRange.setEndAfter(anchors[anchors.length - 1]!);
+    } else {
+      stableRange.setStart(range.startContainer, range.startOffset);
+      stableRange.setEnd(range.endContainer, range.endOffset);
+    }
 
-    // Add margin note (always visible)
-    addMarginNote(annotation, range);
+    renderAnnotation(annotation, stableRange);
+    addMarginNote(annotation, stableRange);
   }
 }
 

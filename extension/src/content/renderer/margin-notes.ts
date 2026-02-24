@@ -9,6 +9,7 @@ type MarginNote = {
   annotation: Annotation;
   range: Range;
   side: 'left' | 'right';
+  anchorTopPx: number;
   topPx: number;
   height: number;
   element: HTMLDivElement;
@@ -65,6 +66,8 @@ export function initMarginNotes(region: Element): void {
 
 export function addMarginNote(annotation: Annotation, range: Range): void {
   if (!shadowRoot || !regionEl) return;
+  // Deduplicate: skip if a note for this annotation already exists
+  if (notes.some((n) => n.id === annotation.id)) return;
 
   const rects = range.getClientRects();
   if (rects.length === 0) return;
@@ -103,6 +106,7 @@ export function addMarginNote(annotation: Annotation, range: Range): void {
     annotation,
     range,
     side,
+    anchorTopPx,
     topPx: anchorTopPx,
     height: 0,
     element: el,
@@ -174,12 +178,6 @@ export function expandMarginNote(annotationId: string): void {
 
   expandedId = annotationId;
   note.element.classList.add('expanded');
-
-  requestAnimationFrame(() => {
-    note.height = note.element.offsetHeight;
-    resolveOverlaps();
-    applyPositions();
-  });
 }
 
 export function collapseAllMarginNotes(): void {
@@ -187,12 +185,6 @@ export function collapseAllMarginNotes(): void {
     const note = notes.find((n) => n.id === expandedId);
     if (note) note.element.classList.remove('expanded');
     expandedId = null;
-
-    requestAnimationFrame(() => {
-      for (const n of notes) n.height = n.element.offsetHeight;
-      resolveOverlaps();
-      applyPositions();
-    });
   }
 }
 
@@ -336,7 +328,12 @@ function resolveOverlaps(): void {
 }
 
 function resolveOverlapsForSide(sideNotes: MarginNote[]): void {
-  sideNotes.sort((a, b) => a.topPx - b.topPx);
+  sideNotes.sort((a, b) => a.anchorTopPx - b.anchorTopPx);
+
+  // Reset topPx to anchor position before resolving
+  for (const note of sideNotes) {
+    note.topPx = note.anchorTopPx;
+  }
 
   for (let i = 1; i < sideNotes.length; i++) {
     const prev = sideNotes[i - 1]!;
@@ -371,7 +368,8 @@ function recomputePositions(): void {
   for (const note of notes) {
     const rects = note.range.getClientRects();
     if (rects.length > 0) {
-      note.topPx = rects[0]!.top + window.scrollY;
+      note.anchorTopPx = rects[0]!.top + window.scrollY;
+      note.topPx = note.anchorTopPx;
     }
     note.height = note.element.offsetHeight;
   }

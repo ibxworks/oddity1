@@ -412,7 +412,18 @@ function renderManualAnnotation(annotation: Annotation, root: Element): void {
   const range = resolveSelector(root, annotation.anchor);
   if (!range) return;
 
-  renderAnnotation(annotation, range);
-  injectAnchors(annotation, range);
-  addMarginNote(annotation, range);
+  const anchors = injectAnchors(annotation, range);
+
+  // Create stable range from anchor spans (survives splitText DOM mutations)
+  const stableRange = document.createRange();
+  if (anchors.length > 0) {
+    stableRange.setStartBefore(anchors[0]!);
+    stableRange.setEndAfter(anchors[anchors.length - 1]!);
+  } else {
+    stableRange.setStart(range.startContainer, range.startOffset);
+    stableRange.setEnd(range.endContainer, range.endOffset);
+  }
+
+  renderAnnotation(annotation, stableRange);
+  addMarginNote(annotation, stableRange);
 }
