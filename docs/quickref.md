@@ -153,6 +153,17 @@ If none of the three tiers finds a reading region, no annotations are requested.
 
 ---
 
+## Auth UI elements
+
+When the user is not signed in or the session expires:
+
+| Element | Where | Behavior |
+|---------|-------|----------|
+| Red "!" badge | Extension icon | Set when annotation request fails due to auth. Click to open popup and sign in. Clears automatically after successful auth. |
+| Dismissible toast | Top-right of page | "Sign in to Oddity to see annotations — click the extension icon". Auto-dismisses after 8 seconds or on click/dismiss. Only shows once per page load. |
+
+---
+
 ## Things that need real values before launch
 
 - [ ] `backend/config/prompts.json` — replace `"<<PLACEHOLDER>>"` with actual system prompts

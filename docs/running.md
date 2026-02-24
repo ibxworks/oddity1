@@ -179,5 +179,18 @@ Make sure you're running from the repo root (`oddity1/`), not inside a workspace
 - Confirm the Google Cloud Console redirect URI matches the Supabase callback URL exactly.
 - Check `chrome://extensions` → your extension → Errors for any auth failures.
 
+**I see a red "!" badge on the extension icon**
+
+- The extension is not signed in. Click the badge to open the popup and authenticate.
+- After signing in, the badge clears automatically and annotations are enabled.
+- If the badge persists after signing in, try refreshing the page.
+
+**Long articles (>5000 words) show no annotations**
+
+- The extension uses lazy loading for large pages — scroll to the article content.
+- Annotations will load as the content enters the viewport proximity (500px ahead).
+- Check the browser console (`F12` → Console) for `[Oddity 1] Requesting annotations for region` logs.
+- If annotations don't appear, check that you're signed in (see "red ! badge" above).
+
 **Prompts returning garbage**
 The prompts in `backend/config/prompts.json` are placeholders. Write real system prompts and restart the backend.

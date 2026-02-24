@@ -12,8 +12,8 @@ oddity1/
 ├── extension/              # Chrome MV3 extension (Vite + CRXJS)
 │   └── src/
 │       ├── background/     # Service worker (auth, API client, adapter registry, message router)
-│       ├── content/        # Content script (detection, rendering, popovers, manual annotations)
-│       ├── popup/          # Extension popup (dashboard, export)
+│       ├── content/        # Content script (detection, rendering, popovers, manual annotations, auth toast)
+│       ├── popup/          # Extension popup (dashboard, export, auth form)
 │       └── options/        # Options page (preferences, account)
 │
 ├── backend/                # Express API, deployable to Vercel
@@ -186,6 +186,20 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 
 ---
 
+## Troubleshooting Auth Issues
+
+If you see a red "!" badge on the Oddity extension icon:
+- The extension is not signed in, or your session expired
+- Click the extension icon to open the popup
+- Sign in or sign up via the form
+- The badge will clear automatically, and the page will reload with annotations
+
+If you see an in-page toast saying "Sign in to Oddity to see annotations":
+- Same as above — click the extension icon and authenticate
+- The toast auto-dismisses after 8 seconds or when you click it
+
+---
+
 ## Common issues
 
 **`npm install` fails with workspace errors**
@@ -201,7 +215,9 @@ Make sure you're running from the repo root (`oddity1/`), not inside a workspace
 
 - Open DevTools on the page → Console → look for `[Oddity]` logs.
 - If you see `[Oddity] No reading regions detected`, the site isn't supported yet — add an adapter.
+- If you see a red "!" badge on the extension icon, you're not signed in — click it to sign in.
 - If you see `Requesting annotations for region...` but nothing comes back, check the backend logs for errors.
+- On long articles (>5000 words), annotations load lazily — scroll to the content. You should see logs as regions enter the viewport.
 
 **Supabase auth not working**
 
