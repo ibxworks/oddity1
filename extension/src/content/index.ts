@@ -98,6 +98,9 @@ async function handleStableRegion(
   // Compute content hash
   const contentHash = await sha256(extracted.text);
 
+  // Store hash on the region element so manual annotations can reuse it
+  (region.element as HTMLElement).dataset.oddityHash = contentHash;
+
   // Check word count — large regions get registered for lazy loading
   if (extracted.wordCount > EAGER_WORD_LIMIT) {
     console.log(
@@ -111,16 +114,26 @@ async function handleStableRegion(
   pendingRegions.add(region.id);
   console.log(`[Oddity] Requesting annotations for region ${region.id}`);
 
-  await sendMessage({
-    action: 'requestAnnotations',
-    payload: {
-      url: window.location.href,
-      contentHash,
-      text: extracted.text,
-      intensity: currentIntensity,
-      wordCount: extracted.wordCount,
-    },
-  });
+  try {
+    const result = await sendMessage<{ error?: string }>({
+      action: 'requestAnnotations',
+      payload: {
+        url: window.location.href,
+        contentHash,
+        text: extracted.text,
+        intensity: currentIntensity,
+        wordCount: extracted.wordCount,
+      },
+    });
+
+    if (result?.error) {
+      console.error(`[Oddity] Annotation request failed: ${result.error}`);
+      pendingRegions.delete(region.id);
+    }
+  } catch (err) {
+    console.error(`[Oddity] Annotation request error:`, err);
+    pendingRegions.delete(region.id);
+  }
 }
 
 // ─── Rendering ───

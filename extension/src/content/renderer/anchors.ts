@@ -27,8 +27,12 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
 
   // Collect text nodes within the range
   const textNodes: Text[] = [];
+  let walkerRoot: Node = range.commonAncestorContainer;
+  if (walkerRoot.nodeType === Node.TEXT_NODE) {
+    walkerRoot = walkerRoot.parentElement ?? walkerRoot;
+  }
   const walker = document.createTreeWalker(
-    range.commonAncestorContainer,
+    walkerRoot,
     NodeFilter.SHOW_TEXT,
     {
       acceptNode(node) {

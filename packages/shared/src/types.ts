@@ -164,4 +164,7 @@ export type ExtensionMessage =
         authenticated: boolean;
         user: { id: string; email: string } | null;
       };
-    };
+    }
+  | { action: 'signIn'; payload: { email: string; password: string } }
+  | { action: 'signUp'; payload: { email: string; password: string } }
+  | { action: 'signOut'; payload: Record<string, never> };

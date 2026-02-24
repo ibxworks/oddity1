@@ -20,6 +20,21 @@ const exportBtn = document.getElementById('export-btn')!;
 const authStatus = document.getElementById('auth-status')!;
 const openOptions = document.getElementById('open-options')!;
 
+// Auth form refs
+const authForm = document.getElementById('auth-form')!;
+const authFormTitle = document.getElementById('auth-form-title')!;
+const authError = document.getElementById('auth-error')!;
+const authSuccess = document.getElementById('auth-success')!;
+const authEmail = document.getElementById('auth-email') as HTMLInputElement;
+const authPassword = document.getElementById('auth-password') as HTMLInputElement;
+const authSubmitBtn = document.getElementById('auth-submit-btn')!;
+const authToggleLink = document.getElementById('auth-toggle-link')!;
+const authToggleText = document.getElementById('auth-toggle-text')!;
+const mainContent = document.getElementById('main-content')!;
+const signOutBtn = document.getElementById('sign-out-btn')!;
+
+let isSignUpMode = false;
+
 // ─── State ───
 
 let currentPrefs: Required<UserPreferences> = {
@@ -84,6 +99,51 @@ async function savePrefs(): Promise<void> {
 
 // ─── Auth ───
 
+function showAuthenticatedUI(email: string): void {
+  authForm.style.display = 'none';
+  mainContent.classList.remove('hidden');
+  authStatus.innerHTML = `<span class="auth-email">${escapeHtml(email)}</span>`;
+  signOutBtn.style.display = '';
+}
+
+function showUnauthenticatedUI(): void {
+  authForm.style.display = '';
+  mainContent.classList.add('hidden');
+  authStatus.textContent = 'Not signed in';
+  signOutBtn.style.display = 'none';
+}
+
+function showAuthError(msg: string): void {
+  authError.textContent = msg;
+  authError.style.display = 'block';
+  authSuccess.style.display = 'none';
+}
+
+function hideAuthMessages(): void {
+  authError.style.display = 'none';
+  authSuccess.style.display = 'none';
+}
+
+function friendlyAuthError(error: string): string {
+  if (error.includes('Invalid login credentials')) return 'Invalid email or password.';
+  if (error.includes('Email not confirmed')) return 'Please confirm your email before signing in.';
+  if (error.includes('User already registered')) return 'An account with this email already exists.';
+  if (error.includes('Password should be at least')) return 'Password must be at least 6 characters.';
+  if (error.includes('Unable to validate email')) return 'Please enter a valid email address.';
+  return error;
+}
+
+async function refreshActiveTab(): Promise<void> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) {
+      await chrome.tabs.reload(tab.id);
+    }
+  } catch {
+    // Tab refresh failed; not critical
+  }
+}
+
 async function loadAuthStatus(): Promise<void> {
   try {
     const result = await sendMessage<{
@@ -95,12 +155,12 @@ async function loadAuthStatus(): Promise<void> {
     });
 
     if (result.authenticated && result.user) {
-      authStatus.innerHTML = `<span class="auth-email">${escapeHtml(result.user.email)}</span>`;
+      showAuthenticatedUI(result.user.email);
     } else {
-      authStatus.textContent = 'Not signed in';
+      showUnauthenticatedUI();
     }
   } catch {
-    authStatus.textContent = 'Auth unavailable';
+    showUnauthenticatedUI();
   }
 }
 
@@ -219,6 +279,126 @@ exportBtn.addEventListener('click', async () => {
 openOptions.addEventListener('click', (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
+});
+
+// ─── Auth Event Handlers ───
+
+// Toggle between sign-in and sign-up mode
+authToggleLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  isSignUpMode = !isSignUpMode;
+  hideAuthMessages();
+
+  if (isSignUpMode) {
+    authFormTitle.textContent = 'Sign Up';
+    authSubmitBtn.textContent = 'Sign Up';
+    authToggleText.textContent = 'Already have an account? ';
+    authToggleLink.textContent = 'Sign In';
+  } else {
+    authFormTitle.textContent = 'Sign In';
+    authSubmitBtn.textContent = 'Sign In';
+    authToggleText.textContent = "Don't have an account? ";
+    authToggleLink.textContent = 'Sign Up';
+  }
+});
+
+// Submit auth form
+authSubmitBtn.addEventListener('click', async () => {
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+
+  hideAuthMessages();
+
+  if (!email || !password) {
+    showAuthError('Please enter both email and password.');
+    return;
+  }
+
+  authSubmitBtn.textContent = isSignUpMode ? 'Signing up...' : 'Signing in...';
+  authSubmitBtn.setAttribute('disabled', '');
+
+  try {
+    if (isSignUpMode) {
+      const result = await sendMessage<{
+        success: boolean;
+        needsConfirmation?: boolean;
+        user: { id: string; email: string } | null;
+        error?: string;
+      }>({ action: 'signUp', payload: { email, password } });
+
+      if (result.error) {
+        showAuthError(friendlyAuthError(result.error));
+        return;
+      }
+
+      if (result.needsConfirmation) {
+        authSuccess.textContent = 'Check your email to confirm your account, then sign in.';
+        authSuccess.style.display = 'block';
+        authError.style.display = 'none';
+        // Auto-switch to sign-in mode
+        isSignUpMode = false;
+        authFormTitle.textContent = 'Sign In';
+        authSubmitBtn.textContent = 'Sign In';
+        authToggleText.textContent = "Don't have an account? ";
+        authToggleLink.textContent = 'Sign Up';
+        return;
+      }
+
+      // Sign-up with auto-confirm (no email verification)
+      if (result.user) {
+        showAuthenticatedUI(result.user.email);
+        loadAnnotationStats();
+        refreshActiveTab();
+      }
+    } else {
+      const result = await sendMessage<{
+        success: boolean;
+        user: { id: string; email: string };
+        error?: string;
+      }>({ action: 'signIn', payload: { email, password } });
+
+      if (result.error) {
+        showAuthError(friendlyAuthError(result.error));
+        return;
+      }
+
+      showAuthenticatedUI(result.user.email);
+      loadAnnotationStats();
+      refreshActiveTab();
+    }
+  } catch (err) {
+    showAuthError(friendlyAuthError(String(err)));
+  } finally {
+    authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
+    authSubmitBtn.removeAttribute('disabled');
+  }
+});
+
+// Enter key on password → submit
+authPassword.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    authSubmitBtn.click();
+  }
+});
+
+// Enter key on email → focus password
+authEmail.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    authPassword.focus();
+  }
+});
+
+// Sign out
+signOutBtn.addEventListener('click', async () => {
+  try {
+    await sendMessage({ action: 'signOut', payload: {} });
+  } catch {
+    // Sign out failed; still show unauthenticated UI
+  }
+  showUnauthenticatedUI();
+  refreshActiveTab();
 });
 
 // ─── Helpers ───

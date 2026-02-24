@@ -198,7 +198,65 @@
       background: #1d4ed8;
     }
 
-    /* ── Auth ── */
+    /* ── Auth Form ── */
+    .auth-form {
+      padding: 24px 16px;
+    }
+    .auth-form-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    .auth-input {
+      display: block;
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 10px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .auth-input:focus {
+      border-color: #2563eb;
+    }
+    .auth-error {
+      display: none;
+      color: #dc2626;
+      font-size: 12px;
+      margin-bottom: 10px;
+      padding: 8px 10px;
+      background: #fef2f2;
+      border-radius: 6px;
+    }
+    .auth-success {
+      display: none;
+      color: #16a34a;
+      font-size: 12px;
+      margin-bottom: 10px;
+      padding: 8px 10px;
+      background: #f0fdf4;
+      border-radius: 6px;
+    }
+    .auth-toggle {
+      display: block;
+      text-align: center;
+      margin-top: 12px;
+      font-size: 12px;
+      color: #666;
+    }
+    .auth-toggle a {
+      color: #2563eb;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .auth-toggle a:hover {
+      text-decoration: underline;
+    }
+
+    /* ── Auth Bar ── */
     .auth-bar {
       display: flex;
       align-items: center;
@@ -211,6 +269,23 @@
     .auth-email {
       font-weight: 500;
       color: #333;
+    }
+    .auth-signout {
+      background: none;
+      border: none;
+      color: #dc2626;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .auth-signout:hover {
+      background: #fef2f2;
+    }
+
+    /* ── Main Content Toggle ── */
+    .main-content.hidden {
+      display: none;
     }
 
     /* ── Footer ── */
@@ -249,6 +324,23 @@
       </label>
     </div>
   </div>
+
+  <!-- Auth Form (shown when not signed in) -->
+  <div class="auth-form" id="auth-form" style="display:none">
+    <div class="auth-form-title" id="auth-form-title">Sign In</div>
+    <div class="auth-error" id="auth-error"></div>
+    <div class="auth-success" id="auth-success"></div>
+    <input class="auth-input" id="auth-email" type="email" placeholder="Email" autocomplete="email" />
+    <input class="auth-input" id="auth-password" type="password" placeholder="Password" autocomplete="current-password" />
+    <button class="btn btn-primary" id="auth-submit-btn">Sign In</button>
+    <div class="auth-toggle">
+      <span id="auth-toggle-text">Don't have an account? </span>
+      <a id="auth-toggle-link">Sign Up</a>
+    </div>
+  </div>
+
+  <!-- Main Content (shown when signed in) -->
+  <div class="main-content" id="main-content">
 
   <!-- Annotation Stats -->
   <div class="stats" id="stats">
@@ -335,7 +427,10 @@
   <!-- Auth Status -->
   <div class="auth-bar" id="auth-bar">
     <span id="auth-status">Checking...</span>
+    <button class="auth-signout" id="sign-out-btn" style="display:none">Sign out</button>
   </div>
+
+  </div><!-- /main-content -->
 
   <!-- Footer -->
   <div class="footer">

@@ -385,8 +385,10 @@ async function handleSubmit(type: AnnotationType, note: string): Promise<void> {
     },
   };
 
-  // Send to service worker for persistence
-  const contentHash = await sha256(fullText.slice(0, 1000));
+  // Use the hash computed by the main pipeline if available, otherwise fall back
+  const hashEl = root.closest('[data-oddity-hash]');
+  const contentHash = hashEl?.getAttribute('data-oddity-hash')
+    ?? await sha256(fullText.slice(0, 1000));
 
   sendMessage({
     action: 'saveManualAnnotation',

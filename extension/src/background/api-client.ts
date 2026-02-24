@@ -118,7 +118,7 @@ export async function getAdapters(): Promise<SiteAdapter[]> {
 }
 
 export async function getPreferences(): Promise<UserPreferences> {
-  const res = await authFetch('/api/preferences');
+  const res = await authFetch('/api/user/preferences');
   if (!res.ok) throw new Error(`getPreferences failed: ${res.status}`);
   return res.json() as Promise<UserPreferences>;
 }
@@ -126,7 +126,7 @@ export async function getPreferences(): Promise<UserPreferences> {
 export async function updatePreferences(
   prefs: Partial<UserPreferences>,
 ): Promise<UserPreferences> {
-  const res = await authFetch('/api/preferences', {
+  const res = await authFetch('/api/user/preferences', {
     method: 'PUT',
     body: JSON.stringify(prefs),
   });

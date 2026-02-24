@@ -1,8 +1,9 @@
 import type { ExtensionMessage, UserPreferences } from '@oddity/shared';
 import { sendToTab } from '../shared/messaging.js';
-import { getSession } from './auth.js';
+import { getSession, signIn, signUp, signOut } from './auth.js';
 import {
   requestAnnotations,
+  getAnnotations,
   saveAnnotation,
   deleteAnnotation as apiDeleteAnnotation,
 } from './api-client.js';
@@ -34,7 +35,9 @@ chrome.runtime.onMessage.addListener(
         case 'requestAnnotations': {
           const { url, contentHash, text, intensity, wordCount } =
             message.payload;
-          const result = await requestAnnotations({
+
+          // Trigger AI generation/caching
+          await requestAnnotations({
             url,
             content_hash: contentHash,
             text,
@@ -42,18 +45,21 @@ chrome.runtime.onMessage.addListener(
             word_count: wordCount,
           });
 
+          // Fetch merged result (cached AI + user annotations)
+          const merged = await getAnnotations(url, contentHash);
+
           // Forward annotations to the requesting tab
           if (sender.tab?.id) {
             await sendToTab(sender.tab.id, {
               action: 'annotationsReady',
               payload: {
                 regionId: contentHash,
-                annotations: result.annotations,
+                annotations: merged.annotations,
               },
             });
           }
 
-          return result;
+          return merged;
         }
 
         case 'getAdapters': {
@@ -72,6 +78,36 @@ chrome.runtime.onMessage.addListener(
                 }
               : null,
           };
+        }
+
+        case 'signIn': {
+          const { email, password } = message.payload;
+          const data = await signIn(email, password);
+          return {
+            success: true,
+            user: {
+              id: data.user?.id ?? '',
+              email: data.user?.email ?? '',
+            },
+          };
+        }
+
+        case 'signUp': {
+          const { email, password } = message.payload;
+          const data = await signUp(email, password);
+          const needsConfirmation = data.session === null;
+          return {
+            success: true,
+            needsConfirmation,
+            user: data.user
+              ? { id: data.user.id, email: data.user.email ?? '' }
+              : null,
+          };
+        }
+
+        case 'signOut': {
+          await signOut();
+          return { success: true };
         }
 
         case 'saveManualAnnotation': {
