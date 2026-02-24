@@ -1,4 +1,4 @@
-# Oddity Database Schema
+# Oddity 1 Database Schema
 
 Supabase project: `gmmektzvvrtttszdgiai`
 Region: us-east-1

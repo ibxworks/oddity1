@@ -25,7 +25,10 @@
       "mcp__supabase__apply_migration",
       "Bash(npm run build -w packages/shared 2>&1)",
       "Bash(find /Users/realtonypark/Developer/oddity1 -type f \\\\\\( -name \"*.sql\" -o -name \"schema*\" \\\\\\) 2>/dev/null | head -20)",
-      "Bash(npx tsc --noEmit -p extension/tsconfig.json 2>&1 | head -30)"
+      "Bash(npx tsc --noEmit -p extension/tsconfig.json 2>&1 | head -30)",
+      "Bash(npx tsc --noEmit --project backend/tsconfig.json 2>&1 | head -30)",
+      "Bash(npx tsc --noEmit --project extension/tsconfig.json 2>&1 | head -30)",
+      "Bash(cd /Users/realtonypark/Developer/oddity1/extension && npx tsc --noEmit 2>&1)"
     ]
   },
   "enableAllProjectMcpServers": true,

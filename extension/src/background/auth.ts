@@ -60,7 +60,7 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 export async function getSession(): Promise<Session | null> {
   const { data, error } = await supabase.auth.getSession();
   if (error) {
-    console.error("[Oddity] getSession error:", error.message);
+    console.error("[Oddity 1] getSession error:", error.message);
     return null;
   }
   return data.session;

@@ -1,4 +1,4 @@
-# Oddity Quick Reference
+# Oddity 1 Quick Reference
 
 ## Project structure
 

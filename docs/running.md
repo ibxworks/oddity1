@@ -1,4 +1,4 @@
-# Running Oddity Locally
+# Running Oddity 1 Locally
 
 ## Prerequisites
 

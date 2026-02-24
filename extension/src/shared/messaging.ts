@@ -1,10 +1,12 @@
-import type { ExtensionMessage } from '@oddity/shared';
+import type { ExtensionMessage } from "@oddity/shared";
 
 /**
  * Type-safe wrapper around chrome.runtime.sendMessage.
  * Returns a typed response.
  */
-export function sendMessage<T = unknown>(message: ExtensionMessage): Promise<T> {
+export function sendMessage<T = unknown>(
+  message: ExtensionMessage,
+): Promise<T> {
   return chrome.runtime.sendMessage(message);
 }
 
@@ -25,7 +27,7 @@ export function onMessage(
       const result = handler(message, sender);
       if (result instanceof Promise) {
         result.then(sendResponse).catch((err) => {
-          console.error('[Oddity] Message handler error:', err);
+          console.error("[Oddity 1] Message handler error:", err);
           sendResponse({ error: String(err) });
         });
         return true; // keep channel open for async response

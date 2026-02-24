@@ -1,16 +1,39 @@
-import type { SiteAdapter, ExtensionMessage, Annotation, AnnotationType, Intensity } from '@oddity/shared';
-import { EAGER_WORD_LIMIT } from '@oddity/shared';
-import { sendMessage, onMessage } from '../shared/messaging.js';
-import { sha256 } from '../shared/hash.js';
-import { detectReadingRegions, type DetectedRegion } from './detector.js';
-import { extractText, extractWithReadability } from './extractor.js';
-import { createStabilityWatcher } from './stability.js';
-import { resolveSelector } from './selector.js';
-import { initOverlay, renderAnnotation, clearOverlay, setOverlayVisible, filterByTypes, destroyOverlay } from './renderer/overlay.js';
-import { injectAnchors, removeAnchors, clearAllAnchors, getAllAnchorsInOrder, getAnnotationId } from './renderer/anchors.js';
-import { showPopover, hidePopover, isPopoverVisible } from './renderer/popover.js';
-import { initScrollLoader, registerRegion, destroyScrollLoader } from './scroll-loader.js';
-import { initManualAnnotations, destroyManualAnnotations } from './manual.js';
+import type {
+  Annotation,
+  AnnotationType,
+  ExtensionMessage,
+  Intensity,
+  SiteAdapter,
+} from "@oddity/shared";
+import { EAGER_WORD_LIMIT } from "@oddity/shared";
+import { sha256 } from "../shared/hash.js";
+import { onMessage, sendMessage } from "../shared/messaging.js";
+import { detectReadingRegions, type DetectedRegion } from "./detector.js";
+import { extractText, extractWithReadability } from "./extractor.js";
+import { initManualAnnotations } from "./manual.js";
+import {
+  clearAllAnchors,
+  getAllAnchorsInOrder,
+  getAnnotationId,
+  injectAnchors,
+  removeAnchors,
+} from "./renderer/anchors.js";
+import {
+  clearOverlay,
+  filterByTypes,
+  initOverlay,
+  renderAnnotation,
+  setOverlayVisible,
+} from "./renderer/overlay.js";
+import {
+  hidePopover,
+  isPopoverVisible,
+  showPopover,
+} from "./renderer/popover.js";
+import { initScrollLoader, registerRegion } from "./scroll-loader.js";
+import { showAuthToast } from "./auth-toast.js";
+import { resolveSelector } from "./selector.js";
+import { createStabilityWatcher } from "./stability.js";
 
 // ─── State ───
 
@@ -19,19 +42,24 @@ const pendingRegions = new Set<string>();
 const currentAnnotations = new Map<string, Annotation[]>();
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
-  'highlight', 'underline', 'question', 'insight', 'caveat', 'vocabulary',
+  "highlight",
+  "underline",
+  "question",
+  "insight",
+  "caveat",
+  "vocabulary",
 ];
-let currentIntensity: Intensity = 'default';
+let currentIntensity: Intensity = "default";
 let regions: DetectedRegion[] = [];
 
 // ─── Pipeline ───
 
 async function init(): Promise<void> {
-  console.log('[Oddity] Content script initializing');
+  console.log("[Oddity 1] Content script initializing");
 
   // Fetch adapters from service worker
   const response = await sendMessage<{ adapters: SiteAdapter[] }>({
-    action: 'getAdapters',
+    action: "getAdapters",
     payload: {},
   });
 
@@ -45,11 +73,11 @@ async function init(): Promise<void> {
   regions = detectReadingRegions(adapters);
 
   if (regions.length === 0) {
-    console.log('[Oddity] No reading regions detected');
+    console.log("[Oddity 1] No reading regions detected");
     return;
   }
 
-  console.log(`[Oddity] Detected ${regions.length} reading region(s)`);
+  console.log(`[Oddity 1] Detected ${regions.length} reading region(s)`);
 
   // Initialize rendering layers
   initOverlay();
@@ -58,7 +86,7 @@ async function init(): Promise<void> {
   initScrollLoader((regionId, element) => {
     const region = regions.find((r) => r.id === regionId);
     if (region) {
-      handleStableRegion(region, element);
+      handleStableRegion(region, element, true);
     }
   });
 
@@ -84,12 +112,13 @@ async function init(): Promise<void> {
 async function handleStableRegion(
   region: DetectedRegion,
   _element: Element,
+  fromLazyLoader = false,
 ): Promise<void> {
   if (annotatedRegions.has(region.id) || pendingRegions.has(region.id)) return;
 
   // Extract text
   const extracted =
-    region.source === 'readability'
+    region.source === "readability"
       ? extractWithReadability()
       : extractText(region);
 
@@ -102,9 +131,10 @@ async function handleStableRegion(
   (region.element as HTMLElement).dataset.oddityHash = contentHash;
 
   // Check word count — large regions get registered for lazy loading
-  if (extracted.wordCount > EAGER_WORD_LIMIT) {
+  // Skip this check when called from the lazy loader (region already approved)
+  if (!fromLazyLoader && extracted.wordCount > EAGER_WORD_LIMIT) {
     console.log(
-      `[Oddity] Region ${region.id} has ${extracted.wordCount} words — registering for lazy loader`,
+      `[Oddity 1] Region ${region.id} has ${extracted.wordCount} words — registering for lazy loader`,
     );
     registerRegion(region.id, region.element);
     return;
@@ -112,11 +142,11 @@ async function handleStableRegion(
 
   // Request annotations from service worker
   pendingRegions.add(region.id);
-  console.log(`[Oddity] Requesting annotations for region ${region.id}`);
+  console.log(`[Oddity 1] Requesting annotations for region ${region.id}`);
 
   try {
     const result = await sendMessage<{ error?: string }>({
-      action: 'requestAnnotations',
+      action: "requestAnnotations",
       payload: {
         url: window.location.href,
         contentHash,
@@ -127,11 +157,22 @@ async function handleStableRegion(
     });
 
     if (result?.error) {
-      console.error(`[Oddity] Annotation request failed: ${result.error}`);
+      if (result.error.includes("Sign in")) {
+        console.warn("[Oddity 1] Not signed in — open the Oddity extension to sign in");
+        showAuthToast();
+      } else {
+        console.error(`[Oddity 1] Annotation request failed: ${result.error}`);
+      }
       pendingRegions.delete(region.id);
     }
   } catch (err) {
-    console.error(`[Oddity] Annotation request error:`, err);
+    const errStr = String(err);
+    if (errStr.includes("Auth") || errStr.includes("401")) {
+      console.warn("[Oddity 1] Not signed in — open the Oddity extension to sign in");
+      showAuthToast();
+    } else {
+      console.error(`[Oddity 1] Annotation request error:`, err);
+    }
     pendingRegions.delete(region.id);
   }
 }
@@ -147,7 +188,9 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
 
     const range = resolveSelector(root, annotation.anchor);
     if (!range) {
-      console.warn(`[Oddity] Could not resolve selector for annotation ${annotation.id}`);
+      console.warn(
+        `[Oddity 1] Could not resolve selector for annotation ${annotation.id}`,
+      );
       continue;
     }
 
@@ -157,10 +200,10 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
     // Inject inline anchors for hover detection
     const anchors = injectAnchors(annotation, range);
     for (const anchor of anchors) {
-      anchor.addEventListener('mouseenter', () => {
+      anchor.addEventListener("mouseenter", () => {
         showPopover(annotation, anchor);
       });
-      anchor.addEventListener('mouseleave', () => {
+      anchor.addEventListener("mouseleave", () => {
         hidePopover();
       });
     }
@@ -180,13 +223,13 @@ function rerenderAll(): void {
 
 onMessage((message: ExtensionMessage) => {
   switch (message.action) {
-    case 'annotationsReady': {
+    case "annotationsReady": {
       const { regionId, annotations } = message.payload;
       annotatedRegions.add(regionId);
       pendingRegions.delete(regionId);
       currentAnnotations.set(regionId, annotations);
       console.log(
-        `[Oddity] Received ${annotations.length} annotations for region ${regionId}`,
+        `[Oddity 1] Received ${annotations.length} annotations for region ${regionId}`,
       );
 
       if (enabled) {
@@ -195,8 +238,12 @@ onMessage((message: ExtensionMessage) => {
       break;
     }
 
-    case 'settingsUpdated': {
-      const { enabled: newEnabled, intensity: newIntensity, visibleTypes: newVisibleTypes } = message.payload;
+    case "settingsUpdated": {
+      const {
+        enabled: newEnabled,
+        intensity: newIntensity,
+        visibleTypes: newVisibleTypes,
+      } = message.payload;
       const wasEnabled = enabled;
       const intensityChanged = newIntensity !== currentIntensity;
       enabled = newEnabled;
@@ -204,7 +251,7 @@ onMessage((message: ExtensionMessage) => {
       visibleTypes = newVisibleTypes;
 
       console.log(
-        `[Oddity] Settings updated — enabled: ${enabled}, intensity: ${currentIntensity}, types: ${visibleTypes.join(', ')}`,
+        `[Oddity 1] Settings updated — enabled: ${enabled}, intensity: ${currentIntensity}, types: ${visibleTypes.join(", ")}`,
       );
 
       if (!enabled) {
@@ -233,7 +280,7 @@ onMessage((message: ExtensionMessage) => {
       break;
     }
 
-    case 'deleteAnnotation': {
+    case "deleteAnnotation": {
       const { annotationId } = message.payload;
       // Remove from state
       for (const [regionId, annotations] of currentAnnotations) {
@@ -257,39 +304,41 @@ onMessage((message: ExtensionMessage) => {
 let keyboardFocusIndex = -1;
 
 function initKeyboardNav(): void {
-  document.addEventListener('keydown', (e: KeyboardEvent) => {
+  document.addEventListener("keydown", (e: KeyboardEvent) => {
     if (!enabled) return;
 
     // Escape closes popover
-    if (e.key === 'Escape' && isPopoverVisible()) {
+    if (e.key === "Escape" && isPopoverVisible()) {
       hidePopover();
       e.preventDefault();
       return;
     }
 
     // Tab navigates between annotations (only when not in an input/textarea)
-    if (e.key === 'Tab' && !isInputFocused()) {
+    if (e.key === "Tab" && !isInputFocused()) {
       const anchors = getAllAnchorsInOrder();
       if (anchors.length === 0) return;
 
       e.preventDefault();
 
       if (e.shiftKey) {
-        keyboardFocusIndex = keyboardFocusIndex <= 0 ? anchors.length - 1 : keyboardFocusIndex - 1;
+        keyboardFocusIndex =
+          keyboardFocusIndex <= 0 ? anchors.length - 1 : keyboardFocusIndex - 1;
       } else {
-        keyboardFocusIndex = keyboardFocusIndex >= anchors.length - 1 ? 0 : keyboardFocusIndex + 1;
+        keyboardFocusIndex =
+          keyboardFocusIndex >= anchors.length - 1 ? 0 : keyboardFocusIndex + 1;
       }
 
       const anchor = anchors[keyboardFocusIndex];
       if (anchor) {
         anchor.focus();
-        anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        anchor.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       return;
     }
 
     // Enter opens popover on focused annotation
-    if (e.key === 'Enter' && !isInputFocused()) {
+    if (e.key === "Enter" && !isInputFocused()) {
       const anchors = getAllAnchorsInOrder();
       const anchor = anchors[keyboardFocusIndex];
       if (anchor) {
@@ -310,8 +359,12 @@ function isInputFocused(): boolean {
   const active = document.activeElement;
   if (!active) return false;
   const tag = active.tagName.toLowerCase();
-  return tag === 'input' || tag === 'textarea' || tag === 'select' ||
-    (active as HTMLElement).isContentEditable;
+  return (
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select" ||
+    (active as HTMLElement).isContentEditable
+  );
 }
 
 function findAnnotationById(id: string): Annotation | null {
@@ -325,9 +378,9 @@ function findAnnotationById(id: string): Annotation | null {
 // ─── Helpers ───
 
 function matchHostname(hostname: string, pattern: string): boolean {
-  if (pattern.startsWith('*.')) {
+  if (pattern.startsWith("*.")) {
     const suffix = pattern.slice(2);
-    return hostname === suffix || hostname.endsWith('.' + suffix);
+    return hostname === suffix || hostname.endsWith("." + suffix);
   }
   return hostname === pattern;
 }
@@ -335,5 +388,5 @@ function matchHostname(hostname: string, pattern: string): boolean {
 // ─── Start ───
 
 init().catch((err) => {
-  console.error('[Oddity] Content script init error:', err);
+  console.error("[Oddity 1] Content script init error:", err);
 });

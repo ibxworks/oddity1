@@ -156,6 +156,7 @@ async function loadAuthStatus(): Promise<void> {
 
     if (result.authenticated && result.user) {
       showAuthenticatedUI(result.user.email);
+      chrome.action.setBadgeText({ text: "" });
     } else {
       showUnauthenticatedUI();
     }
@@ -347,6 +348,7 @@ authSubmitBtn.addEventListener('click', async () => {
       // Sign-up with auto-confirm (no email verification)
       if (result.user) {
         showAuthenticatedUI(result.user.email);
+        chrome.action.setBadgeText({ text: "" });
         loadAnnotationStats();
         refreshActiveTab();
       }
@@ -363,6 +365,7 @@ authSubmitBtn.addEventListener('click', async () => {
       }
 
       showAuthenticatedUI(result.user.email);
+      chrome.action.setBadgeText({ text: "" });
       loadAnnotationStats();
       refreshActiveTab();
     }

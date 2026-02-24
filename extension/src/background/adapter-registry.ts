@@ -1,8 +1,11 @@
-import { ADAPTER_REFRESH_INTERVAL_MINUTES, type SiteAdapter } from '@oddity/shared';
-import { getAdapters as fetchAdaptersFromApi } from './api-client.js';
+import {
+  ADAPTER_REFRESH_INTERVAL_MINUTES,
+  type SiteAdapter,
+} from "@oddity/shared";
+import { getAdapters as fetchAdaptersFromApi } from "./api-client.js";
 
-const ALARM_NAME = 'oddity-adapter-refresh';
-const STORAGE_KEY = 'adapters';
+const ALARM_NAME = "oddity-adapter-refresh";
+const STORAGE_KEY = "adapters";
 
 // ─── In-Memory Cache ───
 // Service workers can be terminated at any time, so we always
@@ -30,9 +33,11 @@ async function refreshAdapters(): Promise<void> {
   try {
     const adapters = await fetchAdaptersFromApi();
     await saveToStorage(adapters);
-    console.log(`[Oddity] Adapter registry refreshed: ${adapters.length} adapters`);
+    console.log(
+      `[Oddity 1] Adapter registry refreshed: ${adapters.length} adapters`,
+    );
   } catch (err) {
-    console.error('[Oddity] Failed to refresh adapters:', err);
+    console.error("[Oddity 1] Failed to refresh adapters:", err);
   }
 }
 
@@ -81,11 +86,8 @@ export function handleAdapterAlarm(alarm: chrome.alarms.Alarm): void {
  *  - Exact match: "chat.openai.com"
  *  - Wildcard prefix: "*.substack.com"
  */
-function hostnameMatchesPattern(
-  hostname: string,
-  pattern: string,
-): boolean {
-  if (pattern.startsWith('*.')) {
+function hostnameMatchesPattern(hostname: string, pattern: string): boolean {
+  if (pattern.startsWith("*.")) {
     const suffix = pattern.slice(1); // ".substack.com"
     return hostname.endsWith(suffix) || hostname === pattern.slice(2);
   }

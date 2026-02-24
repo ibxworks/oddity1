@@ -1,442 +1,464 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Oddity</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oddity 1</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-    body {
-      width: 360px;
-      min-height: 400px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #fafafa;
-      color: #1a1a1a;
-      font-size: 14px;
-    }
+      body {
+        width: 360px;
+        min-height: 400px;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #fafafa;
+        color: #1a1a1a;
+        font-size: 14px;
+      }
 
-    /* ── Header ── */
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px;
-      border-bottom: 1px solid #e5e5e5;
-    }
-    .header h1 {
-      font-size: 18px;
-      font-weight: 700;
-      letter-spacing: -0.3px;
-    }
-    .toggle-wrap {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .toggle-label {
-      font-size: 12px;
-      color: #666;
-    }
+      /* ── Header ── */
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px;
+        border-bottom: 1px solid #e5e5e5;
+      }
+      .header h1 {
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+      }
+      .toggle-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .toggle-label {
+        font-size: 12px;
+        color: #666;
+      }
 
-    /* ── Toggle switch ── */
-    .toggle {
-      position: relative;
-      width: 40px;
-      height: 22px;
-    }
-    .toggle input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .toggle .slider {
-      position: absolute;
-      inset: 0;
-      background: #ccc;
-      border-radius: 22px;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .toggle .slider::before {
-      content: '';
-      position: absolute;
-      width: 16px;
-      height: 16px;
-      left: 3px;
-      top: 3px;
-      background: #fff;
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-    .toggle input:checked + .slider {
-      background: #2563eb;
-    }
-    .toggle input:checked + .slider::before {
-      transform: translateX(18px);
-    }
+      /* ── Toggle switch ── */
+      .toggle {
+        position: relative;
+        width: 40px;
+        height: 22px;
+      }
+      .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle .slider {
+        position: absolute;
+        inset: 0;
+        background: #ccc;
+        border-radius: 22px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .toggle .slider::before {
+        content: "";
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        left: 3px;
+        top: 3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform 0.2s;
+      }
+      .toggle input:checked + .slider {
+        background: #2563eb;
+      }
+      .toggle input:checked + .slider::before {
+        transform: translateX(18px);
+      }
 
-    /* ── Stats ── */
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      padding: 16px;
-    }
-    .stat-card {
-      text-align: center;
-      padding: 10px 4px;
-      border-radius: 8px;
-      border: 1px solid #e5e5e5;
-      background: #fff;
-    }
-    .stat-count {
-      font-size: 20px;
-      font-weight: 700;
-    }
-    .stat-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #666;
-      margin-top: 2px;
-    }
+      /* ── Stats ── */
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        padding: 16px;
+      }
+      .stat-card {
+        text-align: center;
+        padding: 10px 4px;
+        border-radius: 8px;
+        border: 1px solid #e5e5e5;
+        background: #fff;
+      }
+      .stat-count {
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .stat-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #666;
+        margin-top: 2px;
+      }
 
-    /* ── Section ── */
-    .section {
-      padding: 12px 16px;
-      border-top: 1px solid #e5e5e5;
-    }
-    .section-title {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #999;
-      margin-bottom: 10px;
-    }
+      /* ── Section ── */
+      .section {
+        padding: 12px 16px;
+        border-top: 1px solid #e5e5e5;
+      }
+      .section-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #999;
+        margin-bottom: 10px;
+      }
 
-    /* ── Intensity ── */
-    .intensity-group {
-      display: flex;
-      gap: 6px;
-    }
-    .intensity-btn {
-      flex: 1;
-      padding: 6px 0;
-      border: 1px solid #e5e5e5;
-      border-radius: 6px;
-      background: #fff;
-      font-size: 12px;
-      cursor: pointer;
-      color: #555;
-      transition: all 0.15s;
-    }
-    .intensity-btn:hover {
-      border-color: #bbb;
-    }
-    .intensity-btn.active {
-      background: #2563eb;
-      color: #fff;
-      border-color: #2563eb;
-    }
+      /* ── Intensity ── */
+      .intensity-group {
+        display: flex;
+        gap: 6px;
+      }
+      .intensity-btn {
+        flex: 1;
+        padding: 6px 0;
+        border: 1px solid #e5e5e5;
+        border-radius: 6px;
+        background: #fff;
+        font-size: 12px;
+        cursor: pointer;
+        color: #555;
+        transition: all 0.15s;
+      }
+      .intensity-btn:hover {
+        border-color: #bbb;
+      }
+      .intensity-btn.active {
+        background: #2563eb;
+        color: #fff;
+        border-color: #2563eb;
+      }
 
-    /* ── Type Filters ── */
-    .type-filters {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 6px;
-    }
-    .type-filter {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 12px;
-      transition: background 0.15s;
-    }
-    .type-filter:hover {
-      background: #f0f0f0;
-    }
-    .type-filter input {
-      accent-color: #2563eb;
-    }
-    .type-swatch {
-      width: 10px;
-      height: 10px;
-      border-radius: 2px;
-      flex-shrink: 0;
-    }
+      /* ── Type Filters ── */
+      .type-filters {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+      }
+      .type-filter {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background 0.15s;
+      }
+      .type-filter:hover {
+        background: #f0f0f0;
+      }
+      .type-filter input {
+        accent-color: #2563eb;
+      }
+      .type-swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
 
-    /* ── Buttons ── */
-    .btn {
-      display: block;
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #e5e5e5;
-      border-radius: 8px;
-      background: #fff;
-      font-size: 13px;
-      cursor: pointer;
-      color: #333;
-      transition: all 0.15s;
-      text-align: center;
-      text-decoration: none;
-    }
-    .btn:hover {
-      background: #f5f5f5;
-      border-color: #ccc;
-    }
-    .btn-primary {
-      background: #2563eb;
-      color: #fff;
-      border-color: #2563eb;
-    }
-    .btn-primary:hover {
-      background: #1d4ed8;
-    }
+      /* ── Buttons ── */
+      .btn {
+        display: block;
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #e5e5e5;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 13px;
+        cursor: pointer;
+        color: #333;
+        transition: all 0.15s;
+        text-align: center;
+        text-decoration: none;
+      }
+      .btn:hover {
+        background: #f5f5f5;
+        border-color: #ccc;
+      }
+      .btn-primary {
+        background: #2563eb;
+        color: #fff;
+        border-color: #2563eb;
+      }
+      .btn-primary:hover {
+        background: #1d4ed8;
+      }
 
-    /* ── Auth Form ── */
-    .auth-form {
-      padding: 24px 16px;
-    }
-    .auth-form-title {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      text-align: center;
-    }
-    .auth-input {
-      display: block;
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #e5e5e5;
-      border-radius: 8px;
-      font-size: 13px;
-      margin-bottom: 10px;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    .auth-input:focus {
-      border-color: #2563eb;
-    }
-    .auth-error {
-      display: none;
-      color: #dc2626;
-      font-size: 12px;
-      margin-bottom: 10px;
-      padding: 8px 10px;
-      background: #fef2f2;
-      border-radius: 6px;
-    }
-    .auth-success {
-      display: none;
-      color: #16a34a;
-      font-size: 12px;
-      margin-bottom: 10px;
-      padding: 8px 10px;
-      background: #f0fdf4;
-      border-radius: 6px;
-    }
-    .auth-toggle {
-      display: block;
-      text-align: center;
-      margin-top: 12px;
-      font-size: 12px;
-      color: #666;
-    }
-    .auth-toggle a {
-      color: #2563eb;
-      text-decoration: none;
-      cursor: pointer;
-    }
-    .auth-toggle a:hover {
-      text-decoration: underline;
-    }
+      /* ── Auth Form ── */
+      .auth-form {
+        padding: 24px 16px;
+      }
+      .auth-form-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+      .auth-input {
+        display: block;
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #e5e5e5;
+        border-radius: 8px;
+        font-size: 13px;
+        margin-bottom: 10px;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .auth-input:focus {
+        border-color: #2563eb;
+      }
+      .auth-error {
+        display: none;
+        color: #dc2626;
+        font-size: 12px;
+        margin-bottom: 10px;
+        padding: 8px 10px;
+        background: #fef2f2;
+        border-radius: 6px;
+      }
+      .auth-success {
+        display: none;
+        color: #16a34a;
+        font-size: 12px;
+        margin-bottom: 10px;
+        padding: 8px 10px;
+        background: #f0fdf4;
+        border-radius: 6px;
+      }
+      .auth-toggle {
+        display: block;
+        text-align: center;
+        margin-top: 12px;
+        font-size: 12px;
+        color: #666;
+      }
+      .auth-toggle a {
+        color: #2563eb;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .auth-toggle a:hover {
+        text-decoration: underline;
+      }
 
-    /* ── Auth Bar ── */
-    .auth-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      border-top: 1px solid #e5e5e5;
-      font-size: 12px;
-      color: #666;
-    }
-    .auth-email {
-      font-weight: 500;
-      color: #333;
-    }
-    .auth-signout {
-      background: none;
-      border: none;
-      color: #dc2626;
-      font-size: 12px;
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-    .auth-signout:hover {
-      background: #fef2f2;
-    }
+      /* ── Auth Bar ── */
+      .auth-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-top: 1px solid #e5e5e5;
+        font-size: 12px;
+        color: #666;
+      }
+      .auth-email {
+        font-weight: 500;
+        color: #333;
+      }
+      .auth-signout {
+        background: none;
+        border: none;
+        color: #dc2626;
+        font-size: 12px;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .auth-signout:hover {
+        background: #fef2f2;
+      }
 
-    /* ── Main Content Toggle ── */
-    .main-content.hidden {
-      display: none;
-    }
+      /* ── Main Content Toggle ── */
+      .main-content.hidden {
+        display: none;
+      }
 
-    /* ── Footer ── */
-    .footer {
-      padding: 12px 16px;
-      border-top: 1px solid #e5e5e5;
-      text-align: center;
-    }
-    .footer a {
-      font-size: 12px;
-      color: #2563eb;
-      text-decoration: none;
-    }
-    .footer a:hover {
-      text-decoration: underline;
-    }
+      /* ── Footer ── */
+      .footer {
+        padding: 12px 16px;
+        border-top: 1px solid #e5e5e5;
+        text-align: center;
+      }
+      .footer a {
+        font-size: 12px;
+        color: #2563eb;
+        text-decoration: none;
+      }
+      .footer a:hover {
+        text-decoration: underline;
+      }
 
-    .btn-row {
-      display: flex;
-      gap: 8px;
-    }
-    .btn-row .btn {
-      flex: 1;
-    }
-  </style>
-</head>
-<body>
-  <!-- Header -->
-  <div class="header">
-    <h1>Oddity</h1>
-    <div class="toggle-wrap">
-      <span class="toggle-label" id="toggle-label">On</span>
-      <label class="toggle">
-        <input type="checkbox" id="enabled-toggle" checked />
-        <span class="slider"></span>
-      </label>
+      .btn-row {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-row .btn {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <div class="header">
+      <h1>Oddity 1</h1>
+      <div class="toggle-wrap">
+        <span class="toggle-label" id="toggle-label">On</span>
+        <label class="toggle">
+          <input type="checkbox" id="enabled-toggle" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
     </div>
-  </div>
 
-  <!-- Auth Form (shown when not signed in) -->
-  <div class="auth-form" id="auth-form" style="display:none">
-    <div class="auth-form-title" id="auth-form-title">Sign In</div>
-    <div class="auth-error" id="auth-error"></div>
-    <div class="auth-success" id="auth-success"></div>
-    <input class="auth-input" id="auth-email" type="email" placeholder="Email" autocomplete="email" />
-    <input class="auth-input" id="auth-password" type="password" placeholder="Password" autocomplete="current-password" />
-    <button class="btn btn-primary" id="auth-submit-btn">Sign In</button>
-    <div class="auth-toggle">
-      <span id="auth-toggle-text">Don't have an account? </span>
-      <a id="auth-toggle-link">Sign Up</a>
+    <!-- Auth Form (shown when not signed in) -->
+    <div class="auth-form" id="auth-form" style="display: none">
+      <div class="auth-form-title" id="auth-form-title">Sign In</div>
+      <div class="auth-error" id="auth-error"></div>
+      <div class="auth-success" id="auth-success"></div>
+      <input
+        class="auth-input"
+        id="auth-email"
+        type="email"
+        placeholder="Email"
+        autocomplete="email"
+      />
+      <input
+        class="auth-input"
+        id="auth-password"
+        type="password"
+        placeholder="Password"
+        autocomplete="current-password"
+      />
+      <button class="btn btn-primary" id="auth-submit-btn">Sign In</button>
+      <div class="auth-toggle">
+        <span id="auth-toggle-text">Don't have an account? </span>
+        <a id="auth-toggle-link">Sign Up</a>
+      </div>
     </div>
-  </div>
 
-  <!-- Main Content (shown when signed in) -->
-  <div class="main-content" id="main-content">
+    <!-- Main Content (shown when signed in) -->
+    <div class="main-content" id="main-content">
+      <!-- Annotation Stats -->
+      <div class="stats" id="stats">
+        <div class="stat-card">
+          <div class="stat-count" id="stat-highlight">0</div>
+          <div class="stat-label" style="color: #b45309">Highlight</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-count" id="stat-underline">0</div>
+          <div class="stat-label" style="color: #0d9488">Important</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-count" id="stat-question">0</div>
+          <div class="stat-label" style="color: #7c3aed">Question</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-count" id="stat-insight">0</div>
+          <div class="stat-label" style="color: #2563eb">Insight</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-count" id="stat-caveat">0</div>
+          <div class="stat-label" style="color: #c2410c">Caveat</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-count" id="stat-vocabulary">0</div>
+          <div class="stat-label" style="color: #16a34a">Vocabulary</div>
+        </div>
+      </div>
 
-  <!-- Annotation Stats -->
-  <div class="stats" id="stats">
-    <div class="stat-card">
-      <div class="stat-count" id="stat-highlight">0</div>
-      <div class="stat-label" style="color:#b45309">Highlight</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-count" id="stat-underline">0</div>
-      <div class="stat-label" style="color:#0d9488">Important</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-count" id="stat-question">0</div>
-      <div class="stat-label" style="color:#7c3aed">Question</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-count" id="stat-insight">0</div>
-      <div class="stat-label" style="color:#2563eb">Insight</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-count" id="stat-caveat">0</div>
-      <div class="stat-label" style="color:#c2410c">Caveat</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-count" id="stat-vocabulary">0</div>
-      <div class="stat-label" style="color:#16a34a">Vocabulary</div>
-    </div>
-  </div>
+      <!-- Intensity -->
+      <div class="section">
+        <div class="section-title">Intensity</div>
+        <div class="intensity-group" id="intensity-group">
+          <button class="intensity-btn" data-intensity="light">Light</button>
+          <button class="intensity-btn active" data-intensity="default">
+            Default
+          </button>
+          <button class="intensity-btn" data-intensity="heavy">Heavy</button>
+        </div>
+      </div>
 
-  <!-- Intensity -->
-  <div class="section">
-    <div class="section-title">Intensity</div>
-    <div class="intensity-group" id="intensity-group">
-      <button class="intensity-btn" data-intensity="light">Light</button>
-      <button class="intensity-btn active" data-intensity="default">Default</button>
-      <button class="intensity-btn" data-intensity="heavy">Heavy</button>
+      <!-- Type Filters -->
+      <div class="section">
+        <div class="section-title">Show Types</div>
+        <div class="type-filters" id="type-filters">
+          <label class="type-filter">
+            <input type="checkbox" data-type="highlight" checked />
+            <span class="type-swatch" style="background: #fef3c7"></span>
+            Highlight
+          </label>
+          <label class="type-filter">
+            <input type="checkbox" data-type="underline" checked />
+            <span class="type-swatch" style="background: #99f6e4"></span>
+            Important
+          </label>
+          <label class="type-filter">
+            <input type="checkbox" data-type="question" checked />
+            <span class="type-swatch" style="background: #ddd6fe"></span>
+            Question
+          </label>
+          <label class="type-filter">
+            <input type="checkbox" data-type="insight" checked />
+            <span class="type-swatch" style="background: #bfdbfe"></span>
+            Insight
+          </label>
+          <label class="type-filter">
+            <input type="checkbox" data-type="caveat" checked />
+            <span class="type-swatch" style="background: #fed7aa"></span>
+            Caveat
+          </label>
+          <label class="type-filter">
+            <input type="checkbox" data-type="vocabulary" checked />
+            <span class="type-swatch" style="background: #bbf7d0"></span>
+            Vocabulary
+          </label>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="section">
+        <div class="btn-row">
+          <button class="btn btn-primary" id="export-btn">
+            Export Markdown
+          </button>
+        </div>
+      </div>
+
+      <!-- Auth Status -->
+      <div class="auth-bar" id="auth-bar">
+        <span id="auth-status">Checking...</span>
+        <button class="auth-signout" id="sign-out-btn" style="display: none">
+          Sign out
+        </button>
+      </div>
     </div>
-  </div>
+    <!-- /main-content -->
 
-  <!-- Type Filters -->
-  <div class="section">
-    <div class="section-title">Show Types</div>
-    <div class="type-filters" id="type-filters">
-      <label class="type-filter">
-        <input type="checkbox" data-type="highlight" checked />
-        <span class="type-swatch" style="background:#FEF3C7"></span>
-        Highlight
-      </label>
-      <label class="type-filter">
-        <input type="checkbox" data-type="underline" checked />
-        <span class="type-swatch" style="background:#99F6E4"></span>
-        Important
-      </label>
-      <label class="type-filter">
-        <input type="checkbox" data-type="question" checked />
-        <span class="type-swatch" style="background:#DDD6FE"></span>
-        Question
-      </label>
-      <label class="type-filter">
-        <input type="checkbox" data-type="insight" checked />
-        <span class="type-swatch" style="background:#BFDBFE"></span>
-        Insight
-      </label>
-      <label class="type-filter">
-        <input type="checkbox" data-type="caveat" checked />
-        <span class="type-swatch" style="background:#FED7AA"></span>
-        Caveat
-      </label>
-      <label class="type-filter">
-        <input type="checkbox" data-type="vocabulary" checked />
-        <span class="type-swatch" style="background:#BBF7D0"></span>
-        Vocabulary
-      </label>
+    <!-- Footer -->
+    <div class="footer">
+      <a href="#" id="open-options">Settings &amp; Options</a>
     </div>
-  </div>
 
-  <!-- Actions -->
-  <div class="section">
-    <div class="btn-row">
-      <button class="btn btn-primary" id="export-btn">Export Markdown</button>
-    </div>
-  </div>
-
-  <!-- Auth Status -->
-  <div class="auth-bar" id="auth-bar">
-    <span id="auth-status">Checking...</span>
-    <button class="auth-signout" id="sign-out-btn" style="display:none">Sign out</button>
-  </div>
-
-  </div><!-- /main-content -->
-
-  <!-- Footer -->
-  <div class="footer">
-    <a href="#" id="open-options">Settings &amp; Options</a>
-  </div>
-
-  <script type="module" src="index.ts"></script>
-</body>
+    <script type="module" src="index.ts"></script>
+  </body>
 </html>

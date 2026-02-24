@@ -604,7 +604,7 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
    d. Compute SHA-256 content hash.
    e. Check word count:
    - ≤ 5000 words → annotate immediately (eager).
-   - \> 5000 words → annotate only if region intersects viewport proximity (lazy).
+   - \> 5000 words → register for lazy loading via `registerRegion()` and return. When the lazy loader callback fires, it re-enters `handleStableRegion()` with `fromLazyLoader=true`, which bypasses the word count check and proceeds to request annotations.
      f. Send `requestAnnotations` to service worker.
 7. Service worker calls backend `POST /api/annotate`.
 8. Backend checks cache → returns cached or generates new annotations.
@@ -617,12 +617,13 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
 
 ### 9.3 Scroll-Based Lazy Loading (Long Pages)
 
-1. Content script maintains an IntersectionObserver watching unannotated regions.
-2. When a region enters the proximity threshold (500px ahead of viewport):
-   a. Extract text, compute hash.
-   b. Send annotation request.
+1. During initial processing, regions exceeding `EAGER_WORD_LIMIT` (5000 words) are registered with the scroll loader via `registerRegion()` and skipped for immediate annotation.
+2. Content script maintains an IntersectionObserver watching registered regions.
+3. When a region enters the proximity threshold (500px ahead of viewport):
+   a. The lazy loader callback invokes `handleStableRegion(region, element, true)` with `fromLazyLoader=true`.
+   b. This bypasses the word count early-return, extracts text, computes hash, and sends the annotation request.
    c. Render annotations when response arrives.
-3. Already-annotated regions are skipped.
+4. Already-annotated regions are skipped (tracked via `annotatedRegions` and `loadedRegions` sets).
 
 ### 9.4 Manual Annotation Flow
 
@@ -980,7 +981,7 @@ npx supabase gen types ts      # Generate TypeScript types from schema
 | TextQuoteSelector can't resolve | Fuzzy match score below threshold | Skip that annotation silently. Log for debugging.                                                     |
 | Content script killed by page   | Service worker gets no response   | Re-inject content script on next user interaction.                                                    |
 | Adapter registry stale          | Version/timestamp check           | Stale-while-revalidate: use cached, fetch fresh in background.                                        |
-| User's session expired          | 401 from backend                  | Attempt token refresh. If refresh fails, prompt re-login via popup.                                   |
+| User's session expired          | 401 from backend                  | Attempt token refresh. If refresh fails, set red "!" badge on extension icon and show dismissible in-page toast prompting sign-in. Badge clears on successful auth.  |
 
 ## 18. Known Constraints and Trade-offs
 

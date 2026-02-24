@@ -56,6 +56,19 @@ export function resolveSelector(
     matchPos = fullText.toLowerCase().indexOf(exact.toLowerCase());
   }
 
+  // Fuzzy fallback: punctuation-stripped
+  if (matchPos === -1) {
+    const strippedExact = stripPunctuation(exact);
+    if (strippedExact.length > 0) {
+      const strippedFull = stripPunctuation(fullText);
+      const strippedPos = strippedFull.toLowerCase().indexOf(strippedExact.toLowerCase());
+      if (strippedPos !== -1) {
+        // Map stripped position back to original fullText position
+        matchPos = mapStrippedOffset(fullText, strippedPos);
+      }
+    }
+  }
+
   if (matchPos === -1) return null;
 
   // Map concatenated text position back to DOM range
@@ -166,4 +179,25 @@ function mapNormalizedToOriginal(original: string, normalizedOffset: number): nu
 
 function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+function stripPunctuation(text: string): string {
+  return text.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Map an offset in punctuation-stripped text back to the original text.
+ */
+function mapStrippedOffset(original: string, strippedOffset: number): number {
+  let stripped = 0;
+  let orig = 0;
+
+  while (orig < original.length && stripped < strippedOffset) {
+    if (/[\w\s]/.test(original[orig]!)) {
+      stripped++;
+    }
+    orig++;
+  }
+
+  return orig;
 }
