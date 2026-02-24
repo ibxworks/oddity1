@@ -4,6 +4,7 @@ import { MAX_TEXT_LENGTH, CACHE_TTL_DAYS } from '@oddity/shared';
 import type { Intensity } from '@oddity/shared';
 import { serviceClient } from '../lib/supabase.js';
 import { generateAnnotations } from '../lib/openai.js';
+import { filterAndFixAnnotations } from '../lib/annotation-filter.js';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,7 +53,10 @@ router.post('/', async (req, res) => {
 
     // Generate annotations via OpenAI
     const profile = prompts.intensity_profiles[intensity as Intensity];
-    const annotations = await generateAnnotations(text, intensity, profile);
+    const rawAnnotations = await generateAnnotations(text, intensity, profile);
+
+    // Auto-correct and filter unresolvable annotations
+    const annotations = filterAndFixAnnotations(rawAnnotations, text);
 
     // Store in cache
     const expiresAt = new Date();
