@@ -13,7 +13,7 @@ export type AnnotationVisual = {
 const visualMap: Record<AnnotationType, AnnotationVisual> = {
   highlight: {
     type: 'highlight',
-    backgroundColor: ANNOTATION_COLORS.highlight + '66', // 40% opacity
+    backgroundColor: ANNOTATION_COLORS.highlight + '33', // 20% opacity
     underlineStyle: null,
     gutterIcon: null,
     label: ANNOTATION_LABELS.highlight,
@@ -37,7 +37,7 @@ const visualMap: Record<AnnotationType, AnnotationVisual> = {
   },
   insight: {
     type: 'insight',
-    backgroundColor: ANNOTATION_COLORS.insight + '66',
+    backgroundColor: ANNOTATION_COLORS.insight + '33', // 20% opacity
     underlineStyle: null,
     gutterIcon: null,
     label: ANNOTATION_LABELS.insight,

@@ -29,12 +29,12 @@ export const CACHE_TTL_DAYS = 30;
 // ─── Annotation Colors ───
 
 export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
-  highlight: '#FEF3C7',   // soft yellow
-  underline: '#99F6E4',   // teal/green
-  question: '#DDD6FE',    // purple
-  insight: '#BFDBFE',     // soft blue
-  caveat: '#FED7AA',      // orange
-  vocabulary: '#BBF7D0',  // green
+  highlight: '#F59E0B',   // amber 500
+  underline: '#0D9488',   // teal 600
+  question: '#7C3AED',    // violet 600
+  insight: '#2563EB',     // blue 600
+  caveat: '#EA580C',      // orange 600
+  vocabulary: '#16A34A',  // green 600
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {

@@ -26,10 +26,16 @@ import {
   setOverlayVisible,
 } from "./renderer/overlay.js";
 import {
-  hidePopover,
-  isPopoverVisible,
-  showPopover,
-} from "./renderer/popover.js";
+  initMarginNotes,
+  addMarginNote,
+  removeMarginNote,
+  clearMarginNotes,
+  setMarginNotesVisible,
+  filterMarginNotesByTypes,
+  expandMarginNote,
+  collapseAllMarginNotes,
+  isAnyMarginNoteExpanded,
+} from "./renderer/margin-notes.js";
 import { initScrollLoader, registerRegion } from "./scroll-loader.js";
 import { showAuthToast } from "./auth-toast.js";
 import { resolveSelector } from "./selector.js";
@@ -81,6 +87,7 @@ async function init(): Promise<void> {
 
   // Initialize rendering layers
   initOverlay();
+  initMarginNotes(regions[0]?.element ?? document.body);
 
   // Initialize scroll-based lazy loader
   initScrollLoader((regionId, element) => {
@@ -197,22 +204,18 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
     // Draw overlay rectangles
     renderAnnotation(annotation, range);
 
-    // Inject inline anchors for hover detection
-    const anchors = injectAnchors(annotation, range);
-    for (const anchor of anchors) {
-      anchor.addEventListener("mouseenter", () => {
-        showPopover(annotation, anchor);
-      });
-      anchor.addEventListener("mouseleave", () => {
-        hidePopover();
-      });
-    }
+    // Inject inline anchors for keyboard navigation
+    injectAnchors(annotation, range);
+
+    // Add margin note (always visible)
+    addMarginNote(annotation, range);
   }
 }
 
 function rerenderAll(): void {
   clearOverlay();
   clearAllAnchors();
+  clearMarginNotes();
 
   for (const [regionId, annotations] of currentAnnotations) {
     renderAnnotations(regionId, annotations);
@@ -257,25 +260,30 @@ onMessage((message: ExtensionMessage) => {
       if (!enabled) {
         // Hide everything
         setOverlayVisible(false);
+        setMarginNotesVisible(false);
         clearAllAnchors();
       } else if (intensityChanged) {
         // Intensity changed: clear cache and re-request all regions
         clearOverlay();
         clearAllAnchors();
+        clearMarginNotes();
         currentAnnotations.clear();
         annotatedRegions.clear();
         pendingRegions.clear();
         setOverlayVisible(true);
+        setMarginNotesVisible(true);
         for (const region of regions) {
           handleStableRegion(region, region.element);
         }
       } else if (!wasEnabled && enabled) {
         // Re-enable: re-render everything
         setOverlayVisible(true);
+        setMarginNotesVisible(true);
         rerenderAll();
       } else {
         // Just filter by types
         filterByTypes(visibleTypes);
+        filterMarginNotesByTypes(visibleTypes);
       }
       break;
     }
@@ -291,6 +299,7 @@ onMessage((message: ExtensionMessage) => {
       }
       // Remove from DOM
       removeAnchors(annotationId);
+      removeMarginNote(annotationId);
       // Re-render overlay (overlay.removeAnnotation handles its own cleanup)
       rerenderAll();
       break;
@@ -307,9 +316,9 @@ function initKeyboardNav(): void {
   document.addEventListener("keydown", (e: KeyboardEvent) => {
     if (!enabled) return;
 
-    // Escape closes popover
-    if (e.key === "Escape" && isPopoverVisible()) {
-      hidePopover();
+    // Escape collapses expanded margin notes
+    if (e.key === "Escape" && isAnyMarginNoteExpanded()) {
+      collapseAllMarginNotes();
       e.preventDefault();
       return;
     }
@@ -337,18 +346,15 @@ function initKeyboardNav(): void {
       return;
     }
 
-    // Enter opens popover on focused annotation
+    // Enter expands margin note on focused annotation
     if (e.key === "Enter" && !isInputFocused()) {
       const anchors = getAllAnchorsInOrder();
       const anchor = anchors[keyboardFocusIndex];
       if (anchor) {
         const annotationId = getAnnotationId(anchor);
         if (annotationId) {
-          const annotation = findAnnotationById(annotationId);
-          if (annotation) {
-            showPopover(annotation, anchor);
-            e.preventDefault();
-          }
+          expandMarginNote(annotationId);
+          e.preventDefault();
         }
       }
     }
@@ -365,14 +371,6 @@ function isInputFocused(): boolean {
     tag === "select" ||
     (active as HTMLElement).isContentEditable
   );
-}
-
-function findAnnotationById(id: string): Annotation | null {
-  for (const annotations of currentAnnotations.values()) {
-    const found = annotations.find((a) => a.id === id);
-    if (found) return found;
-  }
-  return null;
 }
 
 // ─── Helpers ───

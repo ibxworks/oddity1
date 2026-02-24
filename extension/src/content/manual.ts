@@ -5,7 +5,7 @@ import { sha256 } from '../shared/hash.js';
 import { resolveSelector } from './selector.js';
 import { renderAnnotation } from './renderer/overlay.js';
 import { injectAnchors } from './renderer/anchors.js';
-import { showPopover, hidePopover } from './renderer/popover.js';
+import { addMarginNote } from './renderer/margin-notes.js';
 
 // ─── State ───
 
@@ -413,10 +413,6 @@ function renderManualAnnotation(annotation: Annotation, root: Element): void {
   if (!range) return;
 
   renderAnnotation(annotation, range);
-
-  const anchors = injectAnchors(annotation, range);
-  for (const anchor of anchors) {
-    anchor.addEventListener('mouseenter', () => showPopover(annotation, anchor));
-    anchor.addEventListener('mouseleave', () => hidePopover());
-  }
+  injectAnchors(annotation, range);
+  addMarginNote(annotation, range);
 }
