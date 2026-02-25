@@ -12,7 +12,7 @@ import {
   requestAnnotations,
   saveAnnotation,
 } from "./api-client.js";
-import { getSession, signIn, signOut, signUp } from "./auth.js";
+import { getSession, getUserTier, signIn, signOut, signUp } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 
 // ─── Installed Event ───
@@ -131,6 +131,11 @@ chrome.runtime.onMessage.addListener(
         case "deleteAnnotation": {
           await apiDeleteAnnotation(message.payload.annotationId);
           return { success: true };
+        }
+
+        case "getUserTier": {
+          const tier = await getUserTier();
+          return { tier };
         }
 
         default:

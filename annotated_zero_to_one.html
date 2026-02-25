@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zero to One — Annotated</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Lora:ital,wght@0,400;0,600;1,400&family=Lora:wght@700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #f5f0e8;
+    background-image: 
+      radial-gradient(ellipse at 20% 50%, rgba(210,190,150,0.15) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba(180,160,120,0.1) 0%, transparent 50%);
+    min-height: 100vh;
+    padding: 40px 20px;
+    font-family: 'Lora', Georgia, serif;
+  }
+
+  .page-wrapper {
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .header .book-title {
+    font-family: 'Lora', serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #8b7355;
+    margin-bottom: 6px;
+  }
+
+  .header .chapter {
+    font-family: 'Lora', serif;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #b09070;
+  }
+
+  /* Three column layout */
+  .layout {
+    display: grid;
+    grid-template-columns: 240px 1fr 240px;
+    gap: 0;
+    position: relative;
+  }
+
+  /* Decorative vertical lines */
+  .layout::before,
+  .layout::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, #c8b89a 10%, #c8b89a 90%, transparent);
+    opacity: 0.5;
+  }
+  .layout::before { left: 240px; }
+  .layout::after { right: 240px; }
+
+  /* Main text */
+  .main-text {
+    padding: 0 48px;
+    position: relative;
+  }
+
+  .section-title {
+    font-family: 'Lora', serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #8b7355;
+    margin-bottom: 20px;
+    margin-top: 36px;
+  }
+
+  .section-title:first-child {
+    margin-top: 0;
+  }
+
+  .main-text p {
+    font-family: 'Lora', serif;
+    font-size: 15.5px;
+    line-height: 1.85;
+    color: #2a2018;
+    margin-bottom: 18px;
+    text-align: justify;
+    hyphens: auto;
+  }
+
+  /* Highlighted passages */
+  .highlight-yellow {
+    background: linear-gradient(120deg, rgba(255,220,50,0.35) 0%, rgba(255,220,50,0.35) 100%);
+    border-radius: 2px;
+    padding: 1px 2px;
+  }
+
+  .highlight-red {
+    background: linear-gradient(120deg, rgba(255,100,80,0.2) 0%, rgba(255,100,80,0.2) 100%);
+    border-radius: 2px;
+    padding: 1px 2px;
+    border-bottom: 2px solid rgba(220,60,40,0.4);
+  }
+
+  .highlight-blue {
+    background: linear-gradient(120deg, rgba(80,150,255,0.18) 0%, rgba(80,150,255,0.18) 100%);
+    border-radius: 2px;
+    padding: 1px 2px;
+  }
+
+  .highlight-green {
+    background: linear-gradient(120deg, rgba(50,180,100,0.2) 0%, rgba(50,180,100,0.2) 100%);
+    border-radius: 2px;
+    padding: 1px 2px;
+    border-bottom: 2px dotted rgba(30,140,70,0.5);
+  }
+
+  /* Margin columns */
+  .margin-left, .margin-right {
+    padding-top: 4px;
+    position: relative;
+  }
+
+  .margin-left {
+    padding-right: 28px;
+    padding-left: 8px;
+  }
+
+  .margin-right {
+    padding-left: 28px;
+    padding-right: 8px;
+  }
+
+  /* Annotation notes */
+  .annotation {
+    position: relative;
+    margin-bottom: 0;
+  }
+
+  .annotation-bubble {
+    font-family: 'Caveat', cursive;
+    font-size: 16px;
+    line-height: 1.45;
+    color: #2a1a08;
+    position: relative;
+    padding: 10px 12px;
+    border-radius: 4px;
+  }
+
+  /* Color variants for annotations */
+  .ann-yellow .annotation-bubble { 
+    background: rgba(255,220,50,0.25);
+    border-left: 3px solid rgba(200,160,20,0.6);
+  }
+  .ann-red .annotation-bubble { 
+    background: rgba(255,100,80,0.15);
+    border-left: 3px solid rgba(220,60,40,0.5);
+  }
+  .ann-blue .annotation-bubble { 
+    background: rgba(80,150,255,0.12);
+    border-left: 3px solid rgba(60,120,220,0.4);
+  }
+  .ann-green .annotation-bubble { 
+    background: rgba(50,180,100,0.15);
+    border-left: 3px solid rgba(30,140,70,0.5);
+  }
+  .ann-plain .annotation-bubble {
+    background: transparent;
+    border-left: 2px solid #c8b89a;
+  }
+
+  .annotation-tag {
+    font-family: 'Caveat', cursive;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    display: block;
+    opacity: 0.6;
+  }
+
+  .ann-yellow .annotation-tag { color: #8b6a00; }
+  .ann-red .annotation-tag { color: #9b3020; }
+  .ann-blue .annotation-tag { color: #1a4a9b; }
+  .ann-green .annotation-tag { color: #0a6a30; }
+  .ann-plain .annotation-tag { color: #7a6a50; }
+
+  /* Connector lines using absolute positioned elements */
+  .connector {
+    position: absolute;
+    top: 50%;
+    width: 20px;
+    height: 1px;
+    background: #c0a880;
+    opacity: 0.5;
+  }
+
+  .margin-left .connector {
+    right: -2px;
+  }
+
+  .margin-right .connector {
+    left: -2px;
+  }
+
+  /* Spacer to align annotations roughly with text */
+  .ann-spacer-sm { margin-top: 20px; }
+  .ann-spacer-md { margin-top: 48px; }
+  .ann-spacer-lg { margin-top: 80px; }
+  .ann-spacer-xl { margin-top: 130px; }
+  .ann-spacer-xxl { margin-top: 190px; }
+
+  /* Scribble / doodle accents */
+  .scribble {
+    font-family: 'Caveat', cursive;
+    font-size: 22px;
+    color: #b09070;
+    opacity: 0.6;
+    display: block;
+    text-align: center;
+    margin: 8px 0;
+  }
+
+  /* Page number */
+  .page-number {
+    text-align: center;
+    margin-top: 48px;
+    font-family: 'Lora', serif;
+    font-size: 12px;
+    color: #b09070;
+    letter-spacing: 2px;
+  }
+
+  /* Arrow SVG connectors */
+  .arrow-container {
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px dashed #c8b89a;
+    margin: 28px 0;
+    opacity: 0.4;
+  }
+
+  .footnote-mark {
+    color: #9b6020;
+    font-size: 11px;
+    vertical-align: super;
+    font-family: 'Caveat', cursive;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="page-wrapper">
+
+  <div class="header">
+    <div class="book-title">Zero to One — Peter Thiel</div>
+    <div class="chapter">Chapter 3 · All Happy Companies Are Different</div>
+  </div>
+
+  <div class="layout">
+
+    <!-- LEFT MARGIN -->
+    <div class="margin-left">
+
+      <div class="annotation ann-plain ann-spacer-sm">
+        <span class="annotation-tag">Note</span>
+        <div class="annotation-bubble">
+          So monopolists are actually free thinkers? Wild framing.
+        </div>
+      </div>
+
+      <div class="annotation ann-red ann-spacer-lg">
+        <span class="annotation-tag">🚩 Wait</span>
+        <div class="annotation-bubble">
+          "Only in a world where nothing changes" — this is doing A LOT of work. Is any world truly static?
+        </div>
+      </div>
+
+      <div class="annotation ann-plain ann-spacer-lg">
+        <div class="annotation-bubble">
+          Monopoly = Rent collector<br>
+          vs<br>
+          Monopoly = Value creator<br><br>
+          He's arguing these are different things. Are they?
+        </div>
+      </div>
+
+      <div class="annotation ann-yellow ann-spacer-xxl">
+        <span class="annotation-tag">💡 Key idea</span>
+        <div class="annotation-bubble">
+          The gov both creates AND destroys monopolies. The left hand doesn't know what the right hand is doing.
+        </div>
+      </div>
+
+      <div class="annotation ann-plain ann-spacer-xl">
+        <span class="scribble">↓</span>
+        <div class="annotation-bubble">
+          IBM → Microsoft → Apple. Each monopoly killed by the next. History as a relay race.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MAIN TEXT -->
+    <div class="main-text">
+
+      <div class="section-title">Monopoly Capitalism</div>
+
+      <p>
+        <span class="highlight-yellow">Monopolists can afford to think about things other than making money; non-monopolists can't.</span> In perfect competition, a business is so focused on today's margins that it can't possibly plan for a long-term future. Only one thing can allow a business to transcend the daily brute struggle for survival: monopoly profits.
+      </p>
+
+      <p>
+        So, a monopoly is good for everyone on the inside, but what about everyone on the outside? Do outsized profits come at the expense of the rest of society? Actually, yes: profits come out of customers' wallets, and monopolies deserve their bad reputation—<span class="highlight-red">but only in a world where nothing changes.</span>
+      </p>
+
+      <p>
+        In a static world, a monopolist is just a rent collector. If you corner the market for something, you can jack up the price; others will have no choice but to buy from you. Think of the famous board game: deeds are shuffled around from player to player, but the board never changes. There's no way to win by inventing a better kind of real estate development. The relative values of the properties are fixed for all time, so all you can do is try to buy them up.
+      </p>
+
+      <p>
+        But the world we live in is dynamic: <span class="highlight-green">Creative monopolists give customers more choices by adding entirely new categories of abundance to the world.</span> Creative monopolies aren't just good for the rest of society; they're powerful engines for making it better.
+      </p>
+
+      <p>
+        Even the government knows this: that's why one of its departments works hard to create monopolies (by granting patents to new inventions) even though another part hunts them down (by prosecuting antitrust cases). <span class="highlight-blue">customers were happy to finally have the choice of paying high prices to get a smartphone that actually works.</span>
+      </p>
+
+      <hr class="divider">
+
+      <p>
+        The dynamism of new monopolies itself explains why old monopolies don't strangle innovation. With Apple's iOS at the forefront, the rise of mobile computing has dramatically reduced Microsoft's decades-long operating system dominance. Before that, IBM's hardware monopoly of the '60s and '70s was overtaken by Microsoft's software monopoly. <span class="highlight-yellow">But the history of progress is a history of better monopoly businesses replacing incumbents.</span>
+      </p>
+
+      <p>
+        So why are economists obsessed with competition as an ideal state? <span class="highlight-red">It's a relic of history. Economists copied their mathematics from the work of 19th-century physicists: they see individuals and businesses as interchangeable atoms, not as unique creators.</span>
+      </p>
+
+      <p>
+        But it's worth recalling that the long-run equilibrium predicted by 19th-century physics was a state in which all energy is evenly distributed and everything comes to rest—<span class="highlight-green">also known as the heat death of the universe.</span> Whatever your views on thermodynamics, it's a powerful metaphor: <span class="highlight-yellow">in business, equilibrium means stasis, and stasis means death.</span>
+      </p>
+
+      <p>
+        <span class="highlight-blue">All happy companies are different: each one earns a monopoly by solving a unique problem. All failed companies are the same: they failed to escape competition.</span>
+      </p>
+
+    </div>
+
+    <!-- RIGHT MARGIN -->
+    <div class="margin-right">
+
+      <div class="annotation ann-green ann-spacer-sm">
+        <span class="annotation-tag">🤔 Question</span>
+        <div class="annotation-bubble">
+          Does Google fit this? They're a monopoly but also fund moonshots. Is that cause or effect?
+        </div>
+      </div>
+
+      <div class="annotation ann-plain ann-spacer-xl">
+        <div class="annotation-bubble">
+          Monopoly in static world = bad<br>
+          Monopoly in dynamic world = good<br><br>
+          But who decides if the world is dynamic? The monopolist?
+        </div>
+      </div>
+
+      <div class="annotation ann-blue ann-spacer-lg">
+        <span class="annotation-tag">🔍 Assumption</span>
+        <div class="annotation-bubble">
+          "Happy to pay high prices" — did Thiel poll iPhone buyers? People hate the price. They just have no choice.
+        </div>
+      </div>
+
+      <div class="annotation ann-yellow ann-spacer-xxl">
+        <span class="annotation-tag">💡 Big claim</span>
+        <div class="annotation-bubble">
+          Economists modeled business on physics — so business theory has a cosmology problem built in.
+        </div>
+      </div>
+
+      <div class="annotation ann-red ann-spacer-lg">
+        <span class="annotation-tag">🔥 Best line</span>
+        <div class="annotation-bubble">
+          He just called mainstream economics the equivalent of heat death. Savage.
+        </div>
+      </div>
+
+      <div class="annotation ann-green ann-spacer-md">
+        <span class="annotation-tag">✍️ Tolstoy flip</span>
+        <div class="annotation-bubble">
+          Anna Karenina says all happy families are alike. Thiel says business is the exact opposite. Sneaky literary move.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="page-number">— 40 —</div>
+
+</div>
+
+</body>
+</html>

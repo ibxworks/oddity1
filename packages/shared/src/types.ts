@@ -167,4 +167,8 @@ export type ExtensionMessage =
     }
   | { action: 'signIn'; payload: { email: string; password: string } }
   | { action: 'signUp'; payload: { email: string; password: string } }
-  | { action: 'signOut'; payload: Record<string, never> };
+  | { action: 'signOut'; payload: Record<string, never> }
+  | { action: 'exportPdf'; payload: { title: string; subtitle: string } }
+  | { action: 'exportPdfResult'; payload: { success: boolean; error?: string } }
+  | { action: 'getUserTier'; payload: Record<string, never> }
+  | { action: 'getUserTierResult'; payload: { tier: UserTier } };

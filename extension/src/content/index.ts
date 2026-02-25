@@ -38,6 +38,7 @@ import {
 } from "./renderer/margin-notes.js";
 import { initScrollLoader, registerRegion } from "./scroll-loader.js";
 import { showAuthToast } from "./auth-toast.js";
+import { handleExportPdf } from "./export-pdf.js";
 import { resolveSelector } from "./selector.js";
 import { createStabilityWatcher } from "./stability.js";
 
@@ -238,6 +239,17 @@ function rerenderAll(): void {
 
 onMessage((message: ExtensionMessage) => {
   switch (message.action) {
+    case "exportPdf": {
+      const { title, subtitle } = message.payload;
+      // Flatten all annotations from currentAnnotations map
+      const allAnnotations: Annotation[] = [];
+      for (const annotations of currentAnnotations.values()) {
+        allAnnotations.push(...annotations);
+      }
+      return handleExportPdf(title, subtitle, allAnnotations)
+        .then(() => ({ success: true }))
+        .catch((err) => ({ success: false, error: String(err) }));
+    }
     case "annotationsReady": {
       const { regionId, annotations } = message.payload;
       annotatedRegions.add(regionId);

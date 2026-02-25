@@ -28,7 +28,9 @@
       "Bash(npx tsc --noEmit -p extension/tsconfig.json 2>&1 | head -30)",
       "Bash(npx tsc --noEmit --project backend/tsconfig.json 2>&1 | head -30)",
       "Bash(npx tsc --noEmit --project extension/tsconfig.json 2>&1 | head -30)",
-      "Bash(cd /Users/realtonypark/Developer/oddity1/extension && npx tsc --noEmit 2>&1)"
+      "Bash(cd /Users/realtonypark/Developer/oddity1/extension && npx tsc --noEmit 2>&1)",
+      "Bash(cd /Users/realtonypark/Developer/oddity1/extension && npm install html2pdf.js)",
+      "Bash(npm run build 2>&1 | tail -5)"
     ]
   },
   "enableAllProjectMcpServers": true,

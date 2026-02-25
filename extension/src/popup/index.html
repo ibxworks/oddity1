@@ -315,6 +315,88 @@
       .btn-row .btn {
         flex: 1;
       }
+
+      /* ── Export Dialog ── */
+      .export-dialog {
+        display: none;
+        padding: 16px;
+      }
+      .export-dialog-title {
+        font-size: 15px;
+        font-weight: 600;
+        margin-bottom: 14px;
+      }
+      .export-field {
+        margin-bottom: 12px;
+      }
+      .export-field label {
+        display: block;
+        font-size: 12px;
+        font-weight: 500;
+        color: #666;
+        margin-bottom: 4px;
+      }
+      .export-input {
+        display: block;
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #e5e5e5;
+        border-radius: 6px;
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .export-input:focus {
+        border-color: #2563eb;
+      }
+      .export-input:disabled {
+        background: #f5f5f5;
+        color: #999;
+        cursor: not-allowed;
+      }
+      .export-subtitle-wrap {
+        position: relative;
+      }
+      .export-pro-badge {
+        display: none;
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 10px;
+        color: #2563eb;
+        background: #eff6ff;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: 600;
+        cursor: default;
+      }
+      .export-btn-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .export-btn-row .btn {
+        flex: 1;
+      }
+      .export-status {
+        display: none;
+        text-align: center;
+        padding: 8px;
+        font-size: 12px;
+        border-radius: 6px;
+        margin-top: 8px;
+      }
+      .export-status.success {
+        display: block;
+        color: #16a34a;
+        background: #f0fdf4;
+      }
+      .export-status.error {
+        display: block;
+        color: #dc2626;
+        background: #fef2f2;
+      }
     </style>
   </head>
   <body>
@@ -439,7 +521,7 @@
       <div class="section">
         <div class="btn-row">
           <button class="btn btn-primary" id="export-btn">
-            Export Markdown
+            Export PDF
           </button>
         </div>
       </div>
@@ -453,6 +535,27 @@
       </div>
     </div>
     <!-- /main-content -->
+
+    <!-- Export Dialog -->
+    <div class="export-dialog" id="export-dialog">
+      <div class="export-dialog-title">Export as PDF</div>
+      <div class="export-field">
+        <label for="export-title">Title</label>
+        <input class="export-input" id="export-title" type="text" placeholder="Document title" />
+      </div>
+      <div class="export-field">
+        <label for="export-subtitle">Subtitle</label>
+        <div class="export-subtitle-wrap">
+          <input class="export-input" id="export-subtitle" type="text" value="Created with Oddity 1" />
+          <span class="export-pro-badge" id="export-pro-badge" title="Set subtitle with Pro">PRO</span>
+        </div>
+      </div>
+      <div class="export-btn-row">
+        <button class="btn" id="export-cancel-btn">Cancel</button>
+        <button class="btn btn-primary" id="export-download-btn">Download</button>
+      </div>
+      <div class="export-status" id="export-status"></div>
+    </div>
 
     <!-- Footer -->
     <div class="footer">

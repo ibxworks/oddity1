@@ -12,7 +12,8 @@
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
     "@oddity/shared": "*",
-    "@supabase/supabase-js": "^2.49.1"
+    "@supabase/supabase-js": "^2.49.1",
+    "html2pdf.js": "^0.14.0"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.28",

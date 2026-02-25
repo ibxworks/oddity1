@@ -2,11 +2,11 @@ import type {
   AnnotationType,
   Intensity,
   UserPreferences,
+  UserTier,
   Annotation,
 } from '@oddity/shared';
 import { ALL_ANNOTATION_TYPES } from '@oddity/shared';
 import { sendMessage } from '../shared/messaging.js';
-import { exportAsMarkdown, downloadMarkdown } from './export.js';
 
 // ─── DOM refs ───
 
@@ -32,6 +32,15 @@ const authToggleLink = document.getElementById('auth-toggle-link')!;
 const authToggleText = document.getElementById('auth-toggle-text')!;
 const mainContent = document.getElementById('main-content')!;
 const signOutBtn = document.getElementById('sign-out-btn')!;
+
+// Export dialog refs
+const exportDialog = document.getElementById('export-dialog')!;
+const exportTitle = document.getElementById('export-title') as HTMLInputElement;
+const exportSubtitle = document.getElementById('export-subtitle') as HTMLInputElement;
+const exportProBadge = document.getElementById('export-pro-badge')!;
+const exportCancelBtn = document.getElementById('export-cancel-btn')!;
+const exportDownloadBtn = document.getElementById('export-download-btn')!;
+const exportStatusEl = document.getElementById('export-status')!;
 
 let isSignUpMode = false;
 
@@ -254,25 +263,83 @@ typeFilters.addEventListener('change', (e) => {
   savePrefs();
 });
 
-// Export button
+// Export button — show export dialog
 exportBtn.addEventListener('click', async () => {
   try {
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    if (!tab?.url) return;
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    exportTitle.value = tab?.title ?? 'Untitled Page';
+    exportSubtitle.value = 'Created with Oddity 1';
 
-    const key = `annotations:${tab.url}`;
-    const stored = await chrome.storage.local.get(key);
-    const annotations: Annotation[] = stored[key] ?? [];
+    // Check user tier for subtitle gating
+    try {
+      const result = await sendMessage<{ tier: UserTier }>({
+        action: 'getUserTier',
+        payload: {},
+      });
+      if (result.tier !== 'pro') {
+        exportSubtitle.disabled = true;
+        exportProBadge.style.display = 'inline-block';
+      } else {
+        exportSubtitle.disabled = false;
+        exportProBadge.style.display = 'none';
+      }
+    } catch {
+      exportSubtitle.disabled = true;
+      exportProBadge.style.display = 'inline-block';
+    }
 
-    const title = tab.title ?? 'Untitled Page';
-    const md = exportAsMarkdown(annotations, title, tab.url);
-    const safeName = title.replace(/[^a-zA-Z0-9 -]/g, '').substring(0, 50);
-    downloadMarkdown(md, `${safeName}-oddity.md`);
+    // Show dialog, hide main content
+    mainContent.style.display = 'none';
+    exportDialog.style.display = 'block';
+    exportStatusEl.style.display = 'none';
+    exportStatusEl.className = 'export-status';
   } catch {
-    // Export failed silently
+    // Failed to set up export dialog
+  }
+});
+
+// Export cancel
+exportCancelBtn.addEventListener('click', () => {
+  exportDialog.style.display = 'none';
+  mainContent.style.display = '';
+});
+
+// Export download
+exportDownloadBtn.addEventListener('click', async () => {
+  const title = exportTitle.value.trim() || 'Untitled';
+  const subtitle = exportSubtitle.value.trim();
+
+  exportDownloadBtn.textContent = 'Generating...';
+  exportDownloadBtn.setAttribute('disabled', '');
+  exportStatusEl.style.display = 'none';
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) throw new Error('No active tab');
+
+    const result = await chrome.tabs.sendMessage(tab.id, {
+      action: 'exportPdf',
+      payload: { title, subtitle },
+    }) as { success: boolean; error?: string };
+
+    if (result?.success) {
+      exportStatusEl.textContent = 'PDF downloaded successfully!';
+      exportStatusEl.className = 'export-status success';
+      exportStatusEl.style.display = 'block';
+      setTimeout(() => {
+        exportDialog.style.display = 'none';
+        mainContent.style.display = '';
+      }, 1500);
+    } else {
+      throw new Error(result?.error ?? 'Export failed');
+    }
+  } catch (err) {
+    exportStatusEl.textContent = String(err instanceof Error ? err.message : 'Export failed');
+    exportStatusEl.className = 'export-status error';
+    exportStatusEl.style.display = 'block';
+  } finally {
+    exportDownloadBtn.textContent = 'Download';
+    exportDownloadBtn.removeAttribute('disabled');
   }
 });
 

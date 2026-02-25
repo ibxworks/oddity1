@@ -94,6 +94,20 @@ export async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
+export async function getUserTier(): Promise<'free' | 'pro'> {
+  const session = await getSession();
+  if (!session) return 'free';
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('tier')
+    .eq('id', session.user.id)
+    .single();
+
+  if (error || !data) return 'free';
+  return (data.tier as 'free' | 'pro') ?? 'free';
+}
+
 export function onAuthStateChange(
   callback: (event: AuthChangeEvent, session: Session | null) => void,
 ) {
