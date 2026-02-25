@@ -191,11 +191,21 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   const region = regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
 
-  // Pass 1: resolve all selectors BEFORE any DOM mutation
-  const resolved: { annotation: Annotation; range: Range }[] = [];
-  for (const annotation of annotations) {
-    if (!visibleTypes.includes(annotation.type)) continue;
+  // Filter visible types first
+  const visible = annotations.filter((a) => visibleTypes.includes(a.type));
 
+  // Sort: background-type annotations first (highlight, insight), underline-type last
+  // This ensures underlines render on top in the DOM stacking order
+  const backgroundTypes = new Set<AnnotationType>(["highlight", "insight"]);
+  visible.sort((a, b) => {
+    const aIsBg = backgroundTypes.has(a.type) ? 0 : 1;
+    const bIsBg = backgroundTypes.has(b.type) ? 0 : 1;
+    return aIsBg - bIsBg;
+  });
+
+  // Single-pass: resolve + render one annotation at a time
+  // This avoids stale ranges from prior DOM mutations (injectAnchors splits text nodes)
+  for (const annotation of visible) {
     const range = resolveSelector(root, annotation.anchor);
     if (!range) {
       console.warn(
@@ -203,19 +213,17 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
       );
       continue;
     }
-    resolved.push({ annotation, range });
-  }
 
-  // Pass 2: render (anchors first to get stable spans, then overlay + margin notes)
-  for (const { annotation, range } of resolved) {
     const anchors = injectAnchors(annotation, range);
 
-    // Create stable range from anchor spans (survives DOM mutations from other annotations)
     const stableRange = document.createRange();
     if (anchors.length > 0) {
       stableRange.setStartBefore(anchors[0]!);
       stableRange.setEndAfter(anchors[anchors.length - 1]!);
     } else {
+      console.warn(
+        `[Oddity 1] Failed to anchor: ${annotation.id} (${annotation.type}): "${annotation.anchor.exact.substring(0, 50)}..."`,
+      );
       stableRange.setStart(range.startContainer, range.startOffset);
       stableRange.setEnd(range.endContainer, range.endOffset);
     }
@@ -257,6 +265,7 @@ onMessage((message: ExtensionMessage) => {
       currentAnnotations.set(regionId, annotations);
       console.log(
         `[Oddity 1] Received ${annotations.length} annotations for region ${regionId}`,
+        annotations,
       );
 
       if (enabled) {

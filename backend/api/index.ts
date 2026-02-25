@@ -11,7 +11,7 @@ const app = express();
 
 // Global middleware
 app.use(cors());
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "1mb" }));
 
 // Health check (no auth)
 app.get("/api/health", (_req, res) => {

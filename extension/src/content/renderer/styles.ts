@@ -46,7 +46,7 @@ const visualMap: Record<AnnotationType, AnnotationVisual> = {
   caveat: {
     type: 'caveat',
     backgroundColor: null,
-    underlineStyle: `2px wavy ${ANNOTATION_COLORS.caveat}`,
+    underlineStyle: `2px dashed ${ANNOTATION_COLORS.caveat}`,
     gutterIcon: null,
     label: ANNOTATION_LABELS.caveat,
     color: ANNOTATION_COLORS.caveat,

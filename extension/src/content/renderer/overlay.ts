@@ -113,6 +113,8 @@ function drawAnnotation(annotation: Annotation, range: Range): void {
     el.dataset.annotationType = annotation.type;
     el.className = 'oddity-rect';
 
+    // Underline-type rects get higher z-index so they render above background-type rects
+    const isUnderline = !visual.backgroundColor && visual.underlineStyle;
     el.style.cssText = `
       position: fixed;
       left: ${rect.left}px;
@@ -121,6 +123,7 @@ function drawAnnotation(annotation: Annotation, range: Range): void {
       height: ${rect.height}px;
       pointer-events: none;
       transition: opacity 0.15s;
+      z-index: ${isUnderline ? 2 : 1};
       ${visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : ''}
       ${visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : ''}
     `;
