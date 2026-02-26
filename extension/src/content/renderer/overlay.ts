@@ -7,6 +7,7 @@ const Z_INDEX = 2147483646;
 let overlayEl: HTMLDivElement | null = null;
 let rafId: number | null = null;
 let activeRanges: { annotation: Annotation; range: Range }[] = [];
+let emphasizedId: string | null = null;
 
 /**
  * Initialize the overlay layer — a fixed-position, pointer-events-none div
@@ -87,6 +88,22 @@ export function filterByTypes(visibleTypes: AnnotationType[]): void {
 }
 
 /**
+ * Emphasize a specific annotation's overlay rects (vivid styles).
+ */
+export function emphasizeAnnotation(id: string): void {
+  emphasizedId = id;
+  redraw();
+}
+
+/**
+ * Remove emphasis from all overlay rects.
+ */
+export function deemphasizeAnnotation(): void {
+  emphasizedId = null;
+  redraw();
+}
+
+/**
  * Destroy the overlay completely.
  */
 export function destroyOverlay(): void {
@@ -102,6 +119,7 @@ function drawAnnotation(annotation: Annotation, range: Range): void {
   if (!overlayEl) return;
 
   const visual = getVisual(annotation.type);
+  const isEmphasized = emphasizedId === annotation.id;
   const rects = range.getClientRects();
 
   for (let i = 0; i < rects.length; i++) {
@@ -115,6 +133,27 @@ function drawAnnotation(annotation: Annotation, range: Range): void {
 
     // Underline-type rects get higher z-index so they render above background-type rects
     const isUnderline = !visual.backgroundColor && visual.underlineStyle;
+
+    // Compute emphasized styles
+    let bgStyle = '';
+    let borderStyle = '';
+    if (visual.backgroundColor) {
+      // Background types: normal 0x33 (20%), emphasized 0x66 (40%)
+      bgStyle = isEmphasized
+        ? `background-color: ${visual.color}66;`
+        : `background-color: ${visual.backgroundColor};`;
+    }
+    if (visual.underlineStyle) {
+      if (isEmphasized) {
+        // Thicker underline + subtle background tint
+        const underlineParts = visual.underlineStyle.replace('2px', '3px');
+        borderStyle = `border-bottom: ${underlineParts};`;
+        bgStyle = `background-color: ${visual.color}15;`;
+      } else {
+        borderStyle = `border-bottom: ${visual.underlineStyle};`;
+      }
+    }
+
     el.style.cssText = `
       position: fixed;
       left: ${rect.left}px;
@@ -122,10 +161,10 @@ function drawAnnotation(annotation: Annotation, range: Range): void {
       width: ${rect.width}px;
       height: ${rect.height}px;
       pointer-events: none;
-      transition: opacity 0.15s;
+      transition: opacity 0.15s, background-color 0.15s, border-bottom 0.15s;
       z-index: ${isUnderline ? 2 : 1};
-      ${visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : ''}
-      ${visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : ''}
+      ${bgStyle}
+      ${borderStyle}
     `;
 
     overlayEl.appendChild(el);

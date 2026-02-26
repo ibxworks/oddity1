@@ -1,6 +1,7 @@
 import type { Annotation, AnnotationType } from '@oddity/shared';
 import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '@oddity/shared';
 import { sendMessage } from '../../shared/messaging.js';
+import { emphasizeAnnotation, deemphasizeAnnotation } from './overlay.js';
 
 // ─── Types ───
 
@@ -285,13 +286,14 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right'): HTML
   el.appendChild(textEl);
   el.appendChild(expandedContent);
 
-  // Hover expand/collapse
+  // Hover expand/collapse + overlay emphasis
   el.addEventListener('mouseenter', () => {
     if (collapseTimer) {
       clearTimeout(collapseTimer);
       collapseTimer = null;
     }
     expandMarginNote(annotation.id);
+    emphasizeAnnotation(annotation.id);
   });
 
   el.addEventListener('mouseleave', () => {
@@ -299,6 +301,7 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right'): HTML
       collapseAllMarginNotes();
       collapseTimer = null;
     }, 300);
+    deemphasizeAnnotation();
   });
 
   return el;
