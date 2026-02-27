@@ -1,6 +1,10 @@
 import type { StabilitySignal } from '@oddity/shared';
 import { STABILITY_DEBOUNCE_MS } from '@oddity/shared';
 
+function queryWithinOrSelf(root: Element, selector: string): Element | null {
+  return root.matches(selector) ? root : root.querySelector(selector);
+}
+
 export interface StabilityWatcher {
   observe(element: Element): void;
   disconnect(): void;
@@ -38,7 +42,7 @@ function createSignalWatcher(signal: StabilitySignal): StabilityWatcher {
 
         switch (signal.type) {
           case 'selector_appears': {
-            const target = observedElement.querySelector(signal.target_selector);
+            const target = queryWithinOrSelf(observedElement, signal.target_selector);
             if (target) {
               callback(observedElement);
               observer?.disconnect();
@@ -46,7 +50,7 @@ function createSignalWatcher(signal: StabilitySignal): StabilityWatcher {
             break;
           }
           case 'selector_disappears': {
-            const target = observedElement.querySelector(signal.target_selector);
+            const target = queryWithinOrSelf(observedElement, signal.target_selector);
             if (!target) {
               callback(observedElement);
               observer?.disconnect();
@@ -54,7 +58,7 @@ function createSignalWatcher(signal: StabilitySignal): StabilityWatcher {
             break;
           }
           case 'attribute_change': {
-            const target = observedElement.querySelector(signal.target_selector);
+            const target = queryWithinOrSelf(observedElement, signal.target_selector);
             if (target && signal.attribute) {
               const val = target.getAttribute(signal.attribute);
               if (val === signal.value) {
@@ -76,13 +80,13 @@ function createSignalWatcher(signal: StabilitySignal): StabilityWatcher {
 
       // Check immediately in case condition is already met
       if (signal.type === 'selector_appears') {
-        const target = element.querySelector(signal.target_selector);
+        const target = queryWithinOrSelf(element, signal.target_selector);
         if (target && callback) {
           callback(element);
           observer.disconnect();
         }
       } else if (signal.type === 'selector_disappears') {
-        const target = element.querySelector(signal.target_selector);
+        const target = queryWithinOrSelf(element, signal.target_selector);
         if (!target && callback) {
           callback(element);
           observer.disconnect();

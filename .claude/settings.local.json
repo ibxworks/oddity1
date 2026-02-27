@@ -31,7 +31,8 @@
       "Bash(cd /Users/realtonypark/Developer/oddity1/extension && npx tsc --noEmit 2>&1)",
       "Bash(cd /Users/realtonypark/Developer/oddity1/extension && npm install html2pdf.js)",
       "Bash(npm run build 2>&1 | tail -5)",
-      "Bash(npm run build 2>&1 | tail -20)"
+      "Bash(npm run build 2>&1 | tail -20)",
+      "Bash(npm run build 2>&1)"
     ]
   },
   "enableAllProjectMcpServers": true,

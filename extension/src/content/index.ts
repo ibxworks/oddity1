@@ -48,6 +48,7 @@ import { createStabilityWatcher } from "./stability.js";
 const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
 const currentAnnotations = new Map<string, Annotation[]>();
+const regionByHash = new Map<string, DetectedRegion>();
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
   "highlight",
@@ -156,9 +157,7 @@ async function handleStableRegion(
   _element: Element,
   fromLazyLoader = false,
 ): Promise<void> {
-  if (annotatedRegions.has(region.id) || pendingRegions.has(region.id)) return;
-
-  // Extract text
+  // Extract text first so we can use contentHash as the dedup key
   const extracted =
     region.source === "readability"
       ? extractWithReadability()
@@ -169,8 +168,13 @@ async function handleStableRegion(
   // Compute content hash
   const contentHash = await sha256(extracted.text);
 
+  if (annotatedRegions.has(contentHash) || pendingRegions.has(contentHash)) return;
+
   // Store hash on the region element so manual annotations can reuse it
   (region.element as HTMLElement).dataset.oddityHash = contentHash;
+
+  // Map hash → region so renderAnnotations can find the element
+  regionByHash.set(contentHash, region);
 
   // Check word count — large regions get registered for lazy loading
   // Skip this check when called from the lazy loader (region already approved)
@@ -183,8 +187,8 @@ async function handleStableRegion(
   }
 
   // Request annotations from service worker
-  pendingRegions.add(region.id);
-  console.log(`[Oddity 1] Requesting annotations for region ${region.id}`);
+  pendingRegions.add(contentHash);
+  console.log(`[Oddity 1] Requesting annotations for region ${region.id} (hash: ${contentHash.slice(0, 12)}…)`);
 
   try {
     const result = await sendMessage<{ error?: string }>({
@@ -205,7 +209,7 @@ async function handleStableRegion(
       } else {
         console.error(`[Oddity 1] Annotation request failed: ${result.error}`);
       }
-      pendingRegions.delete(region.id);
+      pendingRegions.delete(contentHash);
     }
   } catch (err) {
     const errStr = String(err);
@@ -215,14 +219,14 @@ async function handleStableRegion(
     } else {
       console.error(`[Oddity 1] Annotation request error:`, err);
     }
-    pendingRegions.delete(region.id);
+    pendingRegions.delete(contentHash);
   }
 }
 
 // ─── Rendering ───
 
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
-  const region = regions.find((r) => r.id === regionId);
+  const region = regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
 
   // Filter visible types first
@@ -337,6 +341,7 @@ onMessage((message: ExtensionMessage) => {
         currentAnnotations.clear();
         annotatedRegions.clear();
         pendingRegions.clear();
+        regionByHash.clear();
         setOverlayVisible(true);
         setMarginNotesVisible(true);
         for (const region of regions) {

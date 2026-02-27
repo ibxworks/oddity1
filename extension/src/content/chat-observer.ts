@@ -16,53 +16,50 @@ const MUTATION_DEBOUNCE_MS = 200;
 
 export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   const { responseSelector, stabilitySignal, onResponse } = config;
+  const watchingElements = new WeakSet<Element>();
   const processedElements = new WeakSet<Element>();
   let mutationObserver: MutationObserver | null = null;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let responseCounter = 0;
 
-  function findStabilityAncestor(responseEl: Element): Element {
-    if (!stabilitySignal) return responseEl;
-
-    let current: Element | null = responseEl.parentElement;
-    while (current && current !== document.body) {
-      // Check if this ancestor matches the target_selector itself
-      if (current.matches(stabilitySignal.target_selector)) {
-        return current;
-      }
-      // Check if this ancestor contains the target_selector
-      if (current.querySelector(stabilitySignal.target_selector)) {
-        return current;
-      }
+  function findTurnContainer(responseEl: Element): Element {
+    let current: Element | null = responseEl;
+    let turnContainer = responseEl;
+    while (current.parentElement && current.parentElement !== document.body) {
       current = current.parentElement;
+      if (current.querySelectorAll(responseSelector).length > 1) {
+        return turnContainer;
+      }
+      turnContainer = current;
     }
-
-    // Fallback: use the response element's grandparent or parent
-    return responseEl.parentElement?.parentElement ?? responseEl.parentElement ?? responseEl;
+    return turnContainer;
   }
 
   function processResponse(element: Element): void {
-    if (processedElements.has(element)) return;
-    processedElements.add(element);
+    if (watchingElements.has(element) || processedElements.has(element)) return;
+    watchingElements.add(element);
 
     const regionId = `chat-response-${responseCounter++}`;
-    const watchTarget = findStabilityAncestor(element);
+    const watchTarget = findTurnContainer(element);
 
     if (!stabilitySignal) {
       // No stability signal — process immediately
+      processedElements.add(element);
       onResponse(regionId, element);
       return;
     }
 
     // Check if stability condition is already met
     if (isAlreadyStable(watchTarget, stabilitySignal)) {
+      processedElements.add(element);
       onResponse(regionId, element);
       return;
     }
 
-    // Set up stability watcher on the ancestor
+    // Set up stability watcher on the turn container
     const watcher = createStabilityWatcher(stabilitySignal);
     watcher.onStable(() => {
+      processedElements.add(element);
       onResponse(regionId, element);
     });
     watcher.observe(watchTarget);
