@@ -1,6 +1,7 @@
 import type { Annotation } from '@oddity/shared';
 import { POPOVER_SHOW_DELAY_MS, POPOVER_HIDE_DELAY_MS } from '@oddity/shared';
 import { getVisual } from './styles.js';
+import { getThemeMode } from './theme-detector.js';
 
 // ─── State ───
 
@@ -62,6 +63,7 @@ function createPopover(annotation: Annotation, anchorEl: HTMLElement): void {
   // Host element
   hostEl = document.createElement('div');
   hostEl.style.cssText = `position: absolute; z-index: ${Z_INDEX};`;
+  hostEl.dataset.theme = getThemeMode();
   document.body.appendChild(hostEl);
 
   // Closed shadow DOM for full isolation
@@ -364,5 +366,44 @@ const POPOVER_CSS = `
 
   .delete-btn:hover {
     background: #fef2f2;
+  }
+
+  /* ── Dark-mode overrides ── */
+  :host([data-theme="dark"]) .oddity-popover {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  :host([data-theme="dark"]) .popover-header {
+    border-bottom-color: #334155;
+  }
+
+  :host([data-theme="dark"]) .type-label {
+    color: #94a3b8;
+  }
+
+  :host([data-theme="dark"]) .section-label {
+    color: #64748b;
+  }
+
+  :host([data-theme="dark"]) .popover-footer {
+    border-top-color: #334155;
+  }
+
+  :host([data-theme="dark"]) .action-btn {
+    color: #94a3b8;
+  }
+
+  :host([data-theme="dark"]) .action-btn:hover {
+    background: #334155;
+  }
+
+  :host([data-theme="dark"]) .delete-btn {
+    color: #f87171;
+  }
+
+  :host([data-theme="dark"]) .delete-btn:hover {
+    background: #451a1a;
   }
 `;

@@ -6,6 +6,37 @@ import { resolveSelector } from './selector.js';
 import { renderAnnotation } from './renderer/overlay.js';
 import { injectAnchors } from './renderer/anchors.js';
 import { addMarginNote } from './renderer/margin-notes.js';
+import { getThemeMode } from './renderer/theme-detector.js';
+
+// ─── Theme Color Maps ───
+
+const LIGHT_COLORS = {
+  cardBg: 'white',
+  cardBorder: '#E5E7EB',
+  cardText: '#1F2937',
+  previewBg: '#F9FAFB',
+  previewText: '#6B7280',
+  inputBorder: '#D1D5DB',
+  inputBg: 'white',
+  labelColor: '#374151',
+  cancelBg: 'white',
+  cancelText: '#374151',
+  cancelBorder: '#D1D5DB',
+};
+
+const DARK_COLORS = {
+  cardBg: '#1e293b',
+  cardBorder: '#334155',
+  cardText: '#e2e8f0',
+  previewBg: '#0f172a',
+  previewText: '#94a3b8',
+  inputBorder: '#475569',
+  inputBg: '#0f172a',
+  labelColor: '#cbd5e1',
+  cancelBg: '#334155',
+  cancelText: '#e2e8f0',
+  cancelBorder: '#475569',
+};
 
 // ─── State ───
 
@@ -194,6 +225,8 @@ function showEditor(): void {
 
   editorShadow = editorHost.attachShadow({ mode: 'closed' });
 
+  const colors = getThemeMode() === 'dark' ? DARK_COLORS : LIGHT_COLORS;
+
   const container = document.createElement('div');
   container.style.cssText = `
     all: initial;
@@ -201,13 +234,13 @@ function showEditor(): void {
     flex-direction: column;
     gap: 8px;
     padding: 12px;
-    background: white;
+    background: ${colors.cardBg};
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-    border: 1px solid #E5E7EB;
+    border: 1px solid ${colors.cardBorder};
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 13px;
-    color: #1F2937;
+    color: ${colors.cardText};
     min-width: 240px;
     max-width: 320px;
   `;
@@ -218,10 +251,10 @@ function showEditor(): void {
   preview.textContent = selectedText.length > 80 ? selectedText.slice(0, 80) + '...' : selectedText;
   preview.style.cssText = `
     padding: 6px 8px;
-    background: #F9FAFB;
+    background: ${colors.previewBg};
     border-radius: 4px;
     font-style: italic;
-    color: #6B7280;
+    color: ${colors.previewText};
     font-size: 12px;
     line-height: 1.4;
     border-left: 3px solid #3B82F6;
@@ -231,7 +264,7 @@ function showEditor(): void {
   // Type selector
   const typeLabel = document.createElement('label');
   typeLabel.textContent = 'Type';
-  typeLabel.style.cssText = 'font-weight: 600; font-size: 12px; color: #374151;';
+  typeLabel.style.cssText = `font-weight: 600; font-size: 12px; color: ${colors.labelColor};`;
   container.appendChild(typeLabel);
 
   const typeSelect = document.createElement('select');
@@ -240,10 +273,10 @@ function showEditor(): void {
     font-family: system-ui, sans-serif;
     font-size: 13px;
     padding: 6px 8px;
-    border: 1px solid #D1D5DB;
+    border: 1px solid ${colors.inputBorder};
     border-radius: 4px;
-    background: white;
-    color: #1F2937;
+    background: ${colors.inputBg};
+    color: ${colors.cardText};
     cursor: pointer;
     width: 100%;
     box-sizing: border-box;
@@ -261,7 +294,7 @@ function showEditor(): void {
   // Note textarea
   const noteLabel = document.createElement('label');
   noteLabel.textContent = 'Note (optional)';
-  noteLabel.style.cssText = 'font-weight: 600; font-size: 12px; color: #374151;';
+  noteLabel.style.cssText = `font-weight: 600; font-size: 12px; color: ${colors.labelColor};`;
   container.appendChild(noteLabel);
 
   const noteArea = document.createElement('textarea');
@@ -272,10 +305,10 @@ function showEditor(): void {
     font-family: system-ui, sans-serif;
     font-size: 13px;
     padding: 6px 8px;
-    border: 1px solid #D1D5DB;
+    border: 1px solid ${colors.inputBorder};
     border-radius: 4px;
-    background: white;
-    color: #1F2937;
+    background: ${colors.inputBg};
+    color: ${colors.cardText};
     resize: vertical;
     width: 100%;
     box-sizing: border-box;
@@ -294,10 +327,10 @@ function showEditor(): void {
     font-family: system-ui, sans-serif;
     font-size: 12px;
     padding: 6px 12px;
-    border: 1px solid #D1D5DB;
+    border: 1px solid ${colors.cancelBorder};
     border-radius: 4px;
-    background: white;
-    color: #374151;
+    background: ${colors.cancelBg};
+    color: ${colors.cancelText};
     cursor: pointer;
     font-weight: 500;
   `;

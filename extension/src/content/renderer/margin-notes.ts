@@ -2,6 +2,7 @@ import type { Annotation, AnnotationType } from '@oddity/shared';
 import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '@oddity/shared';
 import { sendMessage } from '../../shared/messaging.js';
 import { emphasizeAnnotation, deemphasizeAnnotation } from './overlay.js';
+import { getThemeMode, onThemeChange, offThemeChange } from './theme-detector.js';
 
 // ─── Types ───
 
@@ -29,6 +30,7 @@ let expandedId: string | null = null;
 let collapseTimer: ReturnType<typeof setTimeout> | null = null;
 let needsRedraw = false;
 let fontLink: HTMLLinkElement | null = null;
+let themeHandler: ((mode: 'light' | 'dark') => void) | null = null;
 
 const NOTE_MAX_WIDTH = 180;
 const NOTE_EXPANDED_WIDTH = 220;
@@ -57,6 +59,13 @@ export function initMarginNotes(region: Element): void {
   document.body.appendChild(hostEl);
 
   shadowRoot = hostEl.attachShadow({ mode: 'closed' });
+
+  // Theme detection
+  hostEl.dataset.theme = getThemeMode();
+  themeHandler = (mode) => {
+    if (hostEl) hostEl.dataset.theme = mode;
+  };
+  onThemeChange(themeHandler);
 
   const style = document.createElement('style');
   style.textContent = MARGIN_NOTES_CSS;
@@ -195,6 +204,10 @@ export function isAnyMarginNoteExpanded(): boolean {
 
 export function destroyMarginNotes(): void {
   stopTracking();
+  if (themeHandler) {
+    offThemeChange(themeHandler);
+    themeHandler = null;
+  }
   hostEl?.remove();
   hostEl = null;
   shadowRoot = null;
@@ -574,5 +587,35 @@ const MARGIN_NOTES_CSS = `
 
   .note-delete-btn:hover {
     background: #fef2f2;
+  }
+
+  /* ── Dark-mode overrides ── */
+  :host([data-theme="dark"]) .oddity-note {
+    color: #e2e8f0;
+  }
+
+  :host([data-theme="dark"]) .oddity-note.expanded {
+    background: #1e293b;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  :host([data-theme="dark"]) .note-section-label {
+    color: #64748b;
+  }
+
+  :host([data-theme="dark"]) .note-action-btn {
+    color: #94a3b8;
+  }
+
+  :host([data-theme="dark"]) .note-action-btn:hover {
+    background: #334155;
+  }
+
+  :host([data-theme="dark"]) .note-delete-btn {
+    color: #f87171;
+  }
+
+  :host([data-theme="dark"]) .note-delete-btn:hover {
+    background: #451a1a;
   }
 `;
