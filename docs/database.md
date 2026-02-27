@@ -85,6 +85,7 @@ Config registry for site-specific extraction rules. Seeded with 6 adapters. The 
 | `id`                 | `uuid` PK     | `gen_random_uuid()`                                                      |
 | `hostname_pattern`   | `text` UNIQUE | Glob-style: exact hostname or `*.example.com`                            |
 | `content_selectors`  | `jsonb`       | Array of CSS selector strings                                            |
+| `response_selector`  | `text`        | nullable. CSS selector for individual AI response elements (chat sites)  |
 | `stability_signal`   | `jsonb`       | nullable. `{ type, target_selector }` or `{ type, selector, attribute }` |
 | `excluded_selectors` | `jsonb`       | Default `[]`. CSS selectors to exclude from extraction                   |
 | `extraction_mode`    | `text`        | `'adapter'`, `'readability'`, or `'custom_heuristic'`                    |

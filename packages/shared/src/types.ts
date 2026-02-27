@@ -52,6 +52,7 @@ export type SiteAdapter = {
   id: string;
   hostname_pattern: string;
   content_selectors: string[];
+  response_selector: string | null;
   stability_signal: StabilitySignal | null;
   excluded_selectors: string[];
   extraction_mode: 'adapter' | 'readability' | 'custom_heuristic';

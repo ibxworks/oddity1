@@ -40,6 +40,7 @@ import { initScrollLoader, registerRegion } from "./scroll-loader.js";
 import { showAuthToast } from "./auth-toast.js";
 import { handleExportPdf } from "./export-pdf.js";
 import { resolveSelector } from "./selector.js";
+import { createChatObserver } from "./chat-observer.js";
 import { createStabilityWatcher } from "./stability.js";
 
 // ─── State ───
@@ -76,7 +77,40 @@ async function init(): Promise<void> {
     matchHostname(hostname, a.hostname_pattern),
   );
 
-  // Detect reading regions
+  if (matchedAdapter?.response_selector) {
+    // ── Chat/dynamic site mode ──
+    console.log("[Oddity 1] Chat mode — watching for AI responses");
+
+    initOverlay();
+    initManualAnnotations();
+    initKeyboardNav();
+
+    let marginNotesInitialized = false;
+
+    const observer = createChatObserver({
+      responseSelector: matchedAdapter.response_selector,
+      stabilitySignal: matchedAdapter.stability_signal,
+      onResponse: (regionId, element) => {
+        if (!marginNotesInitialized) {
+          initMarginNotes(element);
+          marginNotesInitialized = true;
+        }
+
+        const region: DetectedRegion = {
+          id: regionId,
+          element,
+          source: 'adapter',
+        };
+        regions.push(region);
+        handleStableRegion(region, element);
+      },
+    });
+
+    observer.start();
+    return;
+  }
+
+  // ── Static site flow ──
   regions = detectReadingRegions(adapters);
 
   if (regions.length === 0) {
