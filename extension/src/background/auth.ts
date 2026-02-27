@@ -17,7 +17,7 @@ const SUPABASE_ANON_KEY =
 // for the access token (ephemeral) and chrome.storage.local for the
 // refresh token (persisted across restarts).
 
-const STORAGE_KEY_PREFIX = "oddity-auth-";
+// const STORAGE_KEY_PREFIX = "oddity-auth-";
 
 const chromeStorageAdapter: SupportedStorage = {
   async getItem(key: string): Promise<string | null> {
@@ -94,18 +94,18 @@ export async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
-export async function getUserTier(): Promise<'free' | 'pro'> {
+export async function getUserTier(): Promise<"free" | "pro"> {
   const session = await getSession();
-  if (!session) return 'free';
+  if (!session) return "free";
 
   const { data, error } = await supabase
-    .from('profiles')
-    .select('tier')
-    .eq('id', session.user.id)
+    .from("profiles")
+    .select("tier")
+    .eq("id", session.user.id)
     .single();
 
-  if (error || !data) return 'free';
-  return (data.tier as 'free' | 'pro') ?? 'free';
+  if (error || !data) return "free";
+  return (data.tier as "free" | "pro") ?? "free";
 }
 
 export function onAuthStateChange(

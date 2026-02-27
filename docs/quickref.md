@@ -157,10 +157,10 @@ If none of the three tiers finds a reading region, no annotations are requested.
 
 When the user is not signed in or the session expires:
 
-| Element | Where | Behavior |
-|---------|-------|----------|
-| Red "!" badge | Extension icon | Set when annotation request fails due to auth. Click to open popup and sign in. Clears automatically after successful auth. |
-| Dismissible toast | Top-right of page | "Sign in to Oddity to see annotations — click the extension icon". Auto-dismisses after 8 seconds or on click/dismiss. Only shows once per page load. |
+| Element           | Where             | Behavior                                                                                                                                                |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Red "!" badge     | Extension icon    | Set when annotation request fails due to auth. Click to open popup and sign in. Clears automatically after successful auth.                             |
+| Dismissible toast | Top-right of page | "Sign in to Oddity 1 to see annotations — click the extension icon". Auto-dismisses after 8 seconds or on click/dismiss. Only shows once per page load. |
 
 ---
 

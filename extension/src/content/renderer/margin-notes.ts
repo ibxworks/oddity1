@@ -357,8 +357,11 @@ function applyPositions(): void {
 
   for (const note of notes) {
     if (note.side === 'left') {
-      note.element.style.left = `${Math.max(8, regionLeft - MARGIN_PADDING - NOTE_MAX_WIDTH)}px`;
+      const rightEdge = regionLeft - MARGIN_PADDING;
+      note.element.style.left = 'auto';
+      note.element.style.right = `${hostEl!.offsetWidth - rightEdge}px`;
     } else {
+      note.element.style.right = 'auto';
       note.element.style.left = `${regionRight + MARGIN_PADDING}px`;
     }
     note.element.style.top = `${note.topPx}px`;
@@ -450,6 +453,14 @@ const MARGIN_NOTES_CSS = `
     border-left-width: 2px;
     border-top-width: 2px;
     border-bottom-width: 2px;
+  }
+
+  .oddity-note.left {
+    text-align: right;
+  }
+
+  .oddity-note.left.expanded {
+    text-align: left;
   }
 
   /* Left-side notes: bracket on right edge */
