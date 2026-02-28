@@ -1,14 +1,37 @@
 import OpenAI from 'openai';
 import type { Annotation, Intensity } from '@oddity/shared';
 import { validateAnnotations } from './schema-validator.js';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? '' });
 const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+
+// Load shared prompt fragments once at startup
+const promptsConfig = JSON.parse(
+  readFileSync(resolve(__dirname, '../config/prompts.json'), 'utf-8'),
+);
+const sharedRules: string = promptsConfig.shared_rules ?? '';
+const schemaExample: string = promptsConfig.schema_example ?? '';
 
 interface PromptProfile {
   system_prompt: string;
   annotation_density: string;
   max_annotations_per_1000_chars: number;
+}
+
+/**
+ * Expand template placeholders in a system prompt.
+ * {{shared_rules}} → the shared anchor rules
+ * {{schema_example}} → the compact JSON schema reference
+ */
+function expandPrompt(template: string): string {
+  return template
+    .replace(/\{\{shared_rules\}\}/g, sharedRules)
+    .replace(/\{\{schema_example\}\}/g, schemaExample);
 }
 
 export async function generateAnnotations(
@@ -35,8 +58,10 @@ async function callOpenAI(
   config: PromptProfile,
   correctionNote?: string,
 ): Promise<unknown> {
+  const systemPrompt = expandPrompt(config.system_prompt);
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: config.system_prompt },
+    { role: 'system', content: systemPrompt },
     { role: 'user', content: text },
   ];
 

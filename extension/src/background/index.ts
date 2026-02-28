@@ -15,6 +15,14 @@ import {
 import { getProfile, getSession, getUserTier, signIn, signOut, signUp, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 
+// ─── Optimization: per-request abort controllers ───
+// Keyed by "tabId:contentHash" so we can cancel stale requests
+const inflight = new Map<string, AbortController>();
+
+function abortKey(tabId: number, contentHash: string): string {
+  return `${tabId}:${contentHash}`;
+}
+
 // ─── Installed Event ───
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -48,30 +56,47 @@ chrome.runtime.onMessage.addListener(
           // Session exists — clear any stale badge
           chrome.action.setBadgeText({ text: "" });
 
-          // Trigger AI generation/caching
-          await requestAnnotations({
-            url,
-            content_hash: contentHash,
-            text,
-            intensity,
-            word_count: wordCount,
-          });
+          // Cancel any previous in-flight request for the same tab+hash
+          const tabId = sender.tab?.id ?? 0;
+          const key = abortKey(tabId, contentHash);
+          inflight.get(key)?.abort();
+          const controller = new AbortController();
+          inflight.set(key, controller);
 
-          // Fetch merged result (cached AI + user annotations)
-          const merged = await getAnnotations(url, contentHash);
-
-          // Forward annotations to the requesting tab
-          if (sender.tab?.id) {
-            await sendToTab(sender.tab.id, {
-              action: "annotationsReady",
-              payload: {
-                regionId: contentHash,
-                annotations: merged.annotations,
+          try {
+            // Trigger AI generation/caching (with abort signal)
+            await requestAnnotations(
+              {
+                url,
+                content_hash: contentHash,
+                text,
+                intensity,
+                word_count: wordCount,
               },
-            });
-          }
+              controller.signal,
+            );
 
-          return merged;
+            // Check if aborted before fetching merged result
+            if (controller.signal.aborted) return { aborted: true };
+
+            // Fetch merged result (cached AI + user annotations)
+            const merged = await getAnnotations(url, contentHash);
+
+            // Forward annotations to the requesting tab
+            if (sender.tab?.id) {
+              await sendToTab(sender.tab.id, {
+                action: "annotationsReady",
+                payload: {
+                  regionId: contentHash,
+                  annotations: merged.annotations,
+                },
+              });
+            }
+
+            return merged;
+          } finally {
+            inflight.delete(key);
+          }
         }
 
         case "getAdapters": {

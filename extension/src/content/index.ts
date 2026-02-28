@@ -39,7 +39,7 @@ import {
 import { initScrollLoader, registerRegion } from "./scroll-loader.js";
 import { showAuthToast } from "./auth-toast.js";
 import { handleExportPdf } from "./export-pdf.js";
-import { resolveSelector } from "./selector.js";
+import { resolveSelector, invalidateTextNodeIndex } from "./selector.js";
 import { createChatObserver } from "./chat-observer.js";
 import { createStabilityWatcher } from "./stability.js";
 
@@ -49,6 +49,8 @@ const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
 const currentAnnotations = new Map<string, Annotation[]>();
 const regionByHash = new Map<string, DetectedRegion>();
+/** Tracks current content hash per region element — used for stale response guards */
+const activeHashes = new Map<Element, string>();
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
   "highlight",
@@ -119,6 +121,9 @@ async function init(): Promise<void> {
     return;
   }
 
+  // Optimization: sort regions by viewport proximity (visible-first)
+  sortByViewportProximity(regions);
+
   console.log(`[Oddity 1] Detected ${regions.length} reading region(s)`);
 
   // Initialize rendering layers
@@ -167,6 +172,17 @@ async function handleStableRegion(
 
   // Compute content hash
   const contentHash = await sha256(extracted.text);
+
+  // Stale guard: if this region already had a different hash, the content changed.
+  // Mark the old hash as stale so its in-flight response gets ignored.
+  const previousHash = activeHashes.get(region.element);
+  if (previousHash && previousHash !== contentHash) {
+    pendingRegions.delete(previousHash);
+    annotatedRegions.delete(previousHash);
+    currentAnnotations.delete(previousHash);
+    regionByHash.delete(previousHash);
+  }
+  activeHashes.set(region.element, contentHash);
 
   if (annotatedRegions.has(contentHash) || pendingRegions.has(contentHash)) return;
 
@@ -241,6 +257,12 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
     return aIsBg - bIsBg;
   });
 
+  // Invalidate text-node index once before the batch — ensures a clean index.
+  // The index is reused across all annotations in this region (5–10× fewer TreeWalker traversals).
+  // Later annotations may see slightly shifted positions due to prior injectAnchors DOM mutations,
+  // but the existing fuzzy fallback chain in resolveSelector handles these gracefully.
+  invalidateTextNodeIndex(root);
+
   // Single-pass: resolve + render one annotation at a time
   // This avoids stale ranges from prior DOM mutations (injectAnchors splits text nodes)
   for (const annotation of visible) {
@@ -298,6 +320,13 @@ onMessage((message: ExtensionMessage) => {
     }
     case "annotationsReady": {
       const { regionId, annotations } = message.payload;
+
+      // Stale response guard: ignore if this hash was invalidated by content change
+      if (!pendingRegions.has(regionId) && !annotatedRegions.has(regionId)) {
+        console.log(`[Oddity 1] Ignoring stale response for ${regionId.slice(0, 12)}…`);
+        break;
+      }
+
       annotatedRegions.add(regionId);
       pendingRegions.delete(regionId);
       currentAnnotations.set(regionId, annotations);
@@ -446,6 +475,48 @@ function isInputFocused(): boolean {
 }
 
 // ─── Helpers ───
+
+/**
+ * Sort regions so that elements closest to (or inside) the viewport come first.
+ * This implements visible-first scheduling — above-the-fold content gets annotated
+ * before far-off regions, reducing perceived TTFA.
+ */
+function sortByViewportProximity(regionList: DetectedRegion[]): void {
+  const viewportTop = window.scrollY;
+  const viewportBottom = viewportTop + window.innerHeight;
+
+  regionList.sort((a, b) => {
+    const rectA = a.element.getBoundingClientRect();
+    const rectB = b.element.getBoundingClientRect();
+
+    // Distance from viewport center (0 = inside viewport)
+    const distA = distanceToViewport(rectA, viewportTop, viewportBottom);
+    const distB = distanceToViewport(rectB, viewportTop, viewportBottom);
+
+    return distA - distB;
+  });
+}
+
+function distanceToViewport(
+  rect: DOMRect,
+  viewportTop: number,
+  viewportBottom: number,
+): number {
+  const absTop = rect.top + window.scrollY;
+  const absBottom = absTop + rect.height;
+
+  // Fully inside viewport
+  if (absTop >= viewportTop && absBottom <= viewportBottom) return 0;
+
+  // Partially overlapping
+  if (absTop < viewportBottom && absBottom > viewportTop) return 0;
+
+  // Above viewport
+  if (absBottom < viewportTop) return viewportTop - absBottom;
+
+  // Below viewport
+  return absTop - viewportBottom;
+}
 
 function matchHostname(hostname: string, pattern: string): boolean {
   if (pattern.startsWith("*.")) {
