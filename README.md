@@ -195,6 +195,7 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 - **Dark mode support**: Automatically detects system theme; annotations adapt colors for readability
 - **Margin notes**: User-added annotations appear in right-side margin with edit/delete controls
 - **Popover details**: Hover annotations to see full notes with "why it matters" and follow-up questions
+- **Annotation interactions**: Thumbs up/down feedback on AI annotations, reply threads, and in-place editing for user notes
 
 ### User Control
 - **Per-page stats**: See count of each annotation type for current page
@@ -213,6 +214,8 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 - **Profile management**: Clickable profile popover showing account info and tier
 - **Auth feedback**: Red "!" badge when not signed in, gray "OFF" badge when disabled
 - **In-page toast**: Gentle reminder to sign in when annotations aren't available
+- **Gradient theme**: Purple-to-amber gradient on dashboard title and Export PDF button
+- **Refined design**: Warm light backgrounds with purple accents, professional styling (Supabase-inspired)
 
 ---
 
@@ -266,16 +269,20 @@ The prompts in `backend/config/prompts.json` are placeholders. Write real system
 
 ## API endpoints at a glance
 
-| Method | Path                    | Auth | Description                               |
-| ------ | ----------------------- | ---- | ----------------------------------------- |
-| GET    | `/api/health`           | No   | Server status check                       |
-| POST   | `/api/annotate`         | Yes  | Generate AI annotations (cached)          |
-| GET    | `/api/annotations`      | Yes  | Fetch cached + user annotations for a URL |
-| POST   | `/api/annotations`      | Yes  | Save a manual annotation                  |
-| DELETE | `/api/annotations/:id`  | Yes  | Delete a user annotation                  |
-| GET    | `/api/adapters`         | No   | Get site adapter registry                 |
-| GET    | `/api/user/preferences` | Yes  | Get user preferences                      |
-| PUT    | `/api/user/preferences` | Yes  | Update preferences (partial JSONB merge)  |
+| Method | Path                         | Auth | Description                                    |
+| ------ | ---------------------------- | ---- | ---------------------------------------------- |
+| GET    | `/api/health`                | No   | Server status check                            |
+| POST   | `/api/annotate`              | Yes  | Generate AI annotations (cached)               |
+| GET    | `/api/annotations`           | Yes  | Fetch cached + user annotations for a URL      |
+| POST   | `/api/annotations`           | Yes  | Save a manual annotation                       |
+| PUT    | `/api/annotations/:id`       | Yes  | Update a user annotation (edit mode)           |
+| DELETE | `/api/annotations/:id`       | Yes  | Delete a user annotation                       |
+| GET    | `/api/annotations/feedback`  | Yes  | Get feedback on annotations for a URL          |
+| POST   | `/api/annotations/feedback`  | Yes  | Save feedback (thumbs up/down/reply)           |
+| DELETE | `/api/annotations/feedback/:id` | Yes  | Delete feedback entry                          |
+| GET    | `/api/adapters`              | No   | Get site adapter registry                      |
+| GET    | `/api/user/preferences`      | Yes  | Get user preferences                           |
+| PUT    | `/api/user/preferences`      | Yes  | Update preferences (partial JSONB merge)       |
 
 Auth = `Authorization: Bearer <supabase_access_token>`
 
@@ -287,12 +294,13 @@ Full docs: [docs/api.md](./api.md)
 
 ## Database tables at a glance
 
-| Table              | Purpose                                              | RLS               |
-| ------------------ | ---------------------------------------------------- | ----------------- |
-| `profiles`         | User metadata + preferences                          | Own row only      |
-| `annotation_cache` | AI annotations, keyed by `(content_hash, intensity)` | Service-role only |
-| `user_annotations` | Manual annotations per user                          | Own rows only     |
-| `site_adapters`    | Site extraction config (6 seeded)                    | Service-role only |
+| Table                   | Purpose                                              | RLS               |
+| ----------------------- | ---------------------------------------------------- | ----------------- |
+| `profiles`              | User metadata + preferences                          | Own row only      |
+| `annotation_cache`      | AI annotations, keyed by `(content_hash, intensity)` | Service-role only |
+| `user_annotations`      | Manual annotations per user                          | Own rows only     |
+| `annotation_feedback`   | User feedback on annotations (thumbs, replies)      | Own rows only     |
+| `site_adapters`         | Site extraction config (6 seeded)                    | Service-role only |
 
 Cache key is `content_hash + intensity` — same text on different URLs shares cache.
 Cache TTL: 30 days (`expires_at` column).

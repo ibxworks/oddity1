@@ -221,7 +221,10 @@ The rendering engine avoids mutating the host DOM for visual effects:
    - Edit / delete actions
    - Dismissal on mouse-out with a small delay to prevent flicker
 
-4. **Margin Notes**: User-created annotations appear in right-side margin of the page as compact note cards. Each card shows the annotation type icon, note preview, and edit/delete buttons. Margin notes auto-scroll to stay visible when corresponding text is in viewport.
+4. **Margin Notes with Interactions**: User-created and AI-generated annotations appear in right-side margin of the page as compact note cards. Each card shows the annotation type icon, note preview, and action buttons. Margin notes auto-scroll to stay visible when corresponding text is in viewport.
+   - **User annotations**: Edit button (in-place textarea) and Delete button
+   - **AI annotations**: Thumbs up/down feedback buttons for helpfulness, reply thread (chat-style bubbles), and reply input bar
+   - **Thumbs down**: Triggers hide animation (fade + slide) and removes annotation from page (persists in backend, won't reappear on reload)
 
 5. **Dark Mode Support**: The rendering engine detects system/page theme and applies appropriate text colors and backgrounds. Annotation colors are adjusted for contrast in dark mode — lighter highlights, inverted text colors, and reduced opacity overlays to prevent text obscuration.
 
@@ -238,7 +241,7 @@ Responsibilities:
 - **Sign-up/Sign-in form**: When not authenticated, show email/password form (+ name field when signing up). Auto-switches to sign-in mode after successful sign-up confirmation email.
 - **Link to settings**: "Settings & Options" footer link opens the options page.
 
-**Visual design**: Refined, professional Supabase-style aesthetic — light background (`#f8f9fa`), subtle borders, pill-shaped buttons, green accent color (`#22c55e`), tighter spacing, smaller typography.
+**Visual design**: Refined, professional Supabase-style aesthetic — light background (`#f8f9fa`), subtle borders, pill-shaped buttons, purple accent color (`#7c3aed`), tighter spacing, smaller typography. Gradient theme on "Oddity 1" title and Export PDF button (purple-to-amber: `linear-gradient(135deg, #c4b5fd, #7c3aed, #f59e0b)`).
 
 ### 6.4 Options UI (Settings Page)
 
@@ -285,16 +288,20 @@ The registry is updateable from the backend without shipping extension updates. 
 All endpoints are serverless functions (Vercel Functions or AWS Lambda behind API Gateway).
 
 ```
-POST   /api/annotate          — Generate annotations for text
-GET    /api/annotations       — Retrieve cached annotations by URL+content hash
-POST   /api/annotations       — Save user's manual annotations
-DELETE /api/annotations/:id   — Delete a specific annotation
-GET    /api/adapters          — Fetch site adapter registry
-GET    /api/user/preferences  — Get user settings
-PUT    /api/user/preferences  — Update user settings
-POST   /api/auth/signup       — Supabase auth passthrough
-POST   /api/auth/login        — Supabase auth passthrough
-POST   /api/auth/refresh      — Token refresh
+POST   /api/annotate              — Generate annotations for text
+GET    /api/annotations           — Retrieve cached annotations by URL+content hash
+POST   /api/annotations           — Save user's manual annotations
+PUT    /api/annotations/:id       — Edit a user annotation
+DELETE /api/annotations/:id       — Delete a specific annotation
+GET    /api/annotations/feedback  — Fetch user feedback on annotations
+POST   /api/annotations/feedback  — Save feedback (thumbs up/down, replies)
+DELETE /api/annotations/feedback/:id — Delete a feedback entry
+GET    /api/adapters              — Fetch site adapter registry
+GET    /api/user/preferences      — Get user settings
+PUT    /api/user/preferences      — Update user settings
+POST   /api/auth/signup           — Supabase auth passthrough
+POST   /api/auth/login            — Supabase auth passthrough
+POST   /api/auth/refresh          — Token refresh
 ```
 
 ### 7.2 Annotation Generation Pipeline (`/api/annotate`)
@@ -440,6 +447,19 @@ create table public.user_annotations (
   updated_at timestamptz default now()
 );
 
+-- User feedback on annotations (thumbs up/down, replies)
+create table public.annotation_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles(id) not null,
+  annotation_id text not null,
+  content_hash text not null,
+  url text not null,
+  feedback_type text not null check (feedback_type in ('thumbs_up', 'thumbs_down', 'reply')),
+  reply_text text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- Site adapter registry
 create table public.site_adapters (
   id uuid primary key default gen_random_uuid(),
@@ -456,6 +476,11 @@ create table public.site_adapters (
 alter table public.user_annotations enable row level security;
 create policy "Users can CRUD own annotations"
   on public.user_annotations for all
+  using (auth.uid() = user_id);
+
+alter table public.annotation_feedback enable row level security;
+create policy "Users can CRUD own feedback"
+  on public.annotation_feedback for all
   using (auth.uid() = user_id);
 
 alter table public.profiles enable row level security;
@@ -563,7 +588,37 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
   action: "annotationsReady",
   payload: {
     regionId: string,
-    annotations: Annotation[]
+    annotations: Annotation[],
+    feedback: AnnotationFeedback[]
+  }
+}
+
+// Content → Background: save feedback on annotation
+{
+  action: "saveFeedback",
+  payload: {
+    annotationId: string,
+    contentHash: string,
+    url: string,
+    feedbackType: "thumbs_up" | "thumbs_down" | "reply",
+    replyText?: string
+  }
+}
+
+// Content → Background: delete feedback
+{
+  action: "deleteFeedback",
+  payload: {
+    feedbackId: string
+  }
+}
+
+// Content → Background: update user annotation
+{
+  action: "updateAnnotation",
+  payload: {
+    annotationId: string,
+    annotation: Annotation
   }
 }
 

@@ -67,16 +67,20 @@ npm run lint
 
 ## API endpoints at a glance
 
-| Method | Path                    | Auth | Description                               |
-| ------ | ----------------------- | ---- | ----------------------------------------- |
-| GET    | `/api/health`           | No   | Server status check                       |
-| POST   | `/api/annotate`         | Yes  | Generate AI annotations (cached)          |
-| GET    | `/api/annotations`      | Yes  | Fetch cached + user annotations for a URL |
-| POST   | `/api/annotations`      | Yes  | Save a manual annotation                  |
-| DELETE | `/api/annotations/:id`  | Yes  | Delete a user annotation                  |
-| GET    | `/api/adapters`         | No   | Get site adapter registry                 |
-| GET    | `/api/user/preferences` | Yes  | Get user preferences                      |
-| PUT    | `/api/user/preferences` | Yes  | Update preferences (partial JSONB merge)  |
+| Method | Path                         | Auth | Description                                    |
+| ------ | ---------------------------- | ---- | ---------------------------------------------- |
+| GET    | `/api/health`                | No   | Server status check                            |
+| POST   | `/api/annotate`              | Yes  | Generate AI annotations (cached)               |
+| GET    | `/api/annotations`           | Yes  | Fetch cached + user annotations for a URL      |
+| POST   | `/api/annotations`           | Yes  | Save a manual annotation                       |
+| PUT    | `/api/annotations/:id`       | Yes  | Update a user annotation (edit mode)           |
+| DELETE | `/api/annotations/:id`       | Yes  | Delete a user annotation                       |
+| GET    | `/api/annotations/feedback`  | Yes  | Fetch feedback on annotations for a URL        |
+| POST   | `/api/annotations/feedback`  | Yes  | Save feedback (thumbs up/down, replies)        |
+| DELETE | `/api/annotations/feedback/:id` | Yes  | Delete a feedback entry                        |
+| GET    | `/api/adapters`              | No   | Get site adapter registry                      |
+| GET    | `/api/user/preferences`      | Yes  | Get user preferences                           |
+| PUT    | `/api/user/preferences`      | Yes  | Update preferences (partial JSONB merge)       |
 
 Auth = `Authorization: Bearer <supabase_access_token>`
 
@@ -88,12 +92,13 @@ Full docs: [docs/api.md](./api.md)
 
 ## Database tables at a glance
 
-| Table              | Purpose                                              | RLS               |
-| ------------------ | ---------------------------------------------------- | ----------------- |
-| `profiles`         | User metadata + preferences                          | Own row only      |
-| `annotation_cache` | AI annotations, keyed by `(content_hash, intensity)` | Service-role only |
-| `user_annotations` | Manual annotations per user                          | Own rows only     |
-| `site_adapters`    | Site extraction config (6 seeded)                    | Service-role only |
+| Table                   | Purpose                                              | RLS               |
+| ----------------------- | ---------------------------------------------------- | ----------------- |
+| `profiles`              | User metadata + preferences                          | Own row only      |
+| `annotation_cache`      | AI annotations, keyed by `(content_hash, intensity)` | Service-role only |
+| `user_annotations`      | Manual annotations per user                          | Own rows only     |
+| `annotation_feedback`   | User feedback on annotations (thumbs, replies)      | Own rows only     |
+| `site_adapters`         | Site extraction config (6 seeded)                    | Service-role only |
 
 Cache key is `content_hash + intensity` — same text on different URLs shares cache.
 Cache TTL: 30 days (`expires_at` column).
@@ -113,7 +118,10 @@ Full schema: [docs/database.md](./database.md)
 | `caveat`     | Orange wavy underline       | Counterpoint/limitation | ✓ |
 | `vocabulary` | Green dotted underline      | Term definition         | ✓ |
 
-**Margin notes**: User-created annotations appear in the right margin with full edit/delete controls. AI annotations appear as inline overlays; user annotations persist in the margin.
+**Margin notes**: Annotations appear in the right margin as expandable cards.
+- **User annotations (manual)**: Edit button (inline textarea) + Delete button
+- **AI annotations**: Thumbs up/down feedback buttons, reply thread with chat-style bubbles, and reply input bar
+- **Thumbs down**: Hides annotation with fade-out animation; persists feedback in backend so it won't reappear on reload
 
 ---
 
@@ -127,6 +135,23 @@ The extension automatically detects the system theme (or page-level dark mode) a
 - **Respects user preference**: Uses CSS `prefers-color-scheme` media query + DOM inspection for dynamic dark mode
 
 Margin notes also adapt to the detected theme for seamless integration.
+
+---
+
+## Dashboard theme and design
+
+The popup dashboard features a professional, refined aesthetic inspired by Supabase:
+
+**Colors**:
+- **Primary accent**: Purple (`#7c3aed`) — toggle switches, buttons, focus rings, avatar background, tier badge
+- **Gradient theme**: "Oddity 1" title and Export PDF button feature a purple-to-amber gradient (`linear-gradient(135deg, #c4b5fd, #7c3aed, #f59e0b)`)
+- **Background**: Warm light (`#f8f9fa`)
+- **Borders**: Subtle (`#dfe3e8`)
+
+**Typography**:
+- Smaller, tighter spacing
+- Section titles: uppercase, muted color
+- Professional, non-toy aesthetic
 
 ---
 

@@ -159,12 +159,120 @@ Save a user-created manual annotation. Stored in `user_annotations`, scoped to t
 
 ---
 
+### `PUT /api/annotations/:id`
+
+Update a user-owned annotation (edit mode). Replaces the annotation's content while preserving the anchor.
+
+**Auth:** Required
+**URL param:** `:id` — annotation ID (from annotation.id, not row UUID)
+
+**Request body**
+
+```json
+{
+  "annotation": {
+    "id": "manual_1",
+    "type": "insight",
+    "anchor": { "type": "TextQuoteSelector", "exact": "..." },
+    "content": { "note": "Updated note text" }
+  }
+}
+```
+
+**Response** — returns the updated annotation object.
+
+---
+
 ### `DELETE /api/annotations/:id`
 
 Delete a user-owned annotation. Only the owning user can delete (enforced by RLS).
 
 **Auth:** Required
-**URL param:** `:id` — UUID of the annotation row
+**URL param:** `:id` — annotation ID (from annotation.id)
+
+**Response**
+
+```json
+{ "success": true }
+```
+
+---
+
+## Annotation Feedback
+
+### `GET /api/annotations/feedback`
+
+Retrieve all feedback (thumbs up/down, replies) on annotations for a specific URL + content hash.
+
+**Auth:** Required
+**Query params:** `url` (required), `content_hash` (required)
+
+```
+GET /api/annotations/feedback?url=https%3A%2F%2F...&content_hash=sha256%3Aabc123
+```
+
+**Response**
+
+```json
+[
+  {
+    "id": "uuid",
+    "annotation_id": "ann_1",
+    "feedback_type": "thumbs_up",
+    "reply_text": null,
+    "created_at": "2026-02-28T..."
+  },
+  {
+    "id": "uuid",
+    "annotation_id": "ann_2",
+    "feedback_type": "reply",
+    "reply_text": "This clarifies the concept really well",
+    "created_at": "2026-02-28T..."
+  }
+]
+```
+
+---
+
+### `POST /api/annotations/feedback`
+
+Save feedback on an annotation. Supports thumbs reactions and reply threads.
+
+**Auth:** Required
+
+**Request body**
+
+```json
+{
+  "annotation_id": "ann_1",
+  "content_hash": "sha256:abc123...",
+  "url": "https://example.com/article",
+  "feedback_type": "thumbs_up"
+}
+```
+
+For replies, include `reply_text`:
+
+```json
+{
+  "annotation_id": "ann_2",
+  "content_hash": "sha256:abc123...",
+  "url": "https://example.com/article",
+  "feedback_type": "reply",
+  "reply_text": "Great explanation!"
+}
+```
+
+**Response** — `201 Created`, returns the created feedback object.
+
+---
+
+### `DELETE /api/annotations/feedback/:id`
+
+Delete a feedback entry. Only the author can delete (enforced by RLS).
+
+**Auth:** Required
+**URL param:** `:id` — UUID of the feedback row
 
 **Response**
 
