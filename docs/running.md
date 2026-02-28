@@ -194,3 +194,46 @@ Make sure you're running from the repo root (`oddity1/`), not inside a workspace
 
 **Prompts returning garbage**
 The prompts in `backend/config/prompts.json` are placeholders. Write real system prompts and restart the backend.
+
+---
+
+## Testing New Features
+
+### Dark Mode
+1. Open a dark-themed website (e.g., GitHub with dark mode, or Medium with dark theme enabled)
+2. Trigger annotations on the page
+3. Verify annotation colors are adjusted for dark backgrounds (lighter highlights, high-contrast text)
+4. Check that margin notes also adapt to the dark theme
+
+### Streaming Annotations (ChatGPT / Claude)
+1. Go to [ChatGPT](https://chatgpt.com) or [Claude](https://claude.ai)
+2. Sign in and start a conversation
+3. Send a prompt and watch the AI response stream in
+4. Once the response completes (copy button appears for ChatGPT, or class change for Claude), annotations should appear automatically
+5. Verify the stability detector correctly identifies streaming completion
+
+### Margin Notes
+1. Click the floating action button (FAB) in the bottom-right of any annotated page
+2. Or right-click on text → "Add Oddity Annotation"
+3. Add a custom note
+4. Verify the note appears in the right margin with type icon
+5. Edit/delete controls should appear on hover
+6. Notes persist when you reload the page (stored in `chrome.storage.local`)
+
+### PDF Export
+1. Go to any long-form page (article, ChatGPT response, newsletter)
+2. Trigger annotations (may take 5-10 seconds for first annotation on a page)
+3. Click "Export PDF" in the popup dashboard
+4. Verify the PDF includes:
+   - Original page content
+   - All AI-generated annotations in-line
+   - All user-created margin notes
+   - Proper formatting and styling
+
+### Profile Features
+1. Sign up for a new account — you'll be prompted for name during sign-up
+2. After signing in, check the popup dashboard:
+   - Welcome greeting should show your first name
+   - Click profile button (bottom-left) to open profile popover
+   - Verify name, email, and tier display correctly
+   - Verify sign-out button works from popover

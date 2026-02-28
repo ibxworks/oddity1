@@ -186,16 +186,50 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 
 ---
 
+## Key Features
+
+### Core Annotation Engine
+- **Smart text extraction** via Readability, site-specific adapters, or custom heuristics
+- **Streaming support** for real-time chatbot pages (ChatGPT, Claude) with stability detection
+- **In-place overlays**: highlights, underlines, and margin-note annotations with type-specific visuals
+- **Dark mode support**: Automatically detects system theme; annotations adapt colors for readability
+- **Margin notes**: User-added annotations appear in right-side margin with edit/delete controls
+- **Popover details**: Hover annotations to see full notes with "why it matters" and follow-up questions
+
+### User Control
+- **Per-page stats**: See count of each annotation type for current page
+- **Intensity levels**: Light / Default / Heavy — controls annotation density
+- **Type filtering**: Toggle specific annotation types on/off
+- **Global toggle**: On/Off switch to disable extension instantly
+- **Manual annotations**: Add custom notes anywhere with context menu or floating action button
+
+### Export & Sharing
+- **PDF export**: Download page with annotations, preserving original content + AI insights
+- **User preferences**: Intensity, visible types, and site-specific settings saved
+- **Subscription tiers**: Free (basic features) and Pro (custom export subtitles, advanced analytics)
+
+### User Experience
+- **Rotating greetings**: Personalized welcome in dashboard (name-based)
+- **Profile management**: Clickable profile popover showing account info and tier
+- **Auth feedback**: Red "!" badge when not signed in, gray "OFF" badge when disabled
+- **In-page toast**: Gentle reminder to sign in when annotations aren't available
+
+---
+
 ## Troubleshooting Auth Issues
 
-If you see a red "!" badge on the Oddity extension icon:
-- The extension is not signed in, or your session expired
+**Badge states on the extension icon:**
+- **Red "!" badge**: Not signed in — click to open popup and sign in
+- **Gray "OFF" badge**: Extension is disabled — toggle "On" in popup to enable
+- **No badge**: Signed in and enabled — extension is working normally
+
+If you see a red "!" badge or the extension is disabled:
 - Click the extension icon to open the popup
-- Sign in or sign up via the form
+- Sign in/sign up via the form, or toggle the "On" switch
 - The badge will clear automatically, and the page will reload with annotations
 
 If you see an in-page toast saying "Sign in to Oddity to see annotations":
-- Same as above — click the extension icon and authenticate
+- Click the extension icon and sign in
 - The toast auto-dismisses after 8 seconds or when you click it
 
 ---

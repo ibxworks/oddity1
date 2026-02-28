@@ -104,14 +104,29 @@ Full schema: [docs/database.md](./database.md)
 
 ## Annotation types
 
-| Type         | Visual                      | Use                     |
-| ------------ | --------------------------- | ----------------------- |
-| `highlight`  | Yellow background           | Key phrase              |
-| `underline`  | Teal underline              | Important statement     |
-| `question`   | Purple dotted underline + ? | Probing question        |
-| `insight`    | Blue background             | "Why this matters"      |
-| `caveat`     | Orange wavy underline       | Counterpoint/limitation |
-| `vocabulary` | Green dotted underline      | Term definition         |
+| Type         | Visual                      | Use                     | Margin Note |
+| ------------ | --------------------------- | ----------------------- | ----------- |
+| `highlight`  | Yellow background           | Key phrase              | ✓ |
+| `underline`  | Teal underline              | Important statement     | ✓ |
+| `question`   | Purple dotted underline + ? | Probing question        | ✓ |
+| `insight`    | Blue background             | "Why this matters"      | ✓ |
+| `caveat`     | Orange wavy underline       | Counterpoint/limitation | ✓ |
+| `vocabulary` | Green dotted underline      | Term definition         | ✓ |
+
+**Margin notes**: User-created annotations appear in the right margin with full edit/delete controls. AI annotations appear as inline overlays; user annotations persist in the margin.
+
+---
+
+## Dark mode support
+
+The extension automatically detects the system theme (or page-level dark mode) and adjusts annotation colors for optimal contrast:
+
+- **Light mode**: Yellow highlights, teal underlines, vivid colors
+- **Dark mode**: Inverted highlight colors, muted overlays, high-contrast text
+- **Per-site detection**: Some sites (e.g., Medium) have built-in dark mode that's automatically detected
+- **Respects user preference**: Uses CSS `prefers-color-scheme` media query + DOM inspection for dynamic dark mode
+
+Margin notes also adapt to the detected theme for seamless integration.
 
 ---
 
@@ -126,16 +141,35 @@ Full schema: [docs/database.md](./database.md)
 
 ---
 
+## Export features
+
+**PDF Export**: Click "Export PDF" in the popup dashboard to download the current page with all annotations:
+
+- Includes original content + all AI-generated annotations
+- User annotations appear in context where they were added
+- Works for any page with extracted text (articles, chat responses, etc.)
+- PDF subtitle customizable in Pro tier (free tier has fixed subtitle)
+
+**Manual annotations**: Add custom notes anywhere on the page via:
+
+- Floating action button (FAB) in bottom-right
+- Context menu (right-click → "Add Oddity Annotation")
+- Notes appear as margin notes and persist in browser storage per-page
+
+---
+
 ## Supported sites (seeded adapters)
 
-| Site                  | Pattern           | Mode        |
-| --------------------- | ----------------- | ----------- |
-| ChatGPT               | `chatgpt.com`     | adapter     |
-| ChatGPT (old URL)     | `chat.openai.com` | adapter     |
-| Claude                | `claude.ai`       | adapter     |
-| Medium                | `medium.com`      | readability |
-| Medium custom domains | `*.medium.com`    | readability |
-| Substack              | `*.substack.com`  | readability |
+| Site                  | Pattern           | Mode              | Features |
+| --------------------- | ----------------- | ----------------- | -------- |
+| ChatGPT               | `chatgpt.com`     | adapter (stream)  | Real-time annotations, streaming detection |
+| ChatGPT (old URL)     | `chat.openai.com` | adapter (stream)  | Real-time annotations, streaming detection |
+| Claude                | `claude.ai`       | adapter (stream)  | Real-time annotations, streaming detection |
+| Medium                | `medium.com`      | readability       | Article extraction, margin notes |
+| Medium custom domains | `*.medium.com`    | readability       | Article extraction, margin notes |
+| Substack              | `*.substack.com`  | readability       | Newsletter extraction, margin notes |
+
+**Streaming adapters**: ChatGPT and Claude have streaming-aware stability signals that detect when AI responses are complete, enabling real-time annotation of streamed text.
 
 To add a new site: insert a row into `site_adapters` (see [docs/database.md](./database.md#adding-a-new-site-adapter)).
 
@@ -153,14 +187,30 @@ If none of the three tiers finds a reading region, no annotations are requested.
 
 ---
 
-## Auth UI elements
+## Badge & UI states
 
-When the user is not signed in or the session expires:
+**Extension icon badge:**
 
-| Element           | Where             | Behavior                                                                                                                                                |
-| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Red "!" badge     | Extension icon    | Set when annotation request fails due to auth. Click to open popup and sign in. Clears automatically after successful auth.                             |
-| Dismissible toast | Top-right of page | "Sign in to Oddity 1 to see annotations — click the extension icon". Auto-dismisses after 8 seconds or on click/dismiss. Only shows once per page load. |
+| Badge              | Meaning                      | Action                                              |
+| ------------------ | ---------------------------- | --------------------------------------------------- |
+| Red "!"            | Not signed in                | Click to open popup and sign in/sign up             |
+| Gray "OFF"         | Extension disabled           | Toggle "On" in popup to re-enable                   |
+| (none)             | Signed in and enabled        | Extension is working normally                       |
+
+**Popup dashboard (when signed in):**
+
+| Element            | Where             | Shows                                                           |
+| ------------------ | ----------------- | -------------------------------------------------------------- |
+| Rotating greeting  | Header            | "Welcome, {FirstName}" with random variation each popup open   |
+| Profile button     | Bottom-left       | Avatar (first initial) + display name. Click to open popover. |
+| Tier badge         | Bottom-right      | "FREE" (gray) or "PRO" (green)                                 |
+| Profile popover    | Above profile btn | Full name, email, subscription tier, sign-out button           |
+
+**In-page toast (when not signed in):**
+
+| Element           | Where             | Behavior                                                                                                                        |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Auth toast        | Top-right of page | "Sign in to Oddity 1 to see annotations — click the extension icon". Auto-dismisses after 8 seconds or on click. Shows once. |
 
 ---
 

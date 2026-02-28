@@ -75,17 +75,52 @@ export async function signIn(email: string, password: string) {
   return data;
 }
 
-export async function signUp(email: string, password: string) {
+export async function signUp(email: string, password: string, displayName: string) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
   });
   if (error) throw error;
+  if (data.user) {
+    await supabase.from('profiles').upsert({
+      id: data.user.id,
+      display_name: displayName,
+    }, { onConflict: 'id' });
+  }
   return data;
 }
 
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}
+
+export async function getProfile(): Promise<{ display_name: string | null; tier: 'free' | 'pro' } | null> {
+  const session = await getSession();
+  if (!session) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('display_name, tier')
+    .eq('id', session.user.id)
+    .single();
+
+  if (error || !data) return null;
+  return {
+    display_name: data.display_name ?? null,
+    tier: (data.tier as 'free' | 'pro') ?? 'free',
+  };
+}
+
+export async function updateProfile(displayName: string): Promise<void> {
+  const session = await getSession();
+  if (!session) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ display_name: displayName })
+    .eq('id', session.user.id);
+
   if (error) throw error;
 }
 

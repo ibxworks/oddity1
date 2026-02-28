@@ -167,8 +167,10 @@ export type ExtensionMessage =
       };
     }
   | { action: 'signIn'; payload: { email: string; password: string } }
-  | { action: 'signUp'; payload: { email: string; password: string } }
+  | { action: 'signUp'; payload: { email: string; password: string; displayName: string } }
   | { action: 'signOut'; payload: Record<string, never> }
+  | { action: 'getProfile'; payload: Record<string, never> }
+  | { action: 'updateProfile'; payload: { display_name: string } }
   | { action: 'exportPdf'; payload: { title: string; subtitle: string } }
   | { action: 'exportPdfResult'; payload: { success: boolean; error?: string } }
   | { action: 'getUserTier'; payload: Record<string, never> }

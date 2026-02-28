@@ -12,7 +12,7 @@ import {
   requestAnnotations,
   saveAnnotation,
 } from "./api-client.js";
-import { getSession, getUserTier, signIn, signOut, signUp } from "./auth.js";
+import { getProfile, getSession, getUserTier, signIn, signOut, signUp, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 
 // ─── Installed Event ───
@@ -81,32 +81,39 @@ chrome.runtime.onMessage.addListener(
 
         case "getAuthStatus": {
           const session = await getSession();
+          if (!session) {
+            return { authenticated: false, user: null };
+          }
+          const profile = await getProfile();
           return {
-            authenticated: session !== null,
-            user: session
-              ? {
-                  id: session.user.id,
-                  email: session.user.email ?? "",
-                }
-              : null,
+            authenticated: true,
+            user: {
+              id: session.user.id,
+              email: session.user.email ?? "",
+              display_name: profile?.display_name ?? null,
+              tier: profile?.tier ?? "free",
+            },
           };
         }
 
         case "signIn": {
           const { email, password } = message.payload;
           const data = await signIn(email, password);
+          const signInProfile = await getProfile();
           return {
             success: true,
             user: {
               id: data.user?.id ?? "",
               email: data.user?.email ?? "",
+              display_name: signInProfile?.display_name ?? null,
+              tier: signInProfile?.tier ?? "free",
             },
           };
         }
 
         case "signUp": {
-          const { email, password } = message.payload;
-          const data = await signUp(email, password);
+          const { email, password, displayName } = message.payload;
+          const data = await signUp(email, password, displayName);
           const needsConfirmation = data.session === null;
           return {
             success: true,
@@ -130,6 +137,16 @@ chrome.runtime.onMessage.addListener(
 
         case "deleteAnnotation": {
           await apiDeleteAnnotation(message.payload.annotationId);
+          return { success: true };
+        }
+
+        case "getProfile": {
+          const userProfile = await getProfile();
+          return userProfile ?? { display_name: null, tier: "free" };
+        }
+
+        case "updateProfile": {
+          await updateProfile(message.payload.display_name);
           return { success: true };
         }
 
@@ -179,6 +196,19 @@ chrome.storage.onChanged.addListener((changes, area) => {
       | UserPreferences
       | undefined;
     if (prefs) {
+      // Update badge based on enabled state
+      if (prefs.enabled === false) {
+        chrome.action.setBadgeText({ text: "OFF" });
+        chrome.action.setBadgeBackgroundColor({ color: "#6B7280" });
+      } else {
+        // Only clear if we were showing OFF (don't clear auth badge)
+        chrome.action.getBadgeText({}).then((text) => {
+          if (text === "OFF") {
+            chrome.action.setBadgeText({ text: "" });
+          }
+        });
+      }
+
       // Broadcast settings update to all tabs
       chrome.tabs.query({}, (tabs) => {
         for (const tab of tabs) {

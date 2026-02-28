@@ -145,14 +145,16 @@ Key runtime events:
 Responsibilities:
 
 - Detect main reading regions using site adapters or generic fallback.
-- Monitor DOM stability (MutationObserver + site-specific completion signals).
+- Monitor DOM stability (MutationObserver + site-specific completion signals for streaming chatbots).
 - Extract text from stable regions and send to background for annotation.
 - Render annotation overlay layer (highlight/underline rectangles via `getClientRects()`).
 - Inject minimal invisible anchor `<span>` elements for hover/click detection.
 - Render Shadow DOM popover on hover with annotation details.
+- **Render margin notes**: User-added annotations appear in right-side margin of page.
 - Handle scroll-based progressive annotation loading.
 - Handle manual annotation creation (floating button + context menu).
 - Apply annotation-type-adaptive visual styles.
+- **Detect and apply dark mode**: Automatically adjusts annotation colors based on page theme (light/dark).
 - Track scroll and resize to reposition overlay rectangles.
 
 #### Content Detection Pipeline
@@ -195,13 +197,15 @@ Page Load / DOM Mutation
 
 #### DOM Stability Detection (Hybrid)
 
-For known chatbot sites, use site-adapter completion signals:
+For known chatbot sites, use site-adapter completion signals to detect streaming completion:
 
-- **ChatGPT**: detect appearance of the copy/edit buttons on a message container.
-- **Claude**: detect container class change or streaming indicator removal.
+- **ChatGPT**: Monitor response container for appearance of copy/edit/regenerate action buttons (indicates streaming is done).
+- **Claude**: Monitor for complete class markers or streaming indicator removal (e.g., `data-is-complete` attribute).
 - **Generic sites**: MutationObserver with configurable debounce (default 1500ms of no mutations on the observed subtree).
 
-The stability detector emits a `regionStable` event per detected text region, triggering the annotation pipeline.
+**Streaming Support**: For chatbots like ChatGPT and Claude, the content script continuously monitors for new message chunks and re-annotates when stability is detected. Adapters include site-specific selectors for response containers and stability signals defined in the `site_adapters` registry.
+
+The stability detector emits a `regionStable` event per detected text region, triggering the annotation pipeline. For streaming pages, this may fire multiple times as chunks are received and stabilize.
 
 #### Annotation Rendering — Hybrid Overlay Model
 
@@ -217,17 +221,24 @@ The rendering engine avoids mutating the host DOM for visual effects:
    - Edit / delete actions
    - Dismissal on mouse-out with a small delay to prevent flicker
 
+4. **Margin Notes**: User-created annotations appear in right-side margin of the page as compact note cards. Each card shows the annotation type icon, note preview, and edit/delete buttons. Margin notes auto-scroll to stay visible when corresponding text is in viewport.
+
+5. **Dark Mode Support**: The rendering engine detects system/page theme and applies appropriate text colors and backgrounds. Annotation colors are adjusted for contrast in dark mode — lighter highlights, inverted text colors, and reduced opacity overlays to prevent text obscuration.
+
 ### 6.3 Popup UI (Page-Level Dashboard)
 
 Responsibilities:
 
-- Show annotation stats for current page: count by type, coverage estimate.
-- Quick filter toggles: enable/disable specific annotation types.
-- Global on/off toggle.
-- Intensity slider (light / default / heavy).
-- Auth status indicator with login/signup prompt.
-- **Export**: download current page's annotations as Markdown or PDF. The export includes original content interleaved with annotations (both AI-generated and user-added).
-- Link to full options/settings page.
+- **Header**: Show "Oddity 1" title with rotating personalized greeting (e.g., "Welcome, Tony") if signed in. Global on/off toggle on the right.
+- **Annotation stats**: Display count by type for current page (highlight, important, question, insight, caveat, vocabulary).
+- **Intensity buttons**: Light / Default / Heavy selector.
+- **Type filters**: Quick toggles to show/hide specific annotation types.
+- **Export button**: Download current page's annotations as PDF. PDF includes original content interleaved with both AI-generated and user-added annotations.
+- **Profile bar**: Bottom section showing clickable profile button (avatar initial + first name) and tier badge (FREE / PRO). Click profile → popover with full name, email, subscription tier, and sign-out button.
+- **Sign-up/Sign-in form**: When not authenticated, show email/password form (+ name field when signing up). Auto-switches to sign-in mode after successful sign-up confirmation email.
+- **Link to settings**: "Settings & Options" footer link opens the options page.
+
+**Visual design**: Refined, professional Supabase-style aesthetic — light background (`#f8f9fa`), subtle borders, pill-shaped buttons, green accent color (`#22c55e`), tighter spacing, smaller typography.
 
 ### 6.4 Options UI (Settings Page)
 
@@ -574,6 +585,64 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
     intensity: "light" | "default" | "heavy",
     visibleTypes: AnnotationType[]
   }
+}
+
+// Popup → Background: get auth status
+{
+  action: "getAuthStatus",
+  payload: {}
+}
+
+// Background → Popup: auth status response
+{
+  action: "authStatusResponse",
+  payload: {
+    authenticated: boolean,
+    user: {
+      id: string,
+      email: string,
+      display_name: string | null,
+      tier: "free" | "pro"
+    } | null
+  }
+}
+
+// Popup → Background: sign in
+{
+  action: "signIn",
+  payload: { email: string, password: string }
+}
+
+// Popup → Background: sign up
+{
+  action: "signUp",
+  payload: { email: string, password: string, displayName: string }
+}
+
+// Popup → Background: sign out
+{
+  action: "signOut",
+  payload: {}
+}
+
+// Popup → Background: get profile
+{
+  action: "getProfile",
+  payload: {}
+}
+
+// Background → Popup: profile response
+{
+  payload: {
+    display_name: string | null,
+    tier: "free" | "pro"
+  }
+}
+
+// Popup → Background: update profile
+{
+  action: "updateProfile",
+  payload: { display_name: string }
 }
 ```
 
