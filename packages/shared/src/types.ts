@@ -35,6 +35,18 @@ export type AnnotationResponse = {
   annotations: Annotation[];
 };
 
+// ─── Feedback ───
+
+export type FeedbackType = 'thumbs_up' | 'thumbs_down' | 'reply';
+
+export type AnnotationFeedback = {
+  id: string;
+  annotation_id: string;
+  feedback_type: FeedbackType;
+  reply_text: string | null;
+  created_at: string;
+};
+
 // ─── Intensity ───
 
 export type Intensity = 'light' | 'default' | 'heavy';
@@ -115,6 +127,7 @@ export type ExtensionMessage =
       payload: {
         regionId: string;
         annotations: Annotation[];
+        feedback: AnnotationFeedback[];
       };
     }
   | {
@@ -174,4 +187,7 @@ export type ExtensionMessage =
   | { action: 'exportPdf'; payload: { title: string; subtitle: string } }
   | { action: 'exportPdfResult'; payload: { success: boolean; error?: string } }
   | { action: 'getUserTier'; payload: Record<string, never> }
-  | { action: 'getUserTierResult'; payload: { tier: UserTier } };
+  | { action: 'getUserTierResult'; payload: { tier: UserTier } }
+  | { action: 'saveFeedback'; payload: { annotationId: string; contentHash: string; url: string; feedbackType: FeedbackType; replyText?: string } }
+  | { action: 'deleteFeedback'; payload: { feedbackId: string } }
+  | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation } };

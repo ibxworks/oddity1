@@ -8,9 +8,13 @@ import {
 import {
   AuthError,
   deleteAnnotation as apiDeleteAnnotation,
+  deleteFeedback as apiDeleteFeedback,
   getAnnotations,
+  getFeedback,
   requestAnnotations,
   saveAnnotation,
+  saveFeedback as apiSaveFeedback,
+  updateAnnotation as apiUpdateAnnotation,
 } from "./api-client.js";
 import { getProfile, getSession, getUserTier, signIn, signOut, signUp, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
@@ -57,8 +61,11 @@ chrome.runtime.onMessage.addListener(
             word_count: wordCount,
           });
 
-          // Fetch merged result (cached AI + user annotations)
-          const merged = await getAnnotations(url, contentHash);
+          // Fetch merged result (cached AI + user annotations) + feedback
+          const [merged, feedback] = await Promise.all([
+            getAnnotations(url, contentHash),
+            getFeedback(url, contentHash),
+          ]);
 
           // Forward annotations to the requesting tab
           if (sender.tab?.id) {
@@ -67,6 +74,7 @@ chrome.runtime.onMessage.addListener(
               payload: {
                 regionId: contentHash,
                 annotations: merged.annotations,
+                feedback,
               },
             });
           }
@@ -153,6 +161,31 @@ chrome.runtime.onMessage.addListener(
         case "getUserTier": {
           const tier = await getUserTier();
           return { tier };
+        }
+
+        case "saveFeedback": {
+          const { annotationId, contentHash, url, feedbackType, replyText } =
+            message.payload;
+          const fb = await apiSaveFeedback({
+            annotation_id: annotationId,
+            content_hash: contentHash,
+            url,
+            feedback_type: feedbackType,
+            reply_text: replyText,
+          });
+          return fb;
+        }
+
+        case "deleteFeedback": {
+          await apiDeleteFeedback(message.payload.feedbackId);
+          return { success: true };
+        }
+
+        case "updateAnnotation": {
+          const { annotationId: annId, annotation: updatedAnn } =
+            message.payload;
+          const result = await apiUpdateAnnotation(annId, updatedAnn);
+          return result;
         }
 
         default:

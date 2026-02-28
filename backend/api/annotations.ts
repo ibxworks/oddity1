@@ -78,6 +78,37 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PUT /api/annotations/:id — update user-owned annotation
+router.put('/:id', async (req, res) => {
+  try {
+    const { annotation } = req.body;
+    if (!annotation) {
+      res.status(400).json({ error: 'annotation required' });
+      return;
+    }
+
+    const token = req.headers.authorization?.slice(7) ?? '';
+    const userClient = createUserClient(token);
+
+    const { data, error } = await userClient
+      .from('user_annotations')
+      .update({ annotation })
+      .eq('annotation->>id', req.params.id)
+      .select()
+      .single();
+
+    if (error) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+
+    res.json(data.annotation);
+  } catch (err) {
+    console.error('[annotations PUT] Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // DELETE /api/annotations/:id — delete user-owned annotation
 router.delete('/:id', async (req, res) => {
   try {
@@ -87,7 +118,7 @@ router.delete('/:id', async (req, res) => {
     const { error } = await userClient
       .from('user_annotations')
       .delete()
-      .eq('id', req.params.id);
+      .eq('annotation->>id', req.params.id);
 
     if (error) {
       res.status(400).json({ error: error.message });

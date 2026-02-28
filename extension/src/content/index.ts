@@ -1,5 +1,6 @@
 import type {
   Annotation,
+  AnnotationFeedback,
   AnnotationType,
   ExtensionMessage,
   Intensity,
@@ -48,6 +49,7 @@ import { createStabilityWatcher } from "./stability.js";
 const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
 const currentAnnotations = new Map<string, Annotation[]>();
+const currentFeedback = new Map<string, AnnotationFeedback[]>();
 const regionByHash = new Map<string, DetectedRegion>();
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
@@ -228,6 +230,7 @@ async function handleStableRegion(
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   const region = regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
+  const feedback = currentFeedback.get(regionId) ?? [];
 
   // Filter visible types first
   const visible = annotations.filter((a) => visibleTypes.includes(a.type));
@@ -267,7 +270,8 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
     }
 
     renderAnnotation(annotation, stableRange);
-    addMarginNote(annotation, stableRange);
+    const noteFeedback = feedback.filter((f) => f.annotation_id === annotation.id);
+    addMarginNote(annotation, stableRange, noteFeedback);
   }
 }
 
@@ -297,17 +301,29 @@ onMessage((message: ExtensionMessage) => {
         .catch((err) => ({ success: false, error: String(err) }));
     }
     case "annotationsReady": {
-      const { regionId, annotations } = message.payload;
+      const { regionId, annotations, feedback } = message.payload;
       annotatedRegions.add(regionId);
       pendingRegions.delete(regionId);
-      currentAnnotations.set(regionId, annotations);
+      currentFeedback.set(regionId, feedback);
+
+      // Filter out annotations that have thumbs_down feedback
+      const thumbsDownIds = new Set(
+        feedback
+          .filter((f) => f.feedback_type === "thumbs_down")
+          .map((f) => f.annotation_id),
+      );
+      const filteredAnnotations = annotations.filter(
+        (a) => !thumbsDownIds.has(a.id),
+      );
+
+      currentAnnotations.set(regionId, filteredAnnotations);
       console.log(
-        `[Oddity 1] Received ${annotations.length} annotations for region ${regionId}`,
-        annotations,
+        `[Oddity 1] Received ${annotations.length} annotations for region ${regionId} (${filteredAnnotations.length} after feedback filter)`,
+        filteredAnnotations,
       );
 
       if (enabled) {
-        renderAnnotations(regionId, annotations);
+        renderAnnotations(regionId, filteredAnnotations);
       }
       break;
     }

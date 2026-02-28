@@ -76,6 +76,34 @@ Stores manually created annotations, scoped per user. The AI-generated annotatio
 
 ---
 
+### `annotation_feedback`
+
+Stores user feedback on annotations — thumbs up/down reactions and reply threads.
+
+| Column          | Type          | Notes                                                                     |
+| --------------- | ------------- | ------------------------------------------------------------------------- |
+| `id`            | `uuid` PK     | `gen_random_uuid()`                                                       |
+| `user_id`       | `uuid`        | FK → `profiles.id`                                                        |
+| `annotation_id` | `text`        | The JSONB annotation `id` (e.g., `ann_1` or `manual-...`)                |
+| `content_hash`  | `text`        | `sha256:<hex>` of page text at time of feedback                          |
+| `url`           | `text`        | Page URL                                                                  |
+| `feedback_type` | `text`        | `'thumbs_up'`, `'thumbs_down'`, or `'reply'`                            |
+| `reply_text`    | `text`        | nullable. Text content for `reply` feedback type                         |
+| `created_at`    | `timestamptz` | Auto `now()`                                                              |
+| `updated_at`    | `timestamptz` | Auto `now()`, updated by trigger                                         |
+
+**RLS policies (enabled):**
+
+- SELECT: `auth.uid() = user_id`
+- INSERT: authenticated users can insert (user_id must match their uid)
+- DELETE: `auth.uid() = user_id`
+
+**Indexes:**
+
+- `(user_id, url, content_hash)` — fast lookup of all feedback for a user on a given page
+
+---
+
 ### `site_adapters`
 
 Config registry for site-specific extraction rules. Seeded with 6 adapters. The extension fetches this on startup and every 6 hours.
@@ -180,7 +208,7 @@ If `stability_signal` is null, the content script falls back to a 1500ms Mutatio
 
 ### `update_updated_at()`
 
-Auto-trigger that sets `updated_at = now()` before any UPDATE on `user_annotations` and `site_adapters`.
+Auto-trigger that sets `updated_at = now()` before any UPDATE on `user_annotations`, `annotation_feedback`, and `site_adapters`.
 
 ```sql
 -- Defined with: SET search_path = '' (security hardened)

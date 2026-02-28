@@ -1,7 +1,8 @@
-import type { Annotation, AnnotationType } from '@oddity/shared';
+import type { Annotation, AnnotationFeedback, AnnotationType } from '@oddity/shared';
 import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '@oddity/shared';
 import { sendMessage } from '../../shared/messaging.js';
-import { emphasizeAnnotation, deemphasizeAnnotation } from './overlay.js';
+import { emphasizeAnnotation, deemphasizeAnnotation, removeAnnotation as removeAnnotationOverlay } from './overlay.js';
+import { removeAnchors } from './anchors.js';
 import { getThemeMode, onThemeChange, offThemeChange } from './theme-detector.js';
 
 // ─── Types ───
@@ -74,7 +75,7 @@ export function initMarginNotes(region: Element): void {
   startTracking();
 }
 
-export function addMarginNote(annotation: Annotation, range: Range): void {
+export function addMarginNote(annotation: Annotation, range: Range, feedback: AnnotationFeedback[] = []): void {
   if (!shadowRoot || !regionEl) return;
   // Deduplicate: skip if a note for this annotation already exists
   if (notes.some((n) => n.id === annotation.id)) return;
@@ -108,7 +109,7 @@ export function addMarginNote(annotation: Annotation, range: Range): void {
 
   noteIndex++;
 
-  const el = createNoteElement(annotation, side);
+  const el = createNoteElement(annotation, side, feedback);
   shadowRoot.appendChild(el);
 
   const note: MarginNote = {
@@ -220,9 +221,10 @@ export function destroyMarginNotes(): void {
 
 // ─── Note Element Construction ───
 
-function createNoteElement(annotation: Annotation, side: 'left' | 'right'): HTMLDivElement {
+function createNoteElement(annotation: Annotation, side: 'left' | 'right', feedback: AnnotationFeedback[] = []): HTMLDivElement {
   const color = ANNOTATION_COLORS[annotation.type];
   const label = ANNOTATION_LABELS[annotation.type];
+  const isManual = annotation.id.startsWith('manual-');
 
   const el = document.createElement('div');
   el.className = `oddity-note ${side}`;
@@ -276,23 +278,122 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right'): HTML
     expandedContent.appendChild(sectionEl);
   }
 
-  // Action buttons
-  const actions = document.createElement('div');
-  actions.className = 'note-actions';
+  if (isManual) {
+    // ── User annotation: Edit + Delete ──
+    const actions = document.createElement('div');
+    actions.className = 'note-actions';
 
-  const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'note-action-btn note-delete-btn';
-  deleteBtn.textContent = 'Delete';
-  deleteBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    sendMessage({
-      action: 'deleteAnnotation',
-      payload: { annotationId: annotation.id },
+    const editBtn = document.createElement('button');
+    editBtn.className = 'note-action-btn note-edit-btn';
+    editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      enterEditMode(el, annotation, textEl);
     });
-  });
 
-  actions.appendChild(deleteBtn);
-  expandedContent.appendChild(actions);
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'note-action-btn note-delete-btn';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sendMessage({
+        action: 'deleteAnnotation',
+        payload: { annotationId: annotation.id },
+      });
+    });
+
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+    expandedContent.appendChild(actions);
+  } else {
+    // ── AI annotation: Reply thread + Feedback row ──
+
+    // Reply thread
+    const replies = feedback.filter((f) => f.feedback_type === 'reply');
+    const repliesContainer = document.createElement('div');
+    repliesContainer.className = 'note-replies';
+    for (const reply of replies) {
+      const bubble = document.createElement('div');
+      bubble.className = 'note-reply-bubble';
+      bubble.textContent = reply.reply_text ?? '';
+      repliesContainer.appendChild(bubble);
+    }
+    expandedContent.appendChild(repliesContainer);
+
+    // Reply input bar
+    const replyBar = document.createElement('div');
+    replyBar.className = 'note-reply-bar';
+    const replyInput = document.createElement('input');
+    replyInput.type = 'text';
+    replyInput.placeholder = 'Reply...';
+    replyInput.className = 'note-reply-input';
+    replyInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter' && replyInput.value.trim()) {
+        submitReply(annotation, replyInput, repliesContainer);
+      }
+    });
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'note-reply-send';
+    sendBtn.innerHTML = '&#8593;'; // up arrow
+    sendBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (replyInput.value.trim()) {
+        submitReply(annotation, replyInput, repliesContainer);
+      }
+    });
+    replyBar.appendChild(replyInput);
+    replyBar.appendChild(sendBtn);
+    expandedContent.appendChild(replyBar);
+
+    // Feedback row (thumbs)
+    const feedbackRow = document.createElement('div');
+    feedbackRow.className = 'note-feedback-row';
+
+    const existingThumbsUp = feedback.find((f) => f.feedback_type === 'thumbs_up');
+
+    const thumbUp = document.createElement('button');
+    thumbUp.className = 'note-thumb-btn' + (existingThumbsUp ? ' active' : '');
+    thumbUp.innerHTML = '&#128077;'; // 👍
+    thumbUp.title = 'Helpful';
+    thumbUp.addEventListener('click', (e) => {
+      e.stopPropagation();
+      thumbUp.classList.toggle('active');
+      sendMessage({
+        action: 'saveFeedback',
+        payload: {
+          annotationId: annotation.id,
+          contentHash: getAnnotationContentHash(annotation),
+          url: window.location.href,
+          feedbackType: 'thumbs_up',
+        },
+      });
+    });
+
+    const thumbDown = document.createElement('button');
+    thumbDown.className = 'note-thumb-btn';
+    thumbDown.innerHTML = '&#128078;'; // 👎
+    thumbDown.title = 'Not helpful';
+    thumbDown.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Save feedback
+      sendMessage({
+        action: 'saveFeedback',
+        payload: {
+          annotationId: annotation.id,
+          contentHash: getAnnotationContentHash(annotation),
+          url: window.location.href,
+          feedbackType: 'thumbs_down',
+        },
+      });
+      // Animate hide
+      hideNoteWithAnimation(el, annotation.id);
+    });
+
+    feedbackRow.appendChild(thumbUp);
+    feedbackRow.appendChild(thumbDown);
+    expandedContent.appendChild(feedbackRow);
+  }
 
   el.appendChild(bracket);
   el.appendChild(labelEl);
@@ -318,6 +419,126 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right'): HTML
   });
 
   return el;
+}
+
+// ─── Interaction Helpers ───
+
+function getAnnotationContentHash(_annotation: Annotation): string {
+  // Get the content hash from the closest region element
+  const hashEl = document.querySelector('[data-oddity-hash]') as HTMLElement | null;
+  return hashEl?.dataset.oddityHash ?? '';
+}
+
+function submitReply(
+  annotation: Annotation,
+  input: HTMLInputElement,
+  container: HTMLDivElement,
+): void {
+  const text = input.value.trim();
+  if (!text) return;
+
+  // Add bubble immediately
+  const bubble = document.createElement('div');
+  bubble.className = 'note-reply-bubble';
+  bubble.textContent = text;
+  container.appendChild(bubble);
+  container.scrollTop = container.scrollHeight;
+
+  // Send to background
+  sendMessage({
+    action: 'saveFeedback',
+    payload: {
+      annotationId: annotation.id,
+      contentHash: getAnnotationContentHash(annotation),
+      url: window.location.href,
+      feedbackType: 'reply',
+      replyText: text,
+    },
+  });
+
+  input.value = '';
+}
+
+function enterEditMode(
+  noteEl: HTMLDivElement,
+  annotation: Annotation,
+  textEl: HTMLDivElement,
+): void {
+  const textarea = document.createElement('textarea');
+  textarea.className = 'note-edit-textarea';
+  textarea.value = annotation.content.note;
+  textarea.rows = 3;
+  textarea.addEventListener('keydown', (e) => e.stopPropagation());
+
+  const editActions = document.createElement('div');
+  editActions.className = 'note-edit-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'note-save-btn';
+  saveBtn.textContent = 'Save';
+  saveBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const newNote = textarea.value.trim();
+    if (!newNote) return;
+
+    const updatedAnnotation = {
+      ...annotation,
+      content: { ...annotation.content, note: newNote },
+    };
+
+    sendMessage({
+      action: 'updateAnnotation',
+      payload: { annotationId: annotation.id, annotation: updatedAnnotation },
+    }).then(() => {
+      annotation.content.note = newNote;
+      textEl.textContent = newNote;
+      exitEditMode(noteEl, textarea, editActions, textEl);
+    });
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'note-cancel-btn';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exitEditMode(noteEl, textarea, editActions, textEl);
+  });
+
+  editActions.appendChild(saveBtn);
+  editActions.appendChild(cancelBtn);
+
+  textEl.style.display = 'none';
+  textEl.parentElement!.insertBefore(textarea, textEl.nextSibling);
+  textEl.parentElement!.insertBefore(editActions, textarea.nextSibling);
+  textarea.focus();
+}
+
+function exitEditMode(
+  _noteEl: HTMLDivElement,
+  textarea: HTMLTextAreaElement,
+  editActions: HTMLDivElement,
+  textEl: HTMLDivElement,
+): void {
+  textarea.remove();
+  editActions.remove();
+  textEl.style.display = '';
+}
+
+function hideNoteWithAnimation(el: HTMLDivElement, annotationId: string): void {
+  el.classList.add('hiding');
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    removeMarginNote(annotationId);
+    removeAnnotationOverlay(annotationId);
+    removeAnchors(annotationId);
+  };
+
+  el.addEventListener('transitionend', cleanup, { once: true });
+  // Safety fallback
+  setTimeout(cleanup, 400);
 }
 
 function createSection(labelText: string, content: string): HTMLDivElement {
@@ -617,5 +838,183 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="dark"]) .note-delete-btn:hover {
     background: #451a1a;
+  }
+
+  /* ── Hide animation ── */
+  .oddity-note.hiding {
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+  }
+
+  /* ── Reply thread ── */
+  .note-replies {
+    max-height: 120px;
+    overflow-y: auto;
+    margin-top: 6px;
+  }
+
+  .note-reply-bubble {
+    background: #f1f5f9;
+    border-radius: 10px;
+    padding: 4px 8px;
+    font-size: 11px;
+    margin-bottom: 3px;
+    word-break: break-word;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  :host([data-theme="dark"]) .note-reply-bubble {
+    background: #334155;
+    color: #e2e8f0;
+  }
+
+  /* ── Reply input bar ── */
+  .note-reply-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .note-reply-input {
+    all: unset;
+    flex: 1;
+    font-size: 11px;
+    padding: 4px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #fff;
+    color: #1a1a1a;
+  }
+
+  :host([data-theme="dark"]) .note-reply-input {
+    border-color: #475569;
+    background: #1e293b;
+    color: #e2e8f0;
+  }
+
+  .note-reply-send {
+    all: unset;
+    cursor: pointer;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #7c3aed;
+    color: #fff;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+
+  .note-reply-send:hover {
+    opacity: 0.85;
+  }
+
+  /* ── Feedback row ── */
+  .note-feedback-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    justify-content: flex-start;
+  }
+
+  .note-thumb-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+    padding: 2px;
+  }
+
+  .note-thumb-btn:hover {
+    opacity: 0.7;
+  }
+
+  .note-thumb-btn.active {
+    opacity: 1;
+  }
+
+  /* ── Edit mode ── */
+  .note-edit-textarea {
+    all: unset;
+    display: block;
+    width: 100%;
+    font-size: 12px;
+    padding: 4px 6px;
+    border: 1px solid #7c3aed;
+    border-radius: 4px;
+    font-family: 'Kalam', cursive, system-ui, sans-serif;
+    resize: vertical;
+    min-height: 48px;
+    box-sizing: border-box;
+    background: #fff;
+    color: #1a1a1a;
+  }
+
+  :host([data-theme="dark"]) .note-edit-textarea {
+    background: #1e293b;
+    color: #e2e8f0;
+    border-color: #7c3aed;
+  }
+
+  .note-edit-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+    justify-content: flex-end;
+  }
+
+  .note-save-btn, .note-cancel-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: system-ui, -apple-system, sans-serif;
+    transition: background 0.15s;
+  }
+
+  .note-save-btn {
+    color: #7c3aed;
+  }
+
+  .note-save-btn:hover {
+    background: #f5f3ff;
+  }
+
+  .note-cancel-btn {
+    color: #6b7280;
+  }
+
+  .note-cancel-btn:hover {
+    background: #f3f4f6;
+  }
+
+  :host([data-theme="dark"]) .note-save-btn:hover {
+    background: #2d2054;
+  }
+
+  :host([data-theme="dark"]) .note-cancel-btn:hover {
+    background: #334155;
+  }
+
+  .note-edit-btn {
+    color: #7c3aed;
+  }
+
+  .note-edit-btn:hover {
+    background: #f5f3ff;
+  }
+
+  :host([data-theme="dark"]) .note-edit-btn:hover {
+    background: #2d2054;
   }
 `;

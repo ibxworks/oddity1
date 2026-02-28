@@ -3,6 +3,8 @@ import {
   type AnnotateRequest,
   type AnnotationResponse,
   type Annotation,
+  type AnnotationFeedback,
+  type FeedbackType,
   type SiteAdapter,
   type UserPreferences,
 } from '@oddity/shared';
@@ -109,6 +111,50 @@ export async function deleteAnnotation(id: string): Promise<void> {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error(`deleteAnnotation failed: ${res.status}`);
+}
+
+export async function updateAnnotation(
+  id: string,
+  annotation: Annotation,
+): Promise<Annotation> {
+  const res = await authFetch(`/api/annotations/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ annotation }),
+  });
+  if (!res.ok) throw new Error(`updateAnnotation failed: ${res.status}`);
+  return res.json() as Promise<Annotation>;
+}
+
+export async function getFeedback(
+  url: string,
+  contentHash: string,
+): Promise<AnnotationFeedback[]> {
+  const params = new URLSearchParams({ url, content_hash: contentHash });
+  const res = await authFetch(`/api/annotations/feedback?${params.toString()}`);
+  if (!res.ok) throw new Error(`getFeedback failed: ${res.status}`);
+  return res.json() as Promise<AnnotationFeedback[]>;
+}
+
+export async function saveFeedback(data: {
+  annotation_id: string;
+  content_hash: string;
+  url: string;
+  feedback_type: FeedbackType;
+  reply_text?: string;
+}): Promise<AnnotationFeedback> {
+  const res = await authFetch('/api/annotations/feedback', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`saveFeedback failed: ${res.status}`);
+  return res.json() as Promise<AnnotationFeedback>;
+}
+
+export async function deleteFeedback(id: string): Promise<void> {
+  const res = await authFetch(`/api/annotations/feedback/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`deleteFeedback failed: ${res.status}`);
 }
 
 export async function getAdapters(): Promise<SiteAdapter[]> {
