@@ -89,7 +89,7 @@
         transition: transform 0.2s;
       }
       .toggle input:checked + .slider {
-        background: #22c55e;
+        background: #2563eb;
       }
       .toggle input:checked + .slider::before {
         transform: translateX(16px);
@@ -157,9 +157,9 @@
         background: #f9fafb;
       }
       .intensity-btn.active {
-        background: #22c55e;
+        background: #2563eb;
         color: #fff;
-        border-color: #22c55e;
+        border-color: #2563eb;
       }
 
       /* ── Type Filters ── */
@@ -183,7 +183,7 @@
         background: #f3f4f6;
       }
       .type-filter input {
-        accent-color: #22c55e;
+        accent-color: #2563eb;
       }
       .type-swatch {
         width: 8px;
@@ -213,12 +213,12 @@
         border-color: #d1d5db;
       }
       .btn-primary {
-        background: #22c55e;
+        background: #2563eb;
         color: #fff;
-        border-color: #22c55e;
+        border-color: #2563eb;
       }
       .btn-primary:hover {
-        background: #16a34a;
+        background: #1d4ed8;
       }
       .btn-primary:disabled {
         opacity: 0.6;
@@ -250,8 +250,8 @@
         color: #111;
       }
       .auth-input:focus {
-        border-color: #22c55e;
-        box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.1);
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
       }
       .auth-input::placeholder {
         color: #9ca3af;
@@ -282,7 +282,7 @@
         color: #9ca3af;
       }
       .auth-toggle a {
-        color: #22c55e;
+        color: #2563eb;
         text-decoration: none;
         cursor: pointer;
         font-weight: 500;
@@ -318,7 +318,7 @@
         width: 24px;
         height: 24px;
         border-radius: 50%;
-        background: #22c55e;
+        background: #2563eb;
         color: #fff;
         font-size: 11px;
         font-weight: 600;
@@ -341,10 +341,18 @@
         border-radius: 10px;
         background: #f3f4f6;
         color: #9ca3af;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .tier-badge:hover {
+        background: #e5e7eb;
       }
       .tier-badge.pro {
-        background: #f0fdf4;
-        color: #22c55e;
+        background: #eff6ff;
+        color: #2563eb;
+      }
+      .tier-badge.pro:hover {
+        background: #dbeafe;
       }
 
       /* ── Profile Popover ── */
@@ -378,6 +386,12 @@
         margin-bottom: 12px;
         padding-bottom: 12px;
         border-bottom: 1px solid #eee;
+        text-decoration: none;
+        cursor: pointer;
+        display: block;
+      }
+      .profile-popover-tier:hover {
+        color: #2563eb;
       }
       .profile-popover-signout {
         display: block;
@@ -462,8 +476,8 @@
         background: #fff;
       }
       .export-input:focus {
-        border-color: #22c55e;
-        box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.1);
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
       }
       .export-input:disabled {
         background: #f9fafb;
@@ -480,8 +494,8 @@
         top: 50%;
         transform: translateY(-50%);
         font-size: 10px;
-        color: #22c55e;
-        background: #f0fdf4;
+        color: #2563eb;
+        background: #eff6ff;
         padding: 2px 6px;
         border-radius: 4px;
         font-weight: 600;
@@ -659,15 +673,14 @@
           <span class="profile-avatar" id="profile-avatar">?</span>
           <span class="profile-name" id="profile-name">Loading...</span>
         </button>
-        <span class="tier-badge" id="tier-badge">FREE</span>
-      </div>
-
-      <!-- Profile Popover -->
-      <div class="profile-popover" id="profile-popover" style="display: none">
-        <div class="profile-popover-name" id="popover-name"></div>
-        <div class="profile-popover-email" id="popover-email"></div>
-        <div class="profile-popover-tier" id="popover-tier">Free Plan</div>
-        <button class="profile-popover-signout" id="popover-sign-out">Sign out</button>
+        <a class="tier-badge" id="tier-badge" href="https://oddity1.com/plans" target="_blank">FREE</a>
+        <!-- Profile Popover -->
+        <div class="profile-popover" id="profile-popover" style="display: none">
+          <div class="profile-popover-name" id="popover-name"></div>
+          <div class="profile-popover-email" id="popover-email"></div>
+          <a class="profile-popover-tier" id="popover-tier" href="https://oddity1.com/plans" target="_blank">Free Plan</a>
+          <button class="profile-popover-signout" id="popover-sign-out">Sign out</button>
+        </div>
       </div>
     </div>
     <!-- /main-content -->
