@@ -226,6 +226,23 @@ async function handleStableRegion(
   }
 }
 
+// ─── Annotation Deletion ───
+
+function handleAnnotationDeleted(annotationId: string): void {
+  // Remove from state
+  for (const [regionId, annotations] of currentAnnotations) {
+    const filtered = annotations.filter((a) => a.id !== annotationId);
+    if (filtered.length !== annotations.length) {
+      currentAnnotations.set(regionId, filtered);
+    }
+  }
+  // Remove from DOM
+  removeAnchors(annotationId);
+  removeMarginNote(annotationId);
+  // Re-render overlay
+  rerenderAll();
+}
+
 // ─── Rendering ───
 
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
@@ -272,7 +289,7 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
 
     renderAnnotation(annotation, stableRange);
     const noteFeedback = feedback.filter((f) => f.annotation_id === annotation.id);
-    addMarginNote(annotation, stableRange, noteFeedback);
+    addMarginNote(annotation, stableRange, noteFeedback, handleAnnotationDeleted);
   }
 }
 
@@ -307,24 +324,14 @@ onMessage((message: ExtensionMessage) => {
       pendingRegions.delete(regionId);
       currentFeedback.set(regionId, feedback);
 
-      // Filter out annotations that have thumbs_down feedback
-      const thumbsDownIds = new Set(
-        feedback
-          .filter((f) => f.feedback_type === "thumbs_down")
-          .map((f) => f.annotation_id),
-      );
-      const filteredAnnotations = annotations.filter(
-        (a) => !thumbsDownIds.has(a.id),
-      );
-
-      currentAnnotations.set(regionId, filteredAnnotations);
+      currentAnnotations.set(regionId, annotations);
       console.log(
-        `[Oddity 1] Received ${annotations.length} annotations for region ${regionId} (${filteredAnnotations.length} after feedback filter)`,
-        filteredAnnotations,
+        `[Oddity 1] Received ${annotations.length} annotations for region ${regionId}`,
+        annotations,
       );
 
       if (enabled) {
-        renderAnnotations(regionId, filteredAnnotations);
+        renderAnnotations(regionId, annotations);
       }
       break;
     }
@@ -383,19 +390,7 @@ onMessage((message: ExtensionMessage) => {
     }
 
     case "deleteAnnotation": {
-      const { annotationId } = message.payload;
-      // Remove from state
-      for (const [regionId, annotations] of currentAnnotations) {
-        const filtered = annotations.filter((a) => a.id !== annotationId);
-        if (filtered.length !== annotations.length) {
-          currentAnnotations.set(regionId, filtered);
-        }
-      }
-      // Remove from DOM
-      removeAnchors(annotationId);
-      removeMarginNote(annotationId);
-      // Re-render overlay (overlay.removeAnnotation handles its own cleanup)
-      rerenderAll();
+      handleAnnotationDeleted(message.payload.annotationId);
       break;
     }
   }

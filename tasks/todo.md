@@ -51,6 +51,15 @@
 13. [x] No host page breakage — pointer-events:none overlay, shadow DOM popovers
 14. [x] contenteditable exclusion — isInsideEditable check in anchors.ts
 
+## Color Consolidation + Delete Fix + AI Annotation Edit/Delete (Feb 28, 2026)
+
+- [x] Color consolidation: caveat → violet (#7C3AED), vocabulary → teal (#0D9488)
+- [x] Fix delete not disappearing: onDelete callback for immediate DOM cleanup
+- [x] Remove thumbs-down hide behavior (annotation stays visible, badge toggles)
+- [x] Backend: upsert (PUT) + tombstone (DELETE) + dedup (GET)
+- [x] AI annotation edit/delete buttons (shared helper, url/contentHash in payloads)
+- [x] Reaction badge in collapsed margin notes (👍/👎 emoji next to label)
+
 ## Build Verification
 - [x] `npm install` succeeds
 - [x] `npm run type-check` passes (all 3 workspaces, zero errors)

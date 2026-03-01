@@ -149,6 +149,8 @@ export type ExtensionMessage =
       action: 'deleteAnnotation';
       payload: {
         annotationId: string;
+        url: string;
+        contentHash: string;
       };
     }
   | {
@@ -199,5 +201,5 @@ export type ExtensionMessage =
   | { action: 'getUserTierResult'; payload: { tier: UserTier } }
   | { action: 'saveFeedback'; payload: { annotationId: string; contentHash: string; url: string; feedbackType: FeedbackType; replyText?: string } }
   | { action: 'deleteFeedback'; payload: { feedbackId: string } }
-  | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation } }
+  | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation; url: string; contentHash: string } }
   | { action: 'sendUserFeedback'; payload: { message: string } };

@@ -146,7 +146,8 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "deleteAnnotation": {
-          await apiDeleteAnnotation(message.payload.annotationId);
+          const { annotationId: delId, url: delUrl, contentHash: delHash } = message.payload;
+          await apiDeleteAnnotation(delId, delUrl, delHash);
           return { success: true };
         }
 
@@ -184,9 +185,9 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "updateAnnotation": {
-          const { annotationId: annId, annotation: updatedAnn } =
+          const { annotationId: annId, annotation: updatedAnn, url: updUrl, contentHash: updHash } =
             message.payload;
-          const result = await apiUpdateAnnotation(annId, updatedAnn);
+          const result = await apiUpdateAnnotation(annId, updatedAnn, updUrl, updHash);
           return result;
         }
 

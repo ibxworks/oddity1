@@ -106,9 +106,10 @@ export async function saveAnnotation(
   return res.json() as Promise<Annotation>;
 }
 
-export async function deleteAnnotation(id: string): Promise<void> {
+export async function deleteAnnotation(id: string, url?: string, contentHash?: string): Promise<void> {
   const res = await authFetch(`/api/annotations/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    body: JSON.stringify({ url, content_hash: contentHash }),
   });
   if (!res.ok) throw new Error(`deleteAnnotation failed: ${res.status}`);
 }
@@ -116,10 +117,12 @@ export async function deleteAnnotation(id: string): Promise<void> {
 export async function updateAnnotation(
   id: string,
   annotation: Annotation,
+  url?: string,
+  contentHash?: string,
 ): Promise<Annotation> {
   const res = await authFetch(`/api/annotations/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify({ annotation }),
+    body: JSON.stringify({ annotation, url, content_hash: contentHash }),
   });
   if (!res.ok) throw new Error(`updateAnnotation failed: ${res.status}`);
   return res.json() as Promise<Annotation>;

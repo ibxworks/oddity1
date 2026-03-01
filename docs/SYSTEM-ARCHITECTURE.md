@@ -150,12 +150,12 @@ Responsibilities:
 - Render annotation overlay layer (highlight/underline rectangles via `getClientRects()`).
 - Inject minimal invisible anchor `<span>` elements for hover/click detection.
 - Render Shadow DOM popover on hover with annotation details.
-- **Render margin notes**: User-added annotations appear in right-side margin of page.
+- **Render margin notes system**: Render all annotations (AI + user) as expandable cards in right-side margin with full interaction support (edit, delete, feedback, replies).
 - Handle scroll-based progressive annotation loading.
 - Handle manual annotation creation (floating button + context menu).
 - Apply annotation-type-adaptive visual styles.
-- **Detect and apply dark mode**: Automatically adjusts annotation colors based on page theme (light/dark).
-- Track scroll and resize to reposition overlay rectangles.
+- **Detect and apply dark mode**: Automatically adjusts annotation colors based on page theme (light/dark). Margin notes also adapt to theme.
+- Track scroll and resize to reposition overlay rectangles and margin notes.
 
 #### Content Detection Pipeline
 
@@ -222,9 +222,13 @@ The rendering engine avoids mutating the host DOM for visual effects:
    - Dismissal on mouse-out with a small delay to prevent flicker
 
 4. **Margin Notes with Interactions**: User-created and AI-generated annotations appear in right-side margin of the page as compact note cards. Each card shows the annotation type icon, note preview, and action buttons. Margin notes auto-scroll to stay visible when corresponding text is in viewport.
-   - **User annotations**: Edit button (in-place textarea) and Delete button
-   - **AI annotations**: Thumbs up/down feedback buttons for helpfulness, reply thread (chat-style bubbles), and reply input bar
-   - **Thumbs down**: Triggers hide animation (fade + slide) and removes annotation from page (persists in backend, won't reappear on reload)
+   - **User annotations**: Type label with user's first name badge (gray background) + preview text. Expanded view shows full text, Edit button (in-place textarea), and Delete button. Delete removes annotation immediately from DOM and persists deletion in backend.
+   - **AI annotations**: Type label with reaction badge (👍 or 👎 if feedback given) + preview text. Expanded view includes full content, "Why it matters", follow-up questions, suggestions, reply thread, feedback buttons, and Edit/Delete buttons.
+   - **Thumbs feedback (mutually exclusive radio-toggle behavior)**:
+     - Click 👍 → activates thumbs up, deactivates thumbs down, saves feedback
+     - Click 👎 → activates thumbs down, deactivates thumbs up, saves feedback
+     - Click active thumb again → deactivates it, deletes feedback
+     - Reaction badge updates in real-time and appears next to type label in collapsed state
 
 5. **Dark Mode Support**: The rendering engine detects system/page theme and applies appropriate text colors and backgrounds. Annotation colors are adjusted for contrast in dark mode — lighter highlights, inverted text colors, and reduced opacity overlays to prevent text obscuration.
 
@@ -629,6 +633,16 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
     url: string,
     contentHash: string,
     annotation: Annotation
+  }
+}
+
+// Content → Background: delete annotation
+{
+  action: "deleteAnnotation",
+  payload: {
+    annotationId: string,
+    url: string,
+    contentHash: string
   }
 }
 

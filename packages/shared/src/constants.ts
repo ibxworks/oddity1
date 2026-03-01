@@ -33,8 +33,8 @@ export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
   recall: '#0D9488',              // teal 600
   provoking_question: '#7C3AED',  // violet 600
   insight: '#2563EB',             // blue 600
-  caveat: '#EA580C',              // orange 600
-  vocabulary: '#16A34A',          // green 600
+  caveat: '#7C3AED',              // violet 600 (grouped with provoking_question)
+  vocabulary: '#0D9488',          // teal 600 (grouped with recall)
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {

@@ -193,9 +193,13 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 - **Streaming support** for real-time chatbot pages (ChatGPT, Claude) with stability detection
 - **In-place overlays**: highlights, underlines, and margin-note annotations with type-specific visuals
 - **Dark mode support**: Automatically detects system theme; annotations adapt colors for readability
-- **Margin notes**: User-added annotations appear in right-side margin with edit/delete controls
+- **Margin notes system**: All annotations (AI + user) appear in right-side margin as expandable cards
 - **Popover details**: Hover annotations to see full notes with "why it matters" and follow-up questions
-- **Annotation interactions**: Thumbs up/down feedback on AI annotations, reply threads, and in-place editing for user notes
+- **Rich annotation interactions**:
+  - **User annotations**: Edit (inline textarea) + Delete buttons
+  - **AI annotations**: Thumbs up/down feedback (mutually exclusive, radio-button style), reply threads with chat bubbles, reply input bar
+  - **Feedback tracking**: Feedback persists in backend; clicking active thumb again undoes the feedback
+- **User name badges**: Manual annotations show user's first name next to the type label
 
 ### User Control
 - **Per-page stats**: See count of each annotation type for current page

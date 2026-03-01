@@ -115,13 +115,27 @@ Full schema: [docs/database.md](./database.md)
 | `underline`  | Teal underline              | Important statement     | ✓ |
 | `question`   | Purple dotted underline + ? | Probing question        | ✓ |
 | `insight`    | Blue background             | "Why this matters"      | ✓ |
-| `caveat`     | Orange wavy underline       | Counterpoint/limitation | ✓ |
-| `vocabulary` | Green dotted underline      | Term definition         | ✓ |
+| `caveat`     | Violet wavy underline       | Counterpoint/limitation | ✓ |
+| `vocabulary` | Teal dotted underline       | Term definition         | ✓ |
 
 **Margin notes**: Annotations appear in the right margin as expandable cards.
-- **User annotations (manual)**: Edit button (inline textarea) + Delete button
-- **AI annotations**: Thumbs up/down feedback buttons, reply thread with chat-style bubbles, and reply input bar
-- **Thumbs down**: Hides annotation with fade-out animation; persists feedback in backend so it won't reappear on reload
+
+**User annotations (manual)**:
+- Type label + **user name badge** (first name, gray background)
+- Preview text (truncated to 2 lines, collapsed)
+- Expanded view: full text, Edit button (inline textarea), Delete button
+- Delete removes the annotation immediately and persists in backend
+
+**AI annotations**:
+- Type label + reaction badge (👍 or 👎 if feedback given)
+- Preview text (truncated to 2 lines, collapsed)
+- Expanded view includes: full text, "Why it matters", "Question", suggestions, reply thread, feedback buttons, Edit/Delete buttons
+- **Reply thread**: Chat-style bubbles with user replies + reply input bar
+- **Thumbs feedback (mutually exclusive)**:
+  - Click 👍 → activates thumbs up, deactivates thumbs down, saves feedback, shows 👍 badge
+  - Click 👎 → activates thumbs down, deactivates thumbs up, saves feedback, shows 👎 badge
+  - Click active thumb again → deactivates it, deletes feedback, removes badge
+- Badge appears next to type label when collapsed, updates in real-time
 
 ---
 

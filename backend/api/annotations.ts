@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
 
     const cachedAnnotations = cached?.flatMap((row) => row.annotations) ?? [];
 
-    // Fetch user manual annotations (RLS-protected)
+    // Fetch user annotations (RLS-protected) — includes edits, manual, and tombstones
     const token = req.headers.authorization?.slice(7) ?? '';
     const userClient = createUserClient(token);
     const { data: userAnns } = await userClient
@@ -32,10 +32,24 @@ router.get('/', async (req, res) => {
 
     const userAnnotations = userAnns?.map((row) => row.annotation) ?? [];
 
+    // Dedup: user version wins over cached version (by annotation ID)
+    // Filter out tombstones (deleted: true)
+    const userAnnotationIds = new Set(userAnnotations.map((a: any) => a.id));
+    const tombstoneIds = new Set(
+      userAnnotations.filter((a: any) => a.deleted === true).map((a: any) => a.id)
+    );
+
+    const dedupedCached = cachedAnnotations.filter(
+      (a: any) => !userAnnotationIds.has(a.id)
+    );
+    const liveUserAnnotations = userAnnotations.filter(
+      (a: any) => a.deleted !== true
+    );
+
     res.json({
       success: true,
       cached: cachedAnnotations.length > 0,
-      annotations: [...cachedAnnotations, ...userAnnotations],
+      annotations: [...dedupedCached, ...liveUserAnnotations],
     });
   } catch (err) {
     console.error('[annotations GET] Error:', err);
@@ -78,10 +92,10 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/annotations/:id — update user-owned annotation
+// PUT /api/annotations/:id — upsert annotation (update if exists, insert if not)
 router.put('/:id', async (req, res) => {
   try {
-    const { annotation } = req.body;
+    const { annotation, url, content_hash } = req.body;
     if (!annotation) {
       res.status(400).json({ error: 'annotation required' });
       return;
@@ -90,6 +104,7 @@ router.put('/:id', async (req, res) => {
     const token = req.headers.authorization?.slice(7) ?? '';
     const userClient = createUserClient(token);
 
+    // Try UPDATE first
     const { data, error } = await userClient
       .from('user_annotations')
       .update({ annotation })
@@ -97,32 +112,78 @@ router.put('/:id', async (req, res) => {
       .select()
       .single();
 
-    if (error) {
-      res.status(400).json({ error: error.message });
+    if (data) {
+      res.json(data.annotation);
       return;
     }
 
-    res.json(data.annotation);
+    // No existing row — INSERT (for AI annotation edits)
+    if (!url || !content_hash) {
+      res.status(400).json({ error: 'url and content_hash required for new annotation edit' });
+      return;
+    }
+
+    const { data: inserted, error: insertError } = await userClient
+      .from('user_annotations')
+      .insert({
+        user_id: req.user!.id,
+        url,
+        content_hash,
+        annotation,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      res.status(400).json({ error: insertError.message });
+      return;
+    }
+
+    res.json(inserted.annotation);
   } catch (err) {
     console.error('[annotations PUT] Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// DELETE /api/annotations/:id — delete user-owned annotation
+// DELETE /api/annotations/:id — delete annotation (or tombstone AI annotation)
 router.delete('/:id', async (req, res) => {
   try {
     const token = req.headers.authorization?.slice(7) ?? '';
     const userClient = createUserClient(token);
 
-    const { error } = await userClient
+    // Try deleting from user_annotations first (manual annotations)
+    const { data: deleted } = await userClient
       .from('user_annotations')
       .delete()
-      .eq('annotation->>id', req.params.id);
+      .eq('annotation->>id', req.params.id)
+      .select();
 
-    if (error) {
-      res.status(400).json({ error: error.message });
+    if (deleted && deleted.length > 0) {
+      res.json({ success: true });
       return;
+    }
+
+    // No user_annotation found — this is an AI annotation.
+    // Insert a tombstone so it doesn't reappear from cache.
+    const { url, content_hash } = req.body ?? {};
+    if (!url || !content_hash) {
+      // Best-effort: without url/content_hash we can't insert a tombstone
+      res.json({ success: true });
+      return;
+    }
+
+    const { error: insertError } = await userClient
+      .from('user_annotations')
+      .insert({
+        user_id: req.user!.id,
+        url,
+        content_hash,
+        annotation: { id: req.params.id, deleted: true },
+      });
+
+    if (insertError) {
+      console.error('[annotations DELETE] Tombstone insert error:', insertError);
     }
 
     res.json({ success: true });

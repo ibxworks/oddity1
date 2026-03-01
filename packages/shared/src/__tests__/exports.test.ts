@@ -33,6 +33,9 @@ describe('@oddity/shared exports', () => {
     expect(shared.ANNOTATION_COLORS.highlight).toBe('#F59E0B');
     expect(shared.ANNOTATION_COLORS.recall).toBe('#0D9488');
     expect(shared.ANNOTATION_COLORS.provoking_question).toBe('#7C3AED');
+    expect(shared.ANNOTATION_COLORS.caveat).toBe('#7C3AED');
+    expect(shared.ANNOTATION_COLORS.vocabulary).toBe('#0D9488');
+    expect(shared.ANNOTATION_COLORS.insight).toBe('#2563EB');
   });
 
   it('exports annotation labels for all 6 types', () => {

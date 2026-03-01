@@ -46,6 +46,7 @@ let collapseTimer: ReturnType<typeof setTimeout> | null = null;
 let needsRedraw = false;
 let fontLink: HTMLLinkElement | null = null;
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
+let userName: string | null = null;
 
 const NOTE_MAX_WIDTH = 180;
 const NOTE_EXPANDED_WIDTH = 220;
@@ -109,12 +110,18 @@ export function initMarginNotes(region: Element): void {
   });
 
   startTracking();
+
+  // Fetch user profile for name badge on manual annotations
+  sendMessage({ action: "getProfile" } as any).then((p: any) => {
+    userName = p?.display_name?.split(" ")[0] ?? null;
+  }).catch(() => {});
 }
 
 export function addMarginNote(
   annotation: Annotation,
   range: Range,
   feedback: AnnotationFeedback[] = [],
+  onDelete?: (annotationId: string) => void,
 ): void {
   if (!shadowRoot || !regionEl) return;
   // Deduplicate: skip if a note for this annotation already exists
@@ -150,7 +157,7 @@ export function addMarginNote(
 
   noteIndex++;
 
-  const el = createNoteElement(annotation, side, feedback);
+  const el = createNoteElement(annotation, side, feedback, onDelete);
   shadowRoot.appendChild(el);
 
   const note: MarginNote = {
@@ -276,6 +283,7 @@ function createNoteElement(
   annotation: Annotation,
   side: "left" | "right",
   feedback: AnnotationFeedback[] = [],
+  onDelete?: (annotationId: string) => void,
 ): HTMLDivElement {
   const color = ANNOTATION_COLORS[annotation.type];
   const label = ANNOTATION_LABELS[annotation.type];
@@ -296,6 +304,25 @@ function createNoteElement(
   labelEl.className = "note-label";
   labelEl.style.color = color;
   labelEl.textContent = label;
+
+  // User name badge for manual annotations
+  if (isManual && userName) {
+    const userBadge = document.createElement("span");
+    userBadge.className = "note-user-badge";
+    userBadge.textContent = userName;
+    labelEl.appendChild(userBadge);
+  }
+
+  // Reaction badge (collapsed state indicator)
+  const existingThumbUp = feedback.find((f) => f.feedback_type === "thumbs_up");
+  const existingThumbDown = feedback.find((f) => f.feedback_type === "thumbs_down");
+  let reactionBadge: HTMLSpanElement | null = null;
+  if (existingThumbUp || existingThumbDown) {
+    reactionBadge = document.createElement("span");
+    reactionBadge.className = "note-reaction-badge";
+    reactionBadge.textContent = existingThumbUp ? "\u{1F44D}" : "\u{1F44E}";
+    labelEl.appendChild(reactionBadge);
+  }
 
   // Note text (collapsed: truncated)
   const textEl = document.createElement("div");
@@ -339,8 +366,8 @@ function createNoteElement(
     expandedContent.appendChild(sectionEl);
   }
 
-  if (isManual) {
-    // ── User annotation: Edit + Delete ──
+  // ── Edit + Delete actions (shared by both manual and AI annotations) ──
+  const createEditDeleteActions = (): HTMLDivElement => {
     const actions = document.createElement("div");
     actions.className = "note-actions";
 
@@ -357,17 +384,29 @@ function createNoteElement(
     deleteBtn.textContent = "Delete";
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      // Immediate DOM removal
+      if (onDelete) onDelete(annotation.id);
+      // Fire-and-forget backend call
       sendMessage({
         action: "deleteAnnotation",
-        payload: { annotationId: annotation.id },
+        payload: {
+          annotationId: annotation.id,
+          url: window.location.href,
+          contentHash: getAnnotationContentHash(annotation),
+        },
       });
     });
 
     actions.appendChild(editBtn);
     actions.appendChild(deleteBtn);
-    expandedContent.appendChild(actions);
+    return actions;
+  };
+
+  if (isManual) {
+    // ── User annotation: Edit + Delete ──
+    expandedContent.appendChild(createEditDeleteActions());
   } else {
-    // ── AI annotation: Reply thread + Feedback row ──
+    // ── AI annotation: Reply thread + Feedback row + Edit/Delete ──
 
     // Reply thread
     const replies = feedback.filter((f) => f.feedback_type === "reply");
@@ -411,51 +450,86 @@ function createNoteElement(
     const feedbackRow = document.createElement("div");
     feedbackRow.className = "note-feedback-row";
 
-    const existingThumbsUp = feedback.find(
-      (f) => f.feedback_type === "thumbs_up",
-    );
+    let currentFeedbackId: string | null = existingThumbUp?.id ?? existingThumbDown?.id ?? null;
 
     const thumbUp = document.createElement("button");
-    thumbUp.className = "note-thumb-btn" + (existingThumbsUp ? " active" : "");
+    thumbUp.className = "note-thumb-btn" + (existingThumbUp ? " active" : "");
     thumbUp.innerHTML = "&#128077;"; // 👍
     thumbUp.title = "Helpful";
     thumbUp.addEventListener("click", (e) => {
       e.stopPropagation();
-      thumbUp.classList.toggle("active");
-      sendMessage({
-        action: "saveFeedback",
-        payload: {
-          annotationId: annotation.id,
-          contentHash: getAnnotationContentHash(annotation),
-          url: window.location.href,
-          feedbackType: "thumbs_up",
-        },
-      });
+      if (thumbUp.classList.contains("active")) {
+        // Undo thumbs up
+        thumbUp.classList.remove("active");
+        updateReactionBadge(labelEl, reactionBadge, "thumbs_up", false);
+        if (currentFeedbackId) {
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
+          currentFeedbackId = null;
+        }
+      } else {
+        // Activate thumbs up, deactivate thumbs down
+        thumbUp.classList.add("active");
+        thumbDown.classList.remove("active");
+        updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
+        if (currentFeedbackId) {
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
+        }
+        sendMessage({
+          action: "saveFeedback",
+          payload: {
+            annotationId: annotation.id,
+            contentHash: getAnnotationContentHash(annotation),
+            url: window.location.href,
+            feedbackType: "thumbs_up",
+          },
+        }).then((fb: any) => {
+          if (fb?.id) currentFeedbackId = fb.id;
+        });
+      }
     });
 
     const thumbDown = document.createElement("button");
-    thumbDown.className = "note-thumb-btn";
+    thumbDown.className = "note-thumb-btn" + (existingThumbDown ? " active" : "");
     thumbDown.innerHTML = "&#128078;"; // 👎
     thumbDown.title = "Not helpful";
     thumbDown.addEventListener("click", (e) => {
       e.stopPropagation();
-      // Save feedback
-      sendMessage({
-        action: "saveFeedback",
-        payload: {
-          annotationId: annotation.id,
-          contentHash: getAnnotationContentHash(annotation),
-          url: window.location.href,
-          feedbackType: "thumbs_down",
-        },
-      });
-      // Animate hide
-      hideNoteWithAnimation(el, annotation.id);
+      if (thumbDown.classList.contains("active")) {
+        // Undo thumbs down
+        thumbDown.classList.remove("active");
+        updateReactionBadge(labelEl, reactionBadge, "thumbs_down", false);
+        if (currentFeedbackId) {
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
+          currentFeedbackId = null;
+        }
+      } else {
+        // Activate thumbs down, deactivate thumbs up
+        thumbDown.classList.add("active");
+        thumbUp.classList.remove("active");
+        updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
+        if (currentFeedbackId) {
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
+        }
+        sendMessage({
+          action: "saveFeedback",
+          payload: {
+            annotationId: annotation.id,
+            contentHash: getAnnotationContentHash(annotation),
+            url: window.location.href,
+            feedbackType: "thumbs_down",
+          },
+        }).then((fb: any) => {
+          if (fb?.id) currentFeedbackId = fb.id;
+        });
+      }
     });
 
     feedbackRow.appendChild(thumbUp);
     feedbackRow.appendChild(thumbDown);
     expandedContent.appendChild(feedbackRow);
+
+    // Edit + Delete for AI annotations too
+    expandedContent.appendChild(createEditDeleteActions());
   }
 
   el.appendChild(bracket);
@@ -553,7 +627,12 @@ function enterEditMode(
 
     sendMessage({
       action: "updateAnnotation",
-      payload: { annotationId: annotation.id, annotation: updatedAnnotation },
+      payload: {
+        annotationId: annotation.id,
+        annotation: updatedAnnotation,
+        url: window.location.href,
+        contentHash: getAnnotationContentHash(annotation),
+      },
     }).then(() => {
       annotation.content.note = newNote;
       textEl.textContent = newNote;
@@ -604,6 +683,27 @@ function hideNoteWithAnimation(el: HTMLDivElement, annotationId: string): void {
   el.addEventListener("transitionend", cleanup, { once: true });
   // Safety fallback
   setTimeout(cleanup, 400);
+}
+
+function updateReactionBadge(
+  labelEl: HTMLSpanElement,
+  existingBadge: HTMLSpanElement | null,
+  type: "thumbs_up" | "thumbs_down",
+  isActive: boolean,
+): void {
+  const emoji = type === "thumbs_up" ? "\u{1F44D}" : "\u{1F44E}";
+  if (isActive) {
+    if (existingBadge) {
+      existingBadge.textContent = emoji;
+    } else {
+      const badge = document.createElement("span");
+      badge.className = "note-reaction-badge";
+      badge.textContent = emoji;
+      labelEl.appendChild(badge);
+    }
+  } else if (existingBadge) {
+    existingBadge.remove();
+  }
 }
 
 function createSection(labelText: string, content: string): HTMLDivElement {
@@ -1077,6 +1177,29 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="dark"]) .note-cancel-btn:hover {
     background: #334155;
+  }
+
+  .note-reaction-badge {
+    font-size: 10px;
+    margin-left: 4px;
+  }
+
+  .note-user-badge {
+    font-size: 9px;
+    background: #E5E7EB;
+    color: #6B7280;
+    padding: 1px 5px;
+    border-radius: 8px;
+    margin-left: 4px;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  :host([data-theme="dark"]) .note-user-badge {
+    background: #334155;
+    color: #94a3b8;
   }
 
   .note-edit-btn {

@@ -3,9 +3,9 @@ import { ALL_ANNOTATION_TYPES, ANNOTATION_LABELS, ANNOTATION_COLORS } from '@odd
 import { sendMessage, onMessage } from '../shared/messaging.js';
 import { sha256 } from '../shared/hash.js';
 import { resolveSelector } from './selector.js';
-import { renderAnnotation } from './renderer/overlay.js';
-import { injectAnchors } from './renderer/anchors.js';
-import { addMarginNote } from './renderer/margin-notes.js';
+import { renderAnnotation, removeAnnotation } from './renderer/overlay.js';
+import { injectAnchors, removeAnchors } from './renderer/anchors.js';
+import { addMarginNote, removeMarginNote } from './renderer/margin-notes.js';
 import { getThemeMode } from './renderer/theme-detector.js';
 
 // ─── Theme Color Maps ───
@@ -458,5 +458,12 @@ function renderManualAnnotation(annotation: Annotation, root: Element): void {
   }
 
   renderAnnotation(annotation, stableRange);
-  addMarginNote(annotation, stableRange);
+
+  const handleDelete = (annotationId: string) => {
+    removeMarginNote(annotationId);
+    removeAnchors(annotationId);
+    removeAnnotation(annotationId);
+  };
+
+  addMarginNote(annotation, stableRange, [], handleDelete);
 }
