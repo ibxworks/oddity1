@@ -29,18 +29,18 @@ export const CACHE_TTL_DAYS = 30;
 // ─── Annotation Colors ───
 
 export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
-  highlight: '#F59E0B',   // amber 500
-  underline: '#0D9488',   // teal 600
-  question: '#7C3AED',    // violet 600
-  insight: '#2563EB',     // blue 600
-  caveat: '#EA580C',      // orange 600
-  vocabulary: '#16A34A',  // green 600
+  highlight: '#F59E0B',           // amber 500
+  recall: '#0D9488',              // teal 600
+  provoking_question: '#7C3AED',  // violet 600
+  insight: '#2563EB',             // blue 600
+  caveat: '#EA580C',              // orange 600
+  vocabulary: '#16A34A',          // green 600
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
   highlight: 'KEY PHRASE',
-  underline: 'IMPORTANT',
-  question: 'QUESTION',
+  recall: 'RECALL',
+  provoking_question: 'PROVOCATION',
   insight: 'INSIGHT',
   caveat: 'CAVEAT',
   vocabulary: 'VOCABULARY',
@@ -50,8 +50,8 @@ export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
 
 export const ALL_ANNOTATION_TYPES: AnnotationType[] = [
   'highlight',
-  'underline',
-  'question',
+  'recall',
+  'provoking_question',
   'insight',
   'caveat',
   'vocabulary',

@@ -19,8 +19,8 @@ const AnnotationSchema = z.object({
   id: z.string().min(1),
   type: z.enum([
     'highlight',
-    'underline',
-    'question',
+    'recall',
+    'provoking_question',
     'insight',
     'caveat',
     'vocabulary',
@@ -45,6 +45,12 @@ export function validateAnnotations(data: unknown): {
   const errors: string[] = [];
 
   for (let i = 0; i < data.length; i++) {
+    // Normalize LLM output: "provoking question" (space) → "provoking_question" (underscore)
+    const item = data[i] as Record<string, unknown> | undefined;
+    if (item && typeof item.type === 'string') {
+      item.type = item.type.replace(/\s+/g, '_');
+    }
+
     const result = AnnotationSchema.safeParse(data[i]);
     if (result.success) {
       valid.push(result.data as Annotation);

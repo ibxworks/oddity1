@@ -131,6 +131,15 @@ async function init(): Promise<void> {
     };
   }
 
+  // Migrate old type names in stored preferences
+  const typeMap: Record<string, string> = { underline: 'recall', question: 'provoking_question' };
+  if (currentPrefs.visible_types.some((t) => t in typeMap)) {
+    currentPrefs.visible_types = currentPrefs.visible_types.map(
+      (t) => (typeMap[t] ?? t) as AnnotationType,
+    );
+    savePrefs();
+  }
+
   // Apply state to UI
   applyPrefsToUI();
 

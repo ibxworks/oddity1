@@ -170,7 +170,7 @@ function drawAnnotation(annotation: Annotation, range: Range): void {
     overlayEl.appendChild(el);
   }
 
-  // Gutter icon (for question type)
+  // Gutter icon (for provoking_question type)
   if (visual.gutterIcon) {
     const firstRect = rects[0];
     if (firstRect) {

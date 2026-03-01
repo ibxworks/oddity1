@@ -30,17 +30,23 @@ describe('@oddity/shared exports', () => {
 
   it('exports annotation colors for all 6 types', () => {
     expect(Object.keys(shared.ANNOTATION_COLORS)).toHaveLength(6);
-    expect(shared.ANNOTATION_COLORS.highlight).toBe('#FEF3C7');
+    expect(shared.ANNOTATION_COLORS.highlight).toBe('#F59E0B');
+    expect(shared.ANNOTATION_COLORS.recall).toBe('#0D9488');
+    expect(shared.ANNOTATION_COLORS.provoking_question).toBe('#7C3AED');
   });
 
   it('exports annotation labels for all 6 types', () => {
     expect(Object.keys(shared.ANNOTATION_LABELS)).toHaveLength(6);
     expect(shared.ANNOTATION_LABELS.highlight).toBe('KEY PHRASE');
+    expect(shared.ANNOTATION_LABELS.recall).toBe('RECALL');
+    expect(shared.ANNOTATION_LABELS.provoking_question).toBe('PROVOCATION');
   });
 
   it('exports ALL_ANNOTATION_TYPES with 6 entries', () => {
     expect(shared.ALL_ANNOTATION_TYPES).toHaveLength(6);
     expect(shared.ALL_ANNOTATION_TYPES).toContain('highlight');
+    expect(shared.ALL_ANNOTATION_TYPES).toContain('recall');
+    expect(shared.ALL_ANNOTATION_TYPES).toContain('provoking_question');
     expect(shared.ALL_ANNOTATION_TYPES).toContain('vocabulary');
   });
 });

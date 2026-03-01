@@ -11,7 +11,7 @@ describe('validateAnnotations', () => {
 
   const validWithOptionals = {
     id: 'ann_2',
-    type: 'question',
+    type: 'provoking_question',
     anchor: {
       type: 'TextQuoteSelector',
       exact: 'neural networks',
@@ -84,7 +84,7 @@ describe('validateAnnotations', () => {
   });
 
   it('accepts all valid annotation types', () => {
-    const types = ['highlight', 'underline', 'question', 'insight', 'caveat', 'vocabulary'];
+    const types = ['highlight', 'recall', 'provoking_question', 'insight', 'caveat', 'vocabulary'];
     const annotations = types.map((type, i) => ({
       id: `ann_${i}`,
       type,
@@ -93,6 +93,19 @@ describe('validateAnnotations', () => {
     }));
     const result = validateAnnotations(annotations);
     expect(result.valid).toHaveLength(6);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('normalizes "provoking question" (with space) to "provoking_question"', () => {
+    const annotation = {
+      id: 'ann_space',
+      type: 'provoking question',
+      anchor: { type: 'TextQuoteSelector', exact: 'some claim' },
+      content: { note: 'Why?' },
+    };
+    const result = validateAnnotations([annotation]);
+    expect(result.valid).toHaveLength(1);
+    expect(result.valid[0]!.type).toBe('provoking_question');
     expect(result.errors).toHaveLength(0);
   });
 });

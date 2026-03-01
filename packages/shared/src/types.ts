@@ -2,8 +2,8 @@
 
 export type AnnotationType =
   | 'highlight'
-  | 'underline'
-  | 'question'
+  | 'recall'
+  | 'provoking_question'
   | 'insight'
   | 'caveat'
   | 'vocabulary';

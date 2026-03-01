@@ -1,9 +1,23 @@
-import type { Annotation, AnnotationFeedback, AnnotationFont, AnnotationFontSize, AnnotationType } from '@oddity/shared';
-import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '@oddity/shared';
-import { sendMessage } from '../../shared/messaging.js';
-import { emphasizeAnnotation, deemphasizeAnnotation, removeAnnotation as removeAnnotationOverlay } from './overlay.js';
-import { removeAnchors } from './anchors.js';
-import { getThemeMode, onThemeChange, offThemeChange } from './theme-detector.js';
+import type {
+  Annotation,
+  AnnotationFeedback,
+  AnnotationFont,
+  AnnotationFontSize,
+  AnnotationType,
+} from "@oddity/shared";
+import { ANNOTATION_COLORS, ANNOTATION_LABELS } from "@oddity/shared";
+import { sendMessage } from "../../shared/messaging.js";
+import { removeAnchors } from "./anchors.js";
+import {
+  deemphasizeAnnotation,
+  emphasizeAnnotation,
+  removeAnnotation as removeAnnotationOverlay,
+} from "./overlay.js";
+import {
+  getThemeMode,
+  offThemeChange,
+  onThemeChange,
+} from "./theme-detector.js";
 
 // ─── Types ───
 
@@ -11,7 +25,7 @@ type MarginNote = {
   id: string;
   annotation: Annotation;
   range: Range;
-  side: 'left' | 'right';
+  side: "left" | "right";
   anchorTopPx: number;
   topPx: number;
   height: number;
@@ -31,7 +45,7 @@ let expandedId: string | null = null;
 let collapseTimer: ReturnType<typeof setTimeout> | null = null;
 let needsRedraw = false;
 let fontLink: HTMLLinkElement | null = null;
-let themeHandler: ((mode: 'light' | 'dark') => void) | null = null;
+let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 
 const NOTE_MAX_WIDTH = 180;
 const NOTE_EXPANDED_WIDTH = 220;
@@ -45,7 +59,11 @@ const FONT_MAP: Record<AnnotationFont, string> = {
   arial: "Arial, 'Helvetica Neue', sans-serif",
   georgia: "Georgia, 'Times New Roman', serif",
 };
-const SIZE_MAP: Record<AnnotationFontSize, string> = { small: '11px', default: '13px', large: '15px' };
+const SIZE_MAP: Record<AnnotationFontSize, string> = {
+  small: "11px",
+  default: "13px",
+  large: "15px",
+};
 
 // ─── Public API ───
 
@@ -54,20 +72,22 @@ export function initMarginNotes(region: Element): void {
 
   // Load Kalam font globally (font-face is always global, shadow DOM elements reference by name)
   if (!fontLink) {
-    fontLink = document.createElement('link');
-    fontLink.rel = 'stylesheet';
-    fontLink.href = 'https://fonts.googleapis.com/css2?family=Kalam:wght@400&display=swap';
+    fontLink = document.createElement("link");
+    fontLink.rel = "stylesheet";
+    fontLink.href =
+      "https://fonts.googleapis.com/css2?family=Kalam:wght@400&display=swap";
     document.head.appendChild(fontLink);
   }
 
   if (hostEl) return;
 
-  hostEl = document.createElement('div');
-  hostEl.id = 'oddity-margin-notes';
-  hostEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 2147483645;';
+  hostEl = document.createElement("div");
+  hostEl.id = "oddity-margin-notes";
+  hostEl.style.cssText =
+    "position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 2147483645;";
   document.body.appendChild(hostEl);
 
-  shadowRoot = hostEl.attachShadow({ mode: 'closed' });
+  shadowRoot = hostEl.attachShadow({ mode: "closed" });
 
   // Theme detection
   hostEl.dataset.theme = getThemeMode();
@@ -76,13 +96,13 @@ export function initMarginNotes(region: Element): void {
   };
   onThemeChange(themeHandler);
 
-  const style = document.createElement('style');
+  const style = document.createElement("style");
   style.textContent = MARGIN_NOTES_CSS;
   shadowRoot.appendChild(style);
 
   // Apply initial font/size from stored preferences
-  chrome.storage.local.get('preferences', (result) => {
-    const prefs = result['preferences'];
+  chrome.storage.local.get("preferences", (result) => {
+    const prefs = result["preferences"];
     if (prefs) {
       updateMarginNotesStyle(prefs.annotation_font, prefs.annotation_font_size);
     }
@@ -91,7 +111,11 @@ export function initMarginNotes(region: Element): void {
   startTracking();
 }
 
-export function addMarginNote(annotation: Annotation, range: Range, feedback: AnnotationFeedback[] = []): void {
+export function addMarginNote(
+  annotation: Annotation,
+  range: Range,
+  feedback: AnnotationFeedback[] = [],
+): void {
   if (!shadowRoot || !regionEl) return;
   // Deduplicate: skip if a note for this annotation already exists
   if (notes.some((n) => n.id === annotation.id)) return;
@@ -104,19 +128,20 @@ export function addMarginNote(annotation: Annotation, range: Range, feedback: An
   // Determine side
   const regionRect = regionEl.getBoundingClientRect();
   const leftMarginWidth = regionRect.left - MARGIN_PADDING;
-  const rightMarginWidth = window.innerWidth - regionRect.right - MARGIN_PADDING;
+  const rightMarginWidth =
+    window.innerWidth - regionRect.right - MARGIN_PADDING;
 
-  let side: 'left' | 'right';
+  let side: "left" | "right";
   const preferLeft = noteIndex % 2 === 0;
 
   if (preferLeft && leftMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = 'left';
+    side = "left";
   } else if (!preferLeft && rightMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = 'right';
+    side = "right";
   } else if (leftMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = 'left';
+    side = "left";
   } else if (rightMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = 'right';
+    side = "right";
   } else {
     // Both margins too narrow — skip this note
     noteIndex++;
@@ -175,7 +200,7 @@ export function clearMarginNotes(): void {
 export function setMarginNotesVisible(v: boolean): void {
   visible = v;
   if (hostEl) {
-    hostEl.style.display = v ? '' : 'none';
+    hostEl.style.display = v ? "" : "none";
   }
 }
 
@@ -185,7 +210,7 @@ export function filterMarginNotesByTypes(types: AnnotationType[]): void {
 
   for (const note of notes) {
     const isVisible = typeSet.has(note.annotation.type);
-    note.element.style.display = isVisible ? '' : 'none';
+    note.element.style.display = isVisible ? "" : "none";
     if (!isVisible) hiddenTypes.add(note.annotation.type);
   }
 
@@ -200,17 +225,17 @@ export function expandMarginNote(annotationId: string): void {
   // Collapse previous
   if (expandedId && expandedId !== annotationId) {
     const prev = notes.find((n) => n.id === expandedId);
-    if (prev) prev.element.classList.remove('expanded');
+    if (prev) prev.element.classList.remove("expanded");
   }
 
   expandedId = annotationId;
-  note.element.classList.add('expanded');
+  note.element.classList.add("expanded");
 }
 
 export function collapseAllMarginNotes(): void {
   if (expandedId) {
     const note = notes.find((n) => n.id === expandedId);
-    if (note) note.element.classList.remove('expanded');
+    if (note) note.element.classList.remove("expanded");
     expandedId = null;
   }
 }
@@ -235,65 +260,78 @@ export function destroyMarginNotes(): void {
   fontLink = null;
 }
 
-export function updateMarginNotesStyle(font?: AnnotationFont, fontSize?: AnnotationFontSize): void {
+export function updateMarginNotesStyle(
+  font?: AnnotationFont,
+  fontSize?: AnnotationFontSize,
+): void {
   const host = shadowRoot?.host as HTMLElement;
   if (!host) return;
-  host.style.setProperty('--oddity-note-font', FONT_MAP[font ?? 'default']);
-  host.style.setProperty('--oddity-note-size', SIZE_MAP[fontSize ?? 'default']);
+  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "default"]);
+  host.style.setProperty("--oddity-note-size", SIZE_MAP[fontSize ?? "default"]);
 }
 
 // ─── Note Element Construction ───
 
-function createNoteElement(annotation: Annotation, side: 'left' | 'right', feedback: AnnotationFeedback[] = []): HTMLDivElement {
+function createNoteElement(
+  annotation: Annotation,
+  side: "left" | "right",
+  feedback: AnnotationFeedback[] = [],
+): HTMLDivElement {
   const color = ANNOTATION_COLORS[annotation.type];
   const label = ANNOTATION_LABELS[annotation.type];
-  const isManual = annotation.id.startsWith('manual-');
+  const isManual = annotation.id.startsWith("manual-");
 
-  const el = document.createElement('div');
+  const el = document.createElement("div");
   el.className = `oddity-note ${side}`;
   el.dataset.annotationId = annotation.id;
   el.dataset.annotationType = annotation.type;
 
   // Bracket
-  const bracket = document.createElement('div');
-  bracket.className = 'note-bracket';
+  const bracket = document.createElement("div");
+  bracket.className = "note-bracket";
   bracket.style.borderColor = color;
 
   // Label
-  const labelEl = document.createElement('span');
-  labelEl.className = 'note-label';
+  const labelEl = document.createElement("span");
+  labelEl.className = "note-label";
   labelEl.style.color = color;
   labelEl.textContent = label;
 
   // Note text (collapsed: truncated)
-  const textEl = document.createElement('div');
-  textEl.className = 'note-text';
+  const textEl = document.createElement("div");
+  textEl.className = "note-text";
   textEl.textContent = annotation.content.note;
 
   // Expanded content (hidden by default, shown on .expanded)
-  const expandedContent = document.createElement('div');
-  expandedContent.className = 'note-expanded-content';
+  const expandedContent = document.createElement("div");
+  expandedContent.className = "note-expanded-content";
 
   if (annotation.content.why_it_matters) {
-    const section = createSection('Why it matters', annotation.content.why_it_matters);
+    const section = createSection(
+      "Why it matters",
+      annotation.content.why_it_matters,
+    );
     expandedContent.appendChild(section);
   }
 
   if (annotation.content.question) {
-    const section = createSection('Question', annotation.content.question);
+    const section = createSection("Question", annotation.content.question);
     expandedContent.appendChild(section);
   }
 
-  if (annotation.content.suggestions && annotation.content.suggestions.length > 0) {
-    const sectionEl = document.createElement('div');
-    sectionEl.className = 'note-section';
-    const sLabel = document.createElement('span');
-    sLabel.className = 'note-section-label';
-    sLabel.textContent = 'Suggestions';
+  if (
+    annotation.content.suggestions &&
+    annotation.content.suggestions.length > 0
+  ) {
+    const sectionEl = document.createElement("div");
+    sectionEl.className = "note-section";
+    const sLabel = document.createElement("span");
+    sLabel.className = "note-section-label";
+    sLabel.textContent = "Suggestions";
     sectionEl.appendChild(sLabel);
-    const ul = document.createElement('ul');
+    const ul = document.createElement("ul");
     for (const s of annotation.content.suggestions) {
-      const li = document.createElement('li');
+      const li = document.createElement("li");
       li.textContent = s;
       ul.appendChild(li);
     }
@@ -303,24 +341,24 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right', feedb
 
   if (isManual) {
     // ── User annotation: Edit + Delete ──
-    const actions = document.createElement('div');
-    actions.className = 'note-actions';
+    const actions = document.createElement("div");
+    actions.className = "note-actions";
 
-    const editBtn = document.createElement('button');
-    editBtn.className = 'note-action-btn note-edit-btn';
-    editBtn.textContent = 'Edit';
-    editBtn.addEventListener('click', (e) => {
+    const editBtn = document.createElement("button");
+    editBtn.className = "note-action-btn note-edit-btn";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       enterEditMode(el, annotation, textEl);
     });
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'note-action-btn note-delete-btn';
-    deleteBtn.textContent = 'Delete';
-    deleteBtn.addEventListener('click', (e) => {
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "note-action-btn note-delete-btn";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       sendMessage({
-        action: 'deleteAnnotation',
+        action: "deleteAnnotation",
         payload: { annotationId: annotation.id },
       });
     });
@@ -332,34 +370,34 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right', feedb
     // ── AI annotation: Reply thread + Feedback row ──
 
     // Reply thread
-    const replies = feedback.filter((f) => f.feedback_type === 'reply');
-    const repliesContainer = document.createElement('div');
-    repliesContainer.className = 'note-replies';
+    const replies = feedback.filter((f) => f.feedback_type === "reply");
+    const repliesContainer = document.createElement("div");
+    repliesContainer.className = "note-replies";
     for (const reply of replies) {
-      const bubble = document.createElement('div');
-      bubble.className = 'note-reply-bubble';
-      bubble.textContent = reply.reply_text ?? '';
+      const bubble = document.createElement("div");
+      bubble.className = "note-reply-bubble";
+      bubble.textContent = reply.reply_text ?? "";
       repliesContainer.appendChild(bubble);
     }
     expandedContent.appendChild(repliesContainer);
 
     // Reply input bar
-    const replyBar = document.createElement('div');
-    replyBar.className = 'note-reply-bar';
-    const replyInput = document.createElement('input');
-    replyInput.type = 'text';
-    replyInput.placeholder = 'Reply...';
-    replyInput.className = 'note-reply-input';
-    replyInput.addEventListener('keydown', (e) => {
+    const replyBar = document.createElement("div");
+    replyBar.className = "note-reply-bar";
+    const replyInput = document.createElement("input");
+    replyInput.type = "text";
+    replyInput.placeholder = "Thoughts?";
+    replyInput.className = "note-reply-input";
+    replyInput.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === 'Enter' && replyInput.value.trim()) {
+      if (e.key === "Enter" && replyInput.value.trim()) {
         submitReply(annotation, replyInput, repliesContainer);
       }
     });
-    const sendBtn = document.createElement('button');
-    sendBtn.className = 'note-reply-send';
-    sendBtn.innerHTML = '&#8593;'; // up arrow
-    sendBtn.addEventListener('click', (e) => {
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "note-reply-send";
+    sendBtn.innerHTML = "&#8593;"; // up arrow
+    sendBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (replyInput.value.trim()) {
         submitReply(annotation, replyInput, repliesContainer);
@@ -370,43 +408,45 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right', feedb
     expandedContent.appendChild(replyBar);
 
     // Feedback row (thumbs)
-    const feedbackRow = document.createElement('div');
-    feedbackRow.className = 'note-feedback-row';
+    const feedbackRow = document.createElement("div");
+    feedbackRow.className = "note-feedback-row";
 
-    const existingThumbsUp = feedback.find((f) => f.feedback_type === 'thumbs_up');
+    const existingThumbsUp = feedback.find(
+      (f) => f.feedback_type === "thumbs_up",
+    );
 
-    const thumbUp = document.createElement('button');
-    thumbUp.className = 'note-thumb-btn' + (existingThumbsUp ? ' active' : '');
-    thumbUp.innerHTML = '&#128077;'; // 👍
-    thumbUp.title = 'Helpful';
-    thumbUp.addEventListener('click', (e) => {
+    const thumbUp = document.createElement("button");
+    thumbUp.className = "note-thumb-btn" + (existingThumbsUp ? " active" : "");
+    thumbUp.innerHTML = "&#128077;"; // 👍
+    thumbUp.title = "Helpful";
+    thumbUp.addEventListener("click", (e) => {
       e.stopPropagation();
-      thumbUp.classList.toggle('active');
+      thumbUp.classList.toggle("active");
       sendMessage({
-        action: 'saveFeedback',
+        action: "saveFeedback",
         payload: {
           annotationId: annotation.id,
           contentHash: getAnnotationContentHash(annotation),
           url: window.location.href,
-          feedbackType: 'thumbs_up',
+          feedbackType: "thumbs_up",
         },
       });
     });
 
-    const thumbDown = document.createElement('button');
-    thumbDown.className = 'note-thumb-btn';
-    thumbDown.innerHTML = '&#128078;'; // 👎
-    thumbDown.title = 'Not helpful';
-    thumbDown.addEventListener('click', (e) => {
+    const thumbDown = document.createElement("button");
+    thumbDown.className = "note-thumb-btn";
+    thumbDown.innerHTML = "&#128078;"; // 👎
+    thumbDown.title = "Not helpful";
+    thumbDown.addEventListener("click", (e) => {
       e.stopPropagation();
       // Save feedback
       sendMessage({
-        action: 'saveFeedback',
+        action: "saveFeedback",
         payload: {
           annotationId: annotation.id,
           contentHash: getAnnotationContentHash(annotation),
           url: window.location.href,
-          feedbackType: 'thumbs_down',
+          feedbackType: "thumbs_down",
         },
       });
       // Animate hide
@@ -424,7 +464,7 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right', feedb
   el.appendChild(expandedContent);
 
   // Hover expand/collapse + overlay emphasis
-  el.addEventListener('mouseenter', () => {
+  el.addEventListener("mouseenter", () => {
     if (collapseTimer) {
       clearTimeout(collapseTimer);
       collapseTimer = null;
@@ -433,7 +473,7 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right', feedb
     emphasizeAnnotation(annotation.id);
   });
 
-  el.addEventListener('mouseleave', () => {
+  el.addEventListener("mouseleave", () => {
     collapseTimer = setTimeout(() => {
       collapseAllMarginNotes();
       collapseTimer = null;
@@ -448,8 +488,10 @@ function createNoteElement(annotation: Annotation, side: 'left' | 'right', feedb
 
 function getAnnotationContentHash(_annotation: Annotation): string {
   // Get the content hash from the closest region element
-  const hashEl = document.querySelector('[data-oddity-hash]') as HTMLElement | null;
-  return hashEl?.dataset.oddityHash ?? '';
+  const hashEl = document.querySelector(
+    "[data-oddity-hash]",
+  ) as HTMLElement | null;
+  return hashEl?.dataset.oddityHash ?? "";
 }
 
 function submitReply(
@@ -461,25 +503,25 @@ function submitReply(
   if (!text) return;
 
   // Add bubble immediately
-  const bubble = document.createElement('div');
-  bubble.className = 'note-reply-bubble';
+  const bubble = document.createElement("div");
+  bubble.className = "note-reply-bubble";
   bubble.textContent = text;
   container.appendChild(bubble);
   container.scrollTop = container.scrollHeight;
 
   // Send to background
   sendMessage({
-    action: 'saveFeedback',
+    action: "saveFeedback",
     payload: {
       annotationId: annotation.id,
       contentHash: getAnnotationContentHash(annotation),
       url: window.location.href,
-      feedbackType: 'reply',
+      feedbackType: "reply",
       replyText: text,
     },
   });
 
-  input.value = '';
+  input.value = "";
 }
 
 function enterEditMode(
@@ -487,19 +529,19 @@ function enterEditMode(
   annotation: Annotation,
   textEl: HTMLDivElement,
 ): void {
-  const textarea = document.createElement('textarea');
-  textarea.className = 'note-edit-textarea';
+  const textarea = document.createElement("textarea");
+  textarea.className = "note-edit-textarea";
   textarea.value = annotation.content.note;
   textarea.rows = 3;
-  textarea.addEventListener('keydown', (e) => e.stopPropagation());
+  textarea.addEventListener("keydown", (e) => e.stopPropagation());
 
-  const editActions = document.createElement('div');
-  editActions.className = 'note-edit-actions';
+  const editActions = document.createElement("div");
+  editActions.className = "note-edit-actions";
 
-  const saveBtn = document.createElement('button');
-  saveBtn.className = 'note-save-btn';
-  saveBtn.textContent = 'Save';
-  saveBtn.addEventListener('click', (e) => {
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "note-save-btn";
+  saveBtn.textContent = "Save";
+  saveBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     const newNote = textarea.value.trim();
     if (!newNote) return;
@@ -510,7 +552,7 @@ function enterEditMode(
     };
 
     sendMessage({
-      action: 'updateAnnotation',
+      action: "updateAnnotation",
       payload: { annotationId: annotation.id, annotation: updatedAnnotation },
     }).then(() => {
       annotation.content.note = newNote;
@@ -519,10 +561,10 @@ function enterEditMode(
     });
   });
 
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'note-cancel-btn';
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.addEventListener('click', (e) => {
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "note-cancel-btn";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     exitEditMode(noteEl, textarea, editActions, textEl);
   });
@@ -530,7 +572,7 @@ function enterEditMode(
   editActions.appendChild(saveBtn);
   editActions.appendChild(cancelBtn);
 
-  textEl.style.display = 'none';
+  textEl.style.display = "none";
   textEl.parentElement!.insertBefore(textarea, textEl.nextSibling);
   textEl.parentElement!.insertBefore(editActions, textarea.nextSibling);
   textarea.focus();
@@ -544,11 +586,11 @@ function exitEditMode(
 ): void {
   textarea.remove();
   editActions.remove();
-  textEl.style.display = '';
+  textEl.style.display = "";
 }
 
 function hideNoteWithAnimation(el: HTMLDivElement, annotationId: string): void {
-  el.classList.add('hiding');
+  el.classList.add("hiding");
 
   let cleaned = false;
   const cleanup = () => {
@@ -559,18 +601,18 @@ function hideNoteWithAnimation(el: HTMLDivElement, annotationId: string): void {
     removeAnchors(annotationId);
   };
 
-  el.addEventListener('transitionend', cleanup, { once: true });
+  el.addEventListener("transitionend", cleanup, { once: true });
   // Safety fallback
   setTimeout(cleanup, 400);
 }
 
 function createSection(labelText: string, content: string): HTMLDivElement {
-  const section = document.createElement('div');
-  section.className = 'note-section';
-  const label = document.createElement('span');
-  label.className = 'note-section-label';
+  const section = document.createElement("div");
+  section.className = "note-section";
+  const label = document.createElement("span");
+  label.className = "note-section-label";
   label.textContent = labelText;
-  const text = document.createElement('p');
+  const text = document.createElement("p");
   text.textContent = content;
   section.appendChild(label);
   section.appendChild(text);
@@ -580,8 +622,12 @@ function createSection(labelText: string, content: string): HTMLDivElement {
 // ─── Layout ───
 
 function resolveOverlaps(): void {
-  const leftNotes = notes.filter((n) => n.side === 'left' && n.element.style.display !== 'none');
-  const rightNotes = notes.filter((n) => n.side === 'right' && n.element.style.display !== 'none');
+  const leftNotes = notes.filter(
+    (n) => n.side === "left" && n.element.style.display !== "none",
+  );
+  const rightNotes = notes.filter(
+    (n) => n.side === "right" && n.element.style.display !== "none",
+  );
 
   resolveOverlapsForSide(leftNotes);
   resolveOverlapsForSide(rightNotes);
@@ -613,12 +659,12 @@ function applyPositions(): void {
   const regionRight = regionRect.right + window.scrollX;
 
   for (const note of notes) {
-    if (note.side === 'left') {
+    if (note.side === "left") {
       const rightEdge = regionLeft - MARGIN_PADDING;
-      note.element.style.left = 'auto';
+      note.element.style.left = "auto";
       note.element.style.right = `${hostEl!.offsetWidth - rightEdge}px`;
     } else {
-      note.element.style.right = 'auto';
+      note.element.style.right = "auto";
       note.element.style.left = `${regionRight + MARGIN_PADDING}px`;
     }
     note.element.style.top = `${note.topPx}px`;
@@ -654,12 +700,15 @@ function scheduleRedraw(): void {
 let cleanupTracking: (() => void) | null = null;
 
 function startTracking(): void {
-  window.addEventListener('scroll', scheduleRedraw, { passive: true, capture: true });
-  window.addEventListener('resize', scheduleRedraw, { passive: true });
+  window.addEventListener("scroll", scheduleRedraw, {
+    passive: true,
+    capture: true,
+  });
+  window.addEventListener("resize", scheduleRedraw, { passive: true });
 
   cleanupTracking = () => {
-    window.removeEventListener('scroll', scheduleRedraw, { capture: true });
-    window.removeEventListener('resize', scheduleRedraw);
+    window.removeEventListener("scroll", scheduleRedraw, { capture: true });
+    window.removeEventListener("resize", scheduleRedraw);
   };
 }
 

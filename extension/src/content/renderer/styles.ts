@@ -19,21 +19,21 @@ const visualMap: Record<AnnotationType, AnnotationVisual> = {
     label: ANNOTATION_LABELS.highlight,
     color: ANNOTATION_COLORS.highlight,
   },
-  underline: {
-    type: 'underline',
+  recall: {
+    type: 'recall',
     backgroundColor: null,
-    underlineStyle: `2px solid ${ANNOTATION_COLORS.underline}`,
+    underlineStyle: `2px solid ${ANNOTATION_COLORS.recall}`,
     gutterIcon: null,
-    label: ANNOTATION_LABELS.underline,
-    color: ANNOTATION_COLORS.underline,
+    label: ANNOTATION_LABELS.recall,
+    color: ANNOTATION_COLORS.recall,
   },
-  question: {
-    type: 'question',
+  provoking_question: {
+    type: 'provoking_question',
     backgroundColor: null,
-    underlineStyle: `2px dotted ${ANNOTATION_COLORS.question}`,
+    underlineStyle: `2px dotted ${ANNOTATION_COLORS.provoking_question}`,
     gutterIcon: '?',
-    label: ANNOTATION_LABELS.question,
-    color: ANNOTATION_COLORS.question,
+    label: ANNOTATION_LABELS.provoking_question,
+    color: ANNOTATION_COLORS.provoking_question,
   },
   insight: {
     type: 'insight',

@@ -15,8 +15,8 @@ interface PositionedNote {
 
 const INLINE_STYLES: Record<AnnotationType, string> = {
   highlight: `background: ${ANNOTATION_COLORS.highlight}33; border-radius: 2px; padding: 1px 2px;`,
-  underline: `border-bottom: 2px solid ${ANNOTATION_COLORS.underline}; padding-bottom: 1px;`,
-  question: `border-bottom: 2px dotted ${ANNOTATION_COLORS.question}; padding-bottom: 1px;`,
+  recall: `border-bottom: 2px solid ${ANNOTATION_COLORS.recall}; padding-bottom: 1px;`,
+  provoking_question: `border-bottom: 2px dotted ${ANNOTATION_COLORS.provoking_question}; padding-bottom: 1px;`,
   insight: `background: ${ANNOTATION_COLORS.insight}33; border-radius: 2px; padding: 1px 2px;`,
   caveat: `border-bottom: 2px wavy ${ANNOTATION_COLORS.caveat}; padding-bottom: 1px;`,
   vocabulary: `border-bottom: 2px dotted ${ANNOTATION_COLORS.vocabulary}; padding-bottom: 1px;`,
@@ -392,7 +392,7 @@ ${generateAnnotationColorCSS()}
 }
 
 function generateAnnotationColorCSS(): string {
-  const types: AnnotationType[] = ['highlight', 'underline', 'question', 'insight', 'caveat', 'vocabulary'];
+  const types: AnnotationType[] = ['highlight', 'recall', 'provoking_question', 'insight', 'caveat', 'vocabulary'];
   return types
     .map((type) => {
       const color = ANNOTATION_COLORS[type];

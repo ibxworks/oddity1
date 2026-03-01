@@ -55,8 +55,8 @@ const regionByHash = new Map<string, DetectedRegion>();
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
   "highlight",
-  "underline",
-  "question",
+  "recall",
+  "provoking_question",
   "insight",
   "caveat",
   "vocabulary",
@@ -236,7 +236,7 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   // Filter visible types first
   const visible = annotations.filter((a) => visibleTypes.includes(a.type));
 
-  // Sort: background-type annotations first (highlight, insight), underline-type last
+  // Sort: background-type annotations first (highlight, insight), line-type last
   // This ensures underlines render on top in the DOM stacking order
   const backgroundTypes = new Set<AnnotationType>(["highlight", "insight"]);
   visible.sort((a, b) => {

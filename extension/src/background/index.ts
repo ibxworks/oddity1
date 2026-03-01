@@ -262,8 +262,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
                 intensity: prefs.intensity ?? "default",
                 visibleTypes: prefs.visible_types ?? [
                   "highlight",
-                  "underline",
-                  "question",
+                  "recall",
+                  "provoking_question",
                   "insight",
                   "caveat",
                   "vocabulary",
