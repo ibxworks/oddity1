@@ -1,5 +1,6 @@
 import type {
-  Annotation,
+  AnnotationFont,
+  AnnotationFontSize,
   AnnotationType,
   Intensity,
   UserPreferences,
@@ -19,6 +20,9 @@ const typeFilters = document.getElementById("type-filters")!;
 const exportBtn = document.getElementById("export-btn")!;
 const openOptions = document.getElementById("open-options")!;
 const welcomeText = document.getElementById("welcome-text")!;
+const totalCountNumber = document.getElementById("total-count-number")!;
+const fontSelect = document.getElementById("font-select") as HTMLSelectElement;
+const fontSizeGroup = document.getElementById("font-size-group")!;
 
 // Auth form refs
 const authForm = document.getElementById("auth-form")!;
@@ -46,6 +50,17 @@ const popoverEmail = document.getElementById("popover-email")!;
 const popoverTier = document.getElementById("popover-tier")!;
 const popoverSignOut = document.getElementById("popover-sign-out")!;
 
+// Feedback dialog refs
+const feedbackDialog = document.getElementById("feedback-dialog")!;
+const feedbackEmail = document.getElementById("feedback-email")!;
+const feedbackTextarea = document.getElementById(
+  "feedback-textarea",
+) as HTMLTextAreaElement;
+const feedbackCancelBtn = document.getElementById("feedback-cancel-btn")!;
+const feedbackSendBtn = document.getElementById("feedback-send-btn")!;
+const feedbackStatusEl = document.getElementById("feedback-status")!;
+const feedbackLink = document.getElementById("feedback-link")!;
+
 // Export dialog refs
 const exportDialog = document.getElementById("export-dialog")!;
 const exportTitle = document.getElementById("export-title") as HTMLInputElement;
@@ -66,6 +81,8 @@ let currentPrefs: Required<UserPreferences> = {
   intensity: "default",
   visible_types: [...ALL_ANNOTATION_TYPES],
   disabled_sites: [],
+  annotation_font: "default",
+  annotation_font_size: "default",
 };
 
 let currentUser: {
@@ -73,6 +90,7 @@ let currentUser: {
   email: string;
   display_name: string | null;
   tier: UserTier;
+  annotation_count?: number;
 } | null = null;
 
 // ─── Greetings ───
@@ -108,6 +126,8 @@ async function init(): Promise<void> {
       intensity: prefs.intensity ?? "default",
       visible_types: prefs.visible_types ?? [...ALL_ANNOTATION_TYPES],
       disabled_sites: prefs.disabled_sites ?? [],
+      annotation_font: prefs.annotation_font ?? "default",
+      annotation_font_size: prefs.annotation_font_size ?? "default",
     };
   }
 
@@ -116,9 +136,6 @@ async function init(): Promise<void> {
 
   // Fetch auth status
   loadAuthStatus();
-
-  // Fetch annotation stats from current tab
-  loadAnnotationStats();
 }
 
 function applyPrefsToUI(): void {
@@ -143,6 +160,19 @@ function applyPrefsToUI(): void {
     const t = cb.dataset["type"] as AnnotationType;
     cb.checked = currentPrefs.visible_types.includes(t);
   }
+
+  // Font select
+  fontSelect.value = currentPrefs.annotation_font;
+
+  // Font size buttons
+  for (const btn of fontSizeGroup.querySelectorAll<HTMLButtonElement>(
+    ".intensity-btn",
+  )) {
+    btn.classList.toggle(
+      "active",
+      btn.dataset["fontsize"] === currentPrefs.annotation_font_size,
+    );
+  }
 }
 
 async function savePrefs(): Promise<void> {
@@ -155,6 +185,7 @@ function showAuthenticatedUI(user: {
   email: string;
   display_name: string | null;
   tier: UserTier;
+  annotation_count?: number;
 }): void {
   authForm.style.display = "none";
   mainContent.classList.remove("hidden");
@@ -176,6 +207,9 @@ function showAuthenticatedUI(user: {
 
   // Welcome text
   showWelcomeText(user.display_name);
+
+  // Total annotation count
+  totalCountNumber.textContent = String(user.annotation_count ?? 0);
 }
 
 function showUnauthenticatedUI(): void {
@@ -233,6 +267,7 @@ async function loadAuthStatus(): Promise<void> {
         email: string;
         display_name: string | null;
         tier: UserTier;
+        annotation_count?: number;
       } | null;
     }>({
       action: "getAuthStatus",
@@ -254,46 +289,6 @@ async function loadAuthStatus(): Promise<void> {
     }
   } catch {
     showUnauthenticatedUI();
-  }
-}
-
-// ─── Annotation Stats ───
-
-async function loadAnnotationStats(): Promise<void> {
-  try {
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    if (!tab?.id || !tab.url) return;
-
-    // Query storage for cached annotations for this URL
-    const key = `annotations:${tab.url}`;
-    const stored = await chrome.storage.local.get(key);
-    const annotations: Annotation[] = stored[key] ?? [];
-
-    // Count by type
-    const counts: Record<AnnotationType, number> = {
-      highlight: 0,
-      underline: 0,
-      question: 0,
-      insight: 0,
-      caveat: 0,
-      vocabulary: 0,
-    };
-
-    for (const ann of annotations) {
-      if (ann.type in counts) {
-        counts[ann.type]++;
-      }
-    }
-
-    for (const t of ALL_ANNOTATION_TYPES) {
-      const el = document.getElementById(`stat-${t}`);
-      if (el) el.textContent = String(counts[t]);
-    }
-  } catch {
-    // Stats unavailable — leave at 0
   }
 }
 
@@ -350,6 +345,33 @@ typeFilters.addEventListener("change", (e) => {
     currentPrefs.visible_types = currentPrefs.visible_types.filter(
       (t) => t !== type,
     );
+  }
+
+  savePrefs();
+});
+
+// Font select
+fontSelect.addEventListener("change", () => {
+  currentPrefs.annotation_font = fontSelect.value as AnnotationFont;
+  savePrefs();
+});
+
+// Font size buttons
+fontSizeGroup.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
+    ".intensity-btn",
+  );
+  if (!btn) return;
+
+  const size = btn.dataset["fontsize"] as AnnotationFontSize | undefined;
+  if (!size) return;
+
+  currentPrefs.annotation_font_size = size;
+
+  for (const b of fontSizeGroup.querySelectorAll<HTMLButtonElement>(
+    ".intensity-btn",
+  )) {
+    b.classList.toggle("active", b === btn);
   }
 
   savePrefs();
@@ -569,7 +591,7 @@ authSubmitBtn.addEventListener("click", async () => {
           tier: "free",
         });
         chrome.action.setBadgeText({ text: "" });
-        loadAnnotationStats();
+
         refreshActiveTab();
       }
     } else {
@@ -592,7 +614,6 @@ authSubmitBtn.addEventListener("click", async () => {
       currentUser = result.user;
       showAuthenticatedUI(result.user);
       chrome.action.setBadgeText({ text: "" });
-      loadAnnotationStats();
       refreshActiveTab();
     }
   } catch (err) {
@@ -624,6 +645,58 @@ authEmail.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     authPassword.focus();
+  }
+});
+
+// ─── Feedback Dialog ───
+
+feedbackLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  feedbackEmail.textContent = currentUser?.email ?? "";
+  feedbackTextarea.value = "";
+  feedbackStatusEl.style.display = "none";
+  feedbackStatusEl.className = "feedback-status";
+  mainContent.style.display = "none";
+  feedbackDialog.style.display = "block";
+});
+
+feedbackCancelBtn.addEventListener("click", () => {
+  feedbackDialog.style.display = "none";
+  mainContent.style.display = "";
+});
+
+feedbackSendBtn.addEventListener("click", async () => {
+  const message = feedbackTextarea.value.trim();
+  if (!message) return;
+
+  feedbackSendBtn.textContent = "Sending...";
+  feedbackSendBtn.setAttribute("disabled", "");
+  feedbackStatusEl.style.display = "none";
+
+  try {
+    const result = await sendMessage<{ success: boolean; error?: string }>({
+      action: "sendUserFeedback",
+      payload: { message },
+    });
+
+    if (result.error) throw new Error(result.error);
+
+    feedbackStatusEl.textContent = "Feedback sent! Thank you.";
+    feedbackStatusEl.className = "feedback-status success";
+    feedbackStatusEl.style.display = "block";
+    setTimeout(() => {
+      feedbackDialog.style.display = "none";
+      mainContent.style.display = "";
+    }, 1500);
+  } catch (err) {
+    feedbackStatusEl.textContent = String(
+      err instanceof Error ? err.message : "Failed to send feedback",
+    );
+    feedbackStatusEl.className = "feedback-status error";
+    feedbackStatusEl.style.display = "block";
+  } finally {
+    feedbackSendBtn.textContent = "Send";
+    feedbackSendBtn.removeAttribute("disabled");
   }
 });
 

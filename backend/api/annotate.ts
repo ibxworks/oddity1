@@ -75,6 +75,14 @@ router.post('/', async (req, res) => {
       { onConflict: 'content_hash,intensity' },
     );
 
+    // Increment user's annotation count (fresh generation only)
+    if (req.user?.id) {
+      await serviceClient.rpc('increment_annotation_count', {
+        p_user_id: req.user.id,
+        p_count: annotations.length,
+      });
+    }
+
     res.json({ success: true, cached: false, annotations });
   } catch (err) {
     console.error('[annotate] Error:', err);

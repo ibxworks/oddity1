@@ -14,6 +14,7 @@ import {
   requestAnnotations,
   saveAnnotation,
   saveFeedback as apiSaveFeedback,
+  sendUserFeedback as apiSendUserFeedback,
   updateAnnotation as apiUpdateAnnotation,
 } from "./api-client.js";
 import { getProfile, getSession, getUserTier, signIn, signOut, signUp, updateProfile } from "./auth.js";
@@ -100,6 +101,7 @@ chrome.runtime.onMessage.addListener(
               email: session.user.email ?? "",
               display_name: profile?.display_name ?? null,
               tier: profile?.tier ?? "free",
+              annotation_count: profile?.annotation_count ?? 0,
             },
           };
         }
@@ -188,6 +190,13 @@ chrome.runtime.onMessage.addListener(
           return result;
         }
 
+        case "sendUserFeedback": {
+          const feedbackResult = await apiSendUserFeedback(
+            message.payload.message,
+          );
+          return feedbackResult;
+        }
+
         default:
           return undefined;
       }
@@ -259,6 +268,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
                   "caveat",
                   "vocabulary",
                 ],
+                annotationFont: prefs.annotation_font,
+                annotationFontSize: prefs.annotation_font_size,
               },
             }).catch(() => {
               // Tab may not have content script loaded; ignore

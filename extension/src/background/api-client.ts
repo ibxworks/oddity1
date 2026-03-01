@@ -169,6 +169,15 @@ export async function getPreferences(): Promise<UserPreferences> {
   return res.json() as Promise<UserPreferences>;
 }
 
+export async function sendUserFeedback(message: string): Promise<{ success: boolean }> {
+  const res = await authFetch('/api/user-feedback', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) throw new Error(`sendUserFeedback failed: ${res.status}`);
+  return res.json() as Promise<{ success: boolean }>;
+}
+
 export async function updatePreferences(
   prefs: Partial<UserPreferences>,
 ): Promise<UserPreferences> {

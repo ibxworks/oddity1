@@ -36,7 +36,9 @@
       "Bash(grep -r \"chatgpt\\\\|chat.openai\" /Users/realtonypark/Developer/oddity1 --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.sql\" --include=\"*.json\" 2>/dev/null | head -30)",
       "Bash(grep -r \"response_selector\\\\|stability_signal\" /Users/realtonypark/Developer/oddity1 --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.sql\" 2>/dev/null | grep -v node_modules | head -40)",
       "Bash(find /Users/realtonypark/Developer/oddity1 -type f -name \"*.md\" -not -path \"*/node_modules/*\" 2>/dev/null | xargs grep -l \"response_selector\\\\|stability_signal\" 2>/dev/null)",
-      "Bash(grep -r \"markdown\" /Users/realtonypark/Developer/oddity1/extension/src --include=\"*.ts\" 2>/dev/null | head -20)"
+      "Bash(grep -r \"markdown\" /Users/realtonypark/Developer/oddity1/extension/src --include=\"*.ts\" 2>/dev/null | head -20)",
+      "Bash(find /Users/realtonypark/Developer/oddity1 -path \"*/supabase/*\" -name \"*.sql\" 2>/dev/null | head -20)",
+      "Bash(find /Users/realtonypark/Developer/oddity1/backend -name \"*feedback*\" -o -name \"*table*\" 2>/dev/null | head -20)"
     ]
   },
   "enableAllProjectMcpServers": true,

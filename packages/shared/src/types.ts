@@ -51,6 +51,11 @@ export type AnnotationFeedback = {
 
 export type Intensity = 'light' | 'default' | 'heavy';
 
+// ─── Annotation Style ───
+
+export type AnnotationFont = 'default' | 'helvetica' | 'arial' | 'georgia';
+export type AnnotationFontSize = 'small' | 'default' | 'large';
+
 // ─── Site Adapter Registry ───
 
 export type StabilitySignal = {
@@ -89,6 +94,8 @@ export type UserPreferences = {
   intensity?: Intensity;
   visible_types?: AnnotationType[];
   disabled_sites?: string[];
+  annotation_font?: AnnotationFont;
+  annotation_font_size?: AnnotationFontSize;
 };
 
 // ─── API Request/Response ───
@@ -150,6 +157,8 @@ export type ExtensionMessage =
         enabled: boolean;
         intensity: Intensity;
         visibleTypes: AnnotationType[];
+        annotationFont?: AnnotationFont;
+        annotationFontSize?: AnnotationFontSize;
       };
     }
   | {
@@ -190,4 +199,5 @@ export type ExtensionMessage =
   | { action: 'getUserTierResult'; payload: { tier: UserTier } }
   | { action: 'saveFeedback'; payload: { annotationId: string; contentHash: string; url: string; feedbackType: FeedbackType; replyText?: string } }
   | { action: 'deleteFeedback'; payload: { feedbackId: string } }
-  | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation } };
+  | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation } }
+  | { action: 'sendUserFeedback'; payload: { message: string } };

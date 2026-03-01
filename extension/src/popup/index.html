@@ -40,19 +40,15 @@
         font-size: 15px;
         font-weight: 600;
         letter-spacing: -0.3px;
-        background: linear-gradient(135deg, #c4b5fd 0%, #7c3aed 45%, #f59e0b 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: #1a1a1a;
       }
       #export-btn {
-        background: linear-gradient(135deg, #c4b5fd 0%, #7c3aed 45%, #f59e0b 100%);
-        border-color: transparent;
+        background: #1a1a1a;
+        border-color: #1a1a1a;
         color: #fff;
       }
       #export-btn:hover {
         opacity: 0.9;
-        background: linear-gradient(135deg, #c4b5fd 0%, #7c3aed 45%, #f59e0b 100%);
       }
       .welcome-text {
         font-size: 12px;
@@ -101,36 +97,66 @@
         transition: transform 0.2s;
       }
       .toggle input:checked + .slider {
-        background: #7c3aed;
+        background: #1a1a1a;
       }
       .toggle input:checked + .slider::before {
         transform: translateX(16px);
       }
 
-      /* ── Stats ── */
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 6px;
-        padding: 12px 16px;
-      }
-      .stat-card {
+      /* ── Total Count ── */
+      .total-count {
         text-align: center;
-        padding: 8px 4px;
-        border-radius: 6px;
-        border: 1px solid #eee;
-        background: #fff;
+        padding: 14px 16px 10px;
       }
-      .stat-count {
-        font-size: 18px;
+      .total-count-number {
+        display: block;
+        font-size: 28px;
         font-weight: 700;
         color: #111;
+        letter-spacing: -0.5px;
       }
-      .stat-label {
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        margin-top: 1px;
+      .total-count-label {
+        font-size: 11px;
+        color: #9ca3af;
+        letter-spacing: 0.01em;
+      }
+
+      /* ── Style Controls ── */
+      .style-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .style-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .style-label {
+        font-size: 12px;
+        color: #6b7280;
+        min-width: 36px;
+        flex-shrink: 0;
+      }
+      .style-select {
+        flex: 1;
+        padding: 5px 28px 5px 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 20px;
+        background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E") no-repeat right 10px center;
+        background-size: 10px;
+        appearance: none;
+        -webkit-appearance: none;
+        font-size: 12px;
+        font-weight: 500;
+        color: #374151;
+        height: 30px;
+        cursor: pointer;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .style-select:focus {
+        border-color: #1a1a1a;
       }
 
       /* ── Section ── */
@@ -169,9 +195,9 @@
         background: #f9fafb;
       }
       .intensity-btn.active {
-        background: #7c3aed;
+        background: #1a1a1a;
         color: #fff;
-        border-color: #7c3aed;
+        border-color: #1a1a1a;
       }
 
       /* ── Type Filters ── */
@@ -195,7 +221,7 @@
         background: #f3f4f6;
       }
       .type-filter input {
-        accent-color: #7c3aed;
+        accent-color: #1a1a1a;
       }
       .type-swatch {
         width: 8px;
@@ -225,12 +251,12 @@
         border-color: #d1d5db;
       }
       .btn-primary {
-        background: #7c3aed;
+        background: #1a1a1a;
         color: #fff;
-        border-color: #7c3aed;
+        border-color: #1a1a1a;
       }
       .btn-primary:hover {
-        background: #6d28d9;
+        background: #111;
       }
       .btn-primary:disabled {
         opacity: 0.6;
@@ -262,8 +288,8 @@
         color: #111;
       }
       .auth-input:focus {
-        border-color: #7c3aed;
-        box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.1);
+        border-color: #1a1a1a;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
       }
       .auth-input::placeholder {
         color: #9ca3af;
@@ -294,7 +320,7 @@
         color: #9ca3af;
       }
       .auth-toggle a {
-        color: #7c3aed;
+        color: #1a1a1a;
         text-decoration: none;
         cursor: pointer;
         font-weight: 500;
@@ -330,7 +356,7 @@
         width: 24px;
         height: 24px;
         border-radius: 50%;
-        background: #7c3aed;
+        background: #1a1a1a;
         color: #fff;
         font-size: 11px;
         font-weight: 600;
@@ -360,11 +386,11 @@
         background: #e5e7eb;
       }
       .tier-badge.pro {
-        background: #f5f3ff;
-        color: #7c3aed;
+        background: #f3f4f6;
+        color: #1a1a1a;
       }
       .tier-badge.pro:hover {
-        background: #ede9fe;
+        background: #e5e7eb;
       }
 
       /* ── Profile Popover ── */
@@ -403,7 +429,7 @@
         display: block;
       }
       .profile-popover-tier:hover {
-        color: #7c3aed;
+        color: #1a1a1a;
       }
       .profile-popover-signout {
         display: block;
@@ -488,8 +514,8 @@
         background: #fff;
       }
       .export-input:focus {
-        border-color: #7c3aed;
-        box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.1);
+        border-color: #1a1a1a;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
       }
       .export-input:disabled {
         background: #f9fafb;
@@ -506,8 +532,8 @@
         top: 50%;
         transform: translateY(-50%);
         font-size: 10px;
-        color: #7c3aed;
-        background: #f5f3ff;
+        color: #1a1a1a;
+        background: #f3f4f6;
         padding: 2px 6px;
         border-radius: 4px;
         font-weight: 600;
@@ -538,6 +564,75 @@
         display: block;
         color: #dc2626;
         background: #fef2f2;
+      }
+
+      /* ── Feedback Dialog ── */
+      .feedback-dialog {
+        display: none;
+        padding: 16px;
+      }
+      .feedback-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #111;
+      }
+      .feedback-email {
+        font-size: 12px;
+        color: #9ca3af;
+        margin-bottom: 10px;
+      }
+      .feedback-textarea {
+        display: block;
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #dfe3e8;
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.15s;
+        background: #fff;
+        color: #111;
+        resize: vertical;
+        min-height: 80px;
+      }
+      .feedback-textarea:focus {
+        border-color: #1a1a1a;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
+      }
+      .feedback-btn-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .feedback-btn-row .btn {
+        flex: 1;
+      }
+      .feedback-status {
+        display: none;
+        text-align: center;
+        padding: 8px;
+        font-size: 12px;
+        border-radius: 6px;
+        margin-top: 8px;
+      }
+      .feedback-status.success {
+        display: block;
+        color: #16a34a;
+        background: #f0fdf4;
+      }
+      .feedback-status.error {
+        display: block;
+        color: #dc2626;
+        background: #fef2f2;
+      }
+
+      /* ── Footer separator ── */
+      .footer-sep {
+        color: #d1d5db;
+        margin: 0 4px;
+        font-size: 11px;
       }
     </style>
   </head>
@@ -593,32 +688,10 @@
 
     <!-- Main Content (shown when signed in) -->
     <div class="main-content" id="main-content">
-      <!-- Annotation Stats -->
-      <div class="stats" id="stats">
-        <div class="stat-card">
-          <div class="stat-count" id="stat-highlight">0</div>
-          <div class="stat-label" style="color: #F59E0B">Highlight</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-count" id="stat-underline">0</div>
-          <div class="stat-label" style="color: #0D9488">Important</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-count" id="stat-question">0</div>
-          <div class="stat-label" style="color: #7C3AED">Question</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-count" id="stat-insight">0</div>
-          <div class="stat-label" style="color: #2563EB">Insight</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-count" id="stat-caveat">0</div>
-          <div class="stat-label" style="color: #EA580C">Caveat</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-count" id="stat-vocabulary">0</div>
-          <div class="stat-label" style="color: #16A34A">Vocabulary</div>
-        </div>
+      <!-- Total Annotation Count -->
+      <div class="total-count" id="total-count">
+        <span class="total-count-number" id="total-count-number">0</span>
+        <span class="total-count-label">annotations created with Oddity 1</span>
       </div>
 
       <!-- Intensity -->
@@ -670,6 +743,30 @@
         </div>
       </div>
 
+      <!-- Annotation Style -->
+      <div class="section">
+        <div class="section-title">Annotation Style</div>
+        <div class="style-controls">
+          <div class="style-row">
+            <label class="style-label">Font</label>
+            <select class="style-select" id="font-select">
+              <option value="default">Handwritten</option>
+              <option value="helvetica">Helvetica</option>
+              <option value="arial">Arial</option>
+              <option value="georgia">Georgia</option>
+            </select>
+          </div>
+          <div class="style-row">
+            <label class="style-label">Size</label>
+            <div class="intensity-group" id="font-size-group" style="flex: 1">
+              <button class="intensity-btn" data-fontsize="small">Small</button>
+              <button class="intensity-btn active" data-fontsize="default">Default</button>
+              <button class="intensity-btn" data-fontsize="large">Large</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Actions -->
       <div class="section">
         <div class="btn-row">
@@ -718,9 +815,23 @@
       <div class="export-status" id="export-status"></div>
     </div>
 
+    <!-- Feedback Dialog -->
+    <div class="feedback-dialog" id="feedback-dialog">
+      <div class="feedback-title">Send Feedback</div>
+      <div class="feedback-email" id="feedback-email"></div>
+      <textarea class="feedback-textarea" id="feedback-textarea" placeholder="Enter your feedback..." rows="5"></textarea>
+      <div class="feedback-btn-row">
+        <button class="btn" id="feedback-cancel-btn">Cancel</button>
+        <button class="btn btn-primary" id="feedback-send-btn">Send</button>
+      </div>
+      <div class="feedback-status" id="feedback-status"></div>
+    </div>
+
     <!-- Footer -->
     <div class="footer">
-      <a href="#" id="open-options">Settings &amp; Options</a>
+      <a href="#" id="open-options">Settings</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="#" id="feedback-link">Send Feedback</a>
     </div>
 
     <script type="module" src="index.ts"></script>

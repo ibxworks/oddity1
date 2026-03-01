@@ -6,6 +6,7 @@ import adaptersRouter from "./adapters.js";
 import annotateRouter from "./annotate.js";
 import annotationsRouter from "./annotations.js";
 import feedbackRouter from "./feedback.js";
+import userFeedbackRouter from "./user-feedback.js";
 import preferencesRouter from "./user/preferences.js";
 
 const app = express();
@@ -27,6 +28,7 @@ app.use("/api/annotate", authMiddleware, createRateLimiter(), annotateRouter);
 app.use("/api/annotations/feedback", authMiddleware, feedbackRouter);
 app.use("/api/annotations", authMiddleware, annotationsRouter);
 app.use("/api/user/preferences", authMiddleware, preferencesRouter);
+app.use("/api/user-feedback", authMiddleware, userFeedbackRouter);
 
 // Global error handler
 app.use(

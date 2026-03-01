@@ -95,13 +95,13 @@ export async function signOut() {
   if (error) throw error;
 }
 
-export async function getProfile(): Promise<{ display_name: string | null; tier: 'free' | 'pro' } | null> {
+export async function getProfile(): Promise<{ display_name: string | null; tier: 'free' | 'pro'; annotation_count: number } | null> {
   const session = await getSession();
   if (!session) return null;
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('display_name, tier')
+    .select('display_name, tier, annotation_count')
     .eq('id', session.user.id)
     .single();
 
@@ -109,6 +109,7 @@ export async function getProfile(): Promise<{ display_name: string | null; tier:
   return {
     display_name: data.display_name ?? null,
     tier: (data.tier as 'free' | 'pro') ?? 'free',
+    annotation_count: (data.annotation_count as number) ?? 0,
   };
 }
 

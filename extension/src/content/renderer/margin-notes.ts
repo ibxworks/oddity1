@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationFeedback, AnnotationType } from '@oddity/shared';
+import type { Annotation, AnnotationFeedback, AnnotationFont, AnnotationFontSize, AnnotationType } from '@oddity/shared';
 import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '@oddity/shared';
 import { sendMessage } from '../../shared/messaging.js';
 import { emphasizeAnnotation, deemphasizeAnnotation, removeAnnotation as removeAnnotationOverlay } from './overlay.js';
@@ -39,6 +39,14 @@ const NOTE_GAP = 10;
 const MARGIN_PADDING = 16;
 const MIN_MARGIN_WIDTH = 120;
 
+const FONT_MAP: Record<AnnotationFont, string> = {
+  default: "'Kalam', cursive, system-ui, sans-serif",
+  helvetica: "Helvetica, 'Helvetica Neue', Arial, sans-serif",
+  arial: "Arial, 'Helvetica Neue', sans-serif",
+  georgia: "Georgia, 'Times New Roman', serif",
+};
+const SIZE_MAP: Record<AnnotationFontSize, string> = { small: '11px', default: '13px', large: '15px' };
+
 // ─── Public API ───
 
 export function initMarginNotes(region: Element): void {
@@ -71,6 +79,14 @@ export function initMarginNotes(region: Element): void {
   const style = document.createElement('style');
   style.textContent = MARGIN_NOTES_CSS;
   shadowRoot.appendChild(style);
+
+  // Apply initial font/size from stored preferences
+  chrome.storage.local.get('preferences', (result) => {
+    const prefs = result['preferences'];
+    if (prefs) {
+      updateMarginNotesStyle(prefs.annotation_font, prefs.annotation_font_size);
+    }
+  });
 
   startTracking();
 }
@@ -217,6 +233,13 @@ export function destroyMarginNotes(): void {
   expandedId = null;
   fontLink?.remove();
   fontLink = null;
+}
+
+export function updateMarginNotesStyle(font?: AnnotationFont, fontSize?: AnnotationFontSize): void {
+  const host = shadowRoot?.host as HTMLElement;
+  if (!host) return;
+  host.style.setProperty('--oddity-note-font', FONT_MAP[font ?? 'default']);
+  host.style.setProperty('--oddity-note-size', SIZE_MAP[fontSize ?? 'default']);
 }
 
 // ─── Note Element Construction ───
@@ -649,15 +672,16 @@ function stopTracking(): void {
 
 const MARGIN_NOTES_CSS = `
   :host {
-    font-family: 'Kalam', cursive, system-ui, sans-serif;
+    --oddity-note-font: 'Kalam', cursive, system-ui, sans-serif;
+    --oddity-note-size: 13px;
   }
 
   .oddity-note {
     position: absolute;
     max-width: ${NOTE_MAX_WIDTH}px;
     padding: 6px 10px;
-    font-family: 'Kalam', cursive, system-ui, sans-serif;
-    font-size: 13px;
+    font-family: var(--oddity-note-font);
+    font-size: var(--oddity-note-size);
     line-height: 1.4;
     color: #374151;
     pointer-events: auto;
@@ -766,7 +790,7 @@ const MARGIN_NOTES_CSS = `
 
   .note-section p {
     margin: 0;
-    font-size: 12px;
+    font-size: calc(var(--oddity-note-size) - 1px);
   }
 
   .note-section ul {
@@ -902,7 +926,7 @@ const MARGIN_NOTES_CSS = `
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: #7c3aed;
+    background: #1a1a1a;
     color: #fff;
     font-size: 12px;
     display: flex;
@@ -948,7 +972,7 @@ const MARGIN_NOTES_CSS = `
     width: 100%;
     font-size: 12px;
     padding: 4px 6px;
-    border: 1px solid #7c3aed;
+    border: 1px solid #1a1a1a;
     border-radius: 4px;
     font-family: 'Kalam', cursive, system-ui, sans-serif;
     resize: vertical;
@@ -961,7 +985,7 @@ const MARGIN_NOTES_CSS = `
   :host([data-theme="dark"]) .note-edit-textarea {
     background: #1e293b;
     color: #e2e8f0;
-    border-color: #7c3aed;
+    border-color: #1a1a1a;
   }
 
   .note-edit-actions {
@@ -983,11 +1007,11 @@ const MARGIN_NOTES_CSS = `
   }
 
   .note-save-btn {
-    color: #7c3aed;
+    color: #1a1a1a;
   }
 
   .note-save-btn:hover {
-    background: #f5f3ff;
+    background: #f3f4f6;
   }
 
   .note-cancel-btn {
@@ -999,7 +1023,7 @@ const MARGIN_NOTES_CSS = `
   }
 
   :host([data-theme="dark"]) .note-save-btn:hover {
-    background: #2d2054;
+    background: #334155;
   }
 
   :host([data-theme="dark"]) .note-cancel-btn:hover {
@@ -1007,14 +1031,14 @@ const MARGIN_NOTES_CSS = `
   }
 
   .note-edit-btn {
-    color: #7c3aed;
+    color: #1a1a1a;
   }
 
   .note-edit-btn:hover {
-    background: #f5f3ff;
+    background: #f3f4f6;
   }
 
   :host([data-theme="dark"]) .note-edit-btn:hover {
-    background: #2d2054;
+    background: #334155;
   }
 `;

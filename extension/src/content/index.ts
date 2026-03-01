@@ -36,6 +36,7 @@ import {
   expandMarginNote,
   collapseAllMarginNotes,
   isAnyMarginNoteExpanded,
+  updateMarginNotesStyle,
 } from "./renderer/margin-notes.js";
 import { initScrollLoader, registerRegion } from "./scroll-loader.js";
 import { showAuthToast } from "./auth-toast.js";
@@ -333,7 +334,12 @@ onMessage((message: ExtensionMessage) => {
         enabled: newEnabled,
         intensity: newIntensity,
         visibleTypes: newVisibleTypes,
+        annotationFont,
+        annotationFontSize,
       } = message.payload;
+
+      // Apply font/size changes immediately
+      updateMarginNotesStyle(annotationFont, annotationFontSize);
       const wasEnabled = enabled;
       const intensityChanged = newIntensity !== currentIntensity;
       enabled = newEnabled;
