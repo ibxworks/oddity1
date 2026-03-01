@@ -475,7 +475,7 @@ function createNoteElement(
       if (thumbUp.classList.contains("active")) {
         // Undo thumbs up
         thumbUp.classList.remove("active");
-        updateReactionBadge(labelEl, reactionBadge, "thumbs_up", false);
+        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", false);
         if (currentFeedbackId) {
           sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
           currentFeedbackId = null;
@@ -484,7 +484,7 @@ function createNoteElement(
         // Activate thumbs up, deactivate thumbs down
         thumbUp.classList.add("active");
         thumbDown.classList.remove("active");
-        updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
+        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
         const doSave = () =>
           sendMessage({
             action: "saveFeedback",
@@ -515,7 +515,7 @@ function createNoteElement(
       if (thumbDown.classList.contains("active")) {
         // Undo thumbs down
         thumbDown.classList.remove("active");
-        updateReactionBadge(labelEl, reactionBadge, "thumbs_down", false);
+        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", false);
         if (currentFeedbackId) {
           sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
           currentFeedbackId = null;
@@ -524,7 +524,7 @@ function createNoteElement(
         // Activate thumbs down, deactivate thumbs up
         thumbDown.classList.add("active");
         thumbUp.classList.remove("active");
-        updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
+        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
         const doSave = () =>
           sendMessage({
             action: "saveFeedback",
@@ -718,19 +718,22 @@ function updateReactionBadge(
   existingBadge: HTMLSpanElement | null,
   type: "thumbs_up" | "thumbs_down",
   isActive: boolean,
-): void {
+): HTMLSpanElement | null {
   const emoji = type === "thumbs_up" ? "\u{1F44D}" : "\u{1F44E}";
   if (isActive) {
     if (existingBadge) {
       existingBadge.textContent = emoji;
+      return existingBadge;
     } else {
       const badge = document.createElement("span");
       badge.className = "note-reaction-badge";
       badge.textContent = emoji;
       labelEl.appendChild(badge);
+      return badge;
     }
-  } else if (existingBadge) {
-    existingBadge.remove();
+  } else {
+    if (existingBadge) existingBadge.remove();
+    return null;
   }
 }
 
