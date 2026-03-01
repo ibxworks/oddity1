@@ -69,6 +69,15 @@ let regions: DetectedRegion[] = [];
 async function init(): Promise<void> {
   console.log("[Oddity 1] Content script initializing");
 
+  // Load stored enabled state before doing any work
+  const stored = await chrome.storage.local.get("preferences");
+  const prefs = stored?.preferences;
+  if (prefs?.enabled === false) {
+    enabled = false;
+    console.log("[Oddity 1] Extension is disabled — skipping initialization");
+    return;
+  }
+
   // Fetch adapters from service worker
   const response = await sendMessage<{ adapters: SiteAdapter[] }>({
     action: "getAdapters",
@@ -95,6 +104,7 @@ async function init(): Promise<void> {
       responseSelector: matchedAdapter.response_selector,
       stabilitySignal: matchedAdapter.stability_signal,
       onResponse: (regionId, element) => {
+        if (!enabled) return;
         if (!marginNotesInitialized) {
           initMarginNotes(element);
           marginNotesInitialized = true;
@@ -130,6 +140,7 @@ async function init(): Promise<void> {
 
   // Initialize scroll-based lazy loader
   initScrollLoader((regionId, element) => {
+    if (!enabled) return;
     const region = regions.find((r) => r.id === regionId);
     if (region) {
       handleStableRegion(region, element, true);
@@ -160,6 +171,8 @@ async function handleStableRegion(
   _element: Element,
   fromLazyLoader = false,
 ): Promise<void> {
+  if (!enabled) return;
+
   // Extract text first so we can use contentHash as the dedup key
   const extracted =
     region.source === "readability"
