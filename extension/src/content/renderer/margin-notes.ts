@@ -55,15 +55,16 @@ const MARGIN_PADDING = 16;
 const MIN_MARGIN_WIDTH = 120;
 
 const FONT_MAP: Record<AnnotationFont, string> = {
-  default: "'Kalam', cursive, system-ui, sans-serif",
+  default: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+  kalam: "'Kalam', cursive, system-ui, sans-serif",
   helvetica: "Helvetica, 'Helvetica Neue', Arial, sans-serif",
   arial: "Arial, 'Helvetica Neue', sans-serif",
   georgia: "Georgia, 'Times New Roman', serif",
 };
 const SIZE_MAP: Record<AnnotationFontSize, string> = {
-  small: "11px",
-  default: "13px",
-  large: "15px",
+  small: "12px",
+  default: "14px",
+  large: "16px",
 };
 
 // ─── Public API ───
@@ -293,6 +294,7 @@ function createNoteElement(
   el.className = `oddity-note ${side}`;
   el.dataset.annotationId = annotation.id;
   el.dataset.annotationType = annotation.type;
+  el.style.setProperty("--note-color", color);
 
   // Bracket
   const bracket = document.createElement("div");
@@ -313,9 +315,16 @@ function createNoteElement(
     labelEl.appendChild(userBadge);
   }
 
-  // Reaction badge (collapsed state indicator)
-  const existingThumbUp = feedback.find((f) => f.feedback_type === "thumbs_up");
-  const existingThumbDown = feedback.find((f) => f.feedback_type === "thumbs_down");
+  // Reaction badge (collapsed state indicator) — deduplicate: pick only the latest thumb
+  const thumbFeedback = feedback.filter(
+    (f) => f.feedback_type === "thumbs_up" || f.feedback_type === "thumbs_down",
+  );
+  thumbFeedback.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+  const latestThumb = thumbFeedback[0] ?? null;
+  const existingThumbUp = latestThumb?.feedback_type === "thumbs_up" ? latestThumb : null;
+  const existingThumbDown = latestThumb?.feedback_type === "thumbs_down" ? latestThumb : null;
   let reactionBadge: HTMLSpanElement | null = null;
   if (existingThumbUp || existingThumbDown) {
     reactionBadge = document.createElement("span");
@@ -366,27 +375,26 @@ function createNoteElement(
     expandedContent.appendChild(sectionEl);
   }
 
-  // ── Edit + Delete actions (shared by both manual and AI annotations) ──
-  const createEditDeleteActions = (): HTMLDivElement => {
-    const actions = document.createElement("div");
-    actions.className = "note-actions";
+  // ── Edit + Delete icon buttons (shared by both manual and AI annotations) ──
+  const createEditDeleteIcons = (): DocumentFragment => {
+    const frag = document.createDocumentFragment();
 
     const editBtn = document.createElement("button");
-    editBtn.className = "note-action-btn note-edit-btn";
-    editBtn.textContent = "Edit";
+    editBtn.className = "note-icon-btn note-edit-btn";
+    editBtn.title = "Edit";
+    editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       enterEditMode(el, annotation, textEl);
     });
 
     const deleteBtn = document.createElement("button");
-    deleteBtn.className = "note-action-btn note-delete-btn";
-    deleteBtn.textContent = "Delete";
+    deleteBtn.className = "note-icon-btn note-delete-btn";
+    deleteBtn.title = "Delete";
+    deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      // Immediate DOM removal
       if (onDelete) onDelete(annotation.id);
-      // Fire-and-forget backend call
       sendMessage({
         action: "deleteAnnotation",
         payload: {
@@ -397,14 +405,20 @@ function createNoteElement(
       });
     });
 
-    actions.appendChild(editBtn);
-    actions.appendChild(deleteBtn);
-    return actions;
+    frag.appendChild(editBtn);
+    frag.appendChild(deleteBtn);
+    return frag;
   };
 
   if (isManual) {
-    // ── User annotation: Edit + Delete ──
-    expandedContent.appendChild(createEditDeleteActions());
+    // ── User annotation: Edit + Delete in a single row ──
+    const manualRow = document.createElement("div");
+    manualRow.className = "note-feedback-row";
+    const manualSpacer = document.createElement("div");
+    manualSpacer.style.flex = "1";
+    manualRow.appendChild(manualSpacer);
+    manualRow.appendChild(createEditDeleteIcons());
+    expandedContent.appendChild(manualRow);
   } else {
     // ── AI annotation: Reply thread + Feedback row + Edit/Delete ──
 
@@ -453,8 +467,8 @@ function createNoteElement(
     let currentFeedbackId: string | null = existingThumbUp?.id ?? existingThumbDown?.id ?? null;
 
     const thumbUp = document.createElement("button");
-    thumbUp.className = "note-thumb-btn" + (existingThumbUp ? " active" : "");
-    thumbUp.innerHTML = "&#128077;"; // 👍
+    thumbUp.className = "note-feedback-pill" + (existingThumbUp ? " active" : "");
+    thumbUp.textContent = "Exactly!";
     thumbUp.title = "Helpful";
     thumbUp.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -471,26 +485,30 @@ function createNoteElement(
         thumbUp.classList.add("active");
         thumbDown.classList.remove("active");
         updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
+        const doSave = () =>
+          sendMessage({
+            action: "saveFeedback",
+            payload: {
+              annotationId: annotation.id,
+              contentHash: getAnnotationContentHash(annotation),
+              url: window.location.href,
+              feedbackType: "thumbs_up",
+            },
+          }).then((fb: any) => {
+            if (fb?.id) currentFeedbackId = fb.id;
+          });
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } })
+            .then(() => { currentFeedbackId = null; return doSave(); });
+        } else {
+          doSave();
         }
-        sendMessage({
-          action: "saveFeedback",
-          payload: {
-            annotationId: annotation.id,
-            contentHash: getAnnotationContentHash(annotation),
-            url: window.location.href,
-            feedbackType: "thumbs_up",
-          },
-        }).then((fb: any) => {
-          if (fb?.id) currentFeedbackId = fb.id;
-        });
       }
     });
 
     const thumbDown = document.createElement("button");
-    thumbDown.className = "note-thumb-btn" + (existingThumbDown ? " active" : "");
-    thumbDown.innerHTML = "&#128078;"; // 👎
+    thumbDown.className = "note-feedback-pill note-feedback-pill--negative" + (existingThumbDown ? " active" : "");
+    thumbDown.textContent = "Hmm..?";
     thumbDown.title = "Not helpful";
     thumbDown.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -507,29 +525,39 @@ function createNoteElement(
         thumbDown.classList.add("active");
         thumbUp.classList.remove("active");
         updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
+        const doSave = () =>
+          sendMessage({
+            action: "saveFeedback",
+            payload: {
+              annotationId: annotation.id,
+              contentHash: getAnnotationContentHash(annotation),
+              url: window.location.href,
+              feedbackType: "thumbs_down",
+            },
+          }).then((fb: any) => {
+            if (fb?.id) currentFeedbackId = fb.id;
+          });
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } })
+            .then(() => { currentFeedbackId = null; return doSave(); });
+        } else {
+          doSave();
         }
-        sendMessage({
-          action: "saveFeedback",
-          payload: {
-            annotationId: annotation.id,
-            contentHash: getAnnotationContentHash(annotation),
-            url: window.location.href,
-            feedbackType: "thumbs_down",
-          },
-        }).then((fb: any) => {
-          if (fb?.id) currentFeedbackId = fb.id;
-        });
       }
     });
 
-    feedbackRow.appendChild(thumbUp);
-    feedbackRow.appendChild(thumbDown);
-    expandedContent.appendChild(feedbackRow);
+    const pillGroup = document.createElement("div");
+    pillGroup.className = "note-pill-group";
+    pillGroup.appendChild(thumbUp);
+    pillGroup.appendChild(thumbDown);
 
-    // Edit + Delete for AI annotations too
-    expandedContent.appendChild(createEditDeleteActions());
+    const iconGroup = document.createElement("div");
+    iconGroup.className = "note-icon-group";
+    iconGroup.appendChild(createEditDeleteIcons());
+
+    feedbackRow.appendChild(pillGroup);
+    feedbackRow.appendChild(iconGroup);
+    expandedContent.appendChild(feedbackRow);
   }
 
   el.appendChild(bracket);
@@ -821,8 +849,8 @@ function stopTracking(): void {
 
 const MARGIN_NOTES_CSS = `
   :host {
-    --oddity-note-font: 'Kalam', cursive, system-ui, sans-serif;
-    --oddity-note-size: 13px;
+    --oddity-note-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --oddity-note-size: 14px;
   }
 
   .oddity-note {
@@ -880,12 +908,11 @@ const MARGIN_NOTES_CSS = `
 
   .note-label {
     display: block;
-    font-size: 9px;
+    font-family: var(--oddity-note-font);
+    font-style: italic;
+    font-size: 13px;
     font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
     margin-bottom: 2px;
-    font-family: system-ui, -apple-system, sans-serif;
   }
 
   .note-text {
@@ -901,10 +928,16 @@ const MARGIN_NOTES_CSS = `
   .oddity-note.expanded {
     max-width: ${NOTE_EXPANDED_WIDTH}px;
     background: white;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
-    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
+    border-radius: 4px;
+    padding: 8px 12px;
     opacity: 1;
     z-index: 10;
+    border-left: 3px solid var(--note-color);
+  }
+
+  .oddity-note.expanded .note-bracket {
+    display: none;
   }
 
   .oddity-note.expanded .note-text {
@@ -928,11 +961,9 @@ const MARGIN_NOTES_CSS = `
 
   .note-section-label {
     display: block;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: #94a3b8;
+    color: #374151;
     margin-bottom: 1px;
     font-family: system-ui, -apple-system, sans-serif;
   }
@@ -952,34 +983,27 @@ const MARGIN_NOTES_CSS = `
     margin-bottom: 1px;
   }
 
-  .note-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
-    margin-top: 8px;
-  }
-
-  .note-action-btn {
+  .note-icon-btn {
     all: unset;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-family: system-ui, -apple-system, sans-serif;
-    color: #475569;
-    transition: background 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    color: #64748b;
+    opacity: 0.5;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
   }
 
-  .note-action-btn:hover {
+  .note-icon-btn:hover {
+    opacity: 0.7;
     background: #f1f5f9;
   }
 
-  .note-delete-btn {
+  .note-icon-btn.note-delete-btn:hover {
     color: #ef4444;
-  }
-
-  .note-delete-btn:hover {
     background: #fef2f2;
   }
 
@@ -989,28 +1013,36 @@ const MARGIN_NOTES_CSS = `
   }
 
   :host([data-theme="dark"]) .oddity-note.expanded {
-    background: #1e293b;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    background: #1a1a2e;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.3);
   }
 
   :host([data-theme="dark"]) .note-section-label {
-    color: #64748b;
+    color: #cbd5e1;
   }
 
-  :host([data-theme="dark"]) .note-action-btn {
+  :host([data-theme="dark"]) .note-icon-btn {
     color: #94a3b8;
   }
 
-  :host([data-theme="dark"]) .note-action-btn:hover {
+  :host([data-theme="dark"]) .note-icon-btn:hover {
     background: #334155;
   }
 
-  :host([data-theme="dark"]) .note-delete-btn {
+  :host([data-theme="dark"]) .note-icon-btn.note-delete-btn:hover {
     color: #f87171;
+    background: #451a1a;
   }
 
-  :host([data-theme="dark"]) .note-delete-btn:hover {
-    background: #451a1a;
+  :host([data-theme="dark"]) .note-feedback-pill {
+    background: transparent;
+    border: 1px solid var(--note-color);
+    color: var(--note-color);
+  }
+
+  :host([data-theme="dark"]) .note-feedback-pill.active {
+    background: var(--note-color);
+    color: #fff;
   }
 
   /* ── Hide animation ── */
@@ -1030,7 +1062,7 @@ const MARGIN_NOTES_CSS = `
 
   .note-reply-bubble {
     background: #f1f5f9;
-    border-radius: 10px;
+    border-radius: 4px;
     padding: 4px 8px;
     font-size: 11px;
     margin-bottom: 3px;
@@ -1057,7 +1089,7 @@ const MARGIN_NOTES_CSS = `
     font-size: 11px;
     padding: 4px 8px;
     border: 1px solid #e2e8f0;
-    border-radius: 12px;
+    border-radius: 4px;
     font-family: system-ui, -apple-system, sans-serif;
     background: #fff;
     color: #1a1a1a;
@@ -1075,7 +1107,7 @@ const MARGIN_NOTES_CSS = `
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: #1a1a1a;
+    background: var(--note-color, #1a1a1a);
     color: #fff;
     font-size: 12px;
     display: flex;
@@ -1092,25 +1124,40 @@ const MARGIN_NOTES_CSS = `
   /* ── Feedback row ── */
   .note-feedback-row {
     display: flex;
-    gap: 6px;
+    align-items: center;
+    justify-content: space-between;
     margin-top: 8px;
-    justify-content: flex-start;
   }
 
-  .note-thumb-btn {
+  .note-pill-group {
+    display: flex;
+    gap: 6px;
+  }
+
+  .note-icon-group {
+    display: flex;
+    gap: 2px;
+  }
+
+  .note-feedback-pill {
     all: unset;
     cursor: pointer;
-    font-size: 14px;
-    opacity: 0.4;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--note-color);
+    color: #fff;
+    opacity: 0.45;
     transition: opacity 0.15s;
-    padding: 2px;
   }
 
-  .note-thumb-btn:hover {
+  .note-feedback-pill:hover {
     opacity: 0.7;
   }
 
-  .note-thumb-btn.active {
+  .note-feedback-pill.active {
     opacity: 1;
   }
 
@@ -1123,7 +1170,7 @@ const MARGIN_NOTES_CSS = `
     padding: 4px 6px;
     border: 1px solid #1a1a1a;
     border-radius: 4px;
-    font-family: 'Kalam', cursive, system-ui, sans-serif;
+    font-family: var(--oddity-note-font);
     resize: vertical;
     min-height: 48px;
     box-sizing: border-box;
@@ -1202,15 +1249,4 @@ const MARGIN_NOTES_CSS = `
     color: #94a3b8;
   }
 
-  .note-edit-btn {
-    color: #1a1a1a;
-  }
-
-  .note-edit-btn:hover {
-    background: #f3f4f6;
-  }
-
-  :host([data-theme="dark"]) .note-edit-btn:hover {
-    background: #334155;
-  }
 `;

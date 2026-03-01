@@ -45,7 +45,10 @@ async function callOpenAI(
   }
 
   const supportsTemperature = !(
-    model.includes("gpt-5-nano") || model.includes("gpt-5-mini")
+    model.includes("gpt-5-nano") ||
+    model.includes("gpt-5-mini") ||
+    model.includes("gpt-4.1-nano") ||
+    model.includes("gpt-4.1-mini")
   );
   console.log("supportsTemperature:", supportsTemperature);
 

@@ -53,7 +53,7 @@ export type Intensity = 'light' | 'default' | 'heavy';
 
 // ─── Annotation Style ───
 
-export type AnnotationFont = 'default' | 'helvetica' | 'arial' | 'georgia';
+export type AnnotationFont = 'default' | 'kalam' | 'helvetica' | 'arial' | 'georgia';
 export type AnnotationFontSize = 'small' | 'default' | 'large';
 
 // ─── Site Adapter Registry ───

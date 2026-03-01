@@ -45,6 +45,16 @@ router.post('/', async (req, res) => {
     const token = req.headers.authorization?.slice(7) ?? '';
     const userClient = createUserClient(token);
 
+    // Dedup: remove any existing thumb reaction for this user+annotation before inserting
+    if (feedback_type === 'thumbs_up' || feedback_type === 'thumbs_down') {
+      await userClient
+        .from('annotation_feedback')
+        .delete()
+        .eq('user_id', req.user!.id)
+        .eq('annotation_id', annotation_id)
+        .in('feedback_type', ['thumbs_up', 'thumbs_down']);
+    }
+
     const { data, error } = await userClient
       .from('annotation_feedback')
       .insert({
