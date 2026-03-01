@@ -90,9 +90,10 @@ export async function requestAnnotations(
 export async function getAnnotations(
   url: string,
   contentHash: string,
+  signal?: AbortSignal,
 ): Promise<AnnotationResponse> {
   const params = new URLSearchParams({ url, content_hash: contentHash });
-  const res = await authFetch(`/api/annotations?${params.toString()}`);
+  const res = await authFetch(`/api/annotations?${params.toString()}`, { signal });
   if (!res.ok) throw new Error(`getAnnotations failed: ${res.status}`);
   return res.json() as Promise<AnnotationResponse>;
 }

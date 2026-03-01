@@ -5,7 +5,6 @@ const OVERLAY_ID = 'oddity-overlay';
 const Z_INDEX = 2147483646;
 
 let overlayEl: HTMLDivElement | null = null;
-let rafId: number | null = null;
 let activeRanges: { annotation: Annotation; range: Range }[] = [];
 let emphasizedId: string | null = null;
 
@@ -240,11 +239,6 @@ function redraw(): void {
 // ─── Scroll / Resize Tracking ───
 
 function startTracking(): void {
-  const onFrame = () => {
-    redraw();
-    rafId = requestAnimationFrame(onFrame);
-  };
-
   // Use scroll/resize events to trigger redraw, throttled via rAF
   let needsRedraw = false;
 
@@ -269,10 +263,6 @@ function startTracking(): void {
 }
 
 function stopTracking(): void {
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
-  }
   if (overlayEl) {
     const cleanup = (overlayEl as HTMLDivElement & { _cleanup?: () => void })._cleanup;
     cleanup?.();

@@ -121,9 +121,6 @@ async function init(): Promise<void> {
     return;
   }
 
-  // Optimization: sort regions by viewport proximity (visible-first)
-  sortByViewportProximity(regions);
-
   console.log(`[Oddity 1] Detected ${regions.length} reading region(s)`);
 
   // Initialize rendering layers
@@ -211,6 +208,7 @@ async function handleStableRegion(
       action: "requestAnnotations",
       payload: {
         url: window.location.href,
+        regionId: region.id,
         contentHash,
         text: extracted.text,
         intensity: currentIntensity,
@@ -475,48 +473,6 @@ function isInputFocused(): boolean {
 }
 
 // ─── Helpers ───
-
-/**
- * Sort regions so that elements closest to (or inside) the viewport come first.
- * This implements visible-first scheduling — above-the-fold content gets annotated
- * before far-off regions, reducing perceived TTFA.
- */
-function sortByViewportProximity(regionList: DetectedRegion[]): void {
-  const viewportTop = window.scrollY;
-  const viewportBottom = viewportTop + window.innerHeight;
-
-  regionList.sort((a, b) => {
-    const rectA = a.element.getBoundingClientRect();
-    const rectB = b.element.getBoundingClientRect();
-
-    // Distance from viewport center (0 = inside viewport)
-    const distA = distanceToViewport(rectA, viewportTop, viewportBottom);
-    const distB = distanceToViewport(rectB, viewportTop, viewportBottom);
-
-    return distA - distB;
-  });
-}
-
-function distanceToViewport(
-  rect: DOMRect,
-  viewportTop: number,
-  viewportBottom: number,
-): number {
-  const absTop = rect.top + window.scrollY;
-  const absBottom = absTop + rect.height;
-
-  // Fully inside viewport
-  if (absTop >= viewportTop && absBottom <= viewportBottom) return 0;
-
-  // Partially overlapping
-  if (absTop < viewportBottom && absBottom > viewportTop) return 0;
-
-  // Above viewport
-  if (absBottom < viewportTop) return viewportTop - absBottom;
-
-  // Below viewport
-  return absTop - viewportBottom;
-}
 
 function matchHostname(hostname: string, pattern: string): boolean {
   if (pattern.startsWith("*.")) {

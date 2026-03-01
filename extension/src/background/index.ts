@@ -16,11 +16,12 @@ import { getProfile, getSession, getUserTier, signIn, signOut, signUp, updatePro
 import { setupContextMenu } from "./context-menu.js";
 
 // ─── Optimization: per-request abort controllers ───
-// Keyed by "tabId:contentHash" so we can cancel stale requests
+// Keyed by "tabId:regionId" so re-requesting the same region with new content
+// cancels the previous in-flight request (even when the content hash differs).
 const inflight = new Map<string, AbortController>();
 
-function abortKey(tabId: number, contentHash: string): string {
-  return `${tabId}:${contentHash}`;
+function abortKey(tabId: number, regionId: string): string {
+  return `${tabId}:${regionId}`;
 }
 
 // ─── Installed Event ───
@@ -42,7 +43,7 @@ chrome.runtime.onMessage.addListener(
     const handleAsync = async (): Promise<unknown> => {
       switch (message.action) {
         case "requestAnnotations": {
-          const { url, contentHash, text, intensity, wordCount } =
+          const { url, regionId, contentHash, text, intensity, wordCount } =
             message.payload;
 
           // Proactive auth check — fail fast with badge if not signed in
@@ -56,9 +57,9 @@ chrome.runtime.onMessage.addListener(
           // Session exists — clear any stale badge
           chrome.action.setBadgeText({ text: "" });
 
-          // Cancel any previous in-flight request for the same tab+hash
+          // Cancel any previous in-flight request for the same tab+region
           const tabId = sender.tab?.id ?? 0;
-          const key = abortKey(tabId, contentHash);
+          const key = abortKey(tabId, regionId);
           inflight.get(key)?.abort();
           const controller = new AbortController();
           inflight.set(key, controller);
@@ -80,7 +81,7 @@ chrome.runtime.onMessage.addListener(
             if (controller.signal.aborted) return { aborted: true };
 
             // Fetch merged result (cached AI + user annotations)
-            const merged = await getAnnotations(url, contentHash);
+            const merged = await getAnnotations(url, contentHash, controller.signal);
 
             // Forward annotations to the requesting tab
             if (sender.tab?.id) {

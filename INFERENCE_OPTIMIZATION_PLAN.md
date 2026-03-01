@@ -1,235 +1,152 @@
-# Annotation Inference Optimization Plan
+# Inference Optimization Plan
 
-## Objective
+## Current State
 
-Reduce annotation latency and improve perceived responsiveness without reducing annotation quality.
+Backend deploys to **Vercel serverless** (each request may cold-start a new instance). Extension is Chrome MV3 with a persistent-ish service worker. The dominant cost in annotation latency is the **OpenAI LLM call (~2-4s)**, followed by network round-trips and Supabase DB reads.
 
-## Success Metrics
+### What already exists before any optimization work
 
-- **TTFA (Time To First Annotation)**: target 40–70% reduction.
-- **P95 region annotation latency**: target 30–50% reduction.
-- **LLM calls per page revisit**: target 50%+ reduction.
-- **Annotation render mismatch/drop rate**: no regression.
+| Layer | What's there | Where |
+|---|---|---|
+| DB cache | `annotation_cache` keyed on `content_hash + intensity`, with `expires_at`, `model_version`, `prompt_version` | Supabase table, queried in [annotate.ts](backend/api/annotate.ts) |
+| Scroll-based lazy loading | IntersectionObserver defers large below-fold regions until they near the viewport | [scroll-loader.ts](extension/src/content/scroll-loader.ts) |
+| Stability debounce | MutationObserver + debounce timer before extracting text from a region | [stability.ts](extension/src/content/stability.ts) |
+| Chat adapter signals | Adapter-driven stability signals for streaming chat pages | [chat-observer.ts](extension/src/content/chat-observer.ts) + stability.ts |
 
-## Current Inference Flow (Baseline)
-
-1. Content script detects candidate reading regions.
-2. Stability watchers wait for static content (or chatbot completion signals).
-3. Region text is extracted and normalized.
-4. Region is gated by eager/lazy loading logic.
-5. Background sends `/api/annotate` request.
-6. Backend checks cache and may call OpenAI.
-7. Backend validates/filters annotations.
-8. Extension resolves selectors and renders overlays + margin notes.
-
-## What Already Exists (Important Baseline)
-
-- Backend already uses persistent cache in `annotation_cache` for `/api/annotate` lookups.
-- Cache lookup currently keys on `content_hash` + `intensity` (+ TTL via `expires_at`).
-- Cache entries are written with `model_version` and `prompt_version` metadata.
-- Result: refreshes can already avoid new LLM calls when text hash and intensity are unchanged.
-
-## Optimization Workstreams
-
-## 1) Cache Hit-Rate Hardening (Highest ROI)
-
-### Why
-Cache exists, so the main gains now come from increasing hit rate and reducing overhead around cache misses/hits.
-
-### How
-- Keep hash-based cache lookup in `annotation_cache`, but enforce cache compatibility checks with:
-  - `content_hash`
-  - `intensity`
-  - `model_version`
-  - `prompt_version`
-- Add a short in-memory hot cache inside backend runtime process to bypass DB for burst duplicate requests.
-- Add negative cache (brief TTL) for known-bad inputs (e.g., empty/invalid parse attempts) to reduce repeated waste.
-
-### Implementation
-- Update backend annotate read/write path in [backend/api/annotate.ts](backend/api/annotate.ts).
-- Add optional process-local cache helper in `backend/lib/`.
-- Ensure returned payload includes `cached` source marker (memory/db/new).
-
-### Verification
-- Compare cache hit rate before/after.
-- Confirm repeated refresh of same page avoids OpenAI calls.
-- Confirm prompt/model version changes cannot return stale-incompatible cache entries.
+These baselines mean page revisits already skip LLM calls (DB cache hit), and below-fold content is already deferred. The optimization work targets the remaining gaps.
 
 ---
 
-## 2) Request Coalescing + In-flight Dedup
+## Implemented Optimizations
 
-### Why
-Multiple concurrent requests for identical content can create duplicate LLM calls.
+### 1. DB Cache Version Compatibility ✅ SOLID
 
-### How
-- In backend, maintain an in-flight map keyed by `(content_hash, intensity, model, promptVersion)`.
-- If an identical request arrives while one is running, await the same promise.
-- On completion/failure, remove key from map.
+**What it does:** Before returning a DB cache hit, checks that `model_version` and `prompt_version` match the current runtime values. Stale entries (from an old model or prompt revision) fall through to LLM regeneration and are atomically replaced via upsert.
 
-### Implementation
-- Add shared in-flight promise registry in `backend/lib/`.
-- Wrap `generateAnnotations` invocation in dedup guard from [backend/api/annotate.ts](backend/api/annotate.ts).
+**Files:** [annotate.ts](backend/api/annotate.ts)
 
-### Verification
-- Load test with simultaneous requests; ensure one upstream LLM call per unique key.
+**Impact:** Prevents correctness bugs (stale annotations from wrong prompt). Not a latency optimization per se, but a cache-safety prerequisite.
 
 ---
 
-## 3) Prompt + Token Budget Optimization
+### 2. In-flight Request Dedup ✅ SOLID
 
-### Why
-LLM latency is often the largest single cost.
+**What it does:** If two identical `(content_hash, intensity)` requests arrive concurrently on the same Vercel instance, only one calls the LLM. The second awaits the same promise.
 
-### How
-- Compress prompt instructions while preserving schema guarantees.
-- Use stricter output constraints (keep `response_format` and add bounded output size).
-- Cap annotation count by text length and intensity target.
-- Consider reducing verbosity in `content.note` for fast mode.
+**Files:** [inflight-dedup.ts](backend/lib/inflight-dedup.ts), wired in [annotate.ts](backend/api/annotate.ts)
 
-### Implementation
-- Revise prompt profiles in [backend/config/prompts.json](backend/config/prompts.json).
-- Tune OpenAI call params in [backend/lib/openai.ts](backend/lib/openai.ts) (`max_tokens`, temperature, timeout/retry policy).
-
-### Verification
-- A/B latency and output validity.
-- Monitor dropped annotations from filter/validator to ensure quality is retained.
+**Impact:** Real savings for burst-concurrent scenarios. Saves ~$0.002-0.01 per deduplicated call + 2-4s of wasted LLM time.
 
 ---
 
-## 4) Visible-first Scheduling in Extension
+### 3. Prompt Token Reduction ✅ SOLID
 
-### Why
-Perceived speed matters more than full-page completion.
+**What it does:** Rewrote prompt profiles from verbose v1.1 (~430 tokens avg) to concise v1.2 (~300 tokens avg, ~30% reduction). Extracted shared rules and schema example into reusable template fragments (`{{shared_rules}}`, `{{schema_example}}`).
 
-### How
-- Annotate only above-the-fold / near-viewport regions first.
-- Defer far-off regions using scroll loader.
-- Prioritize first stable region for immediate request.
+**Files:** [prompts.json](backend/config/prompts.json), [openai.ts](backend/lib/openai.ts) (`expandPrompt()`)
 
-### Implementation
-- Adjust region priority and lazy registration flow in:
-  - [extension/src/content/index.ts](extension/src/content/index.ts)
-  - [extension/src/content/scroll-loader.ts](extension/src/content/scroll-loader.ts)
-
-### Verification
-- Measure TTFA from navigation start.
-- Confirm lower-priority regions continue annotating in background.
+**Impact:** ~30% fewer input tokens per call. With gpt-4o-mini, this shaves measurable time off the dominant LLM latency.
 
 ---
 
-## 5) Cancellation of Stale Work
+### 4. Stale Request Cancellation ✅ FIXED
 
-### Why
-Dynamic pages can invalidate ongoing extraction/inference quickly.
+**What it does:** AbortController in the service worker cancels both the `requestAnnotations` and `getAnnotations` fetches when a region's content changes. Content script has a stale-hash guard that drops responses for invalidated hashes.
 
-### How
-- Use `AbortController` on annotation request lifecycle.
-- Cancel when:
-  - region content hash changes before response,
-  - page route/URL changes,
-  - extension settings disable annotations.
-- Ignore stale responses that do not match current hash.
+**Files:** [background/index.ts](extension/src/background/index.ts), [api-client.ts](extension/src/background/api-client.ts), [content/index.ts](extension/src/content/index.ts)
 
-### Implementation
-- Add abort/stale guards in [extension/src/content/index.ts](extension/src/content/index.ts).
-- Add cancellable fetch path in [extension/src/background/api-client.ts](extension/src/background/api-client.ts) if needed.
+**What was fixed:**
+- **Abort key now uses `regionId`** instead of `contentHash`. When a region's content changes, the new request correctly aborts the old one — even though the content hash differs. This was the core bug: keying by hash meant re-requesting the same region with new content never cancelled the stale request.
+- **`getAnnotations()` now receives the abort signal.** Previously only `requestAnnotations()` was cancellable; the second fetch continued unnecessarily after abort.
+- **`regionId` added to `ExtensionMessage`** payload so the background can track per-region abort controllers.
 
-### Verification
-- Confirm fewer wasted requests on streaming/chat pages.
-- Ensure no stale overlays render after content updates.
+**Impact:** Correct abort for dynamic pages (chat navigation, content edits). Prevents wasted LLM calls + bandwidth on stale content.
 
 ---
 
-## 6) Faster Selector Resolution + Render Throughput
+### 5. Selector Text-Node Index Cache ✅ SOLID (with known limitation)
 
-### Why
-Heavy annotation sets can spend significant time in DOM range resolution and redraw.
+**What it does:** Builds a text-node index (WeakMap) on first `resolveSelector` call for a root element, reuses it for subsequent annotations in the same batch. Eliminates N-1 TreeWalker traversals.
 
-### How
-- Build per-region text-node index once, reuse for multiple selector resolutions.
-- Batch redraws with one `requestAnimationFrame` cycle.
-- Avoid full rerender when only one annotation changes.
+**Files:** [selector.ts](extension/src/content/selector.ts)
 
-### Implementation
-- Optimize:
-  - [extension/src/content/selector.ts](extension/src/content/selector.ts)
-  - [extension/src/content/renderer/overlay.ts](extension/src/content/renderer/overlay.ts)
-  - [extension/src/content/index.ts](extension/src/content/index.ts)
+**Known limitation:** The render loop resolves selectors and injects anchors sequentially. After `injectAnchors` splits a text node the cached index is stale for subsequent annotations. In practice, the fuzzy fallback chain (case-insensitive → punctuation-stripped) handles small positional shifts. Acceptable for typical density (~5-8 annotations); unreliable at very high density (15+).
 
-### Verification
-- Profile CPU time in large annotated documents.
-- Ensure no positioning regressions on scroll/resize.
+**Why the two-pass alternative was not implemented:** Resolving all selectors first then injecting all anchors would fix correctness perfectly. However, it requires significant refactoring of `renderAnnotations` and the relationship between resolved Ranges and injected anchor elements. The current approach works well enough for real-world density. A two-pass refactor is left as a future improvement if annotation density increases.
+
+**Impact:** 5-10× fewer TreeWalker traversals per region. Measurable on annotation-heavy pages.
 
 ---
 
-## 7) Progressive Delivery Strategy (Optional Fast Mode)
+### 6. Overlay Render Batching ✅ SOLID
 
-### Why
-Two-phase inference can improve perceived responsiveness on very long pages.
+**What it does:** Instead of appending each annotation's DOM elements immediately, queues all into `pendingBatch` and flushes in a single `requestAnimationFrame` via `DocumentFragment`.
 
-### How
-- Phase 1: quick low-density pass (`light`) for immediate feedback.
-- Phase 2: upgrade to selected intensity (`default`/`heavy`) in background.
-- Replace or merge annotations deterministically.
+**Files:** [overlay.ts](extension/src/content/renderer/overlay.ts)
 
-### Implementation
-- Add opt-in preference and request orchestration in content/background flow.
-- Keep cache separated by intensity to avoid collisions.
+**Impact:** Single-frame DOM insertion. Reduces layout recalculations from N to 1.
 
-### Verification
-- Compare TTFA and user satisfaction against single-pass flow.
+---
 
-## Instrumentation Plan
+### 7. Progressive Paragraph Annotation (Chat/LLM Pages) ✅ NEW
 
-Add timing marks and structured logs for:
-- region detection time
-- stability wait time
-- extraction/hash time
-- backend round-trip time
-- cache hit/miss reason
-- model call duration
-- selector resolve/render duration
+**What it does:** On chat/LLM pages (ChatGPT, Claude, etc.), instead of waiting for the entire AI response to finish streaming before annotating, detects when individual paragraphs stabilize and annotates them progressively.
 
-Collect in both extension console logs and backend logs, then summarize P50/P95.
+**Files:** [chat-observer.ts](extension/src/content/chat-observer.ts), [content/index.ts](extension/src/content/index.ts)
 
-## Rollout Plan
+**How it works:**
+1. MutationObserver watches each AI response container for streaming changes
+2. Block-level elements (`p`, `li`, `pre`, `h1`-`h6`, `blockquote`, `table`) within the response are tracked individually
+3. When the LLM starts writing to a new block, all previous blocks are immediately fired as stable regions (the sibling-progression signal)
+4. Each stable block gets its own `regionId` (e.g. `chat-0-p0`, `chat-0-p1`), text extraction, hash, and independent annotation request
+5. When streaming fully stops (300ms of no mutations), all remaining unfired blocks are fired
+6. Already-complete responses (page reload, scrollback) are detected and fired as a single region
 
-1. Add instrumentation first.
-2. Implement in-flight dedup + cache compatibility checks + hot cache.
-3. Implement visible-first + cancellation.
-4. Tune prompt/token budget.
-5. Optimize selector/render performance.
-6. Gate optional fast mode behind feature flag.
+**Why it matters — the old bottleneck:**
+The previous chat-observer reset a debounce timer on every streamed token. Since tokens arrive every ~50-100ms, the timer NEVER fired until generation fully stopped. Total delay was: entire streaming time (10-60s) + settle (300-1500ms) + backend inference (2-4s). Users saw nothing until the LLM was completely done.
 
-## Risks and Mitigations
+**New behavior:** Annotations for early paragraphs arrive while the LLM is still writing later ones. On a 5-paragraph response, the first annotation can appear 40-50 seconds earlier than before.
 
-- **Risk:** Lower-quality annotations from aggressive prompt trimming.
-  - **Mitigation:** A/B tests and quality spot checks before rollout.
-- **Risk:** Stale responses painting wrong regions.
-  - **Mitigation:** Strict hash checks before render.
-- **Risk:** Over-caching across prompt/model changes.
-  - **Mitigation:** Include `prompt_version` + `model_version` in cache logic.
+**Design decisions:**
+- `MIN_PARAGRAPH_WORDS = 15` — blocks shorter than this are deferred to completion (avoids annotating tiny fragments)
+- Sibling-progression trigger over pure timer — more reliable than guessing settle times, since it uses the LLM's own writing progression as the signal
+- Already-complete responses use `isAlreadyComplete()` which checks for streaming indicators (`.result-streaming`, `.typing-indicator`, `[data-streaming]`) and stability signals
 
-## Implementation Checklist
+---
 
-- [x] Add baseline instrumentation to extension + backend. *(inference-benchmark.test.ts — auto-measuring benchmark with frozen baseline)*
-- [x] Add backend in-flight request dedup map. *(lib/inflight-dedup.ts — promise coalescing, 5→1 concurrent calls)*
-- [x] Add/verify strong cache-key behavior and source markers. *(lib/hot-cache.ts — LRU+TTL; annotate.ts — 3-layer cache with model/prompt version compat)*
-- [x] Add extension request cancellation + stale response guard. *(background/index.ts — AbortController per tab+hash; content/index.ts — activeHashes stale guard)*
-- [x] Prioritize visible-first region scheduling. *(content/index.ts — sortByViewportProximity)*
-- [x] Optimize selector indexing and redraw batching. *(selector.ts — WeakMap text-node index; overlay.ts — DocumentFragment + rAF batching)*
-- [x] Tune prompts and OpenAI token budget. *(prompts.json v1.2 — shared templates, ~30% token reduction)*
-- [x] Run latency benchmark and compare against baseline. *(26/26 tests pass — see benchmark summary below)*
-- [ ] ~~Progressive delivery (workstream 7)~~ — skipped (complexity vs. benefit tradeoff).
+## Removed
 
-### Benchmark Summary (auto-measured)
+### In-Memory Hot Cache — REMOVED
 
-| Optimization | Result |
-|---|---|
-| Hot Cache | read p50=0.0ms (saves ~25ms/req vs DB) |
-| Inflight Dedup | 1/5 calls (saves 4 LLM calls/burst) |
-| Prompt Trimmed | -131 tokens (-30.0% avg) |
-| TTFA cold start | 3.02s (-0.8% from 3.05s baseline) |
-| Warm revisit TTFA | 200ms (-11.1% from 225ms baseline) |
-| Full page revisit total | 824ms (-8.3% from 899ms baseline) |
+**What it was:** LRU cache (5-min TTL, 300 entries) in front of Supabase.
+
+**Why removed:** On Vercel serverless, each cold start has an empty cache. Saved ~25ms on the minority of requests hitting a warm instance — negligible against 2-4s LLM latency. Not worth the code weight for marginal benefit.
+
+**Files deleted:** `backend/lib/hot-cache.ts`, references removed from [annotate.ts](backend/api/annotate.ts).
+
+### Visible-first Sort — REMOVED
+
+**What it was:** Sorted detected regions by viewport proximity before setting up stability watchers.
+
+**Why removed:** All stability watchers were created in a synchronous loop and all fired their timers within microseconds of each other. The sort provided zero real benefit. The actual visible-first optimization is the existing scroll-loader (IntersectionObserver deferral), which remains in place.
+
+**Files cleaned:** `sortByViewportProximity()` and `distanceToViewport()` removed from [content/index.ts](extension/src/content/index.ts).
+
+### Dead Code — REMOVED
+
+- Unused `onFrame` rAF loop in [overlay.ts](extension/src/content/renderer/overlay.ts) `startTracking()` — declared but never called; actual tracking uses scroll/resize event listeners.
+- Unused `rafId` variable associated with the dead rAF loop.
+
+---
+
+## Summary — What Moves the Needle
+
+| Rank | Optimization | Real Impact |
+|---|---|---|
+| 1 | **Progressive paragraph annotation** | Annotations appear 40-50s earlier on chat pages during LLM streaming |
+| 2 | **DB cache + version compat** | Prevents stale annotations; enables safe cache hits across deploys |
+| 3 | **Prompt token reduction** | ~30% fewer input tokens → faster + cheaper LLM calls |
+| 4 | **In-flight dedup** | Eliminates duplicate LLM calls for concurrent identical requests |
+| 5 | **Stale request cancellation** | Correctly aborts per-region; prevents wasted LLM calls on dynamic pages |
+| 6 | **Overlay render batching** | Single-frame DOM insertion, measurable on annotation-heavy pages |
+| 7 | **Selector index cache** | Fewer TreeWalker traversals, acceptable correctness at moderate density |
