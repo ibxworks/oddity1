@@ -96,7 +96,12 @@ chrome.runtime.onMessage.addListener(
 
             return merged;
           } finally {
-            inflight.delete(key);
+            // Only remove if this controller is still the active one for this key.
+            // A newer request may have already replaced it — deleting would orphan
+            // the newer controller and make it unabortable.
+            if (inflight.get(key) === controller) {
+              inflight.delete(key);
+            }
           }
         }
 
@@ -189,6 +194,12 @@ chrome.runtime.onMessage.addListener(
     handleAsync()
       .then(sendResponse)
       .catch((err) => {
+        // Intentional cancellation — not an error, no response needed
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          sendResponse({ aborted: true });
+          return;
+        }
+
         console.error("[Oddity 1] Message handler error:", err);
 
         // Safety net: set badge on any auth failure

@@ -216,6 +216,9 @@ async function handleStableRegion(
       },
     });
 
+    // Aborted request — silently ignore (a newer request superseded this one)
+    if (result && 'aborted' in result) return;
+
     if (result?.error) {
       if (result.error.includes("Sign in")) {
         console.warn("[Oddity 1] Not signed in — open the Oddity extension to sign in");

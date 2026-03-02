@@ -228,6 +228,15 @@ function drawAnnotationInto(parent: Node, annotation: Annotation, range: Range):
 
 function redraw(): void {
   if (!overlayEl) return;
+
+  // Cancel any pending batch flush — redraw renders ALL activeRanges,
+  // so the batch would duplicate what we're about to draw.
+  pendingBatch = [];
+  if (batchRafId !== null) {
+    cancelAnimationFrame(batchRafId);
+    batchRafId = null;
+  }
+
   overlayEl.innerHTML = '';
   const fragment = document.createDocumentFragment();
   for (const { annotation, range } of activeRanges) {

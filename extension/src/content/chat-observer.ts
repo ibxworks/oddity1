@@ -50,6 +50,11 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   let mutationObserver: MutationObserver | null = null;
   let scanTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Elements already on the page when start() was called — these are historical
+  // messages that should fire as single chunks (not progressively split).
+  // New elements appearing after start() are assumed to be streaming.
+  let initialElements: Set<Element> | null = null;
+
   // ─── Response discovery ───
 
   function scanForResponses(): void {
@@ -170,18 +175,31 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   }
 
   function finalizeResponse(state: ResponseState): void {
-    // Fire any remaining unfired blocks that have content
+    let anyBlockFired = false;
+
+    // Check if any block was already fired during streaming
+    for (const [, bs] of state.blocks) {
+      if (bs.fired) { anyBlockFired = true; break; }
+    }
+
+    // Fire remaining unfired blocks that meet the word-count threshold.
+    // Short blocks (< MIN_PARAGRAPH_WORDS) are skipped — the LLM produces
+    // nothing useful for 3-word inputs, so firing them wastes API calls.
     for (const [block, bs] of state.blocks) {
-      if (!bs.fired && bs.lastText.length > 0) {
+      if (bs.fired) continue;
+      const wordCount = countWords(bs.lastText);
+      if (wordCount >= MIN_PARAGRAPH_WORDS) {
         bs.fired = true;
+        anyBlockFired = true;
         const regionId = `chat-${state.responseIndex}-p${bs.index}`;
         onResponse(regionId, block);
       }
     }
 
-    // If no blocks were ever found (e.g. response uses inline text without block elements),
-    // fire the whole response element as a fallback
-    if (state.blocks.size === 0) {
+    // If no individual blocks were ever fired (all too short, or no block
+    // elements found), fire the whole response element as a single chunk.
+    // This gives the LLM full context for short/simple responses.
+    if (!anyBlockFired) {
       const text = state.element.textContent?.trim() ?? '';
       if (text.length > 0) {
         onResponse(`chat-${state.responseIndex}`, state.element);
@@ -197,6 +215,10 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   // ─── Helpers ───
 
   function isAlreadyComplete(element: Element): boolean {
+    // Pre-existing elements (on page before observer started) are historical.
+    // Fire as single chunks — no need for progressive splitting.
+    if (initialElements?.has(element)) return true;
+
     const text = element.textContent ?? '';
     if (text.trim().length < 20) return false;
 
@@ -211,8 +233,11 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
       return isSignalMet(element, stabilitySignal);
     }
 
-    // No stability signal and no streaming indicators → assume complete
-    return true;
+    // New element without stability signal — assume streaming.
+    // The completion timer (300ms) safely handles truly-static content
+    // with only a minor delay. The cost of wrongly assuming "complete"
+    // is far worse: partial text sent, rest of response never annotated.
+    return false;
   }
 
   function isSignalMet(target: Element, signal: StabilitySignal): boolean {
@@ -242,6 +267,10 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
 
   return {
     start() {
+      // Snapshot elements already on page — these are historical/complete messages.
+      // Anything appearing AFTER this point is assumed to be a new streaming response.
+      initialElements = new Set(document.querySelectorAll(responseSelector));
+
       scanForResponses();
 
       mutationObserver = new MutationObserver(() => {
@@ -259,6 +288,7 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
       if (scanTimer) clearTimeout(scanTimer);
       mutationObserver?.disconnect();
       mutationObserver = null;
+      initialElements = null;
 
       for (const [, state] of responseStates) {
         if (state.completionTimer) clearTimeout(state.completionTimer);
