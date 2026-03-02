@@ -309,7 +309,17 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
       continue;
     }
 
-    const anchors = injectAnchors(annotation, range);
+    let anchors = injectAnchors(annotation, range);
+
+    // Retry once: prior injectAnchors calls mutate the DOM (split/wrap text nodes),
+    // which can invalidate the cached text-node index and produce stale Ranges.
+    if (anchors.length === 0) {
+      invalidateTextNodeIndex(root);
+      const retryRange = resolveSelector(root, annotation.anchor);
+      if (retryRange) {
+        anchors = injectAnchors(annotation, retryRange);
+      }
+    }
 
     const stableRange = document.createRange();
     if (anchors.length > 0) {
