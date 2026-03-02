@@ -67,3 +67,14 @@
 - [x] `npm test` — 23/23 tests pass (8 shared + 9 schema-validator + 6 rate-limiter)
 - [x] Supabase security advisors — zero errors (INFO-only for intentional no-policy tables)
 - [x] 6 site adapters seeded (chatgpt.com, chat.openai.com, claude.ai, medium.com, *.medium.com, *.substack.com)
+
+## Optimization Pass
+- [x] Deleted in-memory hot cache (backend/lib/hot-cache.ts) — marginal on serverless
+- [x] Removed hot cache references from annotate.ts — DB cache + dedup remain
+- [x] Fixed abort key: now uses regionId instead of contentHash — stale requests actually cancel
+- [x] Added abort signal to getAnnotations() — both fetches now cancellable
+- [x] Added regionId to ExtensionMessage type + content script payload
+- [x] Removed sortByViewportProximity + distanceToViewport — cosmetic, zero real impact
+- [x] Removed dead onFrame rAF loop + rafId from overlay.ts
+- [x] Rewrote chat-observer for progressive paragraph annotation (sibling-progression trigger)
+- [x] Updated INFERENCE_OPTIMIZATION_PLAN.md with current state

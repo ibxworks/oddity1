@@ -72,12 +72,18 @@ async function authFetch(
 
 // ─── Exported API Functions ───
 
+/**
+ * Request annotations for a content region.
+ * Accepts an optional AbortSignal for cancellation of stale requests.
+ */
 export async function requestAnnotations(
   req: AnnotateRequest,
+  signal?: AbortSignal,
 ): Promise<AnnotationResponse> {
   const res = await authFetch('/api/annotate', {
     method: 'POST',
     body: JSON.stringify(req),
+    signal,
   });
   if (!res.ok) throw new Error(`requestAnnotations failed: ${res.status}`);
   return res.json() as Promise<AnnotationResponse>;
@@ -86,9 +92,10 @@ export async function requestAnnotations(
 export async function getAnnotations(
   url: string,
   contentHash: string,
+  signal?: AbortSignal,
 ): Promise<AnnotationResponse> {
   const params = new URLSearchParams({ url, content_hash: contentHash });
-  const res = await authFetch(`/api/annotations?${params.toString()}`);
+  const res = await authFetch(`/api/annotations?${params.toString()}`, { signal });
   if (!res.ok) throw new Error(`getAnnotations failed: ${res.status}`);
   return res.json() as Promise<AnnotationResponse>;
 }

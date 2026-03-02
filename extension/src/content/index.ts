@@ -41,7 +41,7 @@ import {
 import { initScrollLoader, registerRegion } from "./scroll-loader.js";
 import { showAuthToast } from "./auth-toast.js";
 import { handleExportPdf } from "./export-pdf.js";
-import { resolveSelector } from "./selector.js";
+import { resolveSelector, invalidateTextNodeIndex } from "./selector.js";
 import { createChatObserver } from "./chat-observer.js";
 import { createStabilityWatcher } from "./stability.js";
 
@@ -52,6 +52,8 @@ const pendingRegions = new Set<string>();
 const currentAnnotations = new Map<string, Annotation[]>();
 const currentFeedback = new Map<string, AnnotationFeedback[]>();
 const regionByHash = new Map<string, DetectedRegion>();
+/** Tracks current content hash per region element — used for stale response guards */
+const activeHashes = new Map<Element, string>();
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
   "highlight",
@@ -184,6 +186,17 @@ async function handleStableRegion(
   // Compute content hash
   const contentHash = await sha256(extracted.text);
 
+  // Stale guard: if this region already had a different hash, the content changed.
+  // Mark the old hash as stale so its in-flight response gets ignored.
+  const previousHash = activeHashes.get(region.element);
+  if (previousHash && previousHash !== contentHash) {
+    pendingRegions.delete(previousHash);
+    annotatedRegions.delete(previousHash);
+    currentAnnotations.delete(previousHash);
+    regionByHash.delete(previousHash);
+  }
+  activeHashes.set(region.element, contentHash);
+
   if (annotatedRegions.has(contentHash) || pendingRegions.has(contentHash)) return;
 
   // Store hash on the region element so manual annotations can reuse it
@@ -211,12 +224,16 @@ async function handleStableRegion(
       action: "requestAnnotations",
       payload: {
         url: window.location.href,
+        regionId: region.id,
         contentHash,
         text: extracted.text,
         intensity: currentIntensity,
         wordCount: extracted.wordCount,
       },
     });
+
+    // Aborted request — silently ignore (a newer request superseded this one)
+    if (result && 'aborted' in result) return;
 
     if (result?.error) {
       if (result.error.includes("Sign in")) {
@@ -274,6 +291,12 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
     const bIsBg = backgroundTypes.has(b.type) ? 0 : 1;
     return aIsBg - bIsBg;
   });
+
+  // Invalidate text-node index once before the batch — ensures a clean index.
+  // The index is reused across all annotations in this region (5–10× fewer TreeWalker traversals).
+  // Later annotations may see slightly shifted positions due to prior injectAnchors DOM mutations,
+  // but the existing fuzzy fallback chain in resolveSelector handles these gracefully.
+  invalidateTextNodeIndex(root);
 
   // Single-pass: resolve + render one annotation at a time
   // This avoids stale ranges from prior DOM mutations (injectAnchors splits text nodes)
@@ -333,6 +356,13 @@ onMessage((message: ExtensionMessage) => {
     }
     case "annotationsReady": {
       const { regionId, annotations, feedback } = message.payload;
+
+      // Stale response guard: ignore if this hash was invalidated by content change
+      if (!pendingRegions.has(regionId) && !annotatedRegions.has(regionId)) {
+        console.log(`[Oddity 1] Ignoring stale response for ${regionId.slice(0, 12)}…`);
+        break;
+      }
+
       annotatedRegions.add(regionId);
       pendingRegions.delete(regionId);
       currentFeedback.set(regionId, feedback);

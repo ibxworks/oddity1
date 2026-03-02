@@ -123,6 +123,7 @@ export type ExtensionMessage =
       action: 'requestAnnotations';
       payload: {
         url: string;
+        regionId: string;
         contentHash: string;
         text: string;
         intensity: Intensity;

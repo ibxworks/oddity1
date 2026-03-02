@@ -20,6 +20,15 @@ import {
 import { getProfile, getSession, getUserTier, signIn, signOut, signUp, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 
+// ─── Optimization: per-request abort controllers ───
+// Keyed by "tabId:regionId" so re-requesting the same region with new content
+// cancels the previous in-flight request (even when the content hash differs).
+const inflight = new Map<string, AbortController>();
+
+function abortKey(tabId: number, regionId: string): string {
+  return `${tabId}:${regionId}`;
+}
+
 // ─── Installed Event ───
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -39,7 +48,7 @@ chrome.runtime.onMessage.addListener(
     const handleAsync = async (): Promise<unknown> => {
       switch (message.action) {
         case "requestAnnotations": {
-          const { url, contentHash, text, intensity, wordCount } =
+          const { url, regionId, contentHash, text, intensity, wordCount } =
             message.payload;
 
           // Proactive auth check — fail fast with badge if not signed in
@@ -53,34 +62,56 @@ chrome.runtime.onMessage.addListener(
           // Session exists — clear any stale badge
           chrome.action.setBadgeText({ text: "" });
 
-          // Trigger AI generation/caching
-          await requestAnnotations({
-            url,
-            content_hash: contentHash,
-            text,
-            intensity,
-            word_count: wordCount,
-          });
+          // Cancel any previous in-flight request for the same tab+region
+          const tabId = sender.tab?.id ?? 0;
+          const key = abortKey(tabId, regionId);
+          inflight.get(key)?.abort();
+          const controller = new AbortController();
+          inflight.set(key, controller);
 
-          // Fetch merged result (cached AI + user annotations) + feedback
-          const [merged, feedback] = await Promise.all([
-            getAnnotations(url, contentHash),
-            getFeedback(url, contentHash),
-          ]);
-
-          // Forward annotations to the requesting tab
-          if (sender.tab?.id) {
-            await sendToTab(sender.tab.id, {
-              action: "annotationsReady",
-              payload: {
-                regionId: contentHash,
-                annotations: merged.annotations,
-                feedback,
+          try {
+            // Trigger AI generation/caching (with abort signal)
+            await requestAnnotations(
+              {
+                url,
+                content_hash: contentHash,
+                text,
+                intensity,
+                word_count: wordCount,
               },
-            });
-          }
+              controller.signal,
+            );
 
-          return merged;
+            // Check if aborted before fetching merged result
+            if (controller.signal.aborted) return { aborted: true };
+
+            // Fetch merged result (cached AI + user annotations) + feedback
+            const [merged, feedback] = await Promise.all([
+              getAnnotations(url, contentHash, controller.signal),
+              getFeedback(url, contentHash),
+            ]);
+
+            // Forward annotations to the requesting tab
+            if (sender.tab?.id) {
+              await sendToTab(sender.tab.id, {
+                action: "annotationsReady",
+                payload: {
+                  regionId: contentHash,
+                  annotations: merged.annotations,
+                  feedback,
+                },
+              });
+            }
+
+            return merged;
+          } finally {
+            // Only remove if this controller is still the active one for this key.
+            // A newer request may have already replaced it — deleting would orphan
+            // the newer controller and make it unabortable.
+            if (inflight.get(key) === controller) {
+              inflight.delete(key);
+            }
+          }
         }
 
         case "getAdapters": {
@@ -206,6 +237,12 @@ chrome.runtime.onMessage.addListener(
     handleAsync()
       .then(sendResponse)
       .catch((err) => {
+        // Intentional cancellation — not an error, no response needed
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          sendResponse({ aborted: true });
+          return;
+        }
+
         console.error("[Oddity 1] Message handler error:", err);
 
         // Safety net: set badge on any auth failure

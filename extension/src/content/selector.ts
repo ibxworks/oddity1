@@ -1,18 +1,32 @@
 import type { TextQuoteSelector } from '@oddity/shared';
 
-/**
- * Resolve a TextQuoteSelector to a DOM Range.
- * Uses TreeWalker for text node traversal with whitespace normalization.
- * Falls back to fuzzy matching if exact match fails.
- */
-export function resolveSelector(
-  root: Element,
-  selector: TextQuoteSelector,
-): Range | null {
-  const exact = normalizeWhitespace(selector.exact);
-  if (!exact) return null;
+// ─── Text Node Index Cache ───
+// Built once per root element, reused across multiple resolveSelector calls.
+// Eliminates redundant TreeWalker traversals when resolving N annotations
+// against the same region (typical: 5–10 annotations per region).
 
-  // Collect all text nodes and build a concatenated text
+interface TextSegment {
+  node: Text;
+  start: number;
+  text: string;
+}
+
+interface TextNodeIndex {
+  segments: TextSegment[];
+  fullText: string;
+}
+
+const indexCache = new WeakMap<Element, TextNodeIndex>();
+
+/**
+ * Build or retrieve a cached text-node index for a root element.
+ * The index maps the concatenated normalized text back to individual
+ * DOM text nodes + local offsets.
+ */
+function getTextNodeIndex(root: Element): TextNodeIndex {
+  const cached = indexCache.get(root);
+  if (cached) return cached;
+
   const textNodes: Text[] = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node: Text | null;
@@ -22,17 +36,13 @@ export function resolveSelector(
     }
   }
 
-  if (textNodes.length === 0) return null;
-
-  // Build offset map: concatenated text → (textNode, localOffset)
-  const segments: { node: Text; start: number; text: string }[] = [];
+  const segments: TextSegment[] = [];
   let totalOffset = 0;
 
   for (const tn of textNodes) {
     const normalized = normalizeWhitespace(tn.textContent ?? '');
     if (normalized.length === 0) continue;
 
-    // Add a space between segments to simulate word boundaries
     if (totalOffset > 0) {
       totalOffset += 1;
     }
@@ -42,6 +52,33 @@ export function resolveSelector(
   }
 
   const fullText = segments.map((s) => s.text).join(' ');
+  const index: TextNodeIndex = { segments, fullText };
+  indexCache.set(root, index);
+  return index;
+}
+
+/**
+ * Invalidate the cached text-node index for a root element.
+ * Call this after DOM mutations that change text content (e.g. after injectAnchors).
+ */
+export function invalidateTextNodeIndex(root: Element): void {
+  indexCache.delete(root);
+}
+
+/**
+ * Resolve a TextQuoteSelector to a DOM Range.
+ * Uses a cached text-node index for fast repeated lookups.
+ * Falls back to fuzzy matching if exact match fails.
+ */
+export function resolveSelector(
+  root: Element,
+  selector: TextQuoteSelector,
+): Range | null {
+  const exact = normalizeWhitespace(selector.exact);
+  if (!exact) return null;
+
+  const { segments, fullText } = getTextNodeIndex(root);
+  if (segments.length === 0) return null;
 
   // Find the exact match position in the concatenated text
   let matchPos = findMatchPosition(fullText, exact, selector.prefix, selector.suffix);

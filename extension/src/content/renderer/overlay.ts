@@ -5,9 +5,33 @@ const OVERLAY_ID = 'oddity-overlay';
 const Z_INDEX = 2147483646;
 
 let overlayEl: HTMLDivElement | null = null;
-let rafId: number | null = null;
 let activeRanges: { annotation: Annotation; range: Range }[] = [];
 let emphasizedId: string | null = null;
+
+// ─── Batched Rendering ───
+// Queue annotations and flush in a single rAF to avoid layout thrashing.
+let pendingBatch: { annotation: Annotation; range: Range }[] = [];
+let batchRafId: number | null = null;
+
+function flushBatch(): void {
+  if (!overlayEl || pendingBatch.length === 0) return;
+
+  // Use DocumentFragment to batch all DOM insertions
+  const fragment = document.createDocumentFragment();
+
+  for (const { annotation, range } of pendingBatch) {
+    drawAnnotationInto(fragment, annotation, range);
+  }
+
+  overlayEl.appendChild(fragment);
+  pendingBatch = [];
+  batchRafId = null;
+}
+
+function scheduleBatchFlush(): void {
+  if (batchRafId !== null) return;
+  batchRafId = requestAnimationFrame(flushBatch);
+}
 
 /**
  * Initialize the overlay layer — a fixed-position, pointer-events-none div
@@ -38,11 +62,14 @@ export function initOverlay(): HTMLDivElement {
 
 /**
  * Render highlight/underline rectangles for an annotation's resolved range.
+ * Annotations are batched and drawn in a single requestAnimationFrame to
+ * avoid layout thrashing when rendering multiple annotations at once.
  */
 export function renderAnnotation(annotation: Annotation, range: Range): void {
   if (!overlayEl) initOverlay();
   activeRanges.push({ annotation, range });
-  drawAnnotation(annotation, range);
+  pendingBatch.push({ annotation, range });
+  scheduleBatchFlush();
 }
 
 /**
@@ -115,8 +142,8 @@ export function destroyOverlay(): void {
 
 // ─── Internal Drawing ───
 
-function drawAnnotation(annotation: Annotation, range: Range): void {
-  if (!overlayEl) return;
+/** Draw annotation rects into a target parent (overlay or DocumentFragment) */
+function drawAnnotationInto(parent: Node, annotation: Annotation, range: Range): void {
 
   const visual = getVisual(annotation.type);
   const isEmphasized = emphasizedId === annotation.id;
@@ -167,7 +194,7 @@ function drawAnnotation(annotation: Annotation, range: Range): void {
       ${borderStyle}
     `;
 
-    overlayEl.appendChild(el);
+    parent.appendChild(el);
   }
 
   // Gutter icon (for provoking_question type)
@@ -194,27 +221,33 @@ function drawAnnotation(annotation: Annotation, range: Range): void {
         font-weight: bold;
         pointer-events: none;
       `;
-      overlayEl.appendChild(icon);
+      parent.appendChild(icon);
     }
   }
 }
 
 function redraw(): void {
   if (!overlayEl) return;
-  overlayEl.innerHTML = '';
-  for (const { annotation, range } of activeRanges) {
-    drawAnnotation(annotation, range);
+
+  // Cancel any pending batch flush — redraw renders ALL activeRanges,
+  // so the batch would duplicate what we're about to draw.
+  pendingBatch = [];
+  if (batchRafId !== null) {
+    cancelAnimationFrame(batchRafId);
+    batchRafId = null;
   }
+
+  overlayEl.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  for (const { annotation, range } of activeRanges) {
+    drawAnnotationInto(fragment, annotation, range);
+  }
+  overlayEl.appendChild(fragment);
 }
 
 // ─── Scroll / Resize Tracking ───
 
 function startTracking(): void {
-  const onFrame = () => {
-    redraw();
-    rafId = requestAnimationFrame(onFrame);
-  };
-
   // Use scroll/resize events to trigger redraw, throttled via rAF
   let needsRedraw = false;
 
@@ -239,10 +272,6 @@ function startTracking(): void {
 }
 
 function stopTracking(): void {
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
-  }
   if (overlayEl) {
     const cleanup = (overlayEl as HTMLDivElement & { _cleanup?: () => void })._cleanup;
     cleanup?.();
