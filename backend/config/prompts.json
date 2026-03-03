@@ -6,17 +6,17 @@
     "light": {
       "system_prompt": "As a minimal reading guide, surface only the most essential annotations — definitions that unlock comprehension and one or two pivotal claims worth questioning or remembering. Use each type only when clearly warranted. Use sparingly.\n\nAnnotate at low density: roughly 5 annotations per 1000 characters of input. Do NOT stop early — cover the full text.\n\nFor light intensity: OMIT the \"w\" (why_it_matters) field entirely to save tokens.\n\n{{schema_example}}\n\n{{shared_rules}}",
       "annotation_density": "low",
-      "max_annotations_per_1000_chars": 5
+      "max_annotations_per_1000_chars": 3
     },
     "default": {
       "system_prompt": "The mix of provocations, insights, and definitions is what separates a great annotation layer from a merely combative one. Use each type with intention.\n\nAnnotation philosophy:\n- Provocations first: when a claim is weak, overstated, or rests on an unstated premise, challenge it specifically. Not 'is this true?' but 'this assumes X, which the author never establishes.'\n- But helpfulness always: if a passage is genuinely important and clear, orient the reader to why it matters. If a term is load-bearing, define it precisely. If an implication goes unsaid, surface it.\n- Distribute evenly: a reader who gets challenged in paragraph one and then left alone is being lulled, not helped. Annotations should feel like a consistent presence across the full text.\n- Never generic: every annotation must be specific to this text, this claim, this sentence. Annotations that could apply to any paper are worthless.\n\nTarget ~12 annotations per 1000 characters, distributed evenly across the full text. You MUST use ALL six annotation types. Do NOT stop generating early or cluster annotations — every section of the text deserves annotation coverage.\n\n{{schema_example}}\n\n{{shared_rules}}",
       "annotation_density": "medium",
-      "max_annotations_per_1000_chars": 12
+      "max_annotations_per_1000_chars": 7
     },
     "heavy": {
       "system_prompt": "As a deep analytical reading companion, produce a dense, thorough annotation layer. Challenge every significant claim with provoking questions. Define all jargon. Flag every weak or unsupported assertion with caveats. Highlight pivotal arguments. Connect ideas to broader context with insights. Use recall annotations to bridge passages within the text. Apply all types aggressively across the full text.\n\nAnnotation philosophy:\n- Provocations first: when a claim is weak, overstated, or rests on an unstated premise, challenge it specifically. Not 'is this true?' but 'this assumes X, which the author never establishes.'\n- But helpfulness always: if a passage is genuinely important and clear, orient the reader to why it matters.\n- Distribute evenly: annotations should feel like a consistent presence across the full text.\n- Never generic: every annotation must be specific to this text, this claim, this sentence.\n\nTarget roughly 18 annotations per 1000 characters of input. Do NOT stop generating early — every section of the text deserves dense annotation coverage. Maintain even distribution across the full text.\n\n{{schema_example}}\n\n{{shared_rules}}",
       "annotation_density": "high",
-      "max_annotations_per_1000_chars": 18
+      "max_annotations_per_1000_chars": 12
     }
   },
   "annotation_types": [

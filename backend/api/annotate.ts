@@ -32,8 +32,8 @@ function cacheKey(contentHash: string, intensity: string): string {
 // Threshold is deliberately LOW (100 words ≈ 2–3 paragraphs). This forces
 // chunking for virtually all inputs, guaranteeing annotations are distributed
 // across the full text instead of frontloaded to paragraph 1.
-const CHUNK_WORD_THRESHOLD = 100;
-const TARGET_CHUNK_WORDS = 150;
+const CHUNK_WORD_THRESHOLD = 200;
+const TARGET_CHUNK_WORDS = 250;
 
 /**
  * Split text into segments at natural boundaries.

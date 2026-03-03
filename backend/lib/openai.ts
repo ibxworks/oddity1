@@ -134,7 +134,7 @@ function buildMessages(
   // Dynamic annotation count hint: tell the LLM exactly how many to produce.
   // Floor of 8 ensures even short chat responses get rich, diverse annotations.
   const charCount = text.length;
-  const targetCount = Math.max(8, Math.round((charCount / 1000) * config.max_annotations_per_1000_chars));
+  const targetCount = Math.max(6, Math.round((charCount / 1000) * config.max_annotations_per_1000_chars));
 
   let hint = `[Input: ~${charCount} characters. You MUST produce at least ${targetCount} annotations. Use ALL six annotation types (highlight, vocabulary, provoking question, recall, insight, caveat). Distribute annotations evenly across the ENTIRE text — beginning, middle, and end.]`;
 
