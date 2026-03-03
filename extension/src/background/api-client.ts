@@ -153,6 +153,10 @@ export async function requestAnnotationsStreaming(
           if (event.done) {
             cached = event.cached ?? false;
             feedback = event.feedback ?? [];
+            if (event.annotations) {
+              annotations.length = 0;
+              annotations.push(...event.annotations);
+            }
           }
         } catch {
           // Skip malformed events

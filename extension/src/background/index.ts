@@ -63,10 +63,12 @@ chrome.runtime.onMessage.addListener(
           // Session exists — clear any stale badge
           chrome.action.setBadgeText({ text: "" });
 
-          // ── Session cache: instant hit for revisits within browser session ──
+          // ── Session cache: stale-while-revalidate for revisits ──
+          // Send cached data immediately for instant render, but don't return —
+          // fall through to fetch fresh merged data (with user annotations + feedback)
           const cached = await getFromSessionCache(contentHash, intensity);
           if (cached) {
-            console.log(`[Oddity 1] Session cache hit for ${contentHash.slice(0, 12)}…`);
+            console.log(`[Oddity 1] Session cache hit for ${contentHash.slice(0, 12)}… (stale-while-revalidate)`);
             if (sender.tab?.id) {
               await sendToTab(sender.tab.id, {
                 action: "annotationsReady",
@@ -77,7 +79,7 @@ chrome.runtime.onMessage.addListener(
                 },
               });
             }
-            return { success: true, cached: true, annotations: cached.annotations, feedback: cached.feedback };
+            // DON'T return — fall through to fetch fresh merged data from server
           }
 
           // Cancel any previous in-flight request for the same tab+region

@@ -298,16 +298,11 @@ async function tryUrlPrediction(): Promise<void> {
   regionByHash.set(regionId, region);
   (region.element as HTMLElement).dataset.oddityHash = regionId;
   activeHashes.set(region.element, regionId);
-  pendingRegions.add(regionId);
-
-  // Render speculatively
+  // Render speculatively — do NOT add to pendingRegions/annotatedRegions
+  // so handleStableRegion() can still fire and fetch fresh merged data from server
   currentAnnotations.set(regionId, prediction.annotations);
   currentFeedback.set(regionId, prediction.feedback ?? []);
   renderAnnotations(regionId, prediction.annotations);
-
-  // Mark as annotated so the normal pipeline will no-op if hash matches
-  annotatedRegions.add(regionId);
-  pendingRegions.delete(regionId);
 }
 
 // ─── Annotation Deletion ───

@@ -226,7 +226,7 @@ async function handleStreamingAnnotation(
       for (const ann of merged.annotations) {
         res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
       }
-      res.write(`data: ${JSON.stringify({ done: true, cached: true, feedback: merged.feedback })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true, cached: true, annotations: merged.annotations, feedback: merged.feedback })}\n\n`);
       res.end();
       return;
     }
@@ -273,7 +273,7 @@ async function handleStreamingAnnotation(
     const merged = await mergeAnnotationsAndFeedback(
       allAnnotations, url, content_hash, authToken,
     );
-    res.write(`data: ${JSON.stringify({ done: true, cached: false, feedback: merged.feedback })}\n\n`);
+    res.write(`data: ${JSON.stringify({ done: true, cached: false, annotations: merged.annotations, feedback: merged.feedback })}\n\n`);
     res.end();
   } catch (err) {
     console.error('[annotate/stream] Error:', err);
