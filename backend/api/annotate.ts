@@ -24,29 +24,83 @@ function cacheKey(contentHash: string, intensity: string): string {
 }
 
 // ─── Parallel chunking for long texts ───
-const CHUNK_WORD_THRESHOLD = 1500;
-const TARGET_CHUNK_WORDS = 1200;
-const OVERLAP_WORDS = 100;
+// Smaller chunks ensure the LLM can saturate each chunk with annotations
+// without hitting output token limits or generation laziness.
+// CRITICAL: extractText() normalizes ALL whitespace to spaces, so text
+// arriving here has NO newlines. We must split on sentence boundaries.
+//
+// Threshold is deliberately LOW (100 words ≈ 2–3 paragraphs). This forces
+// chunking for virtually all inputs, guaranteeing annotations are distributed
+// across the full text instead of frontloaded to paragraph 1.
+const CHUNK_WORD_THRESHOLD = 200;
+const TARGET_CHUNK_WORDS = 250;
+
+/**
+ * Split text into segments at natural boundaries.
+ * Handles: paragraph breaks (\n\n), line breaks (\n), sentence boundaries.
+ * Falls back to hard word-count splits for texts with no punctuation.
+ */
+function findSegments(text: string): string[] {
+  // Strategy 1: paragraph breaks (double newline)
+  const paraSegments = text.split(/\n\n+/).filter(s => s.trim().length > 0);
+  if (paraSegments.length > 1) return paraSegments;
+
+  // Strategy 2: single newline breaks
+  const lineSegments = text.split(/\n/).filter(s => s.trim().length > 0);
+  if (lineSegments.length > 1) return lineSegments;
+
+  // Strategy 3: sentence boundaries — this handles the common case where
+  // extractText() has normalized all whitespace to spaces, destroying
+  // paragraph structure. Split at ". X" / "! X" / "? X" where X is uppercase.
+  const sentences: string[] = [];
+  // Match sentence terminators followed by a space + uppercase letter
+  const sentenceRegex = /(?<=[.!?])\s+(?=[A-Z])/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = sentenceRegex.exec(text)) !== null) {
+    const segment = text.slice(lastIndex, match.index + 1).trim(); // include the punctuation
+    if (segment.length > 0) sentences.push(segment);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    const tail = text.slice(lastIndex).trim();
+    if (tail.length > 0) sentences.push(tail);
+  }
+  if (sentences.length > 1) return sentences;
+
+  // Strategy 4: hard word-count split (no usable boundaries at all)
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= TARGET_CHUNK_WORDS) return [text];
+
+  const hardSegments: string[] = [];
+  for (let i = 0; i < words.length; i += TARGET_CHUNK_WORDS) {
+    hardSegments.push(words.slice(i, i + TARGET_CHUNK_WORDS).join(' '));
+  }
+  return hardSegments;
+}
 
 function splitIntoChunks(text: string): string[] {
-  const paragraphs = text.split(/\n\n+/);
+  const segments = findSegments(text);
+
+  // NO overlap between chunks. Overlap caused the LLM to front-load
+  // annotations into the repeated text, which then got deduped by the
+  // `seen` Set — effectively killing every chunk after the first.
+  // The annotation-filter's fixSingleAnnotation already re-computes
+  // prefix/suffix against the full text, so overlap isn't needed.
   const chunks: string[] = [];
   let currentChunk = '';
   let currentWordCount = 0;
 
-  for (const para of paragraphs) {
-    const paraWords = para.split(/\s+/).filter(Boolean).length;
+  for (const seg of segments) {
+    const segWords = seg.split(/\s+/).filter(Boolean).length;
 
-    if (currentWordCount + paraWords > TARGET_CHUNK_WORDS && currentWordCount > 0) {
+    if (currentWordCount + segWords > TARGET_CHUNK_WORDS && currentWordCount > 0) {
       chunks.push(currentChunk.trim());
-      // Add overlap context from end of previous chunk
-      const words = currentChunk.trim().split(/\s+/);
-      const overlapText = words.slice(-OVERLAP_WORDS).join(' ');
-      currentChunk = overlapText + '\n\n' + para;
-      currentWordCount = OVERLAP_WORDS + paraWords;
+      currentChunk = seg;
+      currentWordCount = segWords;
     } else {
-      currentChunk += (currentChunk ? '\n\n' : '') + para;
-      currentWordCount += paraWords;
+      currentChunk += (currentChunk ? ' ' : '') + seg;
+      currentWordCount += segWords;
     }
   }
 
@@ -134,7 +188,7 @@ router.post('/', async (req, res) => {
         console.log(`[annotate] Splitting ${wordCount} words into ${chunks.length} chunks`);
 
         const chunkResults = await Promise.all(
-          chunks.map((chunk) => generateAnnotations(chunk, intensity, profile)),
+          chunks.map((chunk, i) => generateAnnotations(chunk, intensity, profile, { index: i, total: chunks.length })),
         );
 
         // Merge all chunk results, then run filter on full text to fix anchors
@@ -234,14 +288,42 @@ async function handleStreamingAnnotation(
     // Stream from LLM
     const profile = prompts.intensity_profiles[intensity as Intensity];
     const allAnnotations: Annotation[] = [];
-    const stream = generateAnnotationsStream(text, intensity, profile);
 
-    for await (const annotation of stream) {
-      // Fix anchor against source text before sending
-      const fixed = fixSingleAnnotation(annotation, text);
-      if (fixed) {
-        allAnnotations.push(fixed);
-        res.write(`data: ${JSON.stringify({ annotation: fixed })}\n\n`);
+    // Parallel chunking for long texts (mirrors non-streaming path)
+    if (data.word_count > CHUNK_WORD_THRESHOLD) {
+      const chunks = splitIntoChunks(text);
+      console.log(`[annotate/stream] Splitting ${data.word_count} words into ${chunks.length} chunks`);
+
+      const seen = new Set<string>();
+
+      await Promise.all(
+        chunks.map(async (chunk, i) => {
+          try {
+            const stream = generateAnnotationsStream(chunk, intensity, profile, { index: i, total: chunks.length });
+            for await (const annotation of stream) {
+              // Fix anchor against FULL original text (not the chunk)
+              const fixed = fixSingleAnnotation(annotation, text);
+              if (fixed && !seen.has(fixed.anchor.exact)) {
+                seen.add(fixed.anchor.exact);
+                allAnnotations.push(fixed);
+                res.write(`data: ${JSON.stringify({ annotation: fixed })}\n\n`);
+              }
+            }
+          } catch (err) {
+            console.error(`[annotate/stream] Chunk ${i + 1}/${chunks.length} failed:`, err);
+          }
+        }),
+      );
+    } else {
+      const stream = generateAnnotationsStream(text, intensity, profile);
+
+      for await (const annotation of stream) {
+        // Fix anchor against source text before sending
+        const fixed = fixSingleAnnotation(annotation, text);
+        if (fixed) {
+          allAnnotations.push(fixed);
+          res.write(`data: ${JSON.stringify({ annotation: fixed })}\n\n`);
+        }
       }
     }
 

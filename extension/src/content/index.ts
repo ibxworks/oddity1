@@ -102,7 +102,7 @@ async function init(): Promise<void> {
 
     let marginNotesInitialized = false;
 
-    const observer = createChatObserver({
+    const chatObserver = createChatObserver({
       responseSelector: matchedAdapter.response_selector,
       stabilitySignal: matchedAdapter.stability_signal,
       onResponse: (regionId, element) => {
@@ -122,23 +122,38 @@ async function init(): Promise<void> {
       },
     });
 
-    observer.start();
+    chatObserver.start();
+
+    // ── Fallback: if chat observer finds nothing within 5s, the adapter's
+    // response_selector is likely stale. Stop the chat observer and activate
+    // body-level detection so the page still gets annotated. ──
+    setTimeout(() => {
+      if (regions.length > 0) return; // Chat observer is working — no fallback needed
+
+      console.warn(
+        `[Oddity 1] Chat observer found no responses after 5s — adapter response_selector may be stale. Activating body-level fallback.`,
+      );
+      chatObserver.stop();
+      activateBodyLevelDetection(adapters, matchedAdapter);
+    }, 5000);
+
     return;
   }
 
   // ── Static site flow ──
   regions = detectReadingRegions(adapters);
 
-  if (regions.length === 0) {
-    console.log("[Oddity 1] No reading regions detected");
-    return;
-  }
-
   console.log(`[Oddity 1] Detected ${regions.length} reading region(s)`);
 
-  // Initialize rendering layers
+  // Initialize rendering layers (even with 0 initial regions — new content may appear)
   initOverlay();
-  initMarginNotes(regions[0]?.element ?? document.body);
+  initManualAnnotations();
+  initKeyboardNav();
+
+  if (regions.length > 0) {
+    initMarginNotes(regions[0]!.element);
+    marginNotesInitFromBody = true;
+  }
 
   // ── URL prediction: render instantly from previous visit ──
   // Non-blocking: kicks off speculative render while normal pipeline runs in parallel
@@ -153,23 +168,35 @@ async function init(): Promise<void> {
     }
   });
 
-  // Initialize manual annotation UI
-  initManualAnnotations();
-
-  // Initialize keyboard navigation
-  initKeyboardNav();
-
   // Fire speculative requests immediately for visible regions (skip stability wait)
   // The existing pendingRegions/annotatedRegions dedup prevents double-processing
   for (const region of regions) {
     handleStableRegion(region, region.element);
   }
 
-  // Stability watchers run in parallel as verification — if content changes
-  // (e.g. dynamic page), the stale guard cancels speculative results and re-fires
+  // Activate body-level detection (persistent watchers + body observer)
+  activateBodyLevelDetection(adapters, matchedAdapter ?? null);
+}
+
+// ─── Body-Level Detection ───
+// Reusable: called by both the static flow and the chat-mode fallback.
+// Sets up persistent stability watchers + body-level MutationObserver
+// that discovers new content regions as they appear.
+
+let bodyDetectionActive = false;
+let marginNotesInitFromBody = false;
+
+function activateBodyLevelDetection(
+  adapters: SiteAdapter[],
+  adapter: SiteAdapter | null,
+): void {
+  if (bodyDetectionActive) return;
+  bodyDetectionActive = true;
+
+  // Set up persistent stability watchers for all currently known regions
   for (const region of regions) {
-    const signal = matchedAdapter?.stability_signal ?? null;
-    const watcher = createStabilityWatcher(signal);
+    const signal = adapter?.stability_signal ?? null;
+    const watcher = createStabilityWatcher(signal, /* persistent */ true);
 
     watcher.onStable(async (element) => {
       await handleStableRegion(region, element);
@@ -177,6 +204,46 @@ async function init(): Promise<void> {
 
     watcher.observe(region.element);
   }
+
+  // ── Body-level region discovery ──
+  // Periodically re-runs detectReadingRegions when the DOM changes.
+  // Catches: initially-empty pages that gain content (LLM chats without adapters),
+  // new content sections appearing dynamically, SPA navigations.
+  const knownElements = new WeakSet<Element>(regions.map((r) => r.element));
+  let rescanTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const bodyObserver = new MutationObserver(() => {
+    if (!enabled) return;
+    if (rescanTimer) clearTimeout(rescanTimer);
+    rescanTimer = setTimeout(() => {
+      const detected = detectReadingRegions(adapters);
+      for (const candidate of detected) {
+        if (knownElements.has(candidate.element)) continue;
+
+        // New region discovered after init
+        knownElements.add(candidate.element);
+        regions.push(candidate);
+        console.log(`[Oddity 1] New region discovered: ${candidate.id}`);
+
+        if (!marginNotesInitFromBody) {
+          initMarginNotes(candidate.element);
+          marginNotesInitFromBody = true;
+        }
+
+        handleStableRegion(candidate, candidate.element);
+
+        // Set up persistent watcher for the new region
+        const sig = adapter?.stability_signal ?? null;
+        const w = createStabilityWatcher(sig, /* persistent */ true);
+        w.onStable(async (el) => {
+          await handleStableRegion(candidate, el);
+        });
+        w.observe(candidate.element);
+      }
+    }, 1500); // 1.5s debounce — wait for content to settle before re-scanning
+  });
+
+  bodyObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 async function handleStableRegion(
@@ -205,6 +272,8 @@ async function handleStableRegion(
     annotatedRegions.delete(previousHash);
     currentAnnotations.delete(previousHash);
     regionByHash.delete(previousHash);
+    // Content changed — clean up stale DOM annotations and re-render remaining
+    rerenderAll();
   }
   activeHashes.set(region.element, contentHash);
 

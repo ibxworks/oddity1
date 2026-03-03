@@ -14,8 +14,11 @@ export interface ChatObserver {
 /** Debounce for scanning document.body for new response elements. */
 const SCAN_DEBOUNCE_MS = 200;
 
-/** After the entire response stops mutating, fire remaining unfired blocks. */
-const COMPLETION_SETTLE_MS = 300;
+/** After the entire response stops mutating, fire the whole element.
+ *  Must be generous: LLM streaming can pause >300ms between paragraphs,
+ *  on network hiccups, or during reasoning delays. The timer resets on
+ *  every mutation, so this only adds latency AFTER streaming truly stops. */
+const COMPLETION_SETTLE_MS = 1200;
 
 /** Block-level selectors that represent individual paragraphs/sections. */
 const BLOCK_SELECTOR = 'p, li, pre, h1, h2, h3, h4, h5, h6, blockquote, table';
@@ -119,7 +122,6 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
 
   function scanBlocks(state: ResponseState): void {
     const blocks = state.element.querySelectorAll(BLOCK_SELECTOR);
-    let highestNewIndex = -1;
 
     for (const block of blocks) {
       if (state.blocks.has(block)) {
@@ -127,7 +129,7 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
         const bs = state.blocks.get(block)!;
         bs.lastText = block.textContent?.trim() ?? '';
       } else {
-        // New block — register it
+        // New block — register it (used for streaming completion detection)
         const text = block.textContent?.trim() ?? '';
         const bs: BlockState = {
           lastText: text,
@@ -135,32 +137,10 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
           index: state.blockIndex++,
         };
         state.blocks.set(block, bs);
-
-        if (bs.index > highestNewIndex) {
-          highestNewIndex = bs.index;
-        }
       }
     }
-
-    // A new block appeared → all prior unfired blocks are stable (LLM moved on).
-    // Fire them immediately for maximum parallelism.
-    if (highestNewIndex >= 0) {
-      for (const [blk, bs] of state.blocks) {
-        if (!bs.fired && bs.index < highestNewIndex) {
-          const wordCount = countWords(bs.lastText);
-          if (wordCount >= MIN_PARAGRAPH_WORDS) {
-            fireParagraph(state, blk, bs);
-          }
-        }
-      }
-    }
-  }
-
-  function fireParagraph(state: ResponseState, block: Element, bs: BlockState): void {
-    if (bs.fired) return;
-    bs.fired = true;
-    const regionId = `chat-${state.responseIndex}-p${bs.index}`;
-    onResponse(regionId, block);
+    // Don't fire individual blocks — we fire the whole response on completion
+    // to give the LLM full context for diverse annotation types.
   }
 
   // ─── Completion timer ───
@@ -175,35 +155,12 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   }
 
   function finalizeResponse(state: ResponseState): void {
-    let anyBlockFired = false;
-
-    // Check if any block was already fired during streaming
-    for (const [, bs] of state.blocks) {
-      if (bs.fired) { anyBlockFired = true; break; }
-    }
-
-    // Fire remaining unfired blocks that meet the word-count threshold.
-    // Short blocks (< MIN_PARAGRAPH_WORDS) are skipped — the LLM produces
-    // nothing useful for 3-word inputs, so firing them wastes API calls.
-    for (const [block, bs] of state.blocks) {
-      if (bs.fired) continue;
-      const wordCount = countWords(bs.lastText);
-      if (wordCount >= MIN_PARAGRAPH_WORDS) {
-        bs.fired = true;
-        anyBlockFired = true;
-        const regionId = `chat-${state.responseIndex}-p${bs.index}`;
-        onResponse(regionId, block);
-      }
-    }
-
-    // If no individual blocks were ever fired (all too short, or no block
-    // elements found), fire the whole response element as a single chunk.
-    // This gives the LLM full context for short/simple responses.
-    if (!anyBlockFired) {
-      const text = state.element.textContent?.trim() ?? '';
-      if (text.length > 0) {
-        onResponse(`chat-${state.responseIndex}`, state.element);
-      }
+    // Fire the whole response element as a single region.
+    // Full context lets the LLM produce diverse annotation types
+    // (provoking questions, insights, caveats, recall) — not just highlights.
+    const text = state.element.textContent?.trim() ?? '';
+    if (text.length > 0) {
+      onResponse(`chat-${state.responseIndex}`, state.element);
     }
 
     // Clean up
