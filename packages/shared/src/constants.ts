@@ -6,7 +6,7 @@ export const BACKEND_URL = process.env.ODDITY_BACKEND_URL ?? 'http://localhost:3
 
 // ─── Timing ───
 
-export const STABILITY_DEBOUNCE_MS = 1500;
+export const STABILITY_DEBOUNCE_MS = 500;
 export const POPOVER_SHOW_DELAY_MS = 200;
 export const POPOVER_HIDE_DELAY_MS = 300;
 export const ADAPTER_REFRESH_INTERVAL_MINUTES = 360; // 6 hours

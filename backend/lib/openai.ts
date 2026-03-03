@@ -34,23 +34,98 @@ function expandPrompt(template: string): string {
     .replace(/\{\{schema_example\}\}/g, schemaExample);
 }
 
+/**
+ * Expand compressed field names from LLM output to standard annotation format.
+ * Supports both compressed (t, a, c, e, p, s, n, w, q) and full field names.
+ */
+function expandCompressedAnnotations(data: unknown[]): unknown[] {
+  return data.map((item: any) => {
+    if (!item || typeof item !== 'object') return item;
+
+    // If already using full field names, pass through
+    if (item.type && item.anchor && item.content) return item;
+
+    const expanded: any = {
+      id: item.id,
+      type: item.t ?? item.type,
+      anchor: undefined,
+      content: undefined,
+    };
+
+    // Expand anchor: a → anchor, hardcode type: TextQuoteSelector
+    const anchor = item.a ?? item.anchor;
+    if (anchor && typeof anchor === 'object') {
+      expanded.anchor = {
+        type: 'TextQuoteSelector',
+        exact: anchor.e ?? anchor.exact,
+        prefix: anchor.p ?? anchor.prefix,
+        suffix: anchor.s ?? anchor.suffix,
+      };
+    }
+
+    // Expand content: c → content
+    const content = item.c ?? item.content;
+    if (content && typeof content === 'object') {
+      expanded.content = {
+        note: content.n ?? content.note,
+        ...(content.w ?? content.why_it_matters
+          ? { why_it_matters: content.w ?? content.why_it_matters }
+          : {}),
+        ...(content.q ?? content.question
+          ? { question: content.q ?? content.question }
+          : {}),
+      };
+    }
+
+    return expanded;
+  });
+}
+
 export async function generateAnnotations(
   text: string,
   intensity: Intensity,
   promptConfig: PromptProfile,
 ): Promise<Annotation[]> {
   const firstAttempt = await callOpenAI(text, promptConfig);
-  const { valid, errors } = validateAnnotations(firstAttempt);
+  const expanded = Array.isArray(firstAttempt) ? expandCompressedAnnotations(firstAttempt) : firstAttempt;
+  const { valid, errors } = validateAnnotations(expanded);
 
   if (errors.length === 0) return valid;
 
   // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
   const retryAttempt = await callOpenAI(text, promptConfig, correctionPrompt);
-  const retryResult = validateAnnotations(retryAttempt);
+  const retryExpanded = Array.isArray(retryAttempt) ? expandCompressedAnnotations(retryAttempt) : retryAttempt;
+  const retryResult = validateAnnotations(retryExpanded);
 
   // Return whatever valid annotations we got (partial results OK)
   return retryResult.valid.length > 0 ? retryResult.valid : valid;
+}
+
+function buildMessages(
+  text: string,
+  config: PromptProfile,
+  correctionNote?: string,
+): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  const systemPrompt = expandPrompt(config.system_prompt);
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: text },
+  ];
+  if (correctionNote) {
+    messages.push({ role: "user", content: correctionNote });
+  }
+  return messages;
+}
+
+function getModelParams(): { temperature?: number } {
+  const supportsTemperature = !(
+    model.includes("gpt-5-nano") ||
+    model.includes("gpt-5-mini") ||
+    model.includes("gpt-4.1-nano") ||
+    model.includes("gpt-4.1-mini")
+  );
+  return supportsTemperature ? { temperature: 0.3 } : {};
 }
 
 async function callOpenAI(
@@ -58,30 +133,13 @@ async function callOpenAI(
   config: PromptProfile,
   correctionNote?: string,
 ): Promise<unknown> {
-  const systemPrompt = expandPrompt(config.system_prompt);
-
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: text },
-  ];
-
-  if (correctionNote) {
-    messages.push({ role: "user", content: correctionNote });
-  }
-
-  const supportsTemperature = !(
-    model.includes("gpt-5-nano") ||
-    model.includes("gpt-5-mini") ||
-    model.includes("gpt-4.1-nano") ||
-    model.includes("gpt-4.1-mini")
-  );
-  console.log("supportsTemperature:", supportsTemperature);
+  const messages = buildMessages(text, config, correctionNote);
 
   const response = await openai.chat.completions.create({
     model,
     messages,
     response_format: { type: "json_object" },
-    ...(supportsTemperature && { temperature: 0.3 }),
+    ...getModelParams(),
   });
 
   const content = response.choices[0]?.message?.content;
@@ -93,4 +151,114 @@ async function callOpenAI(
   } catch {
     return [];
   }
+}
+
+/**
+ * Streaming annotation generator. Yields individual annotation objects
+ * as they are parsed from the incremental JSON stream.
+ */
+export async function* generateAnnotationsStream(
+  text: string,
+  intensity: Intensity,
+  promptConfig: PromptProfile,
+): AsyncGenerator<Annotation, Annotation[], unknown> {
+  const messages = buildMessages(text, promptConfig);
+  const allAnnotations: Annotation[] = [];
+
+  const stream = await openai.chat.completions.create({
+    model,
+    messages,
+    response_format: { type: "json_object" },
+    ...getModelParams(),
+    stream: true,
+  });
+
+  let buffer = '';
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (!delta) continue;
+    buffer += delta;
+
+    // Try to extract complete annotation objects from the buffer.
+    // The LLM outputs: {"annotations": [{...}, {...}, ...]}
+    // We look for complete objects within the array by tracking brace depth.
+    const extracted = extractCompleteObjects(buffer);
+    for (const objStr of extracted.objects) {
+      try {
+        const raw = JSON.parse(objStr);
+        const expanded = expandCompressedAnnotations([raw]);
+        const { valid } = validateAnnotations(expanded);
+        if (valid.length > 0) {
+          allAnnotations.push(valid[0]!);
+          yield valid[0]!;
+        }
+      } catch {
+        // Incomplete or malformed — skip
+      }
+    }
+    buffer = extracted.remaining;
+  }
+
+  return allAnnotations;
+}
+
+/**
+ * Extract complete JSON objects from a buffer containing an array.
+ * Tracks brace depth to find complete {...} segments.
+ */
+function extractCompleteObjects(buffer: string): {
+  objects: string[];
+  remaining: string;
+} {
+  const objects: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let objectStart = -1;
+
+  // Find the start of the array content (after "annotations": [)
+  const arrayStart = buffer.indexOf('[');
+  if (arrayStart === -1) return { objects: [], remaining: buffer };
+
+  let searchFrom = arrayStart + 1;
+
+  for (let i = searchFrom; i < buffer.length; i++) {
+    const ch = buffer[i]!;
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === '{') {
+      if (depth === 0) objectStart = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && objectStart !== -1) {
+        objects.push(buffer.slice(objectStart, i + 1));
+        searchFrom = i + 1;
+        objectStart = -1;
+      }
+    }
+  }
+
+  // Keep from the last successfully extracted position
+  return {
+    objects,
+    remaining: buffer.slice(0, arrayStart + 1) + buffer.slice(searchFrom),
+  };
 }

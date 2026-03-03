@@ -89,6 +89,83 @@ export async function requestAnnotations(
   return res.json() as Promise<AnnotationResponse>;
 }
 
+/**
+ * Request annotations via SSE streaming. Calls onAnnotation for each
+ * annotation as it arrives, then resolves with the complete result.
+ */
+export async function requestAnnotationsStreaming(
+  req: AnnotateRequest,
+  onAnnotation: (annotation: Annotation) => void,
+  signal?: AbortSignal,
+): Promise<AnnotationResponse> {
+  const token = await getAccessToken();
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'text/event-stream',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${BACKEND_URL}/api/annotate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(req),
+    signal,
+  });
+
+  if (!res.ok) throw new Error(`requestAnnotationsStreaming failed: ${res.status}`);
+  if (!res.body) throw new Error('No response body for SSE stream');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const annotations: Annotation[] = [];
+  let feedback: AnnotationFeedback[] = [];
+  let cached = false;
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? ''; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6);
+
+        try {
+          const event = JSON.parse(jsonStr);
+
+          if (event.error) {
+            throw new Error(event.error);
+          }
+
+          if (event.annotation) {
+            annotations.push(event.annotation);
+            onAnnotation(event.annotation);
+          }
+
+          if (event.done) {
+            cached = event.cached ?? false;
+            feedback = event.feedback ?? [];
+          }
+        } catch {
+          // Skip malformed events
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return { success: true, cached, annotations, feedback };
+}
+
 export async function getAnnotations(
   url: string,
   contentHash: string,

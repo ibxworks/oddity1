@@ -94,6 +94,19 @@ export function filterAndFixAnnotations(
   return results;
 }
 
+/**
+ * Fix a single annotation's anchor against the source text.
+ * Returns the fixed annotation, or null if it can't be resolved.
+ * Used for streaming — each annotation is fixed as it arrives.
+ */
+export function fixSingleAnnotation(
+  ann: Annotation,
+  sourceText: string,
+): Annotation | null {
+  const result = filterAndFixAnnotations([ann], sourceText);
+  return result.length > 0 ? result[0]! : null;
+}
+
 // ─── Helpers ───
 
 function normalizeWs(text: string): string {

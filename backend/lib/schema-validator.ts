@@ -12,7 +12,6 @@ const AnnotationContentSchema = z.object({
   note: z.string().min(1),
   why_it_matters: z.string().optional(),
   question: z.string().optional(),
-  suggestions: z.array(z.string()).optional(),
 });
 
 const AnnotationSchema = z.object({

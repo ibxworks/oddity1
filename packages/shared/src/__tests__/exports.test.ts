@@ -7,7 +7,7 @@ describe('@oddity/shared exports', () => {
   });
 
   it('exports timing constants', () => {
-    expect(shared.STABILITY_DEBOUNCE_MS).toBe(1500);
+    expect(shared.STABILITY_DEBOUNCE_MS).toBe(500);
     expect(shared.POPOVER_SHOW_DELAY_MS).toBe(200);
     expect(shared.POPOVER_HIDE_DELAY_MS).toBe(300);
     expect(shared.ADAPTER_REFRESH_INTERVAL_MINUTES).toBe(360);

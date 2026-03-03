@@ -140,6 +140,10 @@ async function init(): Promise<void> {
   initOverlay();
   initMarginNotes(regions[0]?.element ?? document.body);
 
+  // ── URL prediction: render instantly from previous visit ──
+  // Non-blocking: kicks off speculative render while normal pipeline runs in parallel
+  tryUrlPrediction().catch(() => {});
+
   // Initialize scroll-based lazy loader
   initScrollLoader((regionId, element) => {
     if (!enabled) return;
@@ -155,7 +159,14 @@ async function init(): Promise<void> {
   // Initialize keyboard navigation
   initKeyboardNav();
 
-  // Set up stability watchers for each region
+  // Fire speculative requests immediately for visible regions (skip stability wait)
+  // The existing pendingRegions/annotatedRegions dedup prevents double-processing
+  for (const region of regions) {
+    handleStableRegion(region, region.element);
+  }
+
+  // Stability watchers run in parallel as verification — if content changes
+  // (e.g. dynamic page), the stale guard cancels speculative results and re-fires
   for (const region of regions) {
     const signal = matchedAdapter?.stability_signal ?? null;
     const watcher = createStabilityWatcher(signal);
@@ -254,6 +265,49 @@ async function handleStableRegion(
     }
     pendingRegions.delete(contentHash);
   }
+}
+
+// ─── URL Prediction ───
+
+async function tryUrlPrediction(): Promise<void> {
+  const prediction = await sendMessage<{
+    contentHash: string;
+    intensity: string;
+    annotations: Annotation[];
+    feedback: AnnotationFeedback[];
+  } | null>({
+    action: "getUrlPrediction",
+    payload: { url: window.location.href },
+  });
+
+  if (!prediction || !prediction.annotations?.length) return;
+  if (prediction.intensity !== currentIntensity) return;
+
+  // Use first region as the prediction target
+  const region = regions[0];
+  if (!region) return;
+
+  const regionId = prediction.contentHash;
+
+  // Don't overwrite if normal pipeline already finished
+  if (annotatedRegions.has(regionId)) return;
+
+  console.log(`[Oddity 1] URL prediction hit — rendering ${prediction.annotations.length} annotations instantly`);
+
+  // Store prediction hash so normal pipeline can verify
+  regionByHash.set(regionId, region);
+  (region.element as HTMLElement).dataset.oddityHash = regionId;
+  activeHashes.set(region.element, regionId);
+  pendingRegions.add(regionId);
+
+  // Render speculatively
+  currentAnnotations.set(regionId, prediction.annotations);
+  currentFeedback.set(regionId, prediction.feedback ?? []);
+  renderAnnotations(regionId, prediction.annotations);
+
+  // Mark as annotated so the normal pipeline will no-op if hash matches
+  annotatedRegions.add(regionId);
+  pendingRegions.delete(regionId);
 }
 
 // ─── Annotation Deletion ───
@@ -364,6 +418,50 @@ onMessage((message: ExtensionMessage) => {
         .then(() => ({ success: true }))
         .catch((err) => ({ success: false, error: String(err) }));
     }
+    case "annotationReady": {
+      // Progressive rendering: single annotation from streaming pipeline
+      const { regionId: streamRegionId, annotation } = message.payload;
+
+      // Stale guard
+      if (!pendingRegions.has(streamRegionId)) break;
+      if (!enabled || !visibleTypes.includes(annotation.type)) break;
+
+      const streamRegion = regionByHash.get(streamRegionId) ?? regions.find((r) => r.id === streamRegionId);
+      const streamRoot = streamRegion?.element ?? document.body;
+
+      // Track the annotation in state
+      const existing = currentAnnotations.get(streamRegionId) ?? [];
+      existing.push(annotation);
+      currentAnnotations.set(streamRegionId, existing);
+
+      // Render the single annotation immediately
+      const range = resolveSelector(streamRoot, annotation.anchor);
+      if (range) {
+        let anchors = injectAnchors(annotation, range);
+        if (anchors.length === 0) {
+          invalidateTextNodeIndex(streamRoot);
+          const retryRange = resolveSelector(streamRoot, annotation.anchor);
+          if (retryRange) {
+            anchors = injectAnchors(annotation, retryRange);
+          }
+        }
+
+        const stableRange = document.createRange();
+        if (anchors.length > 0) {
+          stableRange.setStartBefore(anchors[0]!);
+          stableRange.setEndAfter(anchors[anchors.length - 1]!);
+        } else {
+          stableRange.setStart(range.startContainer, range.startOffset);
+          stableRange.setEnd(range.endContainer, range.endOffset);
+        }
+
+        renderAnnotation(annotation, stableRange);
+        const fb = currentFeedback.get(streamRegionId) ?? [];
+        const noteFeedback = fb.filter((f) => f.annotation_id === annotation.id);
+        addMarginNote(annotation, stableRange, noteFeedback, handleAnnotationDeleted);
+      }
+      break;
+    }
     case "annotationsReady": {
       const { regionId, annotations, feedback } = message.payload;
 
@@ -377,13 +475,23 @@ onMessage((message: ExtensionMessage) => {
       pendingRegions.delete(regionId);
       currentFeedback.set(regionId, feedback);
 
+      // Final annotationsReady: replace progressive annotations with complete set
+      // (includes user annotations and proper feedback associations)
+      const hadStreaming = currentAnnotations.has(regionId);
       currentAnnotations.set(regionId, annotations);
-      console.log(
-        `[Oddity 1] Received ${annotations.length} annotations for region ${regionId}`,
-        annotations,
-      );
 
-      if (enabled) {
+      if (enabled && hadStreaming) {
+        // Re-render with complete set (clears progressive renders, adds user annotations)
+        const region = regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
+        const root = region?.element ?? document.body;
+        // Clear only this region's overlays and re-render
+        clearOverlay();
+        clearAllAnchors();
+        clearMarginNotes();
+        for (const [rid, anns] of currentAnnotations) {
+          renderAnnotations(rid, anns);
+        }
+      } else if (enabled) {
         renderAnnotations(regionId, annotations);
       }
       break;

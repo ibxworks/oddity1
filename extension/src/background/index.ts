@@ -9,9 +9,8 @@ import {
   AuthError,
   deleteAnnotation as apiDeleteAnnotation,
   deleteFeedback as apiDeleteFeedback,
-  getAnnotations,
-  getFeedback,
   requestAnnotations,
+  requestAnnotationsStreaming,
   saveAnnotation,
   saveFeedback as apiSaveFeedback,
   sendUserFeedback as apiSendUserFeedback,
@@ -19,6 +18,8 @@ import {
 } from "./api-client.js";
 import { getProfile, getSession, getUserTier, signIn, signOut, signUp, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
+import { getFromSessionCache, setInSessionCache } from "./sw-cache.js";
+import { getUrlCache, setUrlCache } from "./url-cache.js";
 
 // ─── Optimization: per-request abort controllers ───
 // Keyed by "tabId:regionId" so re-requesting the same region with new content
@@ -62,6 +63,23 @@ chrome.runtime.onMessage.addListener(
           // Session exists — clear any stale badge
           chrome.action.setBadgeText({ text: "" });
 
+          // ── Session cache: instant hit for revisits within browser session ──
+          const cached = await getFromSessionCache(contentHash, intensity);
+          if (cached) {
+            console.log(`[Oddity 1] Session cache hit for ${contentHash.slice(0, 12)}…`);
+            if (sender.tab?.id) {
+              await sendToTab(sender.tab.id, {
+                action: "annotationsReady",
+                payload: {
+                  regionId: contentHash,
+                  annotations: cached.annotations,
+                  feedback: cached.feedback,
+                },
+              });
+            }
+            return { success: true, cached: true, annotations: cached.annotations, feedback: cached.feedback };
+          }
+
           // Cancel any previous in-flight request for the same tab+region
           const tabId = sender.tab?.id ?? 0;
           const key = abortKey(tabId, regionId);
@@ -70,40 +88,55 @@ chrome.runtime.onMessage.addListener(
           inflight.set(key, controller);
 
           try {
-            // Trigger AI generation/caching (with abort signal)
-            await requestAnnotations(
-              {
-                url,
-                content_hash: contentHash,
-                text,
-                intensity,
-                word_count: wordCount,
+            const requestPayload = {
+              url,
+              content_hash: contentHash,
+              text,
+              intensity,
+              word_count: wordCount,
+            };
+
+            // Use streaming to progressively render annotations
+            const result = await requestAnnotationsStreaming(
+              requestPayload,
+              (annotation) => {
+                // Forward each annotation individually as it arrives
+                if (sender.tab?.id && !controller.signal.aborted) {
+                  sendToTab(sender.tab.id, {
+                    action: "annotationReady",
+                    payload: {
+                      regionId: contentHash,
+                      annotation,
+                    },
+                  }).catch(() => { /* tab may have closed */ });
+                }
               },
               controller.signal,
             );
 
-            // Check if aborted before fetching merged result
+            // Check if aborted
             if (controller.signal.aborted) return { aborted: true };
 
-            // Fetch merged result (cached AI + user annotations) + feedback
-            const [merged, feedback] = await Promise.all([
-              getAnnotations(url, contentHash, controller.signal),
-              getFeedback(url, contentHash),
-            ]);
+            const annotations = result.annotations;
+            const feedback = result.feedback ?? [];
 
-            // Forward annotations to the requesting tab
+            // Populate caches for future revisits
+            await setInSessionCache(contentHash, intensity, annotations, feedback);
+            await setUrlCache(url, contentHash, intensity, annotations, feedback);
+
+            // Send final annotationsReady with complete set + feedback
             if (sender.tab?.id) {
               await sendToTab(sender.tab.id, {
                 action: "annotationsReady",
                 payload: {
                   regionId: contentHash,
-                  annotations: merged.annotations,
+                  annotations,
                   feedback,
                 },
               });
             }
 
-            return merged;
+            return result;
           } finally {
             // Only remove if this controller is still the active one for this key.
             // A newer request may have already replaced it — deleting would orphan
@@ -112,6 +145,11 @@ chrome.runtime.onMessage.addListener(
               inflight.delete(key);
             }
           }
+        }
+
+        case "getUrlPrediction": {
+          const prediction = await getUrlCache(message.payload.url);
+          return prediction ?? null;
         }
 
         case "getAdapters": {

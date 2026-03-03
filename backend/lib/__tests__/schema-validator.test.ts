@@ -22,7 +22,6 @@ describe('validateAnnotations', () => {
       note: 'What does this mean?',
       why_it_matters: 'Critical concept',
       question: 'Can you elaborate?',
-      suggestions: ['deep learning', 'machine learning'],
     },
   };
 
