@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { randomUUID } from "node:crypto";
 import type { Annotation, Intensity } from "@oddity/shared";
 import { validateAnnotations } from "./schema-validator.js";
 import { readFileSync } from "node:fs";
@@ -81,36 +82,73 @@ function expandCompressedAnnotations(data: unknown[]): unknown[] {
   });
 }
 
+export interface ChunkInfo {
+  index: number;
+  total: number;
+}
+
+/**
+ * Assign globally unique IDs to annotations.
+ * LLM-generated IDs (e.g. "ann_1") are sequential per-call and collide
+ * across separate API calls for different content regions.  Replacing them
+ * with UUIDs ensures margin-note dedup in the client never incorrectly
+ * drops annotations from a different region.
+ */
+function assignUniqueIds(annotations: Annotation[]): Annotation[] {
+  for (const ann of annotations) {
+    ann.id = randomUUID();
+  }
+  return annotations;
+}
+
 export async function generateAnnotations(
   text: string,
   intensity: Intensity,
   promptConfig: PromptProfile,
+  chunkInfo?: ChunkInfo,
 ): Promise<Annotation[]> {
-  const firstAttempt = await callOpenAI(text, promptConfig);
+  const firstAttempt = await callOpenAI(text, promptConfig, undefined, chunkInfo);
   const expanded = Array.isArray(firstAttempt) ? expandCompressedAnnotations(firstAttempt) : firstAttempt;
   const { valid, errors } = validateAnnotations(expanded);
 
-  if (errors.length === 0) return valid;
+  if (errors.length === 0) return assignUniqueIds(valid);
 
   // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callOpenAI(text, promptConfig, correctionPrompt);
+  const retryAttempt = await callOpenAI(text, promptConfig, correctionPrompt, chunkInfo);
   const retryExpanded = Array.isArray(retryAttempt) ? expandCompressedAnnotations(retryAttempt) : retryAttempt;
   const retryResult = validateAnnotations(retryExpanded);
 
   // Return whatever valid annotations we got (partial results OK)
-  return retryResult.valid.length > 0 ? retryResult.valid : valid;
+  return assignUniqueIds(retryResult.valid.length > 0 ? retryResult.valid : valid);
 }
 
 function buildMessages(
   text: string,
   config: PromptProfile,
   correctionNote?: string,
+  chunkInfo?: ChunkInfo,
 ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
   const systemPrompt = expandPrompt(config.system_prompt);
+
+  // Dynamic annotation count hint: tell the LLM exactly how many to produce.
+  // Floor of 8 ensures even short chat responses get rich, diverse annotations.
+  const charCount = text.length;
+  const targetCount = Math.max(8, Math.round((charCount / 1000) * config.max_annotations_per_1000_chars));
+
+  let hint = `[Input: ~${charCount} characters. You MUST produce at least ${targetCount} annotations. Use ALL six annotation types (highlight, vocabulary, provoking question, recall, insight, caveat). Distribute annotations evenly across the ENTIRE text — beginning, middle, and end.]`;
+
+  // When processing chunks, tell the LLM which section it's annotating.
+  // This prevents the model from clustering annotations at the start.
+  if (chunkInfo && chunkInfo.total > 1) {
+    hint += `\n[This is section ${chunkInfo.index + 1} of ${chunkInfo.total} from a larger text. Annotate ONLY the text provided. Cover every paragraph in this section thoroughly.]`;
+  }
+
+  hint += '\n\n';
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: text },
+    { role: "user", content: hint + text },
   ];
   if (correctionNote) {
     messages.push({ role: "user", content: correctionNote });
@@ -132,13 +170,15 @@ async function callOpenAI(
   text: string,
   config: PromptProfile,
   correctionNote?: string,
+  chunkInfo?: ChunkInfo,
 ): Promise<unknown> {
-  const messages = buildMessages(text, config, correctionNote);
+  const messages = buildMessages(text, config, correctionNote, chunkInfo);
 
   const response = await openai.chat.completions.create({
     model,
     messages,
     response_format: { type: "json_object" },
+    max_tokens: 4096,
     ...getModelParams(),
   });
 
@@ -161,14 +201,16 @@ export async function* generateAnnotationsStream(
   text: string,
   intensity: Intensity,
   promptConfig: PromptProfile,
+  chunkInfo?: ChunkInfo,
 ): AsyncGenerator<Annotation, Annotation[], unknown> {
-  const messages = buildMessages(text, promptConfig);
+  const messages = buildMessages(text, promptConfig, undefined, chunkInfo);
   const allAnnotations: Annotation[] = [];
 
   const stream = await openai.chat.completions.create({
     model,
     messages,
     response_format: { type: "json_object" },
+    max_tokens: 4096,
     ...getModelParams(),
     stream: true,
   });
@@ -190,6 +232,7 @@ export async function* generateAnnotationsStream(
         const expanded = expandCompressedAnnotations([raw]);
         const { valid } = validateAnnotations(expanded);
         if (valid.length > 0) {
+          valid[0]!.id = randomUUID();
           allAnnotations.push(valid[0]!);
           yield valid[0]!;
         }

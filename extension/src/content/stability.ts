@@ -17,11 +17,12 @@ export interface StabilityWatcher {
  */
 export function createStabilityWatcher(
   signal: StabilitySignal | null,
+  persistent = false,
 ): StabilityWatcher {
   if (signal) {
     return createSignalWatcher(signal);
   }
-  return createDebounceWatcher();
+  return persistent ? createPersistentDebounceWatcher() : createDebounceWatcher();
 }
 
 function createSignalWatcher(signal: StabilitySignal): StabilityWatcher {
@@ -131,6 +132,58 @@ function createDebounceWatcher(): StabilityWatcher {
       });
 
       // Start the initial debounce timer (in case no mutations happen)
+      debounceTimer = setTimeout(fireStable, STABILITY_DEBOUNCE_MS);
+    },
+
+    disconnect() {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      observer?.disconnect();
+      observer = null;
+    },
+  };
+}
+
+/**
+ * Persistent debounce watcher: keeps watching for content changes indefinitely.
+ * After mutations settle for STABILITY_DEBOUNCE_MS, fires the callback IF the
+ * element's text content has actually changed. Uses textContent.length as a
+ * lightweight content-change guard — annotation rendering (which wraps text
+ * nodes in anchor elements) doesn't change textContent, so it won't re-fire.
+ */
+function createPersistentDebounceWatcher(): StabilityWatcher {
+  let observer: MutationObserver | null = null;
+  let callback: ((element: Element) => void) | null = null;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastTextLength = -1;
+
+  return {
+    onStable(cb) {
+      callback = cb;
+    },
+
+    observe(element: Element) {
+      const fireStable = () => {
+        // Lightweight content-change check: skip if text length unchanged
+        // (annotation anchor injection preserves textContent, so length stays same)
+        const len = element.textContent?.length ?? 0;
+        if (len === lastTextLength) return;
+        lastTextLength = len;
+        if (callback) callback(element);
+        // Don't disconnect — keep watching for future content changes
+      };
+
+      observer = new MutationObserver(() => {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(fireStable, STABILITY_DEBOUNCE_MS);
+      });
+
+      observer.observe(element, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+
+      // Start the initial debounce timer
       debounceTimer = setTimeout(fireStable, STABILITY_DEBOUNCE_MS);
     },
 
