@@ -1,22 +1,22 @@
-import OpenAI from "openai";
-import { randomUUID } from "node:crypto";
 import type { Annotation, Intensity } from "@oddity/shared";
-import { validateAnnotations } from "./schema-validator.js";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import OpenAI from "openai";
+import { validateAnnotations } from "./schema-validator.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? "" });
-const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+const model = process.env.OPENAI_MODEL ?? "gpt-oss-120b";
 
 // Load shared prompt fragments once at startup
 const promptsConfig = JSON.parse(
-  readFileSync(resolve(__dirname, '../config/prompts.json'), 'utf-8'),
+  readFileSync(resolve(__dirname, "../config/prompts.json"), "utf-8"),
 );
-const sharedRules: string = promptsConfig.shared_rules ?? '';
-const schemaExample: string = promptsConfig.schema_example ?? '';
+const sharedRules: string = promptsConfig.shared_rules ?? "";
+const schemaExample: string = promptsConfig.schema_example ?? "";
 
 interface PromptProfile {
   system_prompt: string;
@@ -41,7 +41,7 @@ function expandPrompt(template: string): string {
  */
 function expandCompressedAnnotations(data: unknown[]): unknown[] {
   return data.map((item: any) => {
-    if (!item || typeof item !== 'object') return item;
+    if (!item || typeof item !== "object") return item;
 
     // If already using full field names, pass through
     if (item.type && item.anchor && item.content) return item;
@@ -55,9 +55,9 @@ function expandCompressedAnnotations(data: unknown[]): unknown[] {
 
     // Expand anchor: a → anchor, hardcode type: TextQuoteSelector
     const anchor = item.a ?? item.anchor;
-    if (anchor && typeof anchor === 'object') {
+    if (anchor && typeof anchor === "object") {
       expanded.anchor = {
-        type: 'TextQuoteSelector',
+        type: "TextQuoteSelector",
         exact: anchor.e ?? anchor.exact,
         prefix: anchor.p ?? anchor.prefix,
         suffix: anchor.s ?? anchor.suffix,
@@ -66,13 +66,13 @@ function expandCompressedAnnotations(data: unknown[]): unknown[] {
 
     // Expand content: c → content
     const content = item.c ?? item.content;
-    if (content && typeof content === 'object') {
+    if (content && typeof content === "object") {
       expanded.content = {
         note: content.n ?? content.note,
-        ...(content.w ?? content.why_it_matters
+        ...((content.w ?? content.why_it_matters)
           ? { why_it_matters: content.w ?? content.why_it_matters }
           : {}),
-        ...(content.q ?? content.question
+        ...((content.q ?? content.question)
           ? { question: content.q ?? content.question }
           : {}),
       };
@@ -107,20 +107,36 @@ export async function generateAnnotations(
   promptConfig: PromptProfile,
   chunkInfo?: ChunkInfo,
 ): Promise<Annotation[]> {
-  const firstAttempt = await callOpenAI(text, promptConfig, undefined, chunkInfo);
-  const expanded = Array.isArray(firstAttempt) ? expandCompressedAnnotations(firstAttempt) : firstAttempt;
+  const firstAttempt = await callOpenAI(
+    text,
+    promptConfig,
+    undefined,
+    chunkInfo,
+  );
+  const expanded = Array.isArray(firstAttempt)
+    ? expandCompressedAnnotations(firstAttempt)
+    : firstAttempt;
   const { valid, errors } = validateAnnotations(expanded);
 
   if (errors.length === 0) return assignUniqueIds(valid);
 
   // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callOpenAI(text, promptConfig, correctionPrompt, chunkInfo);
-  const retryExpanded = Array.isArray(retryAttempt) ? expandCompressedAnnotations(retryAttempt) : retryAttempt;
+  const retryAttempt = await callOpenAI(
+    text,
+    promptConfig,
+    correctionPrompt,
+    chunkInfo,
+  );
+  const retryExpanded = Array.isArray(retryAttempt)
+    ? expandCompressedAnnotations(retryAttempt)
+    : retryAttempt;
   const retryResult = validateAnnotations(retryExpanded);
 
   // Return whatever valid annotations we got (partial results OK)
-  return assignUniqueIds(retryResult.valid.length > 0 ? retryResult.valid : valid);
+  return assignUniqueIds(
+    retryResult.valid.length > 0 ? retryResult.valid : valid,
+  );
 }
 
 function buildMessages(
@@ -134,7 +150,10 @@ function buildMessages(
   // Dynamic annotation count hint: tell the LLM exactly how many to produce.
   // Floor of 8 ensures even short chat responses get rich, diverse annotations.
   const charCount = text.length;
-  const targetCount = Math.max(6, Math.round((charCount / 1000) * config.max_annotations_per_1000_chars));
+  const targetCount = Math.max(
+    6,
+    Math.round((charCount / 1000) * config.max_annotations_per_1000_chars),
+  );
 
   let hint = `[Input: ~${charCount} characters. You MUST produce at least ${targetCount} annotations. Use ALL six annotation types (highlight, vocabulary, provoking question, recall, insight, caveat). Distribute annotations evenly across the ENTIRE text — beginning, middle, and end.]`;
 
@@ -144,7 +163,7 @@ function buildMessages(
     hint += `\n[This is section ${chunkInfo.index + 1} of ${chunkInfo.total} from a larger text. Annotate ONLY the text provided. Cover every paragraph in this section thoroughly.]`;
   }
 
-  hint += '\n\n';
+  hint += "\n\n";
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
@@ -157,12 +176,7 @@ function buildMessages(
 }
 
 function getModelParams(): { temperature?: number } {
-  const supportsTemperature = !(
-    model.includes("gpt-5-nano") ||
-    model.includes("gpt-5-mini") ||
-    model.includes("gpt-4.1-nano") ||
-    model.includes("gpt-4.1-mini")
-  );
+  const supportsTemperature = model.includes("gpt-4o-mini");
   return supportsTemperature ? { temperature: 0.3 } : {};
 }
 
@@ -215,7 +229,7 @@ export async function* generateAnnotationsStream(
     stream: true,
   });
 
-  let buffer = '';
+  let buffer = "";
 
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content;
@@ -261,7 +275,7 @@ function extractCompleteObjects(buffer: string): {
   let objectStart = -1;
 
   // Find the start of the array content (after "annotations": [)
-  const arrayStart = buffer.indexOf('[');
+  const arrayStart = buffer.indexOf("[");
   if (arrayStart === -1) return { objects: [], remaining: buffer };
 
   let searchFrom = arrayStart + 1;
@@ -274,7 +288,7 @@ function extractCompleteObjects(buffer: string): {
       continue;
     }
 
-    if (ch === '\\' && inString) {
+    if (ch === "\\" && inString) {
       escape = true;
       continue;
     }
@@ -286,10 +300,10 @@ function extractCompleteObjects(buffer: string): {
 
     if (inString) continue;
 
-    if (ch === '{') {
+    if (ch === "{") {
       if (depth === 0) objectStart = i;
       depth++;
-    } else if (ch === '}') {
+    } else if (ch === "}") {
       depth--;
       if (depth === 0 && objectStart !== -1) {
         objects.push(buffer.slice(objectStart, i + 1));
