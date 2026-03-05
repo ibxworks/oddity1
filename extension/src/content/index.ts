@@ -6,11 +6,16 @@ import type {
   Intensity,
   SiteAdapter,
 } from "@oddity/shared";
-import { EAGER_WORD_LIMIT } from "@oddity/shared";
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
+import { showAuthToast } from "./auth-toast.js";
+import { createChatObserver } from "./chat-observer.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
+import { handleExportPdf } from "./export-pdf.js";
 import { extractText, extractWithReadability } from "./extractor.js";
+import { isLongRequest } from "./long-request.js";
+import { LongWaitManager } from "./long-wait-manager.js";
+import { hideLongWaitToast, showLongWaitToast } from "./long-wait-toast.js";
 import { initManualAnnotations } from "./manual.js";
 import {
   clearAllAnchors,
@@ -20,31 +25,27 @@ import {
   removeAnchors,
 } from "./renderer/anchors.js";
 import {
+  addMarginNote,
+  clearMarginNotes,
+  collapseAllMarginNotes,
+  expandMarginNote,
+  filterMarginNotesByTypes,
+  initMarginNotes,
+  isAnyMarginNoteExpanded,
+  onAnchorHoverEnd,
+  onAnchorHoverStart,
+  removeMarginNote,
+  setMarginNotesVisible,
+  updateMarginNotesStyle,
+} from "./renderer/margin-notes.js";
+import {
   clearOverlay,
   filterByTypes,
   initOverlay,
   renderAnnotation,
   setOverlayVisible,
 } from "./renderer/overlay.js";
-import {
-  initMarginNotes,
-  addMarginNote,
-  removeMarginNote,
-  clearMarginNotes,
-  setMarginNotesVisible,
-  filterMarginNotesByTypes,
-  expandMarginNote,
-  collapseAllMarginNotes,
-  isAnyMarginNoteExpanded,
-  updateMarginNotesStyle,
-  onAnchorHoverStart,
-  onAnchorHoverEnd,
-} from "./renderer/margin-notes.js";
-import { initScrollLoader, registerRegion } from "./scroll-loader.js";
-import { showAuthToast } from "./auth-toast.js";
-import { handleExportPdf } from "./export-pdf.js";
-import { resolveSelector, invalidateTextNodeIndex } from "./selector.js";
-import { createChatObserver } from "./chat-observer.js";
+import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
 import { createStabilityWatcher } from "./stability.js";
 
 // ─── State ───
@@ -67,6 +68,10 @@ let visibleTypes: AnnotationType[] = [
 ];
 let currentIntensity: Intensity = "default";
 let regions: DetectedRegion[] = [];
+const longWaitManager = new LongWaitManager(
+  { show: showLongWaitToast, hide: hideLongWaitToast },
+  500,
+);
 
 // ─── Pipeline ───
 
@@ -117,7 +122,7 @@ async function init(): Promise<void> {
         const region: DetectedRegion = {
           id: regionId,
           element,
-          source: 'adapter',
+          source: "adapter",
         };
         regions.push(region);
         handleStableRegion(region, element);
@@ -137,7 +142,7 @@ async function init(): Promise<void> {
       );
       chatObserver.stop();
       activateBodyLevelDetection(adapters, matchedAdapter);
-    }, 5000);
+    }, 6000);
 
     return;
   }
@@ -160,15 +165,6 @@ async function init(): Promise<void> {
   // ── URL prediction: render instantly from previous visit ──
   // Non-blocking: kicks off speculative render while normal pipeline runs in parallel
   tryUrlPrediction().catch(() => {});
-
-  // Initialize scroll-based lazy loader
-  initScrollLoader((regionId, element) => {
-    if (!enabled) return;
-    const region = regions.find((r) => r.id === regionId);
-    if (region) {
-      handleStableRegion(region, element, true);
-    }
-  });
 
   // Fire speculative requests immediately for visible regions (skip stability wait)
   // The existing pendingRegions/annotatedRegions dedup prevents double-processing
@@ -251,7 +247,6 @@ function activateBodyLevelDetection(
 async function handleStableRegion(
   region: DetectedRegion,
   _element: Element,
-  fromLazyLoader = false,
 ): Promise<void> {
   if (!enabled) return;
 
@@ -279,7 +274,8 @@ async function handleStableRegion(
   }
   activeHashes.set(region.element, contentHash);
 
-  if (annotatedRegions.has(contentHash) || pendingRegions.has(contentHash)) return;
+  if (annotatedRegions.has(contentHash) || pendingRegions.has(contentHash))
+    return;
 
   // Store hash on the region element so manual annotations can reuse it
   (region.element as HTMLElement).dataset.oddityHash = contentHash;
@@ -287,19 +283,15 @@ async function handleStableRegion(
   // Map hash → region so renderAnnotations can find the element
   regionByHash.set(contentHash, region);
 
-  // Check word count — large regions get registered for lazy loading
-  // Skip this check when called from the lazy loader (region already approved)
-  if (!fromLazyLoader && extracted.wordCount > EAGER_WORD_LIMIT) {
-    console.log(
-      `[Oddity 1] Region ${region.id} has ${extracted.wordCount} words — registering for lazy loader`,
-    );
-    registerRegion(region.id, region.element);
-    return;
-  }
-
   // Request annotations from service worker
   pendingRegions.add(contentHash);
-  console.log(`[Oddity 1] Requesting annotations for region ${region.id} (hash: ${contentHash.slice(0, 12)}…)`);
+  const isLong = isLongRequest(extracted.wordCount);
+  if (isLong) {
+    longWaitManager.start(contentHash);
+  }
+  console.log(
+    `[Oddity 1] Requesting annotations for region ${region.id} (hash: ${contentHash.slice(0, 12)}…)`,
+  );
 
   try {
     const result = await sendMessage<{ error?: string }>({
@@ -315,26 +307,35 @@ async function handleStableRegion(
     });
 
     // Aborted request — silently ignore (a newer request superseded this one)
-    if (result && 'aborted' in result) return;
+    if (result && "aborted" in result) {
+      if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
+      return;
+    }
 
     if (result?.error) {
       if (result.error.includes("Sign in")) {
-        console.warn("[Oddity 1] Not signed in — open the Oddity extension to sign in");
+        console.warn(
+          "[Oddity 1] Not signed in — open the Oddity extension to sign in",
+        );
         showAuthToast();
       } else {
         console.error(`[Oddity 1] Annotation request failed: ${result.error}`);
       }
       pendingRegions.delete(contentHash);
+      if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
     }
   } catch (err) {
     const errStr = String(err);
     if (errStr.includes("Auth") || errStr.includes("401")) {
-      console.warn("[Oddity 1] Not signed in — open the Oddity extension to sign in");
+      console.warn(
+        "[Oddity 1] Not signed in — open the Oddity extension to sign in",
+      );
       showAuthToast();
     } else {
       console.error(`[Oddity 1] Annotation request error:`, err);
     }
     pendingRegions.delete(contentHash);
+    if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
   }
 }
 
@@ -363,7 +364,9 @@ async function tryUrlPrediction(): Promise<void> {
   // Don't overwrite if normal pipeline already finished
   if (annotatedRegions.has(regionId)) return;
 
-  console.log(`[Oddity 1] URL prediction hit — rendering ${prediction.annotations.length} annotations instantly`);
+  console.log(
+    `[Oddity 1] URL prediction hit — rendering ${prediction.annotations.length} annotations instantly`,
+  );
 
   // Store prediction hash so normal pipeline can verify
   regionByHash.set(regionId, region);
@@ -395,7 +398,10 @@ function handleAnnotationDeleted(annotationId: string): void {
 
 // ─── Rendering ───
 
-function attachAnchorHoverListeners(spans: HTMLSpanElement[], annotationId: string): void {
+function attachAnchorHoverListeners(
+  spans: HTMLSpanElement[],
+  annotationId: string,
+): void {
   for (const span of spans) {
     span.addEventListener("mouseenter", () => onAnchorHoverStart(annotationId));
     span.addEventListener("mouseleave", () => onAnchorHoverEnd());
@@ -403,7 +409,8 @@ function attachAnchorHoverListeners(spans: HTMLSpanElement[], annotationId: stri
 }
 
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
-  const region = regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
+  const region =
+    regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
   const feedback = currentFeedback.get(regionId) ?? [];
 
@@ -465,8 +472,15 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
     }
 
     renderAnnotation(annotation, stableRange);
-    const noteFeedback = feedback.filter((f) => f.annotation_id === annotation.id);
-    addMarginNote(annotation, stableRange, noteFeedback, handleAnnotationDeleted);
+    const noteFeedback = feedback.filter(
+      (f) => f.annotation_id === annotation.id,
+    );
+    addMarginNote(
+      annotation,
+      stableRange,
+      noteFeedback,
+      handleAnnotationDeleted,
+    );
   }
 }
 
@@ -493,14 +507,14 @@ function collectRegionHtml(): string {
   for (const region of regions) elements.add(region.element);
   for (const region of regionByHash.values()) elements.add(region.element);
 
-  if (elements.size === 0) return '';
+  if (elements.size === 0) return "";
 
   const parts: string[] = [];
   for (const el of elements) {
     const clone = el.cloneNode(true) as Element;
 
     // Unwrap Oddity anchor spans to restore original text flow
-    for (const span of clone.querySelectorAll('[data-oddity-id]')) {
+    for (const span of clone.querySelectorAll("[data-oddity-id]")) {
       const parent = span.parentNode;
       if (!parent) continue;
       while (span.firstChild) parent.insertBefore(span.firstChild, span);
@@ -508,22 +522,26 @@ function collectRegionHtml(): string {
     }
 
     // Strip leftover Oddity data attributes
-    for (const tagged of clone.querySelectorAll('[data-oddity-hash]')) {
-      tagged.removeAttribute('data-oddity-hash');
+    for (const tagged of clone.querySelectorAll("[data-oddity-hash]")) {
+      tagged.removeAttribute("data-oddity-hash");
     }
 
     // Resolve relative image URLs to absolute so they load in the export iframe
-    for (const img of clone.querySelectorAll('img[src]')) {
-      const src = img.getAttribute('src');
-      if (src && !src.startsWith('http') && !src.startsWith('data:')) {
-        try { img.setAttribute('src', new URL(src, window.location.href).href); } catch { /* skip */ }
+    for (const img of clone.querySelectorAll("img[src]")) {
+      const src = img.getAttribute("src");
+      if (src && !src.startsWith("http") && !src.startsWith("data:")) {
+        try {
+          img.setAttribute("src", new URL(src, window.location.href).href);
+        } catch {
+          /* skip */
+        }
       }
     }
 
     parts.push(clone.innerHTML);
   }
 
-  return parts.join('\n');
+  return parts.join("\n");
 }
 
 // ─── Message Listeners ───
@@ -550,9 +568,12 @@ onMessage((message: ExtensionMessage) => {
 
       // Stale guard
       if (!pendingRegions.has(streamRegionId)) break;
+      longWaitManager.handleFirstAnnotation(streamRegionId);
       if (!enabled || !visibleTypes.includes(annotation.type)) break;
 
-      const streamRegion = regionByHash.get(streamRegionId) ?? regions.find((r) => r.id === streamRegionId);
+      const streamRegion =
+        regionByHash.get(streamRegionId) ??
+        regions.find((r) => r.id === streamRegionId);
       const streamRoot = streamRegion?.element ?? document.body;
 
       // Track the annotation in state
@@ -587,8 +608,15 @@ onMessage((message: ExtensionMessage) => {
 
         renderAnnotation(annotation, stableRange);
         const fb = currentFeedback.get(streamRegionId) ?? [];
-        const noteFeedback = fb.filter((f) => f.annotation_id === annotation.id);
-        addMarginNote(annotation, stableRange, noteFeedback, handleAnnotationDeleted);
+        const noteFeedback = fb.filter(
+          (f) => f.annotation_id === annotation.id,
+        );
+        addMarginNote(
+          annotation,
+          stableRange,
+          noteFeedback,
+          handleAnnotationDeleted,
+        );
       }
       break;
     }
@@ -597,9 +625,13 @@ onMessage((message: ExtensionMessage) => {
 
       // Stale response guard: ignore if this hash was invalidated by content change
       if (!pendingRegions.has(regionId) && !annotatedRegions.has(regionId)) {
-        console.log(`[Oddity 1] Ignoring stale response for ${regionId.slice(0, 12)}…`);
+        console.log(
+          `[Oddity 1] Ignoring stale response for ${regionId.slice(0, 12)}…`,
+        );
         break;
       }
+
+      longWaitManager.handleFinalResult(regionId, annotations.length);
 
       annotatedRegions.add(regionId);
       pendingRegions.delete(regionId);
@@ -612,7 +644,8 @@ onMessage((message: ExtensionMessage) => {
 
       if (enabled && hadStreaming) {
         // Re-render with complete set (clears progressive renders, adds user annotations)
-        const region = regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
+        const region =
+          regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
         const root = region?.element ?? document.body;
         // Clear only this region's overlays and re-render
         clearOverlay();
@@ -653,6 +686,7 @@ onMessage((message: ExtensionMessage) => {
         setOverlayVisible(false);
         setMarginNotesVisible(false);
         clearAllAnchors();
+        longWaitManager.reset();
       } else if (intensityChanged) {
         // Intensity changed: clear cache and re-request all regions
         clearOverlay();
@@ -662,6 +696,7 @@ onMessage((message: ExtensionMessage) => {
         annotatedRegions.clear();
         pendingRegions.clear();
         regionByHash.clear();
+        longWaitManager.reset();
         setOverlayVisible(true);
         setMarginNotesVisible(true);
         for (const region of regions) {
@@ -764,6 +799,10 @@ function matchHostname(hostname: string, pattern: string): boolean {
 }
 
 // ─── Start ───
+
+window.addEventListener("pagehide", () => {
+  longWaitManager.reset();
+});
 
 init().catch((err) => {
   console.error("[Oddity 1] Content script init error:", err);

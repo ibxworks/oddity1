@@ -1,9 +1,9 @@
-import type { SiteAdapter } from '@oddity/shared';
+import type { SiteAdapter } from "@oddity/shared";
 
 export interface DetectedRegion {
   id: string;
   element: Element;
-  source: 'adapter' | 'readability' | 'heuristic';
+  source: "adapter" | "readability" | "heuristic";
 }
 
 /**
@@ -16,7 +16,9 @@ export function detectReadingRegions(
   const hostname = window.location.hostname;
 
   // Try adapter match first
-  const adapter = adapters.find((a) => matchHostname(hostname, a.hostname_pattern));
+  const adapter = adapters.find((a) =>
+    matchHostname(hostname, a.hostname_pattern),
+  );
   if (adapter) {
     return detectWithAdapter(adapter);
   }
@@ -30,9 +32,9 @@ export function detectReadingRegions(
 }
 
 function matchHostname(hostname: string, pattern: string): boolean {
-  if (pattern.startsWith('*.')) {
+  if (pattern.startsWith("*.")) {
     const suffix = pattern.slice(2);
-    return hostname === suffix || hostname.endsWith('.' + suffix);
+    return hostname === suffix || hostname.endsWith("." + suffix);
   }
   return hostname === pattern;
 }
@@ -51,7 +53,7 @@ function detectWithAdapter(adapter: SiteAdapter): DetectedRegion[] {
         regions.push({
           id: `adapter-${selector}-${i}`,
           element: el,
-          source: 'adapter',
+          source: "adapter",
         });
       }
     });
@@ -71,9 +73,15 @@ function isInsideExcluded(el: Element, excluded: Set<Element>): boolean {
 
 function detectForReadability(): DetectedRegion[] {
   // Check if page looks like an article
-  const article = document.querySelector('article');
-  if (article && article.textContent && article.textContent.trim().length > 200) {
-    return [{ id: 'readability-article-0', element: article, source: 'readability' }];
+  const article = document.querySelector("article");
+  if (
+    article &&
+    article.textContent &&
+    article.textContent.trim().length > 200
+  ) {
+    return [
+      { id: "readability-article-0", element: article, source: "readability" },
+    ];
   }
 
   // Check for common article containers
@@ -83,7 +91,11 @@ function detectForReadability(): DetectedRegion[] {
   const regions: DetectedRegion[] = [];
   candidates.forEach((el, i) => {
     if (el.textContent && el.textContent.trim().length > 200) {
-      regions.push({ id: `readability-candidate-${i}`, element: el, source: 'readability' });
+      regions.push({
+        id: `readability-candidate-${i}`,
+        element: el,
+        source: "readability",
+      });
     }
   });
 
@@ -99,7 +111,7 @@ function detectWithHeuristic(): DetectedRegion[] {
   const scored: { el: Element; score: number }[] = [];
 
   candidates.forEach((el) => {
-    const text = el.textContent?.trim() ?? '';
+    const text = el.textContent?.trim() ?? "";
     if (text.length < 200) return;
 
     const textLen = text.length;
@@ -110,11 +122,11 @@ function detectWithHeuristic(): DetectedRegion[] {
 
     // Bonus for semantic elements
     const tag = el.tagName.toLowerCase();
-    if (tag === 'main' || tag === 'article') score *= 2;
-    if (el.getAttribute('role') === 'main') score *= 2;
+    if (tag === "main" || tag === "article") score *= 2;
+    if (el.getAttribute("role") === "main") score *= 2;
 
     // Penalize very large containers (likely body-level wrappers)
-    if (textLen > 50000) score *= 0.5;
+    if (textLen > 60000) score *= 0.5;
 
     scored.push({ el, score });
   });
@@ -150,7 +162,7 @@ function detectWithHeuristic(): DetectedRegion[] {
     regions.push({
       id: `heuristic-${regions.length}`,
       element: el,
-      source: 'heuristic',
+      source: "heuristic",
     });
   }
 

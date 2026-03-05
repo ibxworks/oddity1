@@ -741,8 +741,8 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
    c. On `regionStable`, extract text content.
    d. Compute SHA-256 content hash.
    e. Check word count:
-   - ≤ 5000 words → annotate immediately (eager).
-   - \> 5000 words → register for lazy loading via `registerRegion()` and return. When the lazy loader callback fires, it re-enters `handleStableRegion()` with `fromLazyLoader=true`, which bypasses the word count check and proceeds to request annotations.
+   - ≤ 6000 words → annotate immediately (eager).
+   - \> 6000 words → register for lazy loading via `registerRegion()` and return. When the lazy loader callback fires, it re-enters `handleStableRegion()` with `fromLazyLoader=true`, which bypasses the word count check and proceeds to request annotations.
      f. Send `requestAnnotations` to service worker.
 7. Service worker calls backend `POST /api/annotate`.
 8. Backend checks cache → returns cached or generates new annotations.
@@ -755,7 +755,7 @@ Service Worker ↔ Content Script messaging via `chrome.runtime.sendMessage` / `
 
 ### 9.3 Scroll-Based Lazy Loading (Long Pages)
 
-1. During initial processing, regions exceeding `EAGER_WORD_LIMIT` (5000 words) are registered with the scroll loader via `registerRegion()` and skipped for immediate annotation.
+1. During initial processing, regions exceeding `EAGER_WORD_LIMIT` (6000 words) are registered with the scroll loader via `registerRegion()` and skipped for immediate annotation.
 2. Content script maintains an IntersectionObserver watching registered regions.
 3. When a region enters the proximity threshold (500px ahead of viewport):
    a. The lazy loader callback invokes `handleStableRegion(region, element, true)` with `fromLazyLoader=true`.
@@ -1053,7 +1053,7 @@ npx supabase gen types ts      # Generate TypeScript types from schema
 
 ### Step 7: Build extension — scroll loader
 
-1. Implement IntersectionObserver for lazy loading on long pages (>5000 words).
+1. Implement IntersectionObserver for lazy loading on long pages (>6000 words).
 2. Implement region tracking (annotated vs pending).
 3. Wire up lazy regions to annotation pipeline.
 
@@ -1094,7 +1094,7 @@ npx supabase gen types ts      # Generate TypeScript types from schema
 9. Intensity change triggers re-annotation.
 10. Export produces valid Markdown with interleaved annotations.
 11. Cached annotations load instantly on revisit (same content).
-12. Long page (>5000 words) uses lazy loading correctly.
+12. Long page (>6000 words) uses lazy loading correctly.
 13. Content script does not break host page functionality.
 14. `contenteditable` regions are excluded from anchor injection.
 
@@ -1111,15 +1111,15 @@ npx supabase gen types ts      # Generate TypeScript types from schema
 
 ## 17. Failure Modes and Mitigations
 
-| Failure                         | Detection                         | Mitigation                                                                                            |
-| ------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Backend unreachable             | Fetch error/timeout               | Show subtle "offline" badge in overlay. Cache hit still works.                                        |
-| OpenAI API error/timeout        | Backend error response            | Return cached if available; otherwise surface "annotations unavailable" in popup. Retry with backoff. |
-| Malformed LLM JSON output       | Schema validation failure         | Retry once with corrective prompt. If retry fails, return partial annotations (valid subset).         |
-| TextQuoteSelector can't resolve | Fuzzy match score below threshold | Skip that annotation silently. Log for debugging.                                                     |
-| Content script killed by page   | Service worker gets no response   | Re-inject content script on next user interaction.                                                    |
-| Adapter registry stale          | Version/timestamp check           | Stale-while-revalidate: use cached, fetch fresh in background.                                        |
-| User's session expired          | 401 from backend                  | Attempt token refresh. If refresh fails, set red "!" badge on extension icon and show dismissible in-page toast prompting sign-in. Badge clears on successful auth.  |
+| Failure                         | Detection                         | Mitigation                                                                                                                                                          |
+| ------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend unreachable             | Fetch error/timeout               | Show subtle "offline" badge in overlay. Cache hit still works.                                                                                                      |
+| OpenAI API error/timeout        | Backend error response            | Return cached if available; otherwise surface "annotations unavailable" in popup. Retry with backoff.                                                               |
+| Malformed LLM JSON output       | Schema validation failure         | Retry once with corrective prompt. If retry fails, return partial annotations (valid subset).                                                                       |
+| TextQuoteSelector can't resolve | Fuzzy match score below threshold | Skip that annotation silently. Log for debugging.                                                                                                                   |
+| Content script killed by page   | Service worker gets no response   | Re-inject content script on next user interaction.                                                                                                                  |
+| Adapter registry stale          | Version/timestamp check           | Stale-while-revalidate: use cached, fetch fresh in background.                                                                                                      |
+| User's session expired          | 401 from backend                  | Attempt token refresh. If refresh fails, set red "!" badge on extension icon and show dismissible in-page toast prompting sign-in. Badge clears on successful auth. |
 
 ## 18. Known Constraints and Trade-offs
 

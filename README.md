@@ -258,7 +258,7 @@ Make sure you're running from the repo root (`oddity1/`), not inside a workspace
 - If you see `[Oddity] No reading regions detected`, the site isn't supported yet — add an adapter.
 - If you see a red "!" badge on the extension icon, you're not signed in — click it to sign in.
 - If you see `Requesting annotations for region...` but nothing comes back, check the backend logs for errors.
-- On long articles (>5000 words), annotations load lazily — scroll to the content. You should see logs as regions enter the viewport.
+- Long articles are requested immediately. If generation is slow, a top-right "generating annotations" toast appears until the first result arrives.
 
 **Supabase auth not working**
 
