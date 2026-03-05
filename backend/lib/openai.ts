@@ -21,7 +21,6 @@ const schemaExample: string = promptsConfig.schema_example ?? "";
 interface PromptProfile {
   system_prompt: string;
   annotation_density: string;
-  max_annotations_per_1000_chars: number;
 }
 
 /**
@@ -82,11 +81,6 @@ function expandCompressedAnnotations(data: unknown[]): unknown[] {
   });
 }
 
-export interface ChunkInfo {
-  index: number;
-  total: number;
-}
-
 /**
  * Assign globally unique IDs to annotations.
  * LLM-generated IDs (e.g. "ann_1") are sequential per-call and collide
@@ -105,14 +99,8 @@ export async function generateAnnotations(
   text: string,
   intensity: Intensity,
   promptConfig: PromptProfile,
-  chunkInfo?: ChunkInfo,
 ): Promise<Annotation[]> {
-  const firstAttempt = await callOpenAI(
-    text,
-    promptConfig,
-    undefined,
-    chunkInfo,
-  );
+  const firstAttempt = await callOpenAI(text, promptConfig);
   const expanded = Array.isArray(firstAttempt)
     ? expandCompressedAnnotations(firstAttempt)
     : firstAttempt;
@@ -122,12 +110,7 @@ export async function generateAnnotations(
 
   // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callOpenAI(
-    text,
-    promptConfig,
-    correctionPrompt,
-    chunkInfo,
-  );
+  const retryAttempt = await callOpenAI(text, promptConfig, correctionPrompt);
   const retryExpanded = Array.isArray(retryAttempt)
     ? expandCompressedAnnotations(retryAttempt)
     : retryAttempt;
@@ -143,31 +126,12 @@ function buildMessages(
   text: string,
   config: PromptProfile,
   correctionNote?: string,
-  chunkInfo?: ChunkInfo,
 ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
   const systemPrompt = expandPrompt(config.system_prompt);
 
-  // Dynamic annotation count hint: tell the LLM exactly how many to produce.
-  // Floor of 8 ensures even short chat responses get rich, diverse annotations.
-  const charCount = text.length;
-  const targetCount = Math.max(
-    6,
-    Math.round((charCount / 1000) * config.max_annotations_per_1000_chars),
-  );
-
-  let hint = `[Input: ~${charCount} characters. You MUST produce at least ${targetCount} annotations. Use ALL six annotation types (highlight, vocabulary, provoking question, recall, insight, caveat). Distribute annotations evenly across the ENTIRE text — beginning, middle, and end.]`;
-
-  // When processing chunks, tell the LLM which section it's annotating.
-  // This prevents the model from clustering annotations at the start.
-  if (chunkInfo && chunkInfo.total > 1) {
-    hint += `\n[This is section ${chunkInfo.index + 1} of ${chunkInfo.total} from a larger text. Annotate ONLY the text provided. Cover every paragraph in this section thoroughly.]`;
-  }
-
-  hint += "\n\n";
-
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: hint + text },
+    { role: "user", content: text },
   ];
   if (correctionNote) {
     messages.push({ role: "user", content: correctionNote });
@@ -184,9 +148,8 @@ async function callOpenAI(
   text: string,
   config: PromptProfile,
   correctionNote?: string,
-  chunkInfo?: ChunkInfo,
 ): Promise<unknown> {
-  const messages = buildMessages(text, config, correctionNote, chunkInfo);
+  const messages = buildMessages(text, config, correctionNote);
 
   const response = await openai.chat.completions.create({
     model,
@@ -215,9 +178,8 @@ export async function* generateAnnotationsStream(
   text: string,
   intensity: Intensity,
   promptConfig: PromptProfile,
-  chunkInfo?: ChunkInfo,
 ): AsyncGenerator<Annotation, Annotation[], unknown> {
-  const messages = buildMessages(text, promptConfig, undefined, chunkInfo);
+  const messages = buildMessages(text, promptConfig);
   const allAnnotations: Annotation[] = [];
 
   const stream = await openai.chat.completions.create({
