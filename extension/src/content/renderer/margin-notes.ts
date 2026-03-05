@@ -278,9 +278,9 @@ export function onAnchorHoverStart(annotationId: string): void {
 }
 
 export function onAnchorHoverEnd(): void {
+  undimAllNotes();
   anchorHoverTimer = setTimeout(() => {
     collapseAllMarginNotes();
-    undimAllNotes();
     anchorHoverTimer = null;
   }, 300);
   deemphasizeAnnotation();
@@ -617,9 +617,9 @@ function createNoteElement(
   el.addEventListener("mouseleave", () => {
     collapseTimer = setTimeout(() => {
       collapseAllMarginNotes();
-      undimAllNotes();
       collapseTimer = null;
     }, 300);
+    undimAllNotes();
     deemphasizeAnnotation();
   });
 
