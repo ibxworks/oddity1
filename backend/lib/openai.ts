@@ -9,7 +9,7 @@ import { validateAnnotations } from "./schema-validator.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? "" });
-const model = process.env.OPENAI_MODEL ?? "gpt-oss-120b";
+const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
 // Load shared prompt fragments once at startup
 const promptsConfig = JSON.parse(

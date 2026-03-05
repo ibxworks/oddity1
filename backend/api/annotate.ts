@@ -178,7 +178,7 @@ router.post("/", async (req, res) => {
 
     if (dbCached) {
       // Compatibility check: ensure cached entry matches current model + prompt version
-      const currentModel = process.env.OPENAI_MODEL ?? "gpt-oss-120b";
+      const currentModel = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
       const currentPromptVersion = prompts.version;
 
       if (
@@ -242,7 +242,7 @@ router.post("/", async (req, res) => {
         url,
         intensity,
         annotations: aiAnnotations,
-        model_version: process.env.OPENAI_MODEL ?? "gpt-oss-120b",
+        model_version: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         prompt_version: prompts.version,
         expires_at: expiresAt.toISOString(),
       },
@@ -299,7 +299,7 @@ async function handleStreamingAnnotation(
       .gt("expires_at", new Date().toISOString())
       .single();
 
-    const currentModel = process.env.OPENAI_MODEL ?? "gpt-oss-120b";
+    const currentModel = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
     const currentPromptVersion = prompts.version;
 
     if (
