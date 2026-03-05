@@ -37,10 +37,17 @@
         gap: 2px;
       }
       .header-left h1 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         font-size: 15px;
         font-weight: 600;
         letter-spacing: -0.3px;
         color: #1a1a1a;
+      }
+      .header-left h1 img {
+        height: 20px;
+        width: auto;
       }
       #export-btn {
         background: #1a1a1a;
@@ -143,7 +150,9 @@
         padding: 5px 28px 5px 10px;
         border: 1px solid #e5e7eb;
         border-radius: 20px;
-        background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E") no-repeat right 10px center;
+        background: #fff
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E")
+          no-repeat right 10px center;
         background-size: 10px;
         appearance: none;
         -webkit-appearance: none;
@@ -318,6 +327,21 @@
         margin-top: 12px;
         font-size: 12px;
         color: #9ca3af;
+      }
+      .auth-terms {
+        display: none;
+        text-align: center;
+        font-size: 11px;
+        color: #9ca3af;
+        margin-top: 8px;
+        line-height: 1.5;
+      }
+      .auth-terms a {
+        color: #6b7280;
+        text-decoration: underline;
+      }
+      .auth-terms a:hover {
+        color: #1a1a1a;
       }
       .auth-toggle a {
         color: #1a1a1a;
@@ -640,7 +664,10 @@
     <!-- Header -->
     <div class="header">
       <div class="header-left">
-        <h1>Oddity 1</h1>
+        <h1>
+          <!-- <img src="../../assets/logo-main-rect.png" alt="Oddity 1"/> -->
+          Oddity 1
+        </h1>
         <div class="welcome-text" id="welcome-text" style="display: none"></div>
       </div>
       <div class="toggle-wrap">
@@ -680,6 +707,13 @@
         autocomplete="current-password"
       />
       <button class="btn btn-primary" id="auth-submit-btn">Sign In</button>
+      <div class="auth-terms" id="auth-terms">
+        By continuing, you agree to our
+        <a href="https://www.oddity1.com/terms" target="_blank">Terms</a> and
+        <a href="https://www.oddity1.com/privacy" target="_blank"
+          >Privacy Policy</a
+        >.
+      </div>
       <div class="auth-toggle">
         <span id="auth-toggle-text">Don't have an account? </span>
         <a id="auth-toggle-link">Sign Up</a>
@@ -712,32 +746,32 @@
         <div class="type-filters" id="type-filters">
           <label class="type-filter">
             <input type="checkbox" data-type="highlight" checked />
-            <span class="type-swatch" style="background: #F59E0B"></span>
+            <span class="type-swatch" style="background: #f59e0b"></span>
             Highlight
           </label>
           <label class="type-filter">
             <input type="checkbox" data-type="recall" checked />
-            <span class="type-swatch" style="background: #0D9488"></span>
+            <span class="type-swatch" style="background: #0d9488"></span>
             Recall
           </label>
           <label class="type-filter">
             <input type="checkbox" data-type="provoking_question" checked />
-            <span class="type-swatch" style="background: #7C3AED"></span>
+            <span class="type-swatch" style="background: #7c3aed"></span>
             Provocation
           </label>
           <label class="type-filter">
             <input type="checkbox" data-type="insight" checked />
-            <span class="type-swatch" style="background: #2563EB"></span>
+            <span class="type-swatch" style="background: #2563eb"></span>
             Insight
           </label>
           <label class="type-filter">
             <input type="checkbox" data-type="caveat" checked />
-            <span class="type-swatch" style="background: #7C3AED"></span>
+            <span class="type-swatch" style="background: #7c3aed"></span>
             Caveat
           </label>
           <label class="type-filter">
             <input type="checkbox" data-type="vocabulary" checked />
-            <span class="type-swatch" style="background: #0D9488"></span>
+            <span class="type-swatch" style="background: #0d9488"></span>
             Vocabulary
           </label>
         </div>
@@ -761,7 +795,9 @@
             <label class="style-label">Size</label>
             <div class="intensity-group" id="font-size-group" style="flex: 1">
               <button class="intensity-btn" data-fontsize="small">Small</button>
-              <button class="intensity-btn active" data-fontsize="default">Default</button>
+              <button class="intensity-btn active" data-fontsize="default">
+                Default
+              </button>
               <button class="intensity-btn" data-fontsize="large">Large</button>
             </div>
           </div>
@@ -771,9 +807,7 @@
       <!-- Actions -->
       <div class="section">
         <div class="btn-row">
-          <button class="btn btn-primary" id="export-btn">
-            Export PDF
-          </button>
+          <button class="btn btn-primary" id="export-btn">Export PDF</button>
         </div>
       </div>
 
@@ -783,13 +817,27 @@
           <span class="profile-avatar" id="profile-avatar">?</span>
           <span class="profile-name" id="profile-name">Loading...</span>
         </button>
-        <a class="tier-badge" id="tier-badge" href="https://oddity1.com/plans" target="_blank">FREE</a>
+        <a
+          class="tier-badge"
+          id="tier-badge"
+          href="https://oddity1.com/plans"
+          target="_blank"
+          >FREE</a
+        >
         <!-- Profile Popover -->
         <div class="profile-popover" id="profile-popover" style="display: none">
           <div class="profile-popover-name" id="popover-name"></div>
           <div class="profile-popover-email" id="popover-email"></div>
-          <a class="profile-popover-tier" id="popover-tier" href="https://oddity1.com/plans" target="_blank">Free Plan</a>
-          <button class="profile-popover-signout" id="popover-sign-out">Sign out</button>
+          <a
+            class="profile-popover-tier"
+            id="popover-tier"
+            href="https://oddity1.com/plans"
+            target="_blank"
+            >Free Plan</a
+          >
+          <button class="profile-popover-signout" id="popover-sign-out">
+            Sign out
+          </button>
         </div>
       </div>
     </div>
@@ -800,18 +848,35 @@
       <div class="export-dialog-title">Export as PDF</div>
       <div class="export-field">
         <label for="export-title">Title</label>
-        <input class="export-input" id="export-title" type="text" placeholder="Document title" />
+        <input
+          class="export-input"
+          id="export-title"
+          type="text"
+          placeholder="Document title"
+        />
       </div>
       <div class="export-field">
         <label for="export-subtitle">Subtitle</label>
         <div class="export-subtitle-wrap">
-          <input class="export-input" id="export-subtitle" type="text" value="Created with Oddity 1" />
-          <span class="export-pro-badge" id="export-pro-badge" title="Set subtitle with Pro">PRO</span>
+          <input
+            class="export-input"
+            id="export-subtitle"
+            type="text"
+            value="Created with Oddity 1"
+          />
+          <span
+            class="export-pro-badge"
+            id="export-pro-badge"
+            title="Set subtitle with Pro"
+            >PRO</span
+          >
         </div>
       </div>
       <div class="export-btn-row">
         <button class="btn" id="export-cancel-btn">Cancel</button>
-        <button class="btn btn-primary" id="export-download-btn">Download</button>
+        <button class="btn btn-primary" id="export-download-btn">
+          Download
+        </button>
       </div>
       <div class="export-status" id="export-status"></div>
     </div>
@@ -820,7 +885,12 @@
     <div class="feedback-dialog" id="feedback-dialog">
       <div class="feedback-title">Send Feedback</div>
       <div class="feedback-email" id="feedback-email"></div>
-      <textarea class="feedback-textarea" id="feedback-textarea" placeholder="Enter your feedback..." rows="5"></textarea>
+      <textarea
+        class="feedback-textarea"
+        id="feedback-textarea"
+        placeholder="Enter your feedback..."
+        rows="5"
+      ></textarea>
       <div class="feedback-btn-row">
         <button class="btn" id="feedback-cancel-btn">Cancel</button>
         <button class="btn btn-primary" id="feedback-send-btn">Send</button>

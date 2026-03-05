@@ -132,7 +132,10 @@ async function init(): Promise<void> {
   }
 
   // Migrate old type names in stored preferences
-  const typeMap: Record<string, string> = { underline: 'recall', question: 'provoking_question' };
+  const typeMap: Record<string, string> = {
+    underline: "recall",
+    question: "provoking_question",
+  };
   if (currentPrefs.visible_types.some((t) => t in typeMap)) {
     currentPrefs.visible_types = currentPrefs.visible_types.map(
       (t) => (typeMap[t] ?? t) as AnnotationType,
@@ -519,12 +522,14 @@ authToggleLink.addEventListener("click", (e) => {
   isSignUpMode = !isSignUpMode;
   hideAuthMessages();
 
+  const authTerms = document.getElementById("auth-terms")!;
   if (isSignUpMode) {
     authFormTitle.textContent = "Sign Up";
     authSubmitBtn.textContent = "Sign Up";
     authToggleText.textContent = "Already have an account? ";
     authToggleLink.textContent = "Sign In";
     authName.style.display = "";
+    authTerms.style.display = "block";
   } else {
     authFormTitle.textContent = "Sign In";
     authSubmitBtn.textContent = "Sign In";
@@ -532,6 +537,7 @@ authToggleLink.addEventListener("click", (e) => {
     authToggleLink.textContent = "Sign Up";
     authName.style.display = "none";
     authName.value = "";
+    authTerms.style.display = "none";
   }
 });
 
