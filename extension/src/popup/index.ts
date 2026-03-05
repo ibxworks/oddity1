@@ -452,13 +452,13 @@ exportDownloadBtn.addEventListener("click", async () => {
     })) as { success: boolean; error?: string };
 
     if (result?.success) {
-      exportStatusEl.textContent = "PDF downloaded successfully!";
+      exportStatusEl.textContent = "Print dialog opened — choose Save as PDF";
       exportStatusEl.className = "export-status success";
       exportStatusEl.style.display = "block";
       setTimeout(() => {
         exportDialog.style.display = "none";
         mainContent.style.display = "";
-      }, 1500);
+      }, 2500);
     } else {
       throw new Error(result?.error ?? "Export failed");
     }

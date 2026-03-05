@@ -109,3 +109,25 @@
 - `npm run build` — zero errors
 - `npm test` — all 16 tests pass (8 shared + 10 schema-validator + 6 rate-limiter)
 - Projected latency: 0ms revisits, ~500ms first annotation on cache miss
+
+## PDF Export Fix (Mar 5, 2026)
+
+- [x] Replaced html2pdf.js (html2canvas + jsPDF) with browser native `iframe.print()`
+- [x] Content extraction: live region DOM clone instead of Readability (works on ChatGPT/Claude)
+- [x] Oddity anchor spans stripped from clones (preserves original text flow)
+- [x] Relative image URLs resolved to absolute in export
+- [x] Print-optimized CSS: `@page A4`, `@media print`, `break-inside: avoid`, `print-color-adjust: exact`
+- [x] Google Fonts (Lora + Caveat) with `doc.fonts.ready` gate + system fallbacks
+- [x] Promise resolves before blocking `print()` call to prevent message channel timeout
+- [x] Popup message updated to "Print dialog opened — choose Save as PDF"
+- [x] Build verified: `npx tsc --noEmit` + `npx vite build` clean
+
+### PDF Export v2 — Production Fixes (Mar 5, 2026)
+- [x] HTML sanitization: strip inline styles, CSS classes, data attributes, non-content elements (buttons, SVGs, nav, forms, etc.)
+- [x] Replaced 3-column grid + `position: absolute` notes → Tufte-style float sidenotes (`float: left/right; clear: left/right`)
+- [x] Sidenotes injected inline after `<mark>` anchors — stay in document flow, participate in page breaks
+- [x] No more overlap: `clear` stacks same-side notes; no more cutoff: floats paginate correctly
+- [x] Unmatched annotations (text not found on page) now shown in "Additional Annotations" section at bottom
+- [x] Main text neutralization CSS: host-page wrapper divs constrained with `max-width: 100%; overflow-wrap: break-word`
+- [x] Headings, blockquotes, code blocks, tables, hr all get `clear: both` to avoid float interference
+- [x] Build verified clean
