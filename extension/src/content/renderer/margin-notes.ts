@@ -43,6 +43,7 @@ let visible = true;
 let hiddenTypes = new Set<AnnotationType>();
 let expandedId: string | null = null;
 let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+let anchorHoverTimer: ReturnType<typeof setTimeout> | null = null;
 let needsRedraw = false;
 let fontLink: HTMLLinkElement | null = null;
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
@@ -250,6 +251,39 @@ export function collapseAllMarginNotes(): void {
 
 export function isAnyMarginNoteExpanded(): boolean {
   return expandedId !== null;
+}
+
+export function dimOtherNotes(annotationId: string): void {
+  for (const note of notes) {
+    if (note.id === annotationId) {
+      note.element.classList.remove("dimmed");
+    } else {
+      note.element.classList.add("dimmed");
+    }
+  }
+}
+
+export function undimAllNotes(): void {
+  for (const note of notes) {
+    note.element.classList.remove("dimmed");
+  }
+}
+
+export function onAnchorHoverStart(annotationId: string): void {
+  if (anchorHoverTimer) { clearTimeout(anchorHoverTimer); anchorHoverTimer = null; }
+  if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+  expandMarginNote(annotationId);
+  emphasizeAnnotation(annotationId);
+  dimOtherNotes(annotationId);
+}
+
+export function onAnchorHoverEnd(): void {
+  anchorHoverTimer = setTimeout(() => {
+    collapseAllMarginNotes();
+    undimAllNotes();
+    anchorHoverTimer = null;
+  }, 300);
+  deemphasizeAnnotation();
 }
 
 export function destroyMarginNotes(): void {
@@ -571,13 +605,19 @@ function createNoteElement(
       clearTimeout(collapseTimer);
       collapseTimer = null;
     }
+    if (anchorHoverTimer) {
+      clearTimeout(anchorHoverTimer);
+      anchorHoverTimer = null;
+    }
     expandMarginNote(annotation.id);
     emphasizeAnnotation(annotation.id);
+    dimOtherNotes(annotation.id);
   });
 
   el.addEventListener("mouseleave", () => {
     collapseTimer = setTimeout(() => {
       collapseAllMarginNotes();
+      undimAllNotes();
       collapseTimer = null;
     }, 300);
     deemphasizeAnnotation();
@@ -875,6 +915,12 @@ const MARGIN_NOTES_CSS = `
     opacity: 1;
   }
 
+  .oddity-note.dimmed {
+    opacity: 0.5;
+    filter: grayscale(0.8);
+    transition: opacity 0.15s, filter 0.15s;
+  }
+
   /* Bracket on text-facing edge */
   .note-bracket {
     position: absolute;
@@ -1013,6 +1059,10 @@ const MARGIN_NOTES_CSS = `
   /* ── Dark-mode overrides ── */
   :host([data-theme="dark"]) .oddity-note {
     color: #e2e8f0;
+  }
+
+  :host([data-theme="dark"]) .oddity-note.dimmed {
+    opacity: 0.4;
   }
 
   :host([data-theme="dark"]) .oddity-note.expanded {

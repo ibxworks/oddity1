@@ -37,6 +37,8 @@ import {
   collapseAllMarginNotes,
   isAnyMarginNoteExpanded,
   updateMarginNotesStyle,
+  onAnchorHoverStart,
+  onAnchorHoverEnd,
 } from "./renderer/margin-notes.js";
 import { initScrollLoader, registerRegion } from "./scroll-loader.js";
 import { showAuthToast } from "./auth-toast.js";
@@ -393,6 +395,13 @@ function handleAnnotationDeleted(annotationId: string): void {
 
 // ─── Rendering ───
 
+function attachAnchorHoverListeners(spans: HTMLSpanElement[], annotationId: string): void {
+  for (const span of spans) {
+    span.addEventListener("mouseenter", () => onAnchorHoverStart(annotationId));
+    span.addEventListener("mouseleave", () => onAnchorHoverEnd());
+  }
+}
+
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   const region = regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
@@ -449,6 +458,10 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
       );
       stableRange.setStart(range.startContainer, range.startOffset);
       stableRange.setEnd(range.endContainer, range.endOffset);
+    }
+
+    if (anchors.length > 0) {
+      attachAnchorHoverListeners(anchors, annotation.id);
     }
 
     renderAnnotation(annotation, stableRange);
@@ -517,6 +530,10 @@ onMessage((message: ExtensionMessage) => {
         } else {
           stableRange.setStart(range.startContainer, range.startOffset);
           stableRange.setEnd(range.endContainer, range.endOffset);
+        }
+
+        if (anchors.length > 0) {
+          attachAnchorHoverListeners(anchors, annotation.id);
         }
 
         renderAnnotation(annotation, stableRange);
