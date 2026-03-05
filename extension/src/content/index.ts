@@ -480,6 +480,52 @@ function rerenderAll(): void {
   }
 }
 
+// ─── Region HTML Collection (for PDF export) ───
+
+/**
+ * Clone every detected region element, strip Oddity-injected instrumentation
+ * (anchor spans, data attributes), and return the concatenated inner HTML.
+ * This captures the page exactly as the user sees it — far more reliable
+ * than Readability on dynamic sites like ChatGPT.
+ */
+function collectRegionHtml(): string {
+  const elements = new Set<Element>();
+  for (const region of regions) elements.add(region.element);
+  for (const region of regionByHash.values()) elements.add(region.element);
+
+  if (elements.size === 0) return '';
+
+  const parts: string[] = [];
+  for (const el of elements) {
+    const clone = el.cloneNode(true) as Element;
+
+    // Unwrap Oddity anchor spans to restore original text flow
+    for (const span of clone.querySelectorAll('[data-oddity-id]')) {
+      const parent = span.parentNode;
+      if (!parent) continue;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      parent.removeChild(span);
+    }
+
+    // Strip leftover Oddity data attributes
+    for (const tagged of clone.querySelectorAll('[data-oddity-hash]')) {
+      tagged.removeAttribute('data-oddity-hash');
+    }
+
+    // Resolve relative image URLs to absolute so they load in the export iframe
+    for (const img of clone.querySelectorAll('img[src]')) {
+      const src = img.getAttribute('src');
+      if (src && !src.startsWith('http') && !src.startsWith('data:')) {
+        try { img.setAttribute('src', new URL(src, window.location.href).href); } catch { /* skip */ }
+      }
+    }
+
+    parts.push(clone.innerHTML);
+  }
+
+  return parts.join('\n');
+}
+
 // ─── Message Listeners ───
 
 onMessage((message: ExtensionMessage) => {
@@ -491,7 +537,10 @@ onMessage((message: ExtensionMessage) => {
       for (const annotations of currentAnnotations.values()) {
         allAnnotations.push(...annotations);
       }
-      return handleExportPdf(title, subtitle, allAnnotations)
+      // Collect page content from detected regions (live DOM).
+      // This is far more reliable than Readability on dynamic / chat sites.
+      const regionHtml = collectRegionHtml();
+      return handleExportPdf(title, subtitle, allAnnotations, regionHtml)
         .then(() => ({ success: true }))
         .catch((err) => ({ success: false, error: String(err) }));
     }
