@@ -4,6 +4,8 @@ export interface ChatObserverConfig {
   responseSelector: string;
   stabilitySignal: StabilitySignal | null;
   onResponse: (regionId: string, element: Element) => void;
+  /** Called when a new element is first discovered (before completion). */
+  onTrack?: (element: Element) => void;
 }
 
 export interface ChatObserver {
@@ -46,7 +48,7 @@ interface ResponseState {
 }
 
 export function createChatObserver(config: ChatObserverConfig): ChatObserver {
-  const { responseSelector, stabilitySignal, onResponse } = config;
+  const { responseSelector, stabilitySignal, onResponse, onTrack } = config;
   const processedElements = new WeakSet<Element>();
   const responseStates = new Map<Element, ResponseState>();
   let responseCounter = 0;
@@ -73,6 +75,10 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
 
   function trackResponse(element: Element): void {
     const responseIndex = responseCounter++;
+
+    // Notify caller that this element is being tracked (before completion).
+    // Body-level detection uses this to skip in-progress streaming elements.
+    onTrack?.(element);
 
     // Already-complete response (no streaming indicators, has content).
     // Fire the whole element as a single region — better annotation quality

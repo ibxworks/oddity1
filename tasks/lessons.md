@@ -97,3 +97,15 @@
 **Pattern**: 7 per 1000 chars with a floor of 5. A typical ChatGPT paragraph (~150 words ≈ 900 chars): `max(5, round(900/1000 * 7))` = 6. This is why users see "always 6 annotations." The density target was calibrated for long articles, not chat responses.
 
 **Rule**: (1) ALWAYS compute the formula with representative inputs before shipping. ~900 chars at 7/1000 = 6 is obvious in hindsight. (2) Chat responses need higher density than articles — raise to 12/1000 default. (3) The floor must be high enough for meaningful coverage — raise from 5 to 8. (4) After any density formula change, verify: "what does a 500-char input produce? 1000? 2000?" before deploying.
+
+## 2026-03-06: Timed Fallbacks Must Not Destroy In-Progress Work
+
+**Pattern**: A 6-second `setTimeout` fallback checked `regions.length > 0` to decide if the chat observer was working. If no responses had completed yet (fresh chat — user hasn't typed, or first response still streaming), `regions.length === 0` → fallback stopped the chat observer, destroying all in-progress MutationObservers and completion timers for actively-streaming responses. On a fresh ChatGPT chat, the first prompt response was always lost because (a) the user often takes >6s to start typing, or (b) streaming started but hadn't settled, so `onResponse` hadn't fired yet, so `regions.push` hadn't happened.
+
+**Rule**: (1) NEVER destroy an observer as a fallback action — run a supplementary detection path ALONGSIDE the primary one instead. Both paths can coexist with content-hash dedup preventing double-processing. (2) When checking "is this system working?", check the system's actual tracked state (e.g., `responseStates.size > 0`), not downstream side effects (`regions.length`). (3) For dynamic pages where content may not exist at init time, the observer must survive indefinitely — "nothing found yet" ≠ "the selector is broken."
+
+## 2026-03-06: Eager Shadow DOM Initialization Prevents Silent addMarginNote Failures
+
+**Pattern**: `addMarginNote()` has an early return `if (!shadowRoot || !regionEl) return` — silently discards the note if `initMarginNotes` hasn't been called. In chat mode, `initMarginNotes` was only called inside the `onResponse` callback. If the 6s fallback killed the chat observer before `onResponse` fired, the shadow DOM was never created. Subsequent annotations via the fallback body-level path rendered highlights (overlay works without shadow DOM) but margin note boxes were silently dropped. This is the coworker's bug: "highlights appear but annotation boxes don't."
+
+**Rule**: (1) Initialize rendering infrastructure (shadow DOM, containers, overlays) EAGERLY during init, not lazily on first data arrival. The cost of early init is zero; the cost of missing it is silently broken features. (2) Functions that silently return on missing state (guard clauses) should at minimum log a warning in debug mode — silent failures are the hardest bugs to diagnose.
