@@ -18,6 +18,11 @@ import { LongWaitManager } from "./long-wait-manager.js";
 import { hideLongWaitToast, showLongWaitToast } from "./long-wait-toast.js";
 import { initManualAnnotations } from "./manual.js";
 import {
+  destroyArgumentsBox,
+  initArgumentsBox,
+  updateArgumentsBox,
+} from "./renderer/arguments-box.js";
+import {
   clearAllAnchors,
   getAllAnchorsInOrder,
   getAnnotationId,
@@ -73,6 +78,12 @@ const longWaitManager = new LongWaitManager(
   500,
 );
 
+// ─── Arguments Box Sync ───
+
+function syncArgumentsBox(): void {
+  updateArgumentsBox(currentAnnotations, currentFeedback);
+}
+
 // ─── Pipeline ───
 
 async function init(): Promise<void> {
@@ -106,6 +117,7 @@ async function init(): Promise<void> {
     initOverlay();
     initManualAnnotations();
     initKeyboardNav();
+    initArgumentsBox();
 
     let marginNotesInitialized = false;
 
@@ -156,6 +168,7 @@ async function init(): Promise<void> {
   initOverlay();
   initManualAnnotations();
   initKeyboardNav();
+  initArgumentsBox();
 
   if (regions.length > 0) {
     initMarginNotes(regions[0]!.element);
@@ -271,6 +284,7 @@ async function handleStableRegion(
     regionByHash.delete(previousHash);
     // Content changed — clean up stale DOM annotations and re-render remaining
     rerenderAll();
+    syncArgumentsBox();
   }
   activeHashes.set(region.element, contentHash);
 
@@ -377,6 +391,7 @@ async function tryUrlPrediction(): Promise<void> {
   currentAnnotations.set(regionId, prediction.annotations);
   currentFeedback.set(regionId, prediction.feedback ?? []);
   renderAnnotations(regionId, prediction.annotations);
+  syncArgumentsBox();
 }
 
 // ─── Annotation Deletion ───
@@ -394,6 +409,7 @@ function handleAnnotationDeleted(annotationId: string): void {
   removeMarginNote(annotationId);
   // Re-render overlay
   rerenderAll();
+  syncArgumentsBox();
 }
 
 // ─── Rendering ───
@@ -580,6 +596,7 @@ onMessage((message: ExtensionMessage) => {
       const existing = currentAnnotations.get(streamRegionId) ?? [];
       existing.push(annotation);
       currentAnnotations.set(streamRegionId, existing);
+      syncArgumentsBox();
 
       // Render the single annotation immediately
       const range = resolveSelector(streamRoot, annotation.anchor);
@@ -641,6 +658,7 @@ onMessage((message: ExtensionMessage) => {
       // (includes user annotations and proper feedback associations)
       const hadStreaming = currentAnnotations.has(regionId);
       currentAnnotations.set(regionId, annotations);
+      syncArgumentsBox();
 
       if (enabled && hadStreaming) {
         // Re-render with complete set (clears progressive renders, adds user annotations)
@@ -697,6 +715,7 @@ onMessage((message: ExtensionMessage) => {
         pendingRegions.clear();
         regionByHash.clear();
         longWaitManager.reset();
+        syncArgumentsBox();
         setOverlayVisible(true);
         setMarginNotesVisible(true);
         for (const region of regions) {
@@ -802,6 +821,7 @@ function matchHostname(hostname: string, pattern: string): boolean {
 
 window.addEventListener("pagehide", () => {
   longWaitManager.reset();
+  destroyArgumentsBox();
 });
 
 init().catch((err) => {

@@ -13,6 +13,7 @@ import {
   emphasizeAnnotation,
   removeAnnotation as removeAnnotationOverlay,
 } from "./overlay.js";
+import { addLiveFeedback } from "./arguments-box.js";
 import {
   getThemeMode,
   offThemeChange,
@@ -519,6 +520,7 @@ function createNoteElement(
         thumbUp.classList.add("active");
         thumbDown.classList.remove("active");
         reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
+        addLiveFeedback("✓", annotation.content.note);
         const doSave = () =>
           sendMessage({
             action: "saveFeedback",
@@ -559,6 +561,7 @@ function createNoteElement(
         thumbDown.classList.add("active");
         thumbUp.classList.remove("active");
         reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
+        addLiveFeedback("✗", annotation.content.note);
         const doSave = () =>
           sendMessage({
             action: "saveFeedback",
@@ -662,6 +665,11 @@ function submitReply(
       replyText: text,
     },
   });
+
+  const excerpt = annotation.content.note.length > 60
+    ? annotation.content.note.slice(0, 57) + "..."
+    : annotation.content.note;
+  addLiveFeedback("↳", `Re "${excerpt}": ${text}`);
 
   input.value = "";
 }

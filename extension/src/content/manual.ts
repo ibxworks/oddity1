@@ -5,6 +5,7 @@ import { sha256 } from '../shared/hash.js';
 import { resolveSelector } from './selector.js';
 import { renderAnnotation, removeAnnotation } from './renderer/overlay.js';
 import { injectAnchors, removeAnchors } from './renderer/anchors.js';
+import { addLiveFeedback } from './renderer/arguments-box.js';
 import { addMarginNote, removeMarginNote } from './renderer/margin-notes.js';
 import { getThemeMode } from './renderer/theme-detector.js';
 
@@ -434,6 +435,9 @@ async function handleSubmit(type: AnnotationType, note: string): Promise<void> {
 
   // Render immediately
   renderManualAnnotation(annotation, root);
+
+  const label = ANNOTATION_LABELS[type];
+  addLiveFeedback("✎", `(${label}) ${annotation.content.note}`);
 
   dismissEditor();
   window.getSelection()?.removeAllRanges();
