@@ -131,3 +131,26 @@
 - [x] Main text neutralization CSS: host-page wrapper divs constrained with `max-width: 100%; overflow-wrap: break-word`
 - [x] Headings, blockquotes, code blocks, tables, hr all get `clear: both` to avoid float interference
 - [x] Build verified clean
+
+## Fresh Chat First-Prompt Annotation Fix (Mar 6, 2026)
+
+### Problem
+On LLM sites (ChatGPT, Claude), loading a fresh chat and generating the first response produced zero annotations. Only after reloading the page and generating a new response did annotations work. Coworker also reported: highlights/underlines appear during streaming but margin note boxes are missing.
+
+### Root Causes
+1. **6-second fallback killed the chat observer**: A `setTimeout(6000)` checked `regions.length > 0`. On a fresh chat with no responses yet, this was always 0 → destroyed the chat observer (including any in-progress streaming tracking). Body-level fallback took over but had a 1500ms debounce that kept resetting during streaming.
+2. **Margin notes shadow DOM never initialized**: `initMarginNotes()` was only called inside the `onResponse` callback. If the chat observer was killed before `onResponse` fired, the shadow DOM was never created → `addMarginNote()` silently returned → highlights rendered but no margin note boxes.
+
+### Fix
+- [x] Removed destructive 6s fallback — chat observer now runs for the entire page lifetime
+- [x] Body-level detection runs IN PARALLEL as a safety net (not as a replacement)
+- [x] Content-hash dedup prevents double-processing when both paths find the same element
+- [x] Added `onTrack` callback to chat observer — fires when an element is first discovered (before completion)
+- [x] Body-level detection skips elements tracked by the chat observer (including ancestors) via `isTrackedByChat()`
+- [x] Eager `initMarginNotes(document.body)` creates the shadow DOM during init — never silently drops margin notes
+- [x] `onResponse` callback updates `regionEl` to the actual response element for accurate margin positioning
+- [x] TypeScript compile clean, Vite build clean
+
+### Files Modified
+- `extension/src/content/index.ts` — removed 6s fallback, parallel detection, eager margin init, `chatTrackedElements` WeakSet
+- `extension/src/content/chat-observer.ts` — added `onTrack` callback to `ChatObserverConfig`

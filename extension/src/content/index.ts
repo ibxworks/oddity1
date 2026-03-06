@@ -62,6 +62,9 @@ const currentFeedback = new Map<string, AnnotationFeedback[]>();
 const regionByHash = new Map<string, DetectedRegion>();
 /** Tracks current content hash per region element — used for stale response guards */
 const activeHashes = new Map<Element, string>();
+/** Elements currently tracked by the chat observer (including in-progress streaming).
+ *  Shared with body-level detection so it skips elements the chat observer owns. */
+const chatTrackedElements = new WeakSet<Element>();
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
   "highlight",
@@ -119,17 +122,26 @@ async function init(): Promise<void> {
     initKeyboardNav();
     initArgumentsBox();
 
-    let marginNotesInitialized = false;
+    // Eagerly create the margin-notes shadow DOM container so addMarginNote()
+    // never silently returns. We pass document.body as a temporary regionEl;
+    // the onResponse callback updates it to the actual response element for
+    // accurate left/right margin measurement.
+    initMarginNotes(document.body);
 
     const chatObserver = createChatObserver({
       responseSelector: matchedAdapter.response_selector,
       stabilitySignal: matchedAdapter.stability_signal,
+      onTrack: (element) => {
+        // Mark element as owned by the chat observer so body-level detection
+        // doesn't send a request for partial streaming text.
+        chatTrackedElements.add(element);
+      },
       onResponse: (regionId, element) => {
         if (!enabled) return;
-        if (!marginNotesInitialized) {
-          initMarginNotes(element);
-          marginNotesInitialized = true;
-        }
+
+        // Update regionEl to the actual content element so margin notes
+        // compute left/right positioning correctly.
+        initMarginNotes(element);
 
         const region: DetectedRegion = {
           id: regionId,
@@ -143,18 +155,12 @@ async function init(): Promise<void> {
 
     chatObserver.start();
 
-    // ── Fallback: if chat observer finds nothing within 5s, the adapter's
-    // response_selector is likely stale. Stop the chat observer and activate
-    // body-level detection so the page still gets annotated. ──
-    setTimeout(() => {
-      if (regions.length > 0) return; // Chat observer is working — no fallback needed
-
-      console.warn(
-        `[Oddity 1] Chat observer found no responses after 5s — adapter response_selector may be stale. Activating body-level fallback.`,
-      );
-      chatObserver.stop();
-      activateBodyLevelDetection(adapters, matchedAdapter);
-    }, 6000);
+    // Also activate body-level detection as a parallel safety net.
+    // On fresh chat pages, the chat observer correctly waits for the first
+    // streaming response to complete. Body-level detection handles edge cases
+    // (stale selectors, SPA navigations). Content-hash dedup in
+    // handleStableRegion prevents double-processing.
+    activateBodyLevelDetection(adapters, matchedAdapter);
 
     return;
   }
@@ -197,6 +203,16 @@ async function init(): Promise<void> {
 let bodyDetectionActive = false;
 let marginNotesInitFromBody = false;
 
+/** Check if an element (or any of its ancestors) is being tracked by the chat observer. */
+function isTrackedByChat(el: Element): boolean {
+  let node: Element | null = el;
+  while (node) {
+    if (chatTrackedElements.has(node)) return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
 function activateBodyLevelDetection(
   adapters: SiteAdapter[],
   adapter: SiteAdapter | null,
@@ -220,6 +236,8 @@ function activateBodyLevelDetection(
   // Periodically re-runs detectReadingRegions when the DOM changes.
   // Catches: initially-empty pages that gain content (LLM chats without adapters),
   // new content sections appearing dynamically, SPA navigations.
+  // NOTE: knownElements is checked against both this set AND the live regions array
+  // to avoid duplicating elements already tracked by the chat observer.
   const knownElements = new WeakSet<Element>(regions.map((r) => r.element));
   let rescanTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -227,9 +245,18 @@ function activateBodyLevelDetection(
     if (!enabled) return;
     if (rescanTimer) clearTimeout(rescanTimer);
     rescanTimer = setTimeout(() => {
+      // Re-snapshot elements the chat observer may have added since last scan
+      for (const r of regions) knownElements.add(r.element);
+
       const detected = detectReadingRegions(adapters);
       for (const candidate of detected) {
         if (knownElements.has(candidate.element)) continue;
+        // Skip elements the chat observer is actively tracking (still streaming).
+        // The chat observer will fire onResponse when streaming completes,
+        // at which point it gets annotated with the full text.
+        // Check both the element itself and its ancestors — content_selectors
+        // may match a child of the response_selector element.
+        if (isTrackedByChat(candidate.element)) continue;
 
         // New region discovered after init
         knownElements.add(candidate.element);
