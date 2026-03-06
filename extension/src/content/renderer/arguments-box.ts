@@ -1,6 +1,10 @@
 import type { Annotation, AnnotationFeedback } from "@oddity/shared";
 import { ANNOTATION_LABELS } from "@oddity/shared";
-import { getThemeMode, onThemeChange, offThemeChange } from "./theme-detector.js";
+import {
+  getThemeMode,
+  offThemeChange,
+  onThemeChange,
+} from "./theme-detector.js";
 
 // ─── Types ───
 
@@ -45,7 +49,11 @@ export function initArgumentsBox(): void {
   // Toggle button
   toggleBtn = document.createElement("button");
   toggleBtn.className = "args-toggle";
-  toggleBtn.innerHTML = DOCUMENT_ICON;
+  const logoImg = document.createElement("img");
+  logoImg.src = chrome.runtime.getURL("assets/logo-terry.svg");
+  logoImg.alt = "My Arguments";
+  logoImg.className = "args-toggle-logo";
+  toggleBtn.appendChild(logoImg);
   toggleBtn.title = "My Arguments";
   toggleBtn.addEventListener("click", () => toggle());
   shadowRoot.appendChild(toggleBtn);
@@ -102,6 +110,11 @@ export function addLiveFeedback(icon: string, text: string): void {
   renderList();
 }
 
+export function setArgumentsBoxVisible(visible: boolean): void {
+  if (!hostEl) return;
+  hostEl.style.display = visible ? "" : "none";
+}
+
 export function destroyArgumentsBox(): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   if (themeHandler) {
@@ -153,19 +166,20 @@ function buildItems(
       if (fb.feedback_type === "thumbs_up") {
         items.push({
           icon: "✓",
-          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text:
+            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
         });
       } else if (fb.feedback_type === "thumbs_down") {
         items.push({
           icon: "✗",
-          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text:
+            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
-        const excerpt =
-          note.length > 60 ? note.slice(0, 57) + "..." : note;
+        const excerpt = note.length > 60 ? note.slice(0, 57) + "..." : note;
         items.push({
           icon: "↳",
           text: `Re "${excerpt}": ${fb.reply_text ?? ""}`,
@@ -199,7 +213,8 @@ function renderList(): void {
   if (allItems.length === 0) {
     const empty = document.createElement("div");
     empty.className = "args-empty";
-    empty.textContent = "No arguments yet. React to annotations or create your own!";
+    empty.textContent =
+      "No arguments yet. React to annotations or create your own!";
     listEl.appendChild(empty);
     // Update badge
     if (toggleBtn) toggleBtn.dataset.count = "";
@@ -243,8 +258,6 @@ function handleCopy(btn: HTMLButtonElement): void {
 
 // ─── Assets ───
 
-const DOCUMENT_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>`;
-
 // ─── CSS ───
 
 const ARGUMENTS_BOX_CSS = `
@@ -271,6 +284,12 @@ const ARGUMENTS_BOX_CSS = `
     color: #64748b;
     transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
     z-index: 2;
+  }
+
+  .args-toggle-logo {
+    width: 22px;
+    height: 22px;
+    pointer-events: none;
   }
 
   .args-toggle:hover {

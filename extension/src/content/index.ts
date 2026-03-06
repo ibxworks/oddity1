@@ -20,6 +20,7 @@ import { initManualAnnotations } from "./manual.js";
 import {
   destroyArgumentsBox,
   initArgumentsBox,
+  setArgumentsBoxVisible,
   updateArgumentsBox,
 } from "./renderer/arguments-box.js";
 import {
@@ -730,6 +731,7 @@ onMessage((message: ExtensionMessage) => {
         // Hide everything
         setOverlayVisible(false);
         setMarginNotesVisible(false);
+        setArgumentsBoxVisible(false);
         clearAllAnchors();
         longWaitManager.reset();
       } else if (intensityChanged) {
@@ -745,6 +747,7 @@ onMessage((message: ExtensionMessage) => {
         syncArgumentsBox();
         setOverlayVisible(true);
         setMarginNotesVisible(true);
+        setArgumentsBoxVisible(true);
         for (const region of regions) {
           handleStableRegion(region, region.element);
         }
@@ -752,6 +755,7 @@ onMessage((message: ExtensionMessage) => {
         // Re-enable: re-render everything
         setOverlayVisible(true);
         setMarginNotesVisible(true);
+        setArgumentsBoxVisible(true);
         rerenderAll();
       } else {
         // Just filter by types
