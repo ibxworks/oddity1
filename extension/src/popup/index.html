@@ -25,6 +25,8 @@
         font-size: 13px;
         letter-spacing: -0.01em;
         position: relative;
+        border-radius: 16px;
+        overflow: hidden;
       }
 
       /* ── Header ── */
@@ -33,14 +35,13 @@
         align-items: center;
         justify-content: space-between;
         padding: 16px 18px;
-        border-bottom: 1px solid #eee;
       }
       .header-logo {
         font-family: "Fraunces", Georgia, serif;
         font-size: 17px;
-        font-weight: 700;
+        font-weight: 600;
         color: #1a1a1a;
-        letter-spacing: -0.3px;
+        letter-spacing: 0.3px;
       }
       .toggle-wrap {
         display: flex;
@@ -56,8 +57,8 @@
       /* ── Toggle switch ── */
       .toggle {
         position: relative;
-        width: 44px;
-        height: 26px;
+        width: 36px;
+        height: 21px;
       }
       .toggle input {
         opacity: 0;
@@ -75,8 +76,8 @@
       .toggle .slider::before {
         content: "";
         position: absolute;
-        width: 20px;
-        height: 20px;
+        width: 15px;
+        height: 15px;
         left: 3px;
         top: 3px;
         background: #fff;
@@ -88,16 +89,15 @@
         background: #22c55e;
       }
       .toggle input:checked + .slider::before {
-        transform: translateX(18px);
+        transform: translateX(15px);
       }
 
       /* ── Profile Section ── */
       .profile-section {
         display: flex;
-        align-items: center;
-        padding: 20px 18px;
+        align-items: flex-start;
+        padding: 0px 18px 10px;
         gap: 18px;
-        border-bottom: 1px solid #eee;
       }
       .profile-circle-area {
         display: flex;
@@ -107,18 +107,13 @@
         flex-shrink: 0;
       }
       .profile-circle {
-        width: 64px;
-        height: 64px;
+        width: 50px;
+        height: 50px;
         border-radius: 50%;
-        background: #f3f4f6;
-        border: 1px solid #e5e7eb;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        font-weight: 600;
-        color: #374151;
-        font-family: "Fraunces", Georgia, serif;
+        background: #fff;
+        border: 0.5px solid #e5e7eb;
+        overflow: hidden;
+        flex-shrink: 0;
       }
       .profile-name-wrap {
         position: relative;
@@ -143,20 +138,24 @@
       }
       .profile-count-area {
         flex: 1;
+        display: flex;
+        align-items: center;
+        height: 50px;
       }
       .profile-count-number {
-        display: block;
-        font-size: 38px;
-        font-weight: 700;
+        display: inline;
+        font-size: 18px;
+        font-weight: 500;
         color: #111;
-        letter-spacing: -1.5px;
+        letter-spacing: 0.0px;
         line-height: 1;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       }
       .profile-count-label {
+        display: inline;
         font-size: 12px;
         color: #9ca3af;
-        margin-top: 5px;
+        margin-left: 6px;
         line-height: 1.3;
       }
 
@@ -182,7 +181,7 @@
         color: #374151;
         cursor: pointer;
         font-family: "Fraunces", Georgia, serif;
-        font-weight: 500;
+        font-weight: 200;
         text-align: left;
         background: none;
         border: none;
@@ -193,7 +192,7 @@
       }
       .profile-dropdown-item.active {
         color: #1a1a1a;
-        font-weight: 600;
+        font-weight: 200;
       }
       .profile-dropdown-signout {
         display: block;
@@ -208,7 +207,7 @@
         background: none;
         border: none;
         width: 100%;
-        border-top: 1px solid #f3f4f6;
+        border-top: 0.5px solid #f0f0f0;
         margin-top: 3px;
         padding-top: 8px;
       }
@@ -219,11 +218,12 @@
       /* ── Annotation Section ── */
       .section {
         padding: 14px 18px;
-        border-top: 1px solid #eee;
+        border-top: 0.5px solid #f0f0f0;
       }
       .section-title {
         font-size: 14px;
-        font-weight: 700;
+        font-family: "Fraunces", Georgia, serif;
+        font-weight: 600;
         color: #1a1a1a;
         margin-bottom: 14px;
         letter-spacing: -0.2px;
@@ -255,11 +255,11 @@
       .density-btn {
         flex: 1;
         padding: 7px 0;
-        border: 1.5px solid #e5e7eb;
+        border: 0.5px solid #e5e7eb;
         border-radius: 20px;
         background: #fff;
         font-size: 12px;
-        font-weight: 500;
+        font-weight: 400;
         cursor: pointer;
         color: #6b7280;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -278,7 +278,7 @@
       .style-select {
         flex: 1;
         padding: 7px 28px 7px 12px;
-        border: 1.5px solid #e5e7eb;
+        border: 0.5px solid #e5e7eb;
         border-radius: 20px;
         background: #fff
           url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E")
@@ -287,14 +287,14 @@
         appearance: none;
         -webkit-appearance: none;
         font-size: 13px;
-        font-weight: 500;
+        font-weight: 400;
         color: #374151;
         cursor: pointer;
         outline: none;
         transition: border-color 0.15s;
       }
       .style-select:focus {
-        border-color: #1a1a1a;
+        border-color: #e5e7eb;
       }
 
       /* ── Export button ── */
@@ -310,7 +310,7 @@
         border: none;
         border-radius: 28px;
         font-size: 15px;
-        font-weight: 600;
+        font-weight: 400;
         cursor: pointer;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
         letter-spacing: -0.2px;
@@ -330,7 +330,7 @@
         align-items: center;
         justify-content: space-between;
         padding: 10px 18px;
-        border-top: 1px solid #eee;
+        /*border-top: 0.5px solid #f0f0f0;*/
         position: relative;
       }
       .profile-btn {
@@ -400,7 +400,7 @@
       }
       .profile-popover-name {
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 400;
         color: #111;
         margin-bottom: 2px;
       }
@@ -411,10 +411,11 @@
       }
       .profile-popover-tier {
         font-size: 11px;
+        font-weight: 400;
         color: #6b7280;
         margin-bottom: 12px;
         padding-bottom: 12px;
-        border-bottom: 1px solid #eee;
+        border-bottom: 0.5px solid #f0f0f0;
         text-decoration: none;
         cursor: pointer;
         display: block;
@@ -450,14 +451,14 @@
       /* ── Footer ── */
       .footer {
         padding: 10px 18px;
-        border-top: 1px solid #eee;
+        border-top: 0.5px solid #f0f0f0;
         text-align: center;
       }
       .footer a {
         font-size: 11px;
         color: #9ca3af;
         text-decoration: none;
-        font-weight: 500;
+        font-weight: 300;
       }
       .footer a:hover {
         color: #6b7280;
@@ -483,7 +484,7 @@
         display: block;
         width: 100%;
         padding: 10px 12px;
-        border: 1.5px solid #e5e7eb;
+        border: 0.5px solid #e5e7eb;
         border-radius: 10px;
         font-size: 13px;
         margin-bottom: 8px;
@@ -554,7 +555,7 @@
         display: block;
         width: 100%;
         padding: 10px 12px;
-        border: 1.5px solid #e5e7eb;
+        border: 0.5px solid #e5e7eb;
         border-radius: 10px;
         background: #fff;
         font-size: 13px;
@@ -617,7 +618,7 @@
         display: block;
         width: 100%;
         padding: 9px 12px;
-        border: 1.5px solid #e5e7eb;
+        border: 0.5px solid #e5e7eb;
         border-radius: 10px;
         font-size: 13px;
         outline: none;
@@ -697,7 +698,7 @@
         display: block;
         width: 100%;
         padding: 9px 12px;
-        border: 1.5px solid #e5e7eb;
+        border: 0.5px solid #e5e7eb;
         border-radius: 10px;
         font-size: 13px;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -799,10 +800,7 @@
       <div class="profile-section">
         <div class="profile-circle-area">
           <div class="profile-circle">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="12" cy="8" r="4" stroke="#374151" stroke-width="1.5"/>
-              <path d="M4 20c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke="#374151" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
+            <img src="/Terry.png" alt="Terry" style="width:100%;height:100%;object-fit:contain;border-radius:50%;" />
           </div>
           <div class="profile-name-wrap">
             <button class="profile-name-btn" id="profile-name-btn">
