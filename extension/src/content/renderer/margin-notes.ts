@@ -273,18 +273,17 @@ export function undimAllNotes(): void {
 export function onAnchorHoverStart(annotationId: string): void {
   if (anchorHoverTimer) { clearTimeout(anchorHoverTimer); anchorHoverTimer = null; }
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
-  expandMarginNote(annotationId);
   emphasizeAnnotation(annotationId);
   dimOtherNotes(annotationId);
 }
 
 export function onAnchorHoverEnd(): void {
   undimAllNotes();
+  deemphasizeAnnotation();
   anchorHoverTimer = setTimeout(() => {
     collapseAllMarginNotes();
     anchorHoverTimer = null;
   }, 300);
-  deemphasizeAnnotation();
 }
 
 export function destroyMarginNotes(): void {
