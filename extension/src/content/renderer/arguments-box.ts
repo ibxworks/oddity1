@@ -50,7 +50,7 @@ export function initArgumentsBox(): void {
   toggleBtn = document.createElement("button");
   toggleBtn.className = "args-toggle";
   const logoImg = document.createElement("img");
-  logoImg.src = chrome.runtime.getURL("assets/logo-terry.svg");
+  logoImg.src = chrome.runtime.getURL("Terry.png");
   logoImg.alt = "My Arguments";
   logoImg.className = "args-toggle-logo";
   toggleBtn.appendChild(logoImg);
@@ -113,6 +113,11 @@ export function addLiveFeedback(icon: string, text: string): void {
 export function setArgumentsBoxVisible(visible: boolean): void {
   if (!hostEl) return;
   hostEl.style.display = visible ? "" : "none";
+}
+
+export function setArgumentsBoxEnabled(enabled: boolean): void {
+  if (!toggleBtn) return;
+  toggleBtn.classList.toggle("oddity-enabled", enabled);
 }
 
 export function destroyArgumentsBox(): void {
@@ -268,40 +273,40 @@ const ARGUMENTS_BOX_CSS = `
     position: fixed;
     bottom: 20px;
     right: 20px;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    border: 2.5px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     pointer-events: auto;
-    color: #64748b;
-    transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+    overflow: hidden;
+    transition: transform 0.15s, box-shadow 0.15s, border-color 0.2s;
     z-index: 2;
   }
 
+  .args-toggle.oddity-enabled {
+    border-color: #4ade80;
+  }
+
   .args-toggle-logo {
-    width: 22px;
-    height: 22px;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
     pointer-events: none;
   }
 
   .args-toggle:hover {
     transform: scale(1.08);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    color: #334155;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
   }
 
   .args-toggle.active {
-    background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
-    border-color: rgba(59, 130, 246, 0.2);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
   }
 
   /* Badge count */
@@ -433,24 +438,6 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   /* ── Dark mode ── */
-
-  :host([data-theme="dark"]) .args-toggle {
-    background: rgba(15, 23, 42, 0.9);
-    border-color: rgba(255, 255, 255, 0.08);
-    color: #94a3b8;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-
-  :host([data-theme="dark"]) .args-toggle:hover {
-    color: #e2e8f0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  }
-
-  :host([data-theme="dark"]) .args-toggle.active {
-    background: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
-    border-color: rgba(59, 130, 246, 0.25);
-  }
 
   :host([data-theme="dark"]) .args-panel {
     background: rgba(15, 23, 42, 0.9);

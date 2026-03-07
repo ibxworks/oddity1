@@ -27,7 +27,7 @@ export default defineManifest({
   },
   web_accessible_resources: [
     {
-      resources: ["assets/logo-terry.svg"],
+      resources: ["assets/logo-terry.svg", "Terry.png", "Jerry.png"],
       matches: ["<all_urls>"],
     },
   ],

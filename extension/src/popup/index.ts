@@ -128,6 +128,9 @@ async function init(): Promise<void> {
       annotation_font: prefs.annotation_font ?? "default",
       annotation_font_size: prefs.annotation_font_size ?? "default",
     };
+  } else {
+    // First launch — persist defaults so subsequent sessions always read from storage
+    await savePrefs();
   }
 
   // Apply state to UI
