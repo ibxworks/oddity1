@@ -50,7 +50,6 @@ let fontLink: HTMLLinkElement | null = null;
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let userName: string | null = null;
 
-const NOTE_MAX_WIDTH = 180;
 const NOTE_EXPANDED_WIDTH = 220;
 const NOTE_GAP = 10;
 const MARGIN_PADDING = 16;
@@ -596,6 +595,14 @@ function createNoteElement(
     expandedContent.appendChild(feedbackRow);
   }
 
+  // Wrap expanded content children in an inner div for CSS grid animation
+  const expandedInner = document.createElement('div');
+  expandedInner.className = 'note-expanded-inner';
+  while (expandedContent.firstChild) {
+    expandedInner.appendChild(expandedContent.firstChild);
+  }
+  expandedContent.appendChild(expandedInner);
+
   el.appendChild(bracket);
   el.appendChild(labelEl);
   el.appendChild(textEl);
@@ -603,10 +610,6 @@ function createNoteElement(
 
   // Hover expand/collapse + overlay emphasis
   el.addEventListener("mouseenter", () => {
-    if (collapseTimer) {
-      clearTimeout(collapseTimer);
-      collapseTimer = null;
-    }
     if (anchorHoverTimer) {
       clearTimeout(anchorHoverTimer);
       anchorHoverTimer = null;
@@ -617,10 +620,7 @@ function createNoteElement(
   });
 
   el.addEventListener("mouseleave", () => {
-    collapseTimer = setTimeout(() => {
-      collapseAllMarginNotes();
-      collapseTimer = null;
-    }, 300);
+    collapseAllMarginNotes();
     undimAllNotes();
     deemphasizeAnnotation();
   });
@@ -905,7 +905,7 @@ const MARGIN_NOTES_CSS = `
 
   .oddity-note {
     position: absolute;
-    max-width: ${NOTE_MAX_WIDTH}px;
+    max-width: ${NOTE_EXPANDED_WIDTH}px;
     padding: 10px 12px;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-size: 11.5px;
@@ -978,13 +978,22 @@ const MARGIN_NOTES_CSS = `
   }
 
   .note-expanded-content {
-    display: none;
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-top: 0;
+    transition: grid-template-rows 0.25s ease, opacity 0.2s ease, margin-top 0.2s ease;
+  }
+
+  .note-expanded-inner {
+    overflow: hidden;
+    min-height: 0;
   }
 
   .oddity-note.expanded .note-expanded-content {
-    display: block;
+    grid-template-rows: 1fr;
+    opacity: 1;
     margin-top: 10px;
-    padding-top: 2px;
   }
 
   .note-section {
