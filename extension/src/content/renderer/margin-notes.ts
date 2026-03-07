@@ -915,8 +915,8 @@ const MARGIN_NOTES_CSS = `
     pointer-events: auto;
     cursor: default;
     background: rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-radius: 12px;
     box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
     opacity: 1;
@@ -1053,18 +1053,17 @@ const MARGIN_NOTES_CSS = `
   .note-reply-input {
     all: unset;
     flex: 1;
-    background: rgba(255,255,255,0.07);
-    border: 1.5px solid rgba(255,255,255,0.13);
+    background: #DFE7EF;
     border-radius: 100px;
     padding: 5px 12px;
     font-size: 11px;
-    color: #FFFFFF;
+    color: #293038;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     line-height: 1;
   }
 
   .note-reply-input::placeholder {
-    color: rgba(255, 255, 255, 0.35);
+    color: #6D6D6D;
   }
 
   .note-reply-send {
@@ -1112,7 +1111,7 @@ const MARGIN_NOTES_CSS = `
     cursor: pointer;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-size: 10.5px;
-    font-weight: 600;
+    font-weight: 400;
     padding: 4px 10px;
     border-radius: 100px;
     background: var(--note-color);
@@ -1128,6 +1127,12 @@ const MARGIN_NOTES_CSS = `
 
   .note-feedback-pill.active {
     opacity: 1;
+  }
+
+  /* Dark text for light accent colors */
+  [data-annotation-type="highlight"] .note-feedback-pill,
+  [data-annotation-type="insight"] .note-feedback-pill {
+    color: #293038;
   }
 
   /* Icon buttons */
