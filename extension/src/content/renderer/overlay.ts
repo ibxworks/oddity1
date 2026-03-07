@@ -116,10 +116,14 @@ export function filterByTypes(visibleTypes: AnnotationType[]): void {
 /**
  * Emphasize a specific annotation's anchor spans with brightness(1.4).
  */
+const LIGHT_ACCENT_TYPES = new Set(['insight']);
+
 export function emphasizeAnnotation(id: string): void {
   emphasizedId = id;
   document.querySelectorAll<HTMLSpanElement>(`[data-oddity-id]`).forEach(span => {
-    span.style.filter = span.getAttribute('data-oddity-id') === id ? 'brightness(1.4)' : '';
+    if (span.getAttribute('data-oddity-id') !== id) { span.style.filter = ''; return; }
+    const type = span.getAttribute('data-oddity-type') ?? '';
+    span.style.filter = LIGHT_ACCENT_TYPES.has(type) ? 'brightness(1.1) saturate(1.15)' : 'brightness(1.4)';
   });
 }
 

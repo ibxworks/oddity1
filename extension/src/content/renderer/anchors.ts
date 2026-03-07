@@ -82,6 +82,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     // Wrap the target text node in a span
     const span = document.createElement('span');
     span.setAttribute(ATTR, annotation.id);
+    span.setAttribute('data-oddity-type', annotation.type);
     const visual = getVisual(annotation.type);
     const bgCss = visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : '';
     const borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';

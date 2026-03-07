@@ -270,6 +270,7 @@ export function onAnchorClick(annotationId: string): void {
     unpinAll();
   } else if (!justUnpinned) {
     pinnedId = annotationId;
+    hostEl?.classList.add('has-pinned');
     expandMarginNote(annotationId);
     emphasizeAnnotation(annotationId);
     dimOtherNotes(annotationId);
@@ -278,6 +279,7 @@ export function onAnchorClick(annotationId: string): void {
 
 function unpinAll(): void {
   pinnedId = null;
+  hostEl?.classList.remove('has-pinned');
   justUnpinned = true;
   setTimeout(() => { justUnpinned = false; }, 0);
   forceCollapseAll();
@@ -290,6 +292,7 @@ export function isAnyMarginNoteExpanded(): boolean {
 }
 
 export function dimOtherNotes(annotationId: string): void {
+  hostEl?.classList.add('has-dimmed');
   for (const note of notes) {
     if (note.id === annotationId) {
       note.element.classList.remove("dimmed");
@@ -300,6 +303,7 @@ export function dimOtherNotes(annotationId: string): void {
 }
 
 export function undimAllNotes(): void {
+  hostEl?.classList.remove('has-dimmed');
   for (const note of notes) {
     note.element.classList.remove("dimmed");
   }
@@ -671,6 +675,7 @@ function createNoteElement(
       unpinAll();
     } else if (!justUnpinned) {
       pinnedId = annotation.id;
+      hostEl?.classList.add('has-pinned');
       expandMarginNote(annotation.id);
       emphasizeAnnotation(annotation.id);
       dimOtherNotes(annotation.id);
@@ -1361,6 +1366,18 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="light"]) .note-user-badge {
     color: rgba(41, 48, 56, 0.6);
+  }
+
+  :host([data-theme="light"]) [data-annotation-type="highlight"] .note-label {
+    color: #DCAF16 !important;
+  }
+
+  :host([data-theme="light"]) [data-annotation-type="insight"] .note-label {
+    color: #70AC87 !important;
+  }
+
+  :host([data-theme="light"].has-dimmed) .oddity-note.expanded {
+    box-shadow: -8px 4px 28px rgba(0,0,0,0.22), -3px 2px 8px rgba(0,0,0,0.12);
   }
 
 `;
