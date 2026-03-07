@@ -61,6 +61,7 @@ const MIN_MARGIN_WIDTH = 120;
 
 const FONT_MAP: Record<AnnotationFont, string> = {
   default: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+  fraunces: "'Fraunces', Georgia, serif",
   kalam: "'Kalam', cursive, system-ui, sans-serif",
   helvetica: "Helvetica, 'Helvetica Neue', Arial, sans-serif",
   arial: "Arial, 'Helvetica Neue', sans-serif",
@@ -1010,7 +1011,7 @@ const MARGIN_NOTES_CSS = `
     font-family: 'Fraunces', Georgia, serif;
     font-style: normal;
     font-size: 13.5px;
-    font-weight: 700;
+    font-weight: 900;
     letter-spacing: normal;
     text-transform: lowercase;
     margin-bottom: 4px;

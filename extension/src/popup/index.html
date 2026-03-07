@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Oddity 1</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Kalam:wght@400&display=swap"
+      rel="stylesheet"
+    />
     <style>
       * {
         box-sizing: border-box;
@@ -14,9 +19,8 @@
       body {
         width: 360px;
         min-height: 400px;
-        font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: #f8f9fa;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        background: #fff;
         color: #1a1a1a;
         font-size: 13px;
         letter-spacing: -0.01em;
@@ -28,39 +32,15 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 14px 16px;
+        padding: 16px 18px;
         border-bottom: 1px solid #eee;
       }
-      .header-left {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-      .header-left h1 {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 15px;
-        font-weight: 600;
-        letter-spacing: -0.3px;
+      .header-logo {
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 17px;
+        font-weight: 700;
         color: #1a1a1a;
-      }
-      .header-left h1 img {
-        height: 20px;
-        width: auto;
-      }
-      #export-btn {
-        background: #1a1a1a;
-        border-color: #1a1a1a;
-        color: #fff;
-      }
-      #export-btn:hover {
-        opacity: 0.9;
-      }
-      .welcome-text {
-        font-size: 12px;
-        color: #9ca3af;
-        font-weight: 400;
+        letter-spacing: -0.3px;
       }
       .toggle-wrap {
         display: flex;
@@ -68,7 +48,7 @@
         gap: 8px;
       }
       .toggle-label {
-        font-size: 11px;
+        font-size: 12px;
         color: #9ca3af;
         font-weight: 500;
       }
@@ -76,8 +56,8 @@
       /* ── Toggle switch ── */
       .toggle {
         position: relative;
-        width: 36px;
-        height: 20px;
+        width: 44px;
+        height: 26px;
       }
       .toggle input {
         opacity: 0;
@@ -88,51 +68,170 @@
         position: absolute;
         inset: 0;
         background: #d1d5db;
-        border-radius: 20px;
+        border-radius: 26px;
         cursor: pointer;
         transition: background 0.2s;
       }
       .toggle .slider::before {
         content: "";
         position: absolute;
-        width: 14px;
-        height: 14px;
+        width: 20px;
+        height: 20px;
         left: 3px;
         top: 3px;
         background: #fff;
         border-radius: 50%;
         transition: transform 0.2s;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
       }
       .toggle input:checked + .slider {
-        background: #1a1a1a;
+        background: #22c55e;
       }
       .toggle input:checked + .slider::before {
-        transform: translateX(16px);
+        transform: translateX(18px);
       }
 
-      /* ── Total Count ── */
-      .total-count {
-        text-align: center;
-        padding: 14px 16px 10px;
+      /* ── Profile Section ── */
+      .profile-section {
+        display: flex;
+        align-items: center;
+        padding: 20px 18px;
+        gap: 18px;
+        border-bottom: 1px solid #eee;
       }
-      .total-count-number {
+      .profile-circle-area {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 7px;
+        flex-shrink: 0;
+      }
+      .profile-circle {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: 600;
+        color: #374151;
+        font-family: "Fraunces", Georgia, serif;
+      }
+      .profile-name-wrap {
+        position: relative;
+      }
+      .profile-name-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 13px;
+        font-weight: 500;
+        color: #1a1a1a;
+      }
+      .profile-name-btn .caret {
+        font-size: 9px;
+        color: #6b7280;
+        line-height: 1;
+      }
+      .profile-count-area {
+        flex: 1;
+      }
+      .profile-count-number {
         display: block;
-        font-size: 28px;
+        font-size: 38px;
         font-weight: 700;
         color: #111;
-        letter-spacing: -0.5px;
+        letter-spacing: -1.5px;
+        line-height: 1;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       }
-      .total-count-label {
-        font-size: 11px;
+      .profile-count-label {
+        font-size: 12px;
         color: #9ca3af;
-        letter-spacing: 0.01em;
+        margin-top: 5px;
+        line-height: 1.3;
       }
 
-      /* ── Style Controls ── */
+      /* ── Profile Name Dropdown ── */
+      .profile-name-dropdown {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        padding: 5px;
+        z-index: 20;
+        min-width: 130px;
+      }
+      .profile-dropdown-item {
+        display: block;
+        padding: 7px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: #374151;
+        cursor: pointer;
+        font-family: "Fraunces", Georgia, serif;
+        font-weight: 500;
+        text-align: left;
+        background: none;
+        border: none;
+        width: 100%;
+      }
+      .profile-dropdown-item:hover {
+        background: #f9fafb;
+      }
+      .profile-dropdown-item.active {
+        color: #1a1a1a;
+        font-weight: 600;
+      }
+      .profile-dropdown-signout {
+        display: block;
+        padding: 7px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        color: #dc2626;
+        cursor: pointer;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        font-weight: 500;
+        text-align: left;
+        background: none;
+        border: none;
+        width: 100%;
+        border-top: 1px solid #f3f4f6;
+        margin-top: 3px;
+        padding-top: 8px;
+      }
+      .profile-dropdown-signout:hover {
+        background: #fef2f2;
+      }
+
+      /* ── Annotation Section ── */
+      .section {
+        padding: 14px 18px;
+        border-top: 1px solid #eee;
+      }
+      .section-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-bottom: 14px;
+        letter-spacing: -0.2px;
+      }
       .style-controls {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
       }
       .style-row {
         display: flex;
@@ -141,25 +240,55 @@
       }
       .style-label {
         font-size: 12px;
-        color: #6b7280;
-        min-width: 36px;
+        color: #9ca3af;
+        min-width: 56px;
         flex-shrink: 0;
+        font-weight: 400;
       }
+
+      /* ── Density buttons ── */
+      .density-group {
+        display: flex;
+        gap: 6px;
+        flex: 1;
+      }
+      .density-btn {
+        flex: 1;
+        padding: 7px 0;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 20px;
+        background: #fff;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        color: #6b7280;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        transition: all 0.15s;
+      }
+      .density-btn:hover {
+        background: #f9fafb;
+      }
+      .density-btn.active {
+        background: #1a1a1a;
+        color: #fff;
+        border-color: #1a1a1a;
+      }
+
+      /* ── Select dropdowns ── */
       .style-select {
         flex: 1;
-        padding: 5px 28px 5px 10px;
-        border: 1px solid #e5e7eb;
+        padding: 7px 28px 7px 12px;
+        border: 1.5px solid #e5e7eb;
         border-radius: 20px;
         background: #fff
           url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E")
-          no-repeat right 10px center;
+          no-repeat right 12px center;
         background-size: 10px;
         appearance: none;
         -webkit-appearance: none;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 500;
         color: #374151;
-        height: 30px;
         cursor: pointer;
         outline: none;
         transition: border-color 0.15s;
@@ -168,197 +297,39 @@
         border-color: #1a1a1a;
       }
 
-      /* ── Section ── */
-      .section {
-        padding: 10px 16px;
-        border-top: 1px solid #eee;
+      /* ── Export button ── */
+      .export-section {
+        padding: 12px 18px 16px;
       }
-      .section-title {
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #9ca3af;
-        margin-bottom: 8px;
-      }
-
-      /* ── Intensity ── */
-      .intensity-group {
-        display: flex;
-        gap: 6px;
-      }
-      .intensity-btn {
-        flex: 1;
-        padding: 5px 0;
-        border: 1px solid #e5e7eb;
-        border-radius: 20px;
-        background: #fff;
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        color: #6b7280;
-        transition: all 0.15s;
-      }
-      .intensity-btn:hover {
-        border-color: #d1d5db;
-        background: #f9fafb;
-      }
-      .intensity-btn.active {
-        background: #1a1a1a;
-        color: #fff;
-        border-color: #1a1a1a;
-      }
-
-      /* ── Type Filters ── */
-      .type-filters {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 4px;
-      }
-      .type-filter {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 8px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 12px;
-        color: #374151;
-        transition: background 0.15s;
-      }
-      .type-filter:hover {
-        background: #f3f4f6;
-      }
-      .type-filter input {
-        accent-color: #1a1a1a;
-      }
-      .type-swatch {
-        width: 8px;
-        height: 8px;
-        border-radius: 2px;
-        flex-shrink: 0;
-      }
-
-      /* ── Buttons ── */
-      .btn {
+      .btn-export {
         display: block;
         width: 100%;
-        padding: 8px 12px;
-        border: 1px solid #e5e7eb;
-        border-radius: 6px;
-        background: #fff;
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        color: #374151;
-        transition: all 0.15s;
-        text-align: center;
-        text-decoration: none;
-      }
-      .btn:hover {
-        background: #f3f4f6;
-        border-color: #d1d5db;
-      }
-      .btn-primary {
+        padding: 14px 0;
         background: #1a1a1a;
         color: #fff;
-        border-color: #1a1a1a;
+        border: none;
+        border-radius: 28px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        letter-spacing: -0.2px;
+        transition: opacity 0.15s;
       }
-      .btn-primary:hover {
-        background: #111;
+      .btn-export:hover {
+        opacity: 0.88;
       }
-      .btn-primary:disabled {
-        opacity: 0.6;
+      .btn-export:disabled {
+        opacity: 0.5;
         cursor: not-allowed;
       }
 
-      /* ── Auth Form ── */
-      .auth-form {
-        padding: 24px 16px;
-      }
-      .auth-form-title {
-        font-size: 15px;
-        font-weight: 600;
-        margin-bottom: 16px;
-        text-align: center;
-        color: #111;
-      }
-      .auth-input {
-        display: block;
-        width: 100%;
-        padding: 9px 12px;
-        border: 1px solid #dfe3e8;
-        border-radius: 6px;
-        font-size: 13px;
-        margin-bottom: 8px;
-        outline: none;
-        transition: border-color 0.15s;
-        background: #fff;
-        color: #111;
-      }
-      .auth-input:focus {
-        border-color: #1a1a1a;
-        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
-      }
-      .auth-input::placeholder {
-        color: #9ca3af;
-      }
-      .auth-error {
-        display: none;
-        color: #dc2626;
-        font-size: 12px;
-        margin-bottom: 8px;
-        padding: 8px 10px;
-        background: #fef2f2;
-        border-radius: 6px;
-      }
-      .auth-success {
-        display: none;
-        color: #16a34a;
-        font-size: 12px;
-        margin-bottom: 8px;
-        padding: 8px 10px;
-        background: #f0fdf4;
-        border-radius: 6px;
-      }
-      .auth-toggle {
-        display: block;
-        text-align: center;
-        margin-top: 12px;
-        font-size: 12px;
-        color: #9ca3af;
-      }
-      .auth-terms {
-        display: none;
-        text-align: center;
-        font-size: 11px;
-        color: #9ca3af;
-        margin-top: 8px;
-        line-height: 1.5;
-      }
-      .auth-terms a {
-        color: #6b7280;
-        text-decoration: underline;
-      }
-      .auth-terms a:hover {
-        color: #1a1a1a;
-      }
-      .auth-toggle a {
-        color: #1a1a1a;
-        text-decoration: none;
-        cursor: pointer;
-        font-weight: 500;
-      }
-      .auth-toggle a:hover {
-        text-decoration: underline;
-      }
-
-      /* ── Auth Bar (Profile) ── */
+      /* ── Auth Bar (bottom profile) ── */
       .auth-bar {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 16px;
+        padding: 10px 18px;
         border-top: 1px solid #eee;
         position: relative;
       }
@@ -377,12 +348,12 @@
         background: #f3f4f6;
       }
       .profile-avatar {
-        width: 24px;
-        height: 24px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
         background: #1a1a1a;
         color: #fff;
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 600;
         display: flex;
         align-items: center;
@@ -399,8 +370,8 @@
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        padding: 3px 8px;
-        border-radius: 10px;
+        padding: 4px 10px;
+        border-radius: 12px;
         background: #f3f4f6;
         color: #9ca3af;
         text-decoration: none;
@@ -410,14 +381,10 @@
         background: #e5e7eb;
       }
       .tier-badge.pro {
-        background: #f3f4f6;
         color: #1a1a1a;
       }
-      .tier-badge.pro:hover {
-        background: #e5e7eb;
-      }
 
-      /* ── Profile Popover ── */
+      /* ── Profile Popover (bottom) ── */
       .profile-popover {
         position: absolute;
         bottom: 100%;
@@ -425,8 +392,8 @@
         right: 16px;
         background: #fff;
         border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        border-radius: 10px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
         padding: 14px;
         z-index: 10;
         margin-bottom: 4px;
@@ -468,6 +435,7 @@
         cursor: pointer;
         transition: all 0.15s;
         text-align: center;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       }
       .profile-popover-signout:hover {
         background: #fef2f2;
@@ -481,7 +449,7 @@
 
       /* ── Footer ── */
       .footer {
-        padding: 10px 16px;
+        padding: 10px 18px;
         border-top: 1px solid #eee;
         text-align: center;
       }
@@ -494,7 +462,126 @@
       .footer a:hover {
         color: #6b7280;
       }
+      .footer-sep {
+        color: #d1d5db;
+        margin: 0 4px;
+        font-size: 11px;
+      }
 
+      /* ── Auth Form ── */
+      .auth-form {
+        padding: 24px 18px;
+      }
+      .auth-form-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        text-align: center;
+        color: #111;
+      }
+      .auth-input {
+        display: block;
+        width: 100%;
+        padding: 10px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
+        font-size: 13px;
+        margin-bottom: 8px;
+        outline: none;
+        transition: border-color 0.15s;
+        background: #fff;
+        color: #111;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      }
+      .auth-input:focus {
+        border-color: #1a1a1a;
+      }
+      .auth-input::placeholder {
+        color: #9ca3af;
+      }
+      .auth-error {
+        display: none;
+        color: #dc2626;
+        font-size: 12px;
+        margin-bottom: 8px;
+        padding: 8px 10px;
+        background: #fef2f2;
+        border-radius: 8px;
+      }
+      .auth-success {
+        display: none;
+        color: #16a34a;
+        font-size: 12px;
+        margin-bottom: 8px;
+        padding: 8px 10px;
+        background: #f0fdf4;
+        border-radius: 8px;
+      }
+      .auth-toggle {
+        display: block;
+        text-align: center;
+        margin-top: 12px;
+        font-size: 12px;
+        color: #9ca3af;
+      }
+      .auth-terms {
+        display: none;
+        text-align: center;
+        font-size: 11px;
+        color: #9ca3af;
+        margin-top: 8px;
+        line-height: 1.5;
+      }
+      .auth-terms a {
+        color: #6b7280;
+        text-decoration: underline;
+      }
+      .auth-terms a:hover {
+        color: #1a1a1a;
+      }
+      .auth-toggle a {
+        color: #1a1a1a;
+        text-decoration: none;
+        cursor: pointer;
+        font-weight: 500;
+      }
+      .auth-toggle a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Generic Buttons ── */
+      .btn {
+        display: block;
+        width: 100%;
+        padding: 10px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        color: #374151;
+        transition: all 0.15s;
+        text-align: center;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      }
+      .btn:hover {
+        background: #f3f4f6;
+      }
+      .btn-primary {
+        background: #1a1a1a;
+        color: #fff;
+        border-color: #1a1a1a;
+        border-radius: 20px;
+      }
+      .btn-primary:hover {
+        opacity: 0.9;
+        background: #1a1a1a;
+      }
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
       .btn-row {
         display: flex;
         gap: 8px;
@@ -506,10 +593,10 @@
       /* ── Export Dialog ── */
       .export-dialog {
         display: none;
-        padding: 16px;
+        padding: 16px 18px;
       }
       .export-dialog-title {
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 600;
         margin-bottom: 14px;
         color: #111;
@@ -529,17 +616,17 @@
       .export-input {
         display: block;
         width: 100%;
-        padding: 8px 10px;
-        border: 1px solid #dfe3e8;
-        border-radius: 6px;
+        padding: 9px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
         font-size: 13px;
         outline: none;
         transition: border-color 0.15s;
         background: #fff;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       }
       .export-input:focus {
         border-color: #1a1a1a;
-        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
       }
       .export-input:disabled {
         background: #f9fafb;
@@ -552,7 +639,7 @@
       .export-pro-badge {
         display: none;
         position: absolute;
-        right: 8px;
+        right: 10px;
         top: 50%;
         transform: translateY(-50%);
         font-size: 10px;
@@ -576,7 +663,7 @@
         text-align: center;
         padding: 8px;
         font-size: 12px;
-        border-radius: 6px;
+        border-radius: 8px;
         margin-top: 8px;
       }
       .export-status.success {
@@ -593,10 +680,10 @@
       /* ── Feedback Dialog ── */
       .feedback-dialog {
         display: none;
-        padding: 16px;
+        padding: 16px 18px;
       }
       .feedback-title {
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 600;
         margin-bottom: 10px;
         color: #111;
@@ -609,11 +696,11 @@
       .feedback-textarea {
         display: block;
         width: 100%;
-        padding: 8px 10px;
-        border: 1px solid #dfe3e8;
-        border-radius: 6px;
+        padding: 9px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
         font-size: 13px;
-        font-family: inherit;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
         outline: none;
         transition: border-color 0.15s;
         background: #fff;
@@ -623,7 +710,6 @@
       }
       .feedback-textarea:focus {
         border-color: #1a1a1a;
-        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
       }
       .feedback-btn-row {
         display: flex;
@@ -638,7 +724,7 @@
         text-align: center;
         padding: 8px;
         font-size: 12px;
-        border-radius: 6px;
+        border-radius: 8px;
         margin-top: 8px;
       }
       .feedback-status.success {
@@ -651,25 +737,12 @@
         color: #dc2626;
         background: #fef2f2;
       }
-
-      /* ── Footer separator ── */
-      .footer-sep {
-        color: #d1d5db;
-        margin: 0 4px;
-        font-size: 11px;
-      }
     </style>
   </head>
   <body>
     <!-- Header -->
     <div class="header">
-      <div class="header-left">
-        <h1>
-          <!-- <img src="../../assets/logo-main-rect.png" alt="Oddity 1"/> -->
-          Oddity 1
-        </h1>
-        <div class="welcome-text" id="welcome-text" style="display: none"></div>
-      </div>
+      <span class="header-logo">Oddity 1</span>
       <div class="toggle-wrap">
         <span class="toggle-label" id="toggle-label">On</span>
         <label class="toggle">
@@ -722,93 +795,90 @@
 
     <!-- Main Content (shown when signed in) -->
     <div class="main-content" id="main-content">
-      <!-- Total Annotation Count -->
-      <div class="total-count" id="total-count">
-        <span class="total-count-number" id="total-count-number">0</span>
-        <span class="total-count-label">annotations created with Oddity 1</span>
-      </div>
-
-      <!-- Intensity -->
-      <div class="section">
-        <div class="section-title">Intensity</div>
-        <div class="intensity-group" id="intensity-group">
-          <button class="intensity-btn" data-intensity="light">Light</button>
-          <button class="intensity-btn active" data-intensity="default">
-            Default
-          </button>
-          <button class="intensity-btn" data-intensity="heavy">Heavy</button>
-        </div>
-      </div>
-
-      <!-- Type Filters -->
-      <div class="section">
-        <div class="section-title">Show Types</div>
-        <div class="type-filters" id="type-filters">
-          <label class="type-filter">
-            <input type="checkbox" data-type="highlight" checked />
-            <span class="type-swatch" style="background: #f59e0b"></span>
-            Highlight
-          </label>
-          <label class="type-filter">
-            <input type="checkbox" data-type="recall" checked />
-            <span class="type-swatch" style="background: #0d9488"></span>
-            Recall
-          </label>
-          <label class="type-filter">
-            <input type="checkbox" data-type="provoking_question" checked />
-            <span class="type-swatch" style="background: #7c3aed"></span>
-            Provocation
-          </label>
-          <label class="type-filter">
-            <input type="checkbox" data-type="insight" checked />
-            <span class="type-swatch" style="background: #2563eb"></span>
-            Insight
-          </label>
-          <label class="type-filter">
-            <input type="checkbox" data-type="caveat" checked />
-            <span class="type-swatch" style="background: #7c3aed"></span>
-            Caveat
-          </label>
-          <label class="type-filter">
-            <input type="checkbox" data-type="vocabulary" checked />
-            <span class="type-swatch" style="background: #0d9488"></span>
-            Vocabulary
-          </label>
-        </div>
-      </div>
-
-      <!-- Annotation Style -->
-      <div class="section">
-        <div class="section-title">Annotation Style</div>
-        <div class="style-controls">
-          <div class="style-row">
-            <label class="style-label">Font</label>
-            <select class="style-select" id="font-select">
-              <option value="default">System</option>
-              <option value="kalam">Handwritten</option>
-              <option value="helvetica">Helvetica</option>
-              <option value="arial">Arial</option>
-              <option value="georgia">Georgia</option>
-            </select>
-          </div>
-          <div class="style-row">
-            <label class="style-label">Size</label>
-            <div class="intensity-group" id="font-size-group" style="flex: 1">
-              <button class="intensity-btn" data-fontsize="small">Small</button>
-              <button class="intensity-btn active" data-fontsize="default">
-                Default
+      <!-- Profile + Annotation Count -->
+      <div class="profile-section">
+        <div class="profile-circle-area">
+          <div class="profile-circle" id="profile-circle">?</div>
+          <div class="profile-name-wrap">
+            <button class="profile-name-btn" id="profile-name-btn">
+              <span id="profile-name-display">Loading</span>
+              <span class="caret">▾</span>
+            </button>
+            <div
+              class="profile-name-dropdown"
+              id="profile-name-dropdown"
+              style="display: none"
+            >
+              <button
+                class="profile-dropdown-signout"
+                id="profile-name-signout"
+              >
+                Sign out
               </button>
-              <button class="intensity-btn" data-fontsize="large">Large</button>
             </div>
           </div>
         </div>
+        <div class="profile-count-area">
+          <span class="profile-count-number" id="total-count-number">0</span>
+          <div class="profile-count-label">
+            annotations created with Oddity 1
+          </div>
+        </div>
       </div>
 
-      <!-- Actions -->
+      <!-- Annotation Settings -->
       <div class="section">
-        <div class="btn-row">
-          <button class="btn btn-primary" id="export-btn">Export PDF</button>
+        <div class="section-title">Annotation</div>
+        <div class="style-controls">
+          <!-- Density -->
+          <div class="style-row">
+            <span class="style-label">Density</span>
+            <div class="density-group" id="intensity-group">
+              <button class="density-btn" data-intensity="light">Light</button>
+              <button class="density-btn active" data-intensity="default">
+                Default
+              </button>
+              <button class="density-btn" data-intensity="heavy">Heavy</button>
+            </div>
+          </div>
+          <!-- Font -->
+          <div class="style-row">
+            <span class="style-label">Font</span>
+            <select class="style-select" id="font-select">
+              <option value="default">System</option>
+              <option value="fraunces" style="font-family: Fraunces, serif">
+                Fraunces
+              </option>
+              <option value="kalam" style="font-family: Kalam, cursive">
+                Kalam
+              </option>
+              <option
+                value="helvetica"
+                style="font-family: 'Helvetica Neue', Helvetica"
+              >
+                Helvetica Neue
+              </option>
+              <option value="arial" style="font-family: Arial">Arial</option>
+              <option value="georgia" style="font-family: Georgia">
+                Georgia
+              </option>
+            </select>
+          </div>
+          <!-- Size -->
+          <div class="style-row">
+            <span class="style-label">Size</span>
+            <select class="style-select" id="font-size-select">
+              <option value="small">Small</option>
+              <option value="default">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </div>
         </div>
+      </div>
+
+      <!-- Export PDF -->
+      <div class="export-section">
+        <button class="btn-export" id="export-btn">Export PDF</button>
       </div>
 
       <!-- Profile Bar -->
@@ -904,6 +974,12 @@
       <span class="footer-sep">&middot;</span>
       <a href="#" id="feedback-link">Send Feedback</a>
     </div>
+
+    <!-- Hidden element kept for JS compat -->
+    <div id="welcome-text" style="display: none"></div>
+    <div id="total-count" style="display: none"></div>
+    <div id="type-filters" style="display: none"></div>
+    <div id="font-size-group" style="display: none"></div>
 
     <script type="module" src="index.ts"></script>
   </body>
