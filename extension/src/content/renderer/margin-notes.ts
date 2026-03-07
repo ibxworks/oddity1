@@ -30,6 +30,7 @@ type MarginNote = {
   anchorTopPx: number;
   topPx: number;
   height: number;
+  collapsedHeight: number;
   element: HTMLDivElement;
 };
 
@@ -170,6 +171,7 @@ export function addMarginNote(
     anchorTopPx,
     topPx: anchorTopPx,
     height: 0,
+    collapsedHeight: 0,
     element: el,
   };
 
@@ -178,6 +180,7 @@ export function addMarginNote(
   // Measure height in next frame, then resolve overlaps
   requestAnimationFrame(() => {
     note.height = el.offsetHeight;
+    note.collapsedHeight = el.offsetHeight;
     resolveOverlaps();
     applyPositions();
   });
@@ -858,7 +861,11 @@ function recomputePositions(): void {
       note.anchorTopPx = rects[0]!.top + window.scrollY;
       note.topPx = note.anchorTopPx;
     }
-    note.height = note.element.offsetHeight;
+    // Only update collapsedHeight when not expanded so expanding never shifts other notes
+    if (!note.element.classList.contains('expanded')) {
+      note.collapsedHeight = note.element.offsetHeight;
+    }
+    note.height = note.collapsedHeight;
   }
 
   resolveOverlaps();
@@ -919,7 +926,7 @@ const MARGIN_NOTES_CSS = `
     border-radius: 12px;
     box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
     opacity: 1;
-    transition: opacity 0.15s, max-width 0.2s, box-shadow 0.2s;
+    transition: opacity 0.25s ease-in, filter 0.25s ease-in, max-width 0.2s, box-shadow 0.2s;
     box-sizing: border-box;
   }
 
@@ -930,7 +937,6 @@ const MARGIN_NOTES_CSS = `
   .oddity-note.dimmed {
     opacity: 0.45;
     filter: grayscale(0.6);
-    transition: opacity 0.15s, filter 0.15s;
   }
 
   /* Bracket hidden in new card design */
