@@ -419,8 +419,17 @@ openOptions.addEventListener("click", (e) => {
 
 // ─── Persona Picker ───
 
+const profileAvatarImg = document.getElementById("profile-avatar-img") as HTMLImageElement;
+const profileCircleEl = profileAvatarImg.closest('.profile-circle') as HTMLElement;
+
+function applyPersonaVisuals(name: string): void {
+  profileAvatarImg.src = `/${name}.png`;
+  profileAvatarImg.alt = name;
+  profileCircleEl.style.background = name === "Jerry" ? "#FDCB24" : "#fff";
+}
+
 profilePersonaSelect.addEventListener("change", () => {
-  // selection is handled natively by the <select>
+  applyPersonaVisuals(profilePersonaSelect.value);
 });
 
 // ─── Profile Popover (bottom bar) ───
