@@ -920,7 +920,7 @@ const MARGIN_NOTES_CSS = `
     color: #FFFFFF;
     pointer-events: auto;
     cursor: default;
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.15);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 12px;
@@ -1149,6 +1149,18 @@ const MARGIN_NOTES_CSS = `
     color: #293038;
   }
 
+  /* Dark arrow for light-colored send buttons */
+  [data-annotation-type="insight"] .note-reply-send,
+  [data-annotation-type="highlight"] .note-reply-send {
+    color: #293038;
+  }
+
+  /* Vocab and recall label color override */
+  [data-annotation-type="vocabulary"] .note-label,
+  [data-annotation-type="recall"] .note-label {
+    color: #779EDA !important;
+  }
+
   /* Icon buttons */
   .note-icon-btn {
     all: unset;
@@ -1159,12 +1171,12 @@ const MARGIN_NOTES_CSS = `
     width: 24px;
     height: 24px;
     border-radius: 6px;
-    color: rgba(255, 255, 255, 0.4);
+    color: #FFFFFF;
     transition: color 0.15s, background 0.15s;
   }
 
   .note-icon-btn:hover {
-    color: rgba(255, 255, 255, 0.8);
+    color: #FFFFFF;
     background: rgba(255,255,255,0.08);
   }
 
