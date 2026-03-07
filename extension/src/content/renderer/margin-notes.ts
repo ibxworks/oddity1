@@ -1004,11 +1004,15 @@ const MARGIN_NOTES_CSS = `
     display: block;
     font-family: 'Fraunces', Georgia, serif;
     font-style: normal;
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 700;
     letter-spacing: normal;
-    text-transform: none;
+    text-transform: lowercase;
     margin-bottom: 4px;
+  }
+
+  .note-label::first-letter {
+    text-transform: uppercase;
   }
 
   .note-text {
@@ -1021,6 +1025,7 @@ const MARGIN_NOTES_CSS = `
     font-family: 'Fraunces', Georgia, serif;
     font-style: normal;
     font-size: 13.5px;
+    font-weight: 250;
     line-height: 1.45;
     color: #FFFFFF;
   }
@@ -1126,7 +1131,8 @@ const MARGIN_NOTES_CSS = `
     background: #DFE7EF;
     border-radius: 100px;
     padding: 5px 12px;
-    font-size: 11px;
+    font-size: 11.5px;
+    font-weight: 450;
     color: #293038;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     line-height: 1;
@@ -1180,8 +1186,8 @@ const MARGIN_NOTES_CSS = `
     all: unset;
     cursor: pointer;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 10.5px;
-    font-weight: 400;
+    font-size: 11.5px;
+    font-weight: 450;
     padding: 4px 10px;
     border-radius: 100px;
     background: var(--note-color);
