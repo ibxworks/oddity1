@@ -79,7 +79,7 @@ export function initMarginNotes(region: Element): void {
     fontLink = document.createElement("link");
     fontLink.rel = "stylesheet";
     fontLink.href =
-      "https://fonts.googleapis.com/css2?family=Kalam:wght@400&display=swap";
+      "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=Kalam:wght@400&display=swap";
     document.head.appendChild(fontLink);
   }
 
@@ -900,21 +900,26 @@ function stopTracking(): void {
 
 const MARGIN_NOTES_CSS = `
   :host {
-    --oddity-note-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    --oddity-note-size: 14px;
+    --oddity-note-font: 'Inter', system-ui, -apple-system, sans-serif;
+    --oddity-note-size: 11.5px;
   }
 
   .oddity-note {
     position: absolute;
     max-width: ${NOTE_MAX_WIDTH}px;
-    padding: 6px 10px;
-    font-family: var(--oddity-note-font);
-    font-size: var(--oddity-note-size);
-    line-height: 1.4;
-    color: #374151;
+    padding: 10px 12px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #FFFFFF;
     pointer-events: auto;
     cursor: default;
-    opacity: 0.85;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 12px;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
+    opacity: 1;
     transition: opacity 0.15s, max-width 0.2s, box-shadow 0.2s;
     box-sizing: border-box;
   }
@@ -924,52 +929,25 @@ const MARGIN_NOTES_CSS = `
   }
 
   .oddity-note.dimmed {
-    opacity: 0.5;
-    filter: grayscale(0.8);
+    opacity: 0.45;
+    filter: grayscale(0.6);
     transition: opacity 0.15s, filter 0.15s;
   }
 
-  /* Bracket on text-facing edge */
+  /* Bracket hidden in new card design */
   .note-bracket {
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    width: 6px;
-    border-style: solid;
-    border-width: 0;
-  }
-
-  /* Right-side notes: bracket on left edge */
-  .oddity-note.right .note-bracket {
-    left: 0;
-    border-left-width: 2px;
-    border-top-width: 2px;
-    border-bottom-width: 2px;
-  }
-
-  .oddity-note.left {
-    text-align: right;
-  }
-
-  .oddity-note.left.expanded {
-    text-align: left;
-  }
-
-  /* Left-side notes: bracket on right edge */
-  .oddity-note.left .note-bracket {
-    right: 0;
-    border-right-width: 2px;
-    border-top-width: 2px;
-    border-bottom-width: 2px;
+    display: none;
   }
 
   .note-label {
     display: block;
-    font-family: var(--oddity-note-font);
-    font-style: italic;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-style: normal;
     font-size: 13px;
     font-weight: 700;
-    margin-bottom: 2px;
+    letter-spacing: normal;
+    text-transform: none;
+    margin-bottom: 4px;
   }
 
   .note-text {
@@ -979,22 +957,19 @@ const MARGIN_NOTES_CSS = `
     overflow: hidden;
     text-overflow: ellipsis;
     word-break: break-word;
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: #FFFFFF;
   }
 
   /* Expanded state */
   .oddity-note.expanded {
     max-width: ${NOTE_EXPANDED_WIDTH}px;
-    background: white;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
-    border-radius: 4px;
-    padding: 8px 12px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
     opacity: 1;
     z-index: 10;
-    border-left: 3px solid var(--note-color);
-  }
-
-  .oddity-note.expanded .note-bracket {
-    display: none;
   }
 
   .oddity-note.expanded .note-text {
@@ -1009,168 +984,97 @@ const MARGIN_NOTES_CSS = `
 
   .oddity-note.expanded .note-expanded-content {
     display: block;
-    margin-top: 6px;
+    margin-top: 10px;
+    padding-top: 2px;
   }
 
   .note-section {
-    margin-top: 6px;
+    margin-bottom: 8px;
   }
 
   .note-section-label {
     display: block;
-    font-size: 11px;
-    font-weight: 700;
-    color: #374151;
-    margin-bottom: 1px;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+    margin-bottom: 3px;
   }
 
   .note-section p {
     margin: 0;
-    font-size: calc(var(--oddity-note-size) - 1px);
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #FFFFFF;
   }
 
   .note-section ul {
     margin: 2px 0 0;
     padding-left: 16px;
     font-size: 12px;
+    color: #FFFFFF;
   }
 
   .note-section li {
     margin-bottom: 1px;
   }
 
-  .note-icon-btn {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    color: #64748b;
-    opacity: 0.5;
-    transition: opacity 0.15s, background 0.15s, color 0.15s;
-  }
-
-  .note-icon-btn:hover {
-    opacity: 0.7;
-    background: #f1f5f9;
-  }
-
-  .note-icon-btn.note-delete-btn:hover {
-    color: #ef4444;
-    background: #fef2f2;
-  }
-
-  /* ── Dark-mode overrides ── */
-  :host([data-theme="dark"]) .oddity-note {
-    color: #e2e8f0;
-  }
-
-  :host([data-theme="dark"]) .oddity-note.dimmed {
-    opacity: 0.4;
-  }
-
-  :host([data-theme="dark"]) .oddity-note.expanded {
-    background: #1a1a2e;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.3);
-  }
-
-  :host([data-theme="dark"]) .note-section-label {
-    color: #cbd5e1;
-  }
-
-  :host([data-theme="dark"]) .note-icon-btn {
-    color: #94a3b8;
-  }
-
-  :host([data-theme="dark"]) .note-icon-btn:hover {
-    background: #334155;
-  }
-
-  :host([data-theme="dark"]) .note-icon-btn.note-delete-btn:hover {
-    color: #f87171;
-    background: #451a1a;
-  }
-
-  :host([data-theme="dark"]) .note-feedback-pill {
-    background: transparent;
-    border: 1px solid var(--note-color);
-    color: var(--note-color);
-  }
-
-  :host([data-theme="dark"]) .note-feedback-pill.active {
-    background: var(--note-color);
-    color: #fff;
-  }
-
-  /* ── Hide animation ── */
-  .oddity-note.hiding {
-    opacity: 0;
-    transform: translateX(20px);
-    transition: opacity 0.3s, transform 0.3s;
-    pointer-events: none;
-  }
-
   /* ── Reply thread ── */
   .note-replies {
-    max-height: 120px;
+    max-height: 100px;
     overflow-y: auto;
     margin-top: 6px;
   }
 
   .note-reply-bubble {
-    background: #f1f5f9;
-    border-radius: 4px;
-    padding: 4px 8px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 4px 10px;
     font-size: 11px;
     margin-bottom: 3px;
     word-break: break-word;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #FFFFFF;
   }
 
-  :host([data-theme="dark"]) .note-reply-bubble {
-    background: #334155;
-    color: #e2e8f0;
-  }
-
-  /* ── Reply input bar ── */
+  /* ── Reply input bar (ace-input-row style) ── */
   .note-reply-bar {
     display: flex;
     align-items: center;
-    gap: 4px;
-    margin-top: 6px;
+    gap: 6px;
+    margin-top: 10px;
+    margin-bottom: 7px;
   }
 
   .note-reply-input {
     all: unset;
     flex: 1;
+    background: rgba(255,255,255,0.07);
+    border: 1.5px solid rgba(255,255,255,0.13);
+    border-radius: 100px;
+    padding: 5px 12px;
     font-size: 11px;
-    padding: 4px 8px;
-    border: 1px solid #e2e8f0;
-    border-radius: 4px;
-    font-family: system-ui, -apple-system, sans-serif;
-    background: #fff;
-    color: #1a1a1a;
+    color: #FFFFFF;
+    font-family: 'Inter', system-ui, sans-serif;
+    line-height: 1;
   }
 
-  :host([data-theme="dark"]) .note-reply-input {
-    border-color: #475569;
-    background: #1e293b;
-    color: #e2e8f0;
+  .note-reply-input::placeholder {
+    color: rgba(255, 255, 255, 0.35);
   }
 
   .note-reply-send {
     all: unset;
     cursor: pointer;
-    width: 22px;
-    height: 22px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    background: var(--note-color, #1a1a1a);
+    background: var(--note-color, #c4913a);
     color: #fff;
-    font-size: 12px;
+    font-size: 13px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1192,7 +1096,8 @@ const MARGIN_NOTES_CSS = `
 
   .note-pill-group {
     display: flex;
-    gap: 6px;
+    gap: 5px;
+    flex-wrap: wrap;
   }
 
   .note-icon-group {
@@ -1200,26 +1105,71 @@ const MARGIN_NOTES_CSS = `
     gap: 2px;
   }
 
+  /* Feedback pills (ace-quick style) */
   .note-feedback-pill {
     all: unset;
     cursor: pointer;
-    font-size: 11px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 10.5px;
     font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 4px;
-    font-family: system-ui, -apple-system, sans-serif;
+    padding: 4px 10px;
+    border-radius: 100px;
     background: var(--note-color);
     color: #fff;
-    opacity: 0.45;
+    opacity: 1;
     transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+
+  .note-feedback-pill--negative {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    color: rgba(255, 255, 255, 0.6);
+    opacity: 1;
   }
 
   .note-feedback-pill:hover {
-    opacity: 0.7;
+    opacity: 0.8;
+  }
+
+  .note-feedback-pill--negative:hover {
+    opacity: 0.8;
   }
 
   .note-feedback-pill.active {
     opacity: 1;
+  }
+
+  /* Icon buttons */
+  .note-icon-btn {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.4);
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .note-icon-btn:hover {
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255,255,255,0.08);
+  }
+
+  .note-icon-btn.note-delete-btn:hover {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.12);
+  }
+
+  /* ── Hide animation ── */
+  .oddity-note.hiding {
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
   }
 
   /* ── Edit mode ── */
@@ -1228,63 +1178,53 @@ const MARGIN_NOTES_CSS = `
     display: block;
     width: 100%;
     font-size: 12px;
-    padding: 4px 6px;
-    border: 1px solid #1a1a1a;
-    border-radius: 4px;
-    font-family: var(--oddity-note-font);
+    padding: 6px 10px;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    font-family: 'Inter', system-ui, sans-serif;
     resize: vertical;
     min-height: 48px;
     box-sizing: border-box;
-    background: #fff;
-    color: #1a1a1a;
-  }
-
-  :host([data-theme="dark"]) .note-edit-textarea {
-    background: #1e293b;
-    color: #e2e8f0;
-    border-color: #1a1a1a;
+    background: rgba(255,255,255,0.06);
+    color: #FFFFFF;
   }
 
   .note-edit-actions {
     display: flex;
     gap: 4px;
-    margin-top: 4px;
+    margin-top: 6px;
     justify-content: flex-end;
   }
 
   .note-save-btn, .note-cancel-btn {
     all: unset;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-family: system-ui, -apple-system, sans-serif;
-    transition: background 0.15s;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-family: 'Inter', system-ui, sans-serif;
+    transition: opacity 0.15s;
   }
 
   .note-save-btn {
-    color: #1a1a1a;
+    background: var(--note-color);
+    color: #fff;
+    opacity: 0.8;
   }
 
   .note-save-btn:hover {
-    background: #f3f4f6;
+    opacity: 1;
   }
 
   .note-cancel-btn {
-    color: #6b7280;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255, 255, 255, 0.6);
   }
 
   .note-cancel-btn:hover {
-    background: #f3f4f6;
-  }
-
-  :host([data-theme="dark"]) .note-save-btn:hover {
-    background: #334155;
-  }
-
-  :host([data-theme="dark"]) .note-cancel-btn:hover {
-    background: #334155;
+    background: rgba(255,255,255,0.12);
   }
 
   .note-reaction-badge {
@@ -1294,20 +1234,15 @@ const MARGIN_NOTES_CSS = `
 
   .note-user-badge {
     font-size: 9px;
-    background: #E5E7EB;
-    color: #6B7280;
+    background: rgba(255,255,255,0.1);
+    color: rgba(255, 255, 255, 0.6);
     padding: 1px 5px;
     border-radius: 8px;
     margin-left: 4px;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
     font-weight: 500;
     text-transform: none;
     letter-spacing: normal;
-  }
-
-  :host([data-theme="dark"]) .note-user-badge {
-    background: #334155;
-    color: #94a3b8;
   }
 
 `;

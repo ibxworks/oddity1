@@ -30,12 +30,12 @@ export const CACHE_TTL_DAYS = 30;
 // ─── Annotation Colors ───
 
 export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
-  highlight: "#c4913a",           // muted amber
-  recall: "#5a8a6a",              // muted sage
-  provoking_question: "#7a5a9a",  // muted violet
-  insight: "#5a7a9a",             // muted slate
-  caveat: "#9a5a6a",              // muted rose
-  vocabulary: "#5a8a6a",          // muted sage
+  highlight: "#FFDD69",
+  recall: "#243C61",
+  provoking_question: "#F5574C",
+  insight: "#BFF3D3",
+  caveat: "#F5574C",
+  vocabulary: "#243C61",
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
