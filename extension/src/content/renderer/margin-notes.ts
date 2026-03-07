@@ -976,8 +976,8 @@ const MARGIN_NOTES_CSS = `
     position: absolute;
     max-width: ${NOTE_EXPANDED_WIDTH}px;
     padding: 10px 12px;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-size: 11.5px;
+    font-family: var(--oddity-note-font);
+    font-size: var(--oddity-note-size);
     line-height: 1.45;
     color: #FFFFFF;
     pointer-events: auto;
@@ -1008,9 +1008,9 @@ const MARGIN_NOTES_CSS = `
 
   .note-label {
     display: block;
-    font-family: 'Fraunces', Georgia, serif;
+    font-family: var(--oddity-note-font);
     font-style: normal;
-    font-size: 13.5px;
+    font-size: var(--oddity-note-size);
     font-weight: 900;
     letter-spacing: normal;
     text-transform: lowercase;
@@ -1028,9 +1028,9 @@ const MARGIN_NOTES_CSS = `
     overflow: hidden;
     text-overflow: ellipsis;
     word-break: break-word;
-    font-family: 'Fraunces', Georgia, serif;
+    font-family: var(--oddity-note-font);
     font-style: normal;
-    font-size: 13.5px;
+    font-size: var(--oddity-note-size);
     font-weight: 250;
     line-height: 1.45;
     color: #FFFFFF;
@@ -1086,9 +1086,9 @@ const MARGIN_NOTES_CSS = `
 
   .note-section p {
     margin: 0;
-    font-family: 'Fraunces', Georgia, serif;
+    font-family: var(--oddity-note-font);
     font-style: normal;
-    font-size: 13px;
+    font-size: var(--oddity-note-size);
     line-height: 1.45;
     color: #FFFFFF;
   }

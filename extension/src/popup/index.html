@@ -798,10 +798,15 @@
       <!-- Profile + Annotation Count -->
       <div class="profile-section">
         <div class="profile-circle-area">
-          <div class="profile-circle" id="profile-circle">?</div>
+          <div class="profile-circle">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="8" r="4" stroke="#374151" stroke-width="1.5"/>
+              <path d="M4 20c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke="#374151" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
           <div class="profile-name-wrap">
             <button class="profile-name-btn" id="profile-name-btn">
-              <span id="profile-name-display">Loading</span>
+              <span id="profile-name-display">Terry</span>
               <span class="caret">▾</span>
             </button>
             <div
@@ -809,12 +814,8 @@
               id="profile-name-dropdown"
               style="display: none"
             >
-              <button
-                class="profile-dropdown-signout"
-                id="profile-name-signout"
-              >
-                Sign out
-              </button>
+              <button class="profile-dropdown-item active" data-persona="Terry" id="persona-terry">Terry</button>
+              <button class="profile-dropdown-item" data-persona="Jerry" id="persona-jerry">Jerry</button>
             </div>
           </div>
         </div>

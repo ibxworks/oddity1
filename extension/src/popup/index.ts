@@ -38,12 +38,12 @@ const authToggleLink = document.getElementById("auth-toggle-link")!;
 const authToggleText = document.getElementById("auth-toggle-text")!;
 const mainContent = document.getElementById("main-content")!;
 
-// Profile circle refs (top section)
-const profileCircle = document.getElementById("profile-circle")!;
+// Persona picker refs (top section)
 const profileNameDisplay = document.getElementById("profile-name-display")!;
 const profileNameBtn = document.getElementById("profile-name-btn")!;
 const profileNameDropdown = document.getElementById("profile-name-dropdown")!;
-const profileNameSignout = document.getElementById("profile-name-signout")!;
+const personaTerry = document.getElementById("persona-terry")!;
+const personaJerry = document.getElementById("persona-jerry")!;
 
 // Auth bar refs (bottom)
 const profileBtn = document.getElementById("profile-btn")!;
@@ -180,12 +180,7 @@ function showAuthenticatedUI(user: {
   mainContent.classList.remove("hidden");
 
   const displayName = user.display_name || user.email.split("@")[0] || user.email;
-  const firstName = displayName.split(" ")[0] ?? displayName;
   const initial = displayName.charAt(0).toUpperCase();
-
-  // Profile circle (top section)
-  profileCircle.textContent = initial;
-  profileNameDisplay.textContent = firstName;
 
   // Auth bar (bottom)
   profileAvatar.textContent = initial;
@@ -425,7 +420,16 @@ openOptions.addEventListener("click", (e) => {
   chrome.runtime.openOptionsPage();
 });
 
-// ─── Profile Name Dropdown (top circle) ───
+// ─── Persona Picker ───
+
+function setPersona(name: string): void {
+  profileNameDisplay.textContent = name;
+  for (const btn of profileNameDropdown.querySelectorAll<HTMLButtonElement>(
+    ".profile-dropdown-item",
+  )) {
+    btn.classList.toggle("active", btn.dataset["persona"] === name);
+  }
+}
 
 profileNameBtn.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -433,15 +437,14 @@ profileNameBtn.addEventListener("click", (e) => {
   profileNameDropdown.style.display = isVisible ? "none" : "";
 });
 
-profileNameSignout.addEventListener("click", async () => {
+personaTerry.addEventListener("click", () => {
+  setPersona("Terry");
   profileNameDropdown.style.display = "none";
-  try {
-    await sendMessage({ action: "signOut", payload: {} });
-  } catch {
-    // Sign out failed; still show unauthenticated UI
-  }
-  showUnauthenticatedUI();
-  refreshActiveTab();
+});
+
+personaJerry.addEventListener("click", () => {
+  setPersona("Jerry");
+  profileNameDropdown.style.display = "none";
 });
 
 // ─── Profile Popover (bottom bar) ───
