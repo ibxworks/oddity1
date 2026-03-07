@@ -941,7 +941,7 @@ const MARGIN_NOTES_CSS = `
 
   .note-label {
     display: block;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Fraunces', Georgia, serif;
     font-style: normal;
     font-size: 13px;
     font-weight: 700;
@@ -958,7 +958,7 @@ const MARGIN_NOTES_CSS = `
     text-overflow: ellipsis;
     word-break: break-word;
     font-family: 'Fraunces', Georgia, serif;
-    font-style: italic;
+    font-style: normal;
     font-size: 13.5px;
     line-height: 1.45;
     color: #FFFFFF;
@@ -1006,6 +1006,7 @@ const MARGIN_NOTES_CSS = `
   .note-section p {
     margin: 0;
     font-family: 'Fraunces', Georgia, serif;
+    font-style: normal;
     font-size: 13px;
     line-height: 1.45;
     color: #FFFFFF;
@@ -1058,7 +1059,7 @@ const MARGIN_NOTES_CSS = `
     padding: 5px 12px;
     font-size: 11px;
     color: #FFFFFF;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     line-height: 1;
   }
 
@@ -1109,7 +1110,7 @@ const MARGIN_NOTES_CSS = `
   .note-feedback-pill {
     all: unset;
     cursor: pointer;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-size: 10.5px;
     font-weight: 600;
     padding: 4px 10px;
@@ -1121,18 +1122,7 @@ const MARGIN_NOTES_CSS = `
     white-space: nowrap;
   }
 
-  .note-feedback-pill--negative {
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.14);
-    color: rgba(255, 255, 255, 0.6);
-    opacity: 1;
-  }
-
   .note-feedback-pill:hover {
-    opacity: 0.8;
-  }
-
-  .note-feedback-pill--negative:hover {
     opacity: 0.8;
   }
 
