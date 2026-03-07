@@ -44,11 +44,13 @@ let noteIndex = 0;
 let visible = true;
 let hiddenTypes = new Set<AnnotationType>();
 let expandedId: string | null = null;
+let pinnedId: string | null = null;
 let collapseTimer: ReturnType<typeof setTimeout> | null = null;
 let anchorHoverTimer: ReturnType<typeof setTimeout> | null = null;
 let needsRedraw = false;
 let fontLink: HTMLLinkElement | null = null;
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
+let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let userName: string | null = null;
 
 const NOTE_EXPANDED_WIDTH = 220;
@@ -111,6 +113,10 @@ export function initMarginNotes(region: Element): void {
       updateMarginNotesStyle(prefs.annotation_font, prefs.annotation_font_size);
     }
   });
+
+  // Unpin on any click outside a card/anchor
+  docClickHandler = () => { if (pinnedId) unpinAll(); };
+  document.addEventListener("click", docClickHandler);
 
   startTracking();
 
@@ -207,6 +213,7 @@ export function clearMarginNotes(): void {
   notes = [];
   noteIndex = 0;
   expandedId = null;
+  pinnedId = null;
 }
 
 export function setMarginNotesVisible(v: boolean): void {
@@ -245,11 +252,34 @@ export function expandMarginNote(annotationId: string): void {
 }
 
 export function collapseAllMarginNotes(): void {
+  if (pinnedId) return; // Don't collapse hover-triggered while pinned
+  forceCollapseAll();
+}
+
+function forceCollapseAll(): void {
   if (expandedId) {
     const note = notes.find((n) => n.id === expandedId);
     if (note) note.element.classList.remove("expanded");
     expandedId = null;
   }
+}
+
+export function onAnchorClick(annotationId: string): void {
+  if (pinnedId) {
+    unpinAll();
+  } else {
+    pinnedId = annotationId;
+    expandMarginNote(annotationId);
+    emphasizeAnnotation(annotationId);
+    dimOtherNotes(annotationId);
+  }
+}
+
+function unpinAll(): void {
+  pinnedId = null;
+  forceCollapseAll();
+  undimAllNotes();
+  deemphasizeAnnotation();
 }
 
 export function isAnyMarginNoteExpanded(): boolean {
@@ -273,6 +303,7 @@ export function undimAllNotes(): void {
 }
 
 export function onAnchorHoverStart(annotationId: string): void {
+  if (pinnedId && pinnedId !== annotationId) return;
   if (anchorHoverTimer) { clearTimeout(anchorHoverTimer); anchorHoverTimer = null; }
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
   emphasizeAnnotation(annotationId);
@@ -280,6 +311,7 @@ export function onAnchorHoverStart(annotationId: string): void {
 }
 
 export function onAnchorHoverEnd(): void {
+  if (pinnedId) return;
   undimAllNotes();
   deemphasizeAnnotation();
   anchorHoverTimer = setTimeout(() => {
@@ -294,12 +326,17 @@ export function destroyMarginNotes(): void {
     offThemeChange(themeHandler);
     themeHandler = null;
   }
+  if (docClickHandler) {
+    document.removeEventListener("click", docClickHandler);
+    docClickHandler = null;
+  }
   hostEl?.remove();
   hostEl = null;
   shadowRoot = null;
   notes = [];
   noteIndex = 0;
   expandedId = null;
+  pinnedId = null;
   fontLink?.remove();
   fontLink = null;
 }
@@ -613,6 +650,7 @@ function createNoteElement(
 
   // Hover expand/collapse + overlay emphasis
   el.addEventListener("mouseenter", () => {
+    if (pinnedId && pinnedId !== annotation.id) return;
     if (anchorHoverTimer) {
       clearTimeout(anchorHoverTimer);
       anchorHoverTimer = null;
@@ -622,7 +660,20 @@ function createNoteElement(
     dimOtherNotes(annotation.id);
   });
 
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pinnedId) {
+      unpinAll();
+    } else {
+      pinnedId = annotation.id;
+      expandMarginNote(annotation.id);
+      emphasizeAnnotation(annotation.id);
+      dimOtherNotes(annotation.id);
+    }
+  });
+
   el.addEventListener("mouseleave", () => {
+    if (pinnedId) return;
     collapseAllMarginNotes();
     undimAllNotes();
     deemphasizeAnnotation();
