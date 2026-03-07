@@ -30,6 +30,7 @@ type MarginNote = {
   anchorTopPx: number;
   topPx: number;
   height: number;
+  collapsedHeight: number;
   element: HTMLDivElement;
 };
 
@@ -43,14 +44,16 @@ let noteIndex = 0;
 let visible = true;
 let hiddenTypes = new Set<AnnotationType>();
 let expandedId: string | null = null;
+let pinnedId: string | null = null;
 let collapseTimer: ReturnType<typeof setTimeout> | null = null;
 let anchorHoverTimer: ReturnType<typeof setTimeout> | null = null;
 let needsRedraw = false;
 let fontLink: HTMLLinkElement | null = null;
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
+let docClickHandler: ((e: MouseEvent) => void) | null = null;
+let justUnpinned = false;
 let userName: string | null = null;
 
-const NOTE_MAX_WIDTH = 180;
 const NOTE_EXPANDED_WIDTH = 220;
 const NOTE_GAP = 10;
 const MARGIN_PADDING = 16;
@@ -79,7 +82,7 @@ export function initMarginNotes(region: Element): void {
     fontLink = document.createElement("link");
     fontLink.rel = "stylesheet";
     fontLink.href =
-      "https://fonts.googleapis.com/css2?family=Kalam:wght@400&display=swap";
+      "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=Kalam:wght@400&display=swap";
     document.head.appendChild(fontLink);
   }
 
@@ -111,6 +114,10 @@ export function initMarginNotes(region: Element): void {
       updateMarginNotesStyle(prefs.annotation_font, prefs.annotation_font_size);
     }
   });
+
+  // Unpin on any click outside a card/anchor
+  docClickHandler = () => { if (pinnedId) unpinAll(); };
+  document.addEventListener("click", docClickHandler);
 
   startTracking();
 
@@ -171,6 +178,7 @@ export function addMarginNote(
     anchorTopPx,
     topPx: anchorTopPx,
     height: 0,
+    collapsedHeight: 0,
     element: el,
   };
 
@@ -179,6 +187,7 @@ export function addMarginNote(
   // Measure height in next frame, then resolve overlaps
   requestAnimationFrame(() => {
     note.height = el.offsetHeight;
+    note.collapsedHeight = el.offsetHeight;
     resolveOverlaps();
     applyPositions();
   });
@@ -205,6 +214,7 @@ export function clearMarginNotes(): void {
   notes = [];
   noteIndex = 0;
   expandedId = null;
+  pinnedId = null;
 }
 
 export function setMarginNotesVisible(v: boolean): void {
@@ -243,6 +253,11 @@ export function expandMarginNote(annotationId: string): void {
 }
 
 export function collapseAllMarginNotes(): void {
+  if (pinnedId) return; // Don't collapse hover-triggered while pinned
+  forceCollapseAll();
+}
+
+function forceCollapseAll(): void {
   if (expandedId) {
     const note = notes.find((n) => n.id === expandedId);
     if (note) note.element.classList.remove("expanded");
@@ -250,11 +265,34 @@ export function collapseAllMarginNotes(): void {
   }
 }
 
+export function onAnchorClick(annotationId: string): void {
+  if (pinnedId) {
+    unpinAll();
+  } else if (!justUnpinned) {
+    pinnedId = annotationId;
+    hostEl?.classList.add('has-pinned');
+    expandMarginNote(annotationId);
+    emphasizeAnnotation(annotationId);
+    dimOtherNotes(annotationId);
+  }
+}
+
+function unpinAll(): void {
+  pinnedId = null;
+  hostEl?.classList.remove('has-pinned');
+  justUnpinned = true;
+  setTimeout(() => { justUnpinned = false; }, 0);
+  forceCollapseAll();
+  undimAllNotes();
+  deemphasizeAnnotation();
+}
+
 export function isAnyMarginNoteExpanded(): boolean {
   return expandedId !== null;
 }
 
 export function dimOtherNotes(annotationId: string): void {
+  hostEl?.classList.add('has-dimmed');
   for (const note of notes) {
     if (note.id === annotationId) {
       note.element.classList.remove("dimmed");
@@ -265,26 +303,28 @@ export function dimOtherNotes(annotationId: string): void {
 }
 
 export function undimAllNotes(): void {
+  hostEl?.classList.remove('has-dimmed');
   for (const note of notes) {
     note.element.classList.remove("dimmed");
   }
 }
 
 export function onAnchorHoverStart(annotationId: string): void {
+  if (pinnedId && pinnedId !== annotationId) return;
   if (anchorHoverTimer) { clearTimeout(anchorHoverTimer); anchorHoverTimer = null; }
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
-  expandMarginNote(annotationId);
   emphasizeAnnotation(annotationId);
   dimOtherNotes(annotationId);
 }
 
 export function onAnchorHoverEnd(): void {
+  if (pinnedId) return;
   undimAllNotes();
+  deemphasizeAnnotation();
   anchorHoverTimer = setTimeout(() => {
     collapseAllMarginNotes();
     anchorHoverTimer = null;
   }, 300);
-  deemphasizeAnnotation();
 }
 
 export function destroyMarginNotes(): void {
@@ -293,12 +333,17 @@ export function destroyMarginNotes(): void {
     offThemeChange(themeHandler);
     themeHandler = null;
   }
+  if (docClickHandler) {
+    document.removeEventListener("click", docClickHandler);
+    docClickHandler = null;
+  }
   hostEl?.remove();
   hostEl = null;
   shadowRoot = null;
   notes = [];
   noteIndex = 0;
   expandedId = null;
+  pinnedId = null;
   fontLink?.remove();
   fontLink = null;
 }
@@ -597,6 +642,14 @@ function createNoteElement(
     expandedContent.appendChild(feedbackRow);
   }
 
+  // Wrap expanded content children in an inner div for CSS grid animation
+  const expandedInner = document.createElement('div');
+  expandedInner.className = 'note-expanded-inner';
+  while (expandedContent.firstChild) {
+    expandedInner.appendChild(expandedContent.firstChild);
+  }
+  expandedContent.appendChild(expandedInner);
+
   el.appendChild(bracket);
   el.appendChild(labelEl);
   el.appendChild(textEl);
@@ -604,10 +657,7 @@ function createNoteElement(
 
   // Hover expand/collapse + overlay emphasis
   el.addEventListener("mouseenter", () => {
-    if (collapseTimer) {
-      clearTimeout(collapseTimer);
-      collapseTimer = null;
-    }
+    if (pinnedId && pinnedId !== annotation.id) return;
     if (anchorHoverTimer) {
       clearTimeout(anchorHoverTimer);
       anchorHoverTimer = null;
@@ -617,11 +667,24 @@ function createNoteElement(
     dimOtherNotes(annotation.id);
   });
 
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    // Don't unpin when clicking interactive elements inside the card
+    if ((e.target as HTMLElement).closest('button, input, textarea')) return;
+    if (pinnedId) {
+      unpinAll();
+    } else if (!justUnpinned) {
+      pinnedId = annotation.id;
+      hostEl?.classList.add('has-pinned');
+      expandMarginNote(annotation.id);
+      emphasizeAnnotation(annotation.id);
+      dimOtherNotes(annotation.id);
+    }
+  });
+
   el.addEventListener("mouseleave", () => {
-    collapseTimer = setTimeout(() => {
-      collapseAllMarginNotes();
-      collapseTimer = null;
-    }, 300);
+    if (pinnedId) return;
+    collapseAllMarginNotes();
     undimAllNotes();
     deemphasizeAnnotation();
   });
@@ -859,7 +922,11 @@ function recomputePositions(): void {
       note.anchorTopPx = rects[0]!.top + window.scrollY;
       note.topPx = note.anchorTopPx;
     }
-    note.height = note.element.offsetHeight;
+    // Only update collapsedHeight when not expanded so expanding never shifts other notes
+    if (!note.element.classList.contains('expanded')) {
+      note.collapsedHeight = note.element.offsetHeight;
+    }
+    note.height = note.collapsedHeight;
   }
 
   resolveOverlaps();
@@ -900,22 +967,27 @@ function stopTracking(): void {
 
 const MARGIN_NOTES_CSS = `
   :host {
-    --oddity-note-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    --oddity-note-size: 14px;
+    --oddity-note-font: 'Inter', system-ui, -apple-system, sans-serif;
+    --oddity-note-size: 11.5px;
   }
 
   .oddity-note {
     position: absolute;
-    max-width: ${NOTE_MAX_WIDTH}px;
-    padding: 6px 10px;
-    font-family: var(--oddity-note-font);
-    font-size: var(--oddity-note-size);
-    line-height: 1.4;
-    color: #374151;
+    max-width: ${NOTE_EXPANDED_WIDTH}px;
+    padding: 10px 12px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #FFFFFF;
     pointer-events: auto;
     cursor: default;
-    opacity: 0.85;
-    transition: opacity 0.15s, max-width 0.2s, box-shadow 0.2s;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 12px;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
+    opacity: 1;
+    transition: opacity 0.25s ease-in, filter 0.25s ease-in, max-width 0.2s, box-shadow 0.2s;
     box-sizing: border-box;
   }
 
@@ -924,52 +996,28 @@ const MARGIN_NOTES_CSS = `
   }
 
   .oddity-note.dimmed {
-    opacity: 0.5;
-    filter: grayscale(0.8);
-    transition: opacity 0.15s, filter 0.15s;
+    opacity: 0.45;
+    filter: grayscale(0.6);
   }
 
-  /* Bracket on text-facing edge */
+  /* Bracket hidden in new card design */
   .note-bracket {
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    width: 6px;
-    border-style: solid;
-    border-width: 0;
-  }
-
-  /* Right-side notes: bracket on left edge */
-  .oddity-note.right .note-bracket {
-    left: 0;
-    border-left-width: 2px;
-    border-top-width: 2px;
-    border-bottom-width: 2px;
-  }
-
-  .oddity-note.left {
-    text-align: right;
-  }
-
-  .oddity-note.left.expanded {
-    text-align: left;
-  }
-
-  /* Left-side notes: bracket on right edge */
-  .oddity-note.left .note-bracket {
-    right: 0;
-    border-right-width: 2px;
-    border-top-width: 2px;
-    border-bottom-width: 2px;
+    display: none;
   }
 
   .note-label {
     display: block;
-    font-family: var(--oddity-note-font);
-    font-style: italic;
-    font-size: 13px;
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: normal;
+    font-size: 13.5px;
     font-weight: 700;
-    margin-bottom: 2px;
+    letter-spacing: normal;
+    text-transform: lowercase;
+    margin-bottom: 4px;
+  }
+
+  .note-label::first-letter {
+    text-transform: uppercase;
   }
 
   .note-text {
@@ -979,22 +1027,20 @@ const MARGIN_NOTES_CSS = `
     overflow: hidden;
     text-overflow: ellipsis;
     word-break: break-word;
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: normal;
+    font-size: 13.5px;
+    font-weight: 250;
+    line-height: 1.45;
+    color: #FFFFFF;
   }
 
   /* Expanded state */
   .oddity-note.expanded {
     max-width: ${NOTE_EXPANDED_WIDTH}px;
-    background: white;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
-    border-radius: 4px;
-    padding: 8px 12px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
     opacity: 1;
     z-index: 10;
-    border-left: 3px solid var(--note-color);
-  }
-
-  .oddity-note.expanded .note-bracket {
-    display: none;
   }
 
   .oddity-note.expanded .note-text {
@@ -1004,173 +1050,112 @@ const MARGIN_NOTES_CSS = `
   }
 
   .note-expanded-content {
-    display: none;
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-top: 0;
+    transition: grid-template-rows 0.25s ease, opacity 0.2s ease, margin-top 0.2s ease;
+  }
+
+  .note-expanded-inner {
+    overflow: hidden;
+    min-height: 0;
   }
 
   .oddity-note.expanded .note-expanded-content {
-    display: block;
-    margin-top: 6px;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-top: 10px;
   }
 
   .note-section {
-    margin-top: 6px;
+    margin-bottom: 8px;
   }
 
   .note-section-label {
     display: block;
-    font-size: 11px;
-    font-weight: 700;
-    color: #374151;
-    margin-bottom: 1px;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+    margin-bottom: 3px;
   }
 
   .note-section p {
     margin: 0;
-    font-size: calc(var(--oddity-note-size) - 1px);
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: normal;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #FFFFFF;
   }
 
   .note-section ul {
     margin: 2px 0 0;
     padding-left: 16px;
     font-size: 12px;
+    color: #FFFFFF;
   }
 
   .note-section li {
     margin-bottom: 1px;
   }
 
-  .note-icon-btn {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    color: #64748b;
-    opacity: 0.5;
-    transition: opacity 0.15s, background 0.15s, color 0.15s;
-  }
-
-  .note-icon-btn:hover {
-    opacity: 0.7;
-    background: #f1f5f9;
-  }
-
-  .note-icon-btn.note-delete-btn:hover {
-    color: #ef4444;
-    background: #fef2f2;
-  }
-
-  /* ── Dark-mode overrides ── */
-  :host([data-theme="dark"]) .oddity-note {
-    color: #e2e8f0;
-  }
-
-  :host([data-theme="dark"]) .oddity-note.dimmed {
-    opacity: 0.4;
-  }
-
-  :host([data-theme="dark"]) .oddity-note.expanded {
-    background: #1a1a2e;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.3);
-  }
-
-  :host([data-theme="dark"]) .note-section-label {
-    color: #cbd5e1;
-  }
-
-  :host([data-theme="dark"]) .note-icon-btn {
-    color: #94a3b8;
-  }
-
-  :host([data-theme="dark"]) .note-icon-btn:hover {
-    background: #334155;
-  }
-
-  :host([data-theme="dark"]) .note-icon-btn.note-delete-btn:hover {
-    color: #f87171;
-    background: #451a1a;
-  }
-
-  :host([data-theme="dark"]) .note-feedback-pill {
-    background: transparent;
-    border: 1px solid var(--note-color);
-    color: var(--note-color);
-  }
-
-  :host([data-theme="dark"]) .note-feedback-pill.active {
-    background: var(--note-color);
-    color: #fff;
-  }
-
-  /* ── Hide animation ── */
-  .oddity-note.hiding {
-    opacity: 0;
-    transform: translateX(20px);
-    transition: opacity 0.3s, transform 0.3s;
-    pointer-events: none;
-  }
-
   /* ── Reply thread ── */
   .note-replies {
-    max-height: 120px;
+    max-height: 100px;
     overflow-y: auto;
     margin-top: 6px;
   }
 
   .note-reply-bubble {
-    background: #f1f5f9;
-    border-radius: 4px;
-    padding: 4px 8px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 4px 10px;
     font-size: 11px;
     margin-bottom: 3px;
     word-break: break-word;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #FFFFFF;
   }
 
-  :host([data-theme="dark"]) .note-reply-bubble {
-    background: #334155;
-    color: #e2e8f0;
-  }
-
-  /* ── Reply input bar ── */
+  /* ── Reply input bar (ace-input-row style) ── */
   .note-reply-bar {
     display: flex;
     align-items: center;
-    gap: 4px;
-    margin-top: 6px;
+    gap: 6px;
+    margin-top: 10px;
+    margin-bottom: 7px;
   }
 
   .note-reply-input {
     all: unset;
     flex: 1;
-    font-size: 11px;
-    padding: 4px 8px;
-    border: 1px solid #e2e8f0;
-    border-radius: 4px;
-    font-family: system-ui, -apple-system, sans-serif;
-    background: #fff;
-    color: #1a1a1a;
+    background: #DFE7EF;
+    border-radius: 100px;
+    padding: 5px 12px;
+    font-size: 11.5px;
+    font-weight: 450;
+    color: #293038;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    line-height: 1;
   }
 
-  :host([data-theme="dark"]) .note-reply-input {
-    border-color: #475569;
-    background: #1e293b;
-    color: #e2e8f0;
+  .note-reply-input::placeholder {
+    color: #6D6D6D;
   }
 
   .note-reply-send {
     all: unset;
     cursor: pointer;
-    width: 22px;
-    height: 22px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    background: var(--note-color, #1a1a1a);
+    background: var(--note-color, #c4913a);
     color: #fff;
-    font-size: 12px;
+    font-size: 13px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1192,7 +1177,8 @@ const MARGIN_NOTES_CSS = `
 
   .note-pill-group {
     display: flex;
-    gap: 6px;
+    gap: 5px;
+    flex-wrap: wrap;
   }
 
   .note-icon-group {
@@ -1200,26 +1186,78 @@ const MARGIN_NOTES_CSS = `
     gap: 2px;
   }
 
+  /* Feedback pills (ace-quick style) */
   .note-feedback-pill {
     all: unset;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 4px;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11.5px;
+    font-weight: 450;
+    padding: 4px 10px;
+    border-radius: 100px;
     background: var(--note-color);
     color: #fff;
-    opacity: 0.45;
+    opacity: 1;
     transition: opacity 0.15s;
+    white-space: nowrap;
   }
 
   .note-feedback-pill:hover {
-    opacity: 0.7;
+    opacity: 0.8;
   }
 
   .note-feedback-pill.active {
     opacity: 1;
+  }
+
+  /* Dark text for light accent colors */
+  [data-annotation-type="highlight"] .note-feedback-pill,
+  [data-annotation-type="insight"] .note-feedback-pill {
+    color: #293038;
+  }
+
+  /* Dark arrow for light-colored send buttons */
+  [data-annotation-type="insight"] .note-reply-send,
+  [data-annotation-type="highlight"] .note-reply-send {
+    color: #293038;
+  }
+
+  /* Vocab and recall label color override */
+  [data-annotation-type="vocabulary"] .note-label,
+  [data-annotation-type="recall"] .note-label {
+    color: #779EDA !important;
+  }
+
+  /* Icon buttons */
+  .note-icon-btn {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    color: #FFFFFF;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .note-icon-btn:hover {
+    color: #FFFFFF;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .note-icon-btn.note-delete-btn:hover {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.12);
+  }
+
+  /* ── Hide animation ── */
+  .oddity-note.hiding {
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
   }
 
   /* ── Edit mode ── */
@@ -1228,63 +1266,53 @@ const MARGIN_NOTES_CSS = `
     display: block;
     width: 100%;
     font-size: 12px;
-    padding: 4px 6px;
-    border: 1px solid #1a1a1a;
-    border-radius: 4px;
-    font-family: var(--oddity-note-font);
+    padding: 6px 10px;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    font-family: 'Inter', system-ui, sans-serif;
     resize: vertical;
     min-height: 48px;
     box-sizing: border-box;
-    background: #fff;
-    color: #1a1a1a;
-  }
-
-  :host([data-theme="dark"]) .note-edit-textarea {
-    background: #1e293b;
-    color: #e2e8f0;
-    border-color: #1a1a1a;
+    background: rgba(255,255,255,0.06);
+    color: #FFFFFF;
   }
 
   .note-edit-actions {
     display: flex;
     gap: 4px;
-    margin-top: 4px;
+    margin-top: 6px;
     justify-content: flex-end;
   }
 
   .note-save-btn, .note-cancel-btn {
     all: unset;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-family: system-ui, -apple-system, sans-serif;
-    transition: background 0.15s;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-family: 'Inter', system-ui, sans-serif;
+    transition: opacity 0.15s;
   }
 
   .note-save-btn {
-    color: #1a1a1a;
+    background: var(--note-color);
+    color: #fff;
+    opacity: 0.8;
   }
 
   .note-save-btn:hover {
-    background: #f3f4f6;
+    opacity: 1;
   }
 
   .note-cancel-btn {
-    color: #6b7280;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255, 255, 255, 0.6);
   }
 
   .note-cancel-btn:hover {
-    background: #f3f4f6;
-  }
-
-  :host([data-theme="dark"]) .note-save-btn:hover {
-    background: #334155;
-  }
-
-  :host([data-theme="dark"]) .note-cancel-btn:hover {
-    background: #334155;
+    background: rgba(255,255,255,0.12);
   }
 
   .note-reaction-badge {
@@ -1294,20 +1322,62 @@ const MARGIN_NOTES_CSS = `
 
   .note-user-badge {
     font-size: 9px;
-    background: #E5E7EB;
-    color: #6B7280;
+    background: rgba(255,255,255,0.1);
+    color: rgba(255, 255, 255, 0.6);
     padding: 1px 5px;
     border-radius: 8px;
     margin-left: 4px;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
     font-weight: 500;
     text-transform: none;
     letter-spacing: normal;
   }
 
-  :host([data-theme="dark"]) .note-user-badge {
-    background: #334155;
-    color: #94a3b8;
+  /* ── Light mode overrides ── */
+  :host([data-theme="light"]) .oddity-note {
+    color: #293038;
+    box-shadow: -4px 2px 10px rgba(0,0,0,0.10), -1px 1px 3px rgba(0,0,0,0.06);
+  }
+
+  :host([data-theme="light"]) .oddity-note.expanded {
+    box-shadow: -5px 3px 16px rgba(0,0,0,0.13), -2px 1px 4px rgba(0,0,0,0.07);
+  }
+
+  :host([data-theme="light"]) .note-text,
+  :host([data-theme="light"]) .note-section p,
+  :host([data-theme="light"]) .note-section ul,
+  :host([data-theme="light"]) .note-reply-bubble,
+  :host([data-theme="light"]) .note-edit-textarea {
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .note-section-label {
+    color: rgba(41, 48, 56, 0.45);
+  }
+
+  :host([data-theme="light"]) .note-icon-btn,
+  :host([data-theme="light"]) .note-icon-btn:hover {
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .note-cancel-btn {
+    color: rgba(41, 48, 56, 0.6);
+  }
+
+  :host([data-theme="light"]) .note-user-badge {
+    color: rgba(41, 48, 56, 0.6);
+  }
+
+  :host([data-theme="light"]) [data-annotation-type="highlight"] .note-label {
+    color: #DCAF16 !important;
+  }
+
+  :host([data-theme="light"]) [data-annotation-type="insight"] .note-label {
+    color: #70AC87 !important;
+  }
+
+  :host([data-theme="light"].has-dimmed) .oddity-note.expanded {
+    box-shadow: -8px 4px 28px rgba(0,0,0,0.22), -3px 2px 8px rgba(0,0,0,0.12);
   }
 
 `;

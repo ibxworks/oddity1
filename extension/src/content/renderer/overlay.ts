@@ -1,5 +1,4 @@
 import type { Annotation, AnnotationType } from '@oddity/shared';
-import { getVisual } from './styles.js';
 
 const OVERLAY_ID = 'oddity-overlay';
 const Z_INDEX = 2147483646;
@@ -115,19 +114,27 @@ export function filterByTypes(visibleTypes: AnnotationType[]): void {
 }
 
 /**
- * Emphasize a specific annotation's overlay rects (vivid styles).
+ * Emphasize a specific annotation's anchor spans with brightness(1.4).
  */
+const LIGHT_ACCENT_TYPES = new Set(['insight']);
+
 export function emphasizeAnnotation(id: string): void {
   emphasizedId = id;
-  redraw();
+  document.querySelectorAll<HTMLSpanElement>(`[data-oddity-id]`).forEach(span => {
+    if (span.getAttribute('data-oddity-id') !== id) { span.style.filter = ''; return; }
+    const type = span.getAttribute('data-oddity-type') ?? '';
+    span.style.filter = LIGHT_ACCENT_TYPES.has(type) ? 'brightness(1.1) saturate(1.15)' : 'brightness(1.4)';
+  });
 }
 
 /**
- * Remove emphasis from all overlay rects.
+ * Remove emphasis from all anchor spans.
  */
 export function deemphasizeAnnotation(): void {
   emphasizedId = null;
-  redraw();
+  document.querySelectorAll<HTMLSpanElement>(`[data-oddity-id]`).forEach(span => {
+    span.style.filter = '';
+  });
 }
 
 /**
@@ -145,7 +152,6 @@ export function destroyOverlay(): void {
 /** Draw annotation rects into a target parent (overlay or DocumentFragment) */
 function drawAnnotationInto(parent: Node, annotation: Annotation, range: Range): void {
 
-  const visual = getVisual(annotation.type);
   const isEmphasized = emphasizedId === annotation.id;
   const rects = range.getClientRects();
 
@@ -158,29 +164,6 @@ function drawAnnotationInto(parent: Node, annotation: Annotation, range: Range):
     el.dataset.annotationType = annotation.type;
     el.className = 'oddity-rect';
 
-    // Underline-type rects get higher z-index so they render above background-type rects
-    const isUnderline = !visual.backgroundColor && visual.underlineStyle;
-
-    // Compute emphasized styles
-    let bgStyle = '';
-    let borderStyle = '';
-    if (visual.backgroundColor) {
-      // Background types: normal 0x33 (20%), emphasized 0x66 (40%)
-      bgStyle = isEmphasized
-        ? `background-color: ${visual.color}66;`
-        : `background-color: ${visual.backgroundColor};`;
-    }
-    if (visual.underlineStyle) {
-      if (isEmphasized) {
-        // Thicker underline + subtle background tint
-        const underlineParts = visual.underlineStyle.replace('2px', '3px');
-        borderStyle = `border-bottom: ${underlineParts};`;
-        bgStyle = `background-color: ${visual.color}15;`;
-      } else {
-        borderStyle = `border-bottom: ${visual.underlineStyle};`;
-      }
-    }
-
     el.style.cssText = `
       position: fixed;
       left: ${rect.left}px;
@@ -188,42 +171,14 @@ function drawAnnotationInto(parent: Node, annotation: Annotation, range: Range):
       width: ${rect.width}px;
       height: ${rect.height}px;
       pointer-events: none;
-      transition: opacity 0.15s, background-color 0.15s, border-bottom 0.15s;
-      z-index: ${isUnderline ? 2 : 1};
-      ${bgStyle}
-      ${borderStyle}
+      transition: filter 0.15s;
+      z-index: 1;
+      ${isEmphasized ? 'filter: brightness(1.4);' : ''}
     `;
 
     parent.appendChild(el);
   }
 
-  // Gutter icon (for provoking_question type)
-  if (visual.gutterIcon) {
-    const firstRect = rects[0];
-    if (firstRect) {
-      const icon = document.createElement('div');
-      icon.dataset.annotationId = annotation.id;
-      icon.dataset.annotationType = annotation.type;
-      icon.className = 'oddity-gutter';
-      icon.textContent = visual.gutterIcon;
-      icon.style.cssText = `
-        position: fixed;
-        left: ${firstRect.left - 20}px;
-        top: ${firstRect.top}px;
-        width: 16px;
-        height: 16px;
-        font-size: 12px;
-        line-height: 16px;
-        text-align: center;
-        border-radius: 50%;
-        background: ${visual.color};
-        color: white;
-        font-weight: bold;
-        pointer-events: none;
-      `;
-      parent.appendChild(icon);
-    }
-  }
 }
 
 function redraw(): void {

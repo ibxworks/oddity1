@@ -38,6 +38,7 @@ import {
   filterMarginNotesByTypes,
   initMarginNotes,
   isAnyMarginNoteExpanded,
+  onAnchorClick,
   onAnchorHoverEnd,
   onAnchorHoverStart,
   removeMarginNote,
@@ -449,6 +450,7 @@ function attachAnchorHoverListeners(
   for (const span of spans) {
     span.addEventListener("mouseenter", () => onAnchorHoverStart(annotationId));
     span.addEventListener("mouseleave", () => onAnchorHoverEnd());
+    span.addEventListener("click", (e) => { e.stopPropagation(); onAnchorClick(annotationId); });
   }
 }
 

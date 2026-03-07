@@ -1,4 +1,5 @@
 import type { Annotation } from '@oddity/shared';
+import { getVisual } from './styles.js';
 
 const ATTR = 'data-oddity-id';
 
@@ -81,8 +82,12 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     // Wrap the target text node in a span
     const span = document.createElement('span');
     span.setAttribute(ATTR, annotation.id);
+    span.setAttribute('data-oddity-type', annotation.type);
+    const visual = getVisual(annotation.type);
+    const bgCss = visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : '';
+    const borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';
     span.style.cssText =
-      'all: unset; display: inline; pointer-events: auto; position: relative;';
+      `all: unset; display: inline-block; pointer-events: auto; position: relative; transition: filter 0.15s; padding: 0 0.25em; ${bgCss} ${borderCss}`;
 
     target.parentNode!.insertBefore(span, target);
     span.appendChild(target);

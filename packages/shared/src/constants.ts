@@ -16,7 +16,7 @@ export const EAGER_WORD_LIMIT = 6000;
 
 // ─── Rate Limits ───
 
-export const RATE_LIMIT_FREE = 50;
+export const RATE_LIMIT_FREE = 50000;
 export const RATE_LIMIT_PRO = 500;
 
 // ─── Request Limits ───
@@ -30,12 +30,12 @@ export const CACHE_TTL_DAYS = 30;
 // ─── Annotation Colors ───
 
 export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
-  highlight: "#F59E0B", // amber 500
-  recall: "#0D9488", // teal 600
-  provoking_question: "#7C3AED", // violet 600
-  insight: "#2563EB", // blue 600
-  caveat: "#7C3AED", // violet 600 (grouped with provoking_question)
-  vocabulary: "#0D9488", // teal 600 (grouped with recall)
+  highlight: "#FFDD69",
+  recall: "#243C61",
+  provoking_question: "#F5574C",
+  insight: "#BFF3D3",
+  caveat: "#F5574C",
+  vocabulary: "#243C61",
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
