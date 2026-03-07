@@ -9,14 +9,17 @@ import type {
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
-import { createChatObserver } from "./chat-observer.js";
+import { createChatObserver, type ChatObserver } from "./chat-observer.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
 import { handleExportPdf } from "./export-pdf.js";
 import { extractText, extractWithReadability } from "./extractor.js";
 import { isLongRequest } from "./long-request.js";
 import { LongWaitManager } from "./long-wait-manager.js";
 import { hideLongWaitToast, showLongWaitToast } from "./long-wait-toast.js";
-import { initManualAnnotations } from "./manual.js";
+import {
+  destroyManualAnnotations,
+  initManualAnnotations,
+} from "./manual.js";
 import {
   destroyArgumentsBox,
   initArgumentsBox,
@@ -34,6 +37,7 @@ import {
   addMarginNote,
   clearMarginNotes,
   collapseAllMarginNotes,
+  destroyMarginNotes,
   expandMarginNote,
   filterMarginNotesByTypes,
   initMarginNotes,
@@ -47,6 +51,7 @@ import {
 } from "./renderer/margin-notes.js";
 import {
   clearOverlay,
+  destroyOverlay,
   filterByTypes,
   initOverlay,
   renderAnnotation,
@@ -59,6 +64,11 @@ import { createStabilityWatcher } from "./stability.js";
 
 const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
+/** Regions that received at least one streaming `annotationReady` message.
+ *  Used to distinguish progressive rendering from cache-first rendering
+ *  so the final `annotationsReady` only triggers a global re-render when
+ *  progressive annotations actually need replacing. */
+const streamedRegions = new Set<string>();
 const currentAnnotations = new Map<string, Annotation[]>();
 const currentFeedback = new Map<string, AnnotationFeedback[]>();
 const regionByHash = new Map<string, DetectedRegion>();
@@ -83,16 +93,109 @@ const longWaitManager = new LongWaitManager(
   500,
 );
 
+// ─── SPA Navigation State ───
+
+/** Module-level reference to chat observer for cleanup on SPA navigation. */
+let activeChatObserver: ChatObserver | null = null;
+/** Module-level reference to body MutationObserver for cleanup on SPA navigation. */
+let activeBodyObserver: MutationObserver | null = null;
+/** Timer for body-level detection rescan debounce. */
+let activeRescanTimer: ReturnType<typeof setTimeout> | null = null;
+/** Last known URL — used to detect SPA navigation. */
+let lastKnownUrl = window.location.href;
+/** Interval ID for URL polling. */
+let urlPollInterval: ReturnType<typeof setInterval> | null = null;
+
 // ─── Arguments Box Sync ───
 
 function syncArgumentsBox(): void {
   updateArgumentsBox(currentAnnotations, currentFeedback);
 }
 
+// ─── SPA Navigation: State Reset ───
+
+/**
+ * Completely tear down all annotation state and DOM artifacts.
+ * Called on SPA navigation so the new page starts with a clean slate.
+ */
+function resetAnnotationState(): void {
+  console.log("[Oddity 1] Resetting annotation state (SPA navigation)");
+
+  // Stop observers
+  activeChatObserver?.stop();
+  activeChatObserver = null;
+  activeBodyObserver?.disconnect();
+  activeBodyObserver = null;
+  if (activeRescanTimer) {
+    clearTimeout(activeRescanTimer);
+    activeRescanTimer = null;
+  }
+
+  // Clear in-flight state
+  longWaitManager.reset();
+  annotatedRegions.clear();
+  pendingRegions.clear();
+  streamedRegions.clear();
+  currentAnnotations.clear();
+  currentFeedback.clear();
+  regionByHash.clear();
+  activeHashes.clear();
+  regions = [];
+  bodyDetectionActive = false;
+  marginNotesInitFromBody = false;
+  keyboardFocusIndex = -1;
+
+  // Tear down all DOM artefacts (overlays, anchors, margin notes, etc.)
+  clearAllAnchors();
+  destroyOverlay();
+  destroyMarginNotes();
+  destroyArgumentsBox();
+  destroyManualAnnotations();
+}
+
+// ─── SPA Navigation: URL Change Watcher ───
+
+/**
+ * Detect SPA navigations and re-initialise the annotation pipeline.
+ *
+ * Content scripts run in an isolated world — monkey-patching
+ * history.pushState/replaceState only affects the isolated copy, NOT the
+ * page's real History API calls. So we use a lightweight URL poll (every
+ * 500 ms) combined with the popstate event (instant on back/forward).
+ *
+ * Called once at script load.
+ */
+function watchUrlChanges(): void {
+  function onUrlChange(): void {
+    const newUrl = window.location.href;
+    if (newUrl === lastKnownUrl) return;
+
+    console.log(
+      `[Oddity 1] SPA navigation detected: ${lastKnownUrl} → ${newUrl}`,
+    );
+    lastKnownUrl = newUrl;
+
+    resetAnnotationState();
+    init().catch((err) => {
+      console.error("[Oddity 1] Re-init after SPA navigation failed:", err);
+    });
+  }
+
+  // popstate fires instantly on back/forward
+  window.addEventListener("popstate", onUrlChange);
+
+  // Poll for pushState/replaceState navigations that don't fire popstate.
+  // 500ms is imperceptible to users but catches navigations promptly.
+  urlPollInterval = setInterval(onUrlChange, 500);
+}
+
 // ─── Pipeline ───
 
 async function init(): Promise<void> {
   console.log("[Oddity 1] Content script initializing");
+
+  // Keep URL in sync (used by SPA navigation watcher)
+  lastKnownUrl = window.location.href;
 
   // Load stored enabled state before doing any work
   const stored = await chrome.storage.local.get("preferences");
@@ -156,6 +259,7 @@ async function init(): Promise<void> {
     });
 
     chatObserver.start();
+    activeChatObserver = chatObserver;
 
     // Also activate body-level detection as a parallel safety net.
     // On fresh chat pages, the chat observer correctly waits for the first
@@ -241,12 +345,12 @@ function activateBodyLevelDetection(
   // NOTE: knownElements is checked against both this set AND the live regions array
   // to avoid duplicating elements already tracked by the chat observer.
   const knownElements = new WeakSet<Element>(regions.map((r) => r.element));
-  let rescanTimer: ReturnType<typeof setTimeout> | null = null;
 
   const bodyObserver = new MutationObserver(() => {
     if (!enabled) return;
-    if (rescanTimer) clearTimeout(rescanTimer);
-    rescanTimer = setTimeout(() => {
+    if (activeRescanTimer) clearTimeout(activeRescanTimer);
+    activeRescanTimer = setTimeout(() => {
+      activeRescanTimer = null;
       // Re-snapshot elements the chat observer may have added since last scan
       for (const r of regions) knownElements.add(r.element);
 
@@ -284,6 +388,7 @@ function activateBodyLevelDetection(
   });
 
   bodyObserver.observe(document.body, { childList: true, subtree: true });
+  activeBodyObserver = bodyObserver;
 }
 
 async function handleStableRegion(
@@ -614,6 +719,7 @@ onMessage((message: ExtensionMessage) => {
 
       // Stale guard
       if (!pendingRegions.has(streamRegionId)) break;
+      streamedRegions.add(streamRegionId);
       longWaitManager.handleFirstAnnotation(streamRegionId);
       if (!enabled || !visibleTypes.includes(annotation.type)) break;
 
@@ -680,22 +786,32 @@ onMessage((message: ExtensionMessage) => {
 
       longWaitManager.handleFinalResult(regionId, annotations.length);
 
+      // Stale-while-revalidate: the service worker sends a first
+      // annotationsReady from its session cache, then a second one from
+      // the fresh server fetch. If the region was already rendered (from
+      // the cache hit), silently update state without a visual nuke —
+      // the user's annotations are already on screen.
+      if (annotatedRegions.has(regionId) && !pendingRegions.has(regionId)) {
+        currentAnnotations.set(regionId, annotations);
+        currentFeedback.set(regionId, feedback);
+        syncArgumentsBox();
+        break;
+      }
+
       annotatedRegions.add(regionId);
       pendingRegions.delete(regionId);
       currentFeedback.set(regionId, feedback);
 
-      // Final annotationsReady: replace progressive annotations with complete set
-      // (includes user annotations and proper feedback associations)
-      const hadStreaming = currentAnnotations.has(regionId);
+      // Did this region actually receive progressive streaming annotations?
+      // Only then do we need to clear + re-render to replace the partial set
+      // with the final complete set.
+      const hadStreaming = streamedRegions.has(regionId);
+      streamedRegions.delete(regionId);
       currentAnnotations.set(regionId, annotations);
       syncArgumentsBox();
 
       if (enabled && hadStreaming) {
         // Re-render with complete set (clears progressive renders, adds user annotations)
-        const region =
-          regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
-        const root = region?.element ?? document.body;
-        // Clear only this region's overlays and re-render
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
@@ -744,6 +860,7 @@ onMessage((message: ExtensionMessage) => {
         currentAnnotations.clear();
         annotatedRegions.clear();
         pendingRegions.clear();
+        streamedRegions.clear();
         regionByHash.clear();
         longWaitManager.reset();
         syncArgumentsBox();
@@ -778,8 +895,12 @@ onMessage((message: ExtensionMessage) => {
 // Tab: move between annotations, Enter: open popover, Escape: close popover
 
 let keyboardFocusIndex = -1;
+let keyboardNavInitialized = false;
 
 function initKeyboardNav(): void {
+  if (keyboardNavInitialized) return;
+  keyboardNavInitialized = true;
+
   document.addEventListener("keydown", (e: KeyboardEvent) => {
     if (!enabled) return;
 
@@ -856,6 +977,9 @@ window.addEventListener("pagehide", () => {
   longWaitManager.reset();
   destroyArgumentsBox();
 });
+
+// Install SPA navigation watcher once (survives across re-inits)
+watchUrlChanges();
 
 init().catch((err) => {
   console.error("[Oddity 1] Content script init error:", err);

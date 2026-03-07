@@ -26,6 +26,8 @@ type MarginNote = {
   id: string;
   annotation: Annotation;
   range: Range;
+  /** The content region this note was anchored to at creation time. */
+  region: Element;
   side: "left" | "right";
   anchorTopPx: number;
   topPx: number;
@@ -142,11 +144,15 @@ export function addMarginNote(
 
   const anchorTopPx = rects[0]!.top + window.scrollY;
 
-  // Determine side
-  const regionRect = regionEl.getBoundingClientRect();
-  const leftMarginWidth = regionRect.left - MARGIN_PADDING;
+  // Snapshot the region for this note — each note keeps its own reference
+  // so multi-response chat pages position correctly per response.
+  const noteRegion = regionEl;
+
+  // Determine side using the content column bounds
+  const bounds = getContentBounds(noteRegion, range);
+  const leftMarginWidth = bounds.left - MARGIN_PADDING;
   const rightMarginWidth =
-    window.innerWidth - regionRect.right - MARGIN_PADDING;
+    window.innerWidth - bounds.right - MARGIN_PADDING;
 
   let side: "left" | "right";
   const preferLeft = noteIndex % 2 === 0;
@@ -174,6 +180,7 @@ export function addMarginNote(
     id: annotation.id,
     annotation,
     range,
+    region: noteRegion,
     side,
     anchorTopPx,
     topPx: anchorTopPx,
@@ -863,6 +870,60 @@ function createSection(labelText: string, content: string): HTMLDivElement {
 
 // ─── Layout ───
 
+/**
+ * Get the viewport-relative left/right bounds of the content column that
+ * a note should sit beside.
+ *
+ * On news/article sites `region` is the article element — its bounding rect
+ * gives clean column edges.
+ *
+ * On chat sites `regionEl` may be `document.body` (before any response has
+ * loaded) which is full-viewport-wide and useless for margin positioning.
+ * In that case (or whenever the region is wider than 80% of the viewport —
+ * a reliable heuristic for "this is body or a full-width wrapper"), we
+ * fall back to the note's own text range.  The range sits inside the actual
+ * message bubble, so its bounding rect gives us the real content column.
+ */
+function getContentBounds(
+  region: Element,
+  range: Range,
+): { left: number; right: number } {
+  const regionRect = region.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+
+  // If the region is narrower than 80% of the viewport it's a real content
+  // column (article, card, etc.) — use it directly.
+  if (regionRect.width < viewportWidth * 0.8) {
+    return { left: regionRect.left, right: regionRect.right };
+  }
+
+  // Region is (near-)full-width — derive bounds from the range's container.
+  // Walk up from the range's common ancestor to find the tightest block
+  // element that represents the content column.
+  let el: Element | null =
+    range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? (range.commonAncestorContainer as Element)
+      : range.commonAncestorContainer.parentElement;
+
+  while (el && el !== document.body && el !== document.documentElement) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.width < viewportWidth * 0.8) {
+      return { left: rect.left, right: rect.right };
+    }
+    el = el.parentElement;
+  }
+
+  // Last resort: use the range's own bounding rect to approximate.
+  const rangeRect = range.getBoundingClientRect();
+  if (rangeRect.width > 0) {
+    return { left: rangeRect.left, right: rangeRect.right };
+  }
+
+  // Absolute fallback — center a 700px column.
+  const center = viewportWidth / 2;
+  return { left: center - 350, right: center + 350 };
+}
+
 function resolveOverlaps(): void {
   const leftNotes = notes.filter(
     (n) => n.side === "left" && n.element.style.display !== "none",
@@ -894,20 +955,21 @@ function resolveOverlapsForSide(sideNotes: MarginNote[]): void {
 }
 
 function applyPositions(): void {
-  if (!regionEl) return;
-
-  const regionRect = regionEl.getBoundingClientRect();
-  const regionLeft = regionRect.left + window.scrollX;
-  const regionRight = regionRect.right + window.scrollX;
-
   for (const note of notes) {
+    const bounds = getContentBounds(note.region, note.range);
+    const contentLeft = bounds.left + window.scrollX;
+    const contentRight = bounds.right + window.scrollX;
+
+    // Always use `left` positioning — `right` depends on the containing
+    // block width which varies across pages and changes on scroll/resize.
+    note.element.style.right = "auto";
+
     if (note.side === "left") {
-      const rightEdge = regionLeft - MARGIN_PADDING;
-      note.element.style.left = "auto";
-      note.element.style.right = `${hostEl!.offsetWidth - rightEdge}px`;
+      const noteWidth = note.element.offsetWidth || NOTE_EXPANDED_WIDTH;
+      const rightEdge = contentLeft - MARGIN_PADDING;
+      note.element.style.left = `${rightEdge - noteWidth}px`;
     } else {
-      note.element.style.right = "auto";
-      note.element.style.left = `${regionRight + MARGIN_PADDING}px`;
+      note.element.style.left = `${contentRight + MARGIN_PADDING}px`;
     }
     note.element.style.top = `${note.topPx}px`;
   }

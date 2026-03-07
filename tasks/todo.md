@@ -154,3 +154,30 @@ On LLM sites (ChatGPT, Claude), loading a fresh chat and generating the first re
 ### Files Modified
 - `extension/src/content/index.ts` — removed 6s fallback, parallel detection, eager margin init, `chatTrackedElements` WeakSet
 - `extension/src/content/chat-observer.ts` — added `onTrack` callback to `ChatObserverConfig`
+
+## SPA Navigation Fix (Mar 7, 2026)
+
+### Problem
+On SPA sites (Claude, ChatGPT), switching between conversations or navigating within the app caused:
+1. **Annotations persisted across pages**: Old annotations from the previous conversation remained visible on the new page
+2. **Annotations randomly disappeared**: Margin notes vanished (shadow DOM host detached) while anchor underlines survived
+3. **Overall bugginess**: Stale observers, duplicate regions, cross-wired state
+
+### Root Causes
+1. **No SPA navigation detection**: `init()` ran once at content script load. SPAs use `history.pushState()` to navigate without full page reloads — the content script never re-ran.
+2. **Module-level state persisted**: All Maps/Sets/arrays (`annotatedRegions`, `currentAnnotations`, `regionByHash`, `regions`, etc.) survived across navigations.
+3. **Observers leaked**: `chatObserver` and body `MutationObserver` were local variables inside `init()` — no way to stop them on navigation.
+4. **Shadow DOM host orphaned**: When SPA replaced the page content container, the margin notes shadow DOM host was removed from the DOM → margin notes disappeared but overlay/anchors survived briefly.
+
+### Fix
+- [x] Added `watchUrlChanges()` — intercepts `history.pushState`, `history.replaceState`, and `popstate` events
+- [x] 300ms debounce on navigation events (SPAs can fire multiple rapid history changes)
+- [x] `resetAnnotationState()` — full state teardown: clears all Maps/Sets, stops observers, destroys overlay/margin-notes/arguments-box/manual-annotations/anchors
+- [x] Hoisted `chatObserver` and `bodyObserver` to module-level (`activeChatObserver`, `activeBodyObserver`) for cleanup access
+- [x] `init()` is re-entrant: safe to call after `resetAnnotationState()` clears everything
+- [x] `initKeyboardNav()` guarded against duplicate listener registration
+- [x] `lastKnownUrl` synced at start of `init()` to prevent false re-triggers
+- [x] TypeScript compile clean, Vite build clean
+
+### Files Modified
+- `extension/src/content/index.ts` — all changes above
