@@ -1328,4 +1328,39 @@ const MARGIN_NOTES_CSS = `
     letter-spacing: normal;
   }
 
+  /* ── Light mode overrides ── */
+  :host([data-theme="light"]) .oddity-note {
+    color: #293038;
+    box-shadow: -4px 2px 10px rgba(0,0,0,0.10), -1px 1px 3px rgba(0,0,0,0.06);
+  }
+
+  :host([data-theme="light"]) .oddity-note.expanded {
+    box-shadow: -5px 3px 16px rgba(0,0,0,0.13), -2px 1px 4px rgba(0,0,0,0.07);
+  }
+
+  :host([data-theme="light"]) .note-text,
+  :host([data-theme="light"]) .note-section p,
+  :host([data-theme="light"]) .note-section ul,
+  :host([data-theme="light"]) .note-reply-bubble,
+  :host([data-theme="light"]) .note-edit-textarea {
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .note-section-label {
+    color: rgba(41, 48, 56, 0.45);
+  }
+
+  :host([data-theme="light"]) .note-icon-btn,
+  :host([data-theme="light"]) .note-icon-btn:hover {
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .note-cancel-btn {
+    color: rgba(41, 48, 56, 0.6);
+  }
+
+  :host([data-theme="light"]) .note-user-badge {
+    color: rgba(41, 48, 56, 0.6);
+  }
+
 `;
