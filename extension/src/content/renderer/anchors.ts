@@ -87,7 +87,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     const bgCss = visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : '';
     const borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';
     span.style.cssText =
-      `all: unset; display: inline-block; pointer-events: auto; position: relative; transition: filter 0.15s; padding: 0 0.25em; ${bgCss} ${borderCss}`;
+      `all: unset; display: inline; pointer-events: auto; position: relative; transition: filter 0.15s; ${bgCss} ${borderCss}`;
 
     target.parentNode!.insertBefore(span, target);
     span.appendChild(target);

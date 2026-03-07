@@ -1,7 +1,6 @@
 import type {
   AnnotationFont,
   AnnotationFontSize,
-  AnnotationType,
   Intensity,
   UserPreferences,
   UserTier,
@@ -16,13 +15,13 @@ const enabledToggle = document.getElementById(
 ) as HTMLInputElement;
 const toggleLabel = document.getElementById("toggle-label")!;
 const intensityGroup = document.getElementById("intensity-group")!;
-const typeFilters = document.getElementById("type-filters")!;
 const exportBtn = document.getElementById("export-btn")!;
 const openOptions = document.getElementById("open-options")!;
-const welcomeText = document.getElementById("welcome-text")!;
 const totalCountNumber = document.getElementById("total-count-number")!;
 const fontSelect = document.getElementById("font-select") as HTMLSelectElement;
-const fontSizeGroup = document.getElementById("font-size-group")!;
+const fontSizeSelect = document.getElementById(
+  "font-size-select",
+) as HTMLSelectElement;
 
 // Auth form refs
 const authForm = document.getElementById("auth-form")!;
@@ -39,7 +38,14 @@ const authToggleLink = document.getElementById("auth-toggle-link")!;
 const authToggleText = document.getElementById("auth-toggle-text")!;
 const mainContent = document.getElementById("main-content")!;
 
-// Profile refs
+// Persona picker refs (top section)
+const profileNameDisplay = document.getElementById("profile-name-display")!;
+const profileNameBtn = document.getElementById("profile-name-btn")!;
+const profileNameDropdown = document.getElementById("profile-name-dropdown")!;
+const personaTerry = document.getElementById("persona-terry")!;
+const personaJerry = document.getElementById("persona-jerry")!;
+
+// Auth bar refs (bottom)
 const profileBtn = document.getElementById("profile-btn")!;
 const profileAvatar = document.getElementById("profile-avatar")!;
 const profileName = document.getElementById("profile-name")!;
@@ -93,25 +99,22 @@ let currentUser: {
   annotation_count?: number;
 } | null = null;
 
-// ─── Greetings ───
+// ─── Font appearance ───
 
-const GREETINGS = [
-  (name: string) => `How you doin' ${name}?`,
-  (name: string) => `Vamos, ${name}`,
-  (name: string) => `We're here with you, ${name}`,
-  (name: string) => `Let's go, ${name}`,
-  (name: string) => `Good to see you, ${name}`,
-];
+const FONT_FAMILY_MAP: Record<AnnotationFont, string> = {
+  default: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+  fraunces: '"Fraunces", Georgia, serif',
+  kalam: '"Kalam", cursive, sans-serif',
+  helvetica: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+  arial: "Arial, sans-serif",
+  georgia: "Georgia, serif",
+};
 
-function showWelcomeText(displayName: string | null): void {
-  if (!displayName) {
-    welcomeText.style.display = "none";
-    return;
-  }
-  const firstName = displayName.split(" ")[0];
-  const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
-  welcomeText.textContent = greeting(firstName);
-  welcomeText.style.display = "";
+function updateFontSelectAppearance(): void {
+  const family =
+    FONT_FAMILY_MAP[fontSelect.value as AnnotationFont] ||
+    '"Helvetica Neue", Helvetica, Arial, sans-serif';
+  fontSelect.style.fontFamily = family;
 }
 
 // ─── Init ───
@@ -124,23 +127,11 @@ async function init(): Promise<void> {
     currentPrefs = {
       enabled: prefs.enabled ?? true,
       intensity: prefs.intensity ?? "default",
-      visible_types: prefs.visible_types ?? [...ALL_ANNOTATION_TYPES],
+      visible_types: [...ALL_ANNOTATION_TYPES], // always show all types
       disabled_sites: prefs.disabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "default",
       annotation_font_size: prefs.annotation_font_size ?? "default",
     };
-  }
-
-  // Migrate old type names in stored preferences
-  const typeMap: Record<string, string> = {
-    underline: "recall",
-    question: "provoking_question",
-  };
-  if (currentPrefs.visible_types.some((t) => t in typeMap)) {
-    currentPrefs.visible_types = currentPrefs.visible_types.map(
-      (t) => (typeMap[t] ?? t) as AnnotationType,
-    );
-    savePrefs();
   }
 
   // Apply state to UI
@@ -155,9 +146,9 @@ function applyPrefsToUI(): void {
   enabledToggle.checked = currentPrefs.enabled;
   toggleLabel.textContent = currentPrefs.enabled ? "On" : "Off";
 
-  // Intensity buttons
+  // Density buttons
   for (const btn of intensityGroup.querySelectorAll<HTMLButtonElement>(
-    ".intensity-btn",
+    ".density-btn",
   )) {
     btn.classList.toggle(
       "active",
@@ -165,26 +156,12 @@ function applyPrefsToUI(): void {
     );
   }
 
-  // Type filter checkboxes
-  for (const cb of typeFilters.querySelectorAll<HTMLInputElement>(
-    'input[type="checkbox"]',
-  )) {
-    const t = cb.dataset["type"] as AnnotationType;
-    cb.checked = currentPrefs.visible_types.includes(t);
-  }
-
   // Font select
   fontSelect.value = currentPrefs.annotation_font;
+  updateFontSelectAppearance();
 
-  // Font size buttons
-  for (const btn of fontSizeGroup.querySelectorAll<HTMLButtonElement>(
-    ".intensity-btn",
-  )) {
-    btn.classList.toggle(
-      "active",
-      btn.dataset["fontsize"] === currentPrefs.annotation_font_size,
-    );
-  }
+  // Font size select
+  fontSizeSelect.value = currentPrefs.annotation_font_size;
 }
 
 async function savePrefs(): Promise<void> {
@@ -202,23 +179,21 @@ function showAuthenticatedUI(user: {
   authForm.style.display = "none";
   mainContent.classList.remove("hidden");
 
-  // Profile button
-  const displayName = user.display_name || user.email.split("@")[0];
+  const displayName = user.display_name || user.email.split("@")[0] || user.email;
   const initial = displayName.charAt(0).toUpperCase();
+
+  // Auth bar (bottom)
   profileAvatar.textContent = initial;
-  profileName.textContent = displayName;
+  profileName.textContent = user.email.split("@")[0] ?? user.email;
 
   // Tier badge
   tierBadge.textContent = user.tier === "pro" ? "PRO" : "FREE";
   tierBadge.classList.toggle("pro", user.tier === "pro");
 
   // Popover data
-  popoverName.textContent = user.display_name || displayName;
+  popoverName.textContent = user.display_name ?? displayName;
   popoverEmail.textContent = user.email;
   popoverTier.textContent = user.tier === "pro" ? "Pro Plan" : "Free Plan";
-
-  // Welcome text
-  showWelcomeText(user.display_name);
 
   // Total annotation count
   totalCountNumber.textContent = String(user.annotation_count ?? 0);
@@ -227,7 +202,6 @@ function showAuthenticatedUI(user: {
 function showUnauthenticatedUI(): void {
   authForm.style.display = "";
   mainContent.classList.add("hidden");
-  welcomeText.style.display = "none";
   currentUser = null;
 }
 
@@ -291,7 +265,6 @@ async function loadAuthStatus(): Promise<void> {
       showAuthenticatedUI(result.user);
       chrome.action.setBadgeText({ text: "" });
 
-      // If extension is disabled, show OFF badge
       if (!currentPrefs.enabled) {
         chrome.action.setBadgeText({ text: "OFF" });
         chrome.action.setBadgeBackgroundColor({ color: "#6B7280" });
@@ -311,7 +284,6 @@ enabledToggle.addEventListener("change", () => {
   currentPrefs.enabled = enabledToggle.checked;
   toggleLabel.textContent = currentPrefs.enabled ? "On" : "Off";
 
-  // Update badge
   if (!currentPrefs.enabled) {
     chrome.action.setBadgeText({ text: "OFF" });
     chrome.action.setBadgeBackgroundColor({ color: "#6B7280" });
@@ -322,10 +294,10 @@ enabledToggle.addEventListener("change", () => {
   savePrefs();
 });
 
-// Intensity selection
+// Density selection
 intensityGroup.addEventListener("click", (e) => {
   const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-    ".intensity-btn",
+    ".density-btn",
   );
   if (!btn) return;
 
@@ -335,28 +307,9 @@ intensityGroup.addEventListener("click", (e) => {
   currentPrefs.intensity = intensity;
 
   for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(
-    ".intensity-btn",
+    ".density-btn",
   )) {
     b.classList.toggle("active", b === btn);
-  }
-
-  savePrefs();
-});
-
-// Type filter checkboxes
-typeFilters.addEventListener("change", (e) => {
-  const cb = e.target as HTMLInputElement;
-  const type = cb.dataset["type"] as AnnotationType | undefined;
-  if (!type) return;
-
-  if (cb.checked) {
-    if (!currentPrefs.visible_types.includes(type)) {
-      currentPrefs.visible_types.push(type);
-    }
-  } else {
-    currentPrefs.visible_types = currentPrefs.visible_types.filter(
-      (t) => t !== type,
-    );
   }
 
   savePrefs();
@@ -365,27 +318,13 @@ typeFilters.addEventListener("change", (e) => {
 // Font select
 fontSelect.addEventListener("change", () => {
   currentPrefs.annotation_font = fontSelect.value as AnnotationFont;
+  updateFontSelectAppearance();
   savePrefs();
 });
 
-// Font size buttons
-fontSizeGroup.addEventListener("click", (e) => {
-  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-    ".intensity-btn",
-  );
-  if (!btn) return;
-
-  const size = btn.dataset["fontsize"] as AnnotationFontSize | undefined;
-  if (!size) return;
-
-  currentPrefs.annotation_font_size = size;
-
-  for (const b of fontSizeGroup.querySelectorAll<HTMLButtonElement>(
-    ".intensity-btn",
-  )) {
-    b.classList.toggle("active", b === btn);
-  }
-
+// Font size select
+fontSizeSelect.addEventListener("change", () => {
+  currentPrefs.annotation_font_size = fontSizeSelect.value as AnnotationFontSize;
   savePrefs();
 });
 
@@ -399,7 +338,6 @@ exportBtn.addEventListener("click", async () => {
     exportTitle.value = tab?.title ?? "Untitled Page";
     exportSubtitle.value = "Created with Oddity 1";
 
-    // Check user tier for subtitle gating
     try {
       const result = await sendMessage<{ tier: UserTier }>({
         action: "getUserTier",
@@ -417,7 +355,6 @@ exportBtn.addEventListener("click", async () => {
       exportProBadge.style.display = "inline-block";
     }
 
-    // Show dialog, hide main content
     mainContent.style.display = "none";
     exportDialog.style.display = "block";
     exportStatusEl.style.display = "none";
@@ -483,7 +420,34 @@ openOptions.addEventListener("click", (e) => {
   chrome.runtime.openOptionsPage();
 });
 
-// ─── Profile Popover ───
+// ─── Persona Picker ───
+
+function setPersona(name: string): void {
+  profileNameDisplay.textContent = name;
+  for (const btn of profileNameDropdown.querySelectorAll<HTMLButtonElement>(
+    ".profile-dropdown-item",
+  )) {
+    btn.classList.toggle("active", btn.dataset["persona"] === name);
+  }
+}
+
+profileNameBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const isVisible = profileNameDropdown.style.display !== "none";
+  profileNameDropdown.style.display = isVisible ? "none" : "";
+});
+
+personaTerry.addEventListener("click", () => {
+  setPersona("Terry");
+  profileNameDropdown.style.display = "none";
+});
+
+personaJerry.addEventListener("click", () => {
+  setPersona("Jerry");
+  profileNameDropdown.style.display = "none";
+});
+
+// ─── Profile Popover (bottom bar) ───
 
 profileBtn.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -491,7 +455,7 @@ profileBtn.addEventListener("click", (e) => {
   profilePopover.style.display = isVisible ? "none" : "";
 });
 
-// Click outside popover → close it
+// Click outside → close both dropdowns
 document.addEventListener("click", (e) => {
   if (
     profilePopover.style.display !== "none" &&
@@ -500,9 +464,16 @@ document.addEventListener("click", (e) => {
   ) {
     profilePopover.style.display = "none";
   }
+  if (
+    profileNameDropdown.style.display !== "none" &&
+    !profileNameDropdown.contains(e.target as Node) &&
+    !profileNameBtn.contains(e.target as Node)
+  ) {
+    profileNameDropdown.style.display = "none";
+  }
 });
 
-// Sign out from popover
+// Sign out from bottom popover
 popoverSignOut.addEventListener("click", async () => {
   profilePopover.style.display = "none";
   try {
@@ -516,7 +487,6 @@ popoverSignOut.addEventListener("click", async () => {
 
 // ─── Auth Event Handlers ───
 
-// Toggle between sign-in and sign-up mode
 authToggleLink.addEventListener("click", (e) => {
   e.preventDefault();
   isSignUpMode = !isSignUpMode;
@@ -541,7 +511,6 @@ authToggleLink.addEventListener("click", (e) => {
   }
 });
 
-// Submit auth form
 authSubmitBtn.addEventListener("click", async () => {
   const email = authEmail.value.trim();
   const password = authPassword.value;
@@ -581,7 +550,6 @@ authSubmitBtn.addEventListener("click", async () => {
           "Check your email to confirm your account, then sign in.";
         authSuccess.style.display = "block";
         authError.style.display = "none";
-        // Auto-switch to sign-in mode
         isSignUpMode = false;
         authFormTitle.textContent = "Sign In";
         authSubmitBtn.textContent = "Sign In";
@@ -592,7 +560,6 @@ authSubmitBtn.addEventListener("click", async () => {
         return;
       }
 
-      // Sign-up with auto-confirm (no email verification)
       if (result.user) {
         currentUser = {
           id: result.user.id,
@@ -606,7 +573,6 @@ authSubmitBtn.addEventListener("click", async () => {
           tier: "free",
         });
         chrome.action.setBadgeText({ text: "" });
-
         refreshActiveTab();
       }
     } else {
@@ -639,7 +605,6 @@ authSubmitBtn.addEventListener("click", async () => {
   }
 });
 
-// Enter key on password → submit
 authPassword.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
@@ -647,7 +612,6 @@ authPassword.addEventListener("keydown", (e) => {
   }
 });
 
-// Enter key on name → focus email
 authName.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
@@ -655,7 +619,6 @@ authName.addEventListener("keydown", (e) => {
   }
 });
 
-// Enter key on email → focus password
 authEmail.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
