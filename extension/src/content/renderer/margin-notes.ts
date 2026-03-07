@@ -51,6 +51,7 @@ let needsRedraw = false;
 let fontLink: HTMLLinkElement | null = null;
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let docClickHandler: ((e: MouseEvent) => void) | null = null;
+let justUnpinned = false;
 let userName: string | null = null;
 
 const NOTE_EXPANDED_WIDTH = 220;
@@ -267,7 +268,7 @@ function forceCollapseAll(): void {
 export function onAnchorClick(annotationId: string): void {
   if (pinnedId) {
     unpinAll();
-  } else {
+  } else if (!justUnpinned) {
     pinnedId = annotationId;
     expandMarginNote(annotationId);
     emphasizeAnnotation(annotationId);
@@ -277,6 +278,8 @@ export function onAnchorClick(annotationId: string): void {
 
 function unpinAll(): void {
   pinnedId = null;
+  justUnpinned = true;
+  setTimeout(() => { justUnpinned = false; }, 0);
   forceCollapseAll();
   undimAllNotes();
   deemphasizeAnnotation();
@@ -662,9 +665,11 @@ function createNoteElement(
 
   el.addEventListener("click", (e) => {
     e.stopPropagation();
+    // Don't unpin when clicking interactive elements inside the card
+    if ((e.target as HTMLElement).closest('button, input, textarea')) return;
     if (pinnedId) {
       unpinAll();
-    } else {
+    } else if (!justUnpinned) {
       pinnedId = annotation.id;
       expandMarginNote(annotation.id);
       emphasizeAnnotation(annotation.id);
