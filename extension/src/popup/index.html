@@ -18,7 +18,6 @@
 
       body {
         width: 360px;
-        min-height: 400px;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
         background: #fff;
         color: #1a1a1a;
@@ -96,8 +95,8 @@
       .profile-section {
         display: flex;
         align-items: flex-start;
-        padding: 0px 18px 10px;
-        gap: 18px;
+        padding: 0px 18px 16px;
+        gap: 22px;
       }
       .profile-circle-area {
         display: flex;
@@ -118,10 +117,7 @@
       .profile-name-wrap {
         position: relative;
       }
-      .profile-name-btn {
-        display: flex;
-        align-items: center;
-        gap: 4px;
+      .profile-persona-select {
         background: none;
         border: none;
         cursor: pointer;
@@ -130,11 +126,8 @@
         font-size: 13px;
         font-weight: 500;
         color: #1a1a1a;
-      }
-      .profile-name-btn .caret {
-        font-size: 9px;
-        color: #6b7280;
-        line-height: 1;
+        outline: none;
+        appearance: auto;
       }
       .profile-count-area {
         flex: 1;
@@ -159,41 +152,6 @@
         line-height: 1.3;
       }
 
-      /* ── Profile Name Dropdown ── */
-      .profile-name-dropdown {
-        position: absolute;
-        top: calc(100% + 4px);
-        left: 50%;
-        transform: translateX(-50%);
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 10px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-        padding: 5px;
-        z-index: 20;
-        min-width: 130px;
-      }
-      .profile-dropdown-item {
-        display: block;
-        padding: 7px 12px;
-        border-radius: 6px;
-        font-size: 13px;
-        color: #374151;
-        cursor: pointer;
-        font-family: "Fraunces", Georgia, serif;
-        font-weight: 200;
-        text-align: left;
-        background: none;
-        border: none;
-        width: 100%;
-      }
-      .profile-dropdown-item:hover {
-        background: #f9fafb;
-      }
-      .profile-dropdown-item.active {
-        color: #1a1a1a;
-        font-weight: 200;
-      }
       .profile-dropdown-signout {
         display: block;
         padding: 7px 12px;
@@ -450,7 +408,7 @@
 
       /* ── Footer ── */
       .footer {
-        padding: 10px 18px;
+        padding: 10px 18px 10px;
         border-top: 0.5px solid #f0f0f0;
         text-align: center;
       }
@@ -471,34 +429,40 @@
 
       /* ── Auth Form ── */
       .auth-form {
-        padding: 24px 18px;
+        padding: 20px 18px 24px;
+      }
+      .auth-form.sign-in-mode {
+        padding-bottom: 8px;
       }
       .auth-form-title {
-        font-size: 16px;
-        font-weight: 600;
-        margin-bottom: 16px;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        font-size: 15px;
+        font-weight: 400;
+        margin-bottom: 20px;
         text-align: center;
         color: #111;
       }
       .auth-input {
         display: block;
         width: 100%;
-        padding: 10px 12px;
+        padding: 10px 14px;
         border: 0.5px solid #e5e7eb;
         border-radius: 10px;
         font-size: 13px;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
         outline: none;
         transition: border-color 0.15s;
         background: #fff;
         color: #111;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        font-weight: 400;
       }
       .auth-input:focus {
-        border-color: #1a1a1a;
+        border-color: #d1d5db;
       }
       .auth-input::placeholder {
         color: #9ca3af;
+        font-weight: 400;
       }
       .auth-error {
         display: none;
@@ -521,17 +485,20 @@
       .auth-toggle {
         display: block;
         text-align: center;
-        margin-top: 12px;
-        font-size: 12px;
+        margin-top: 18px;
+        font-size: 13px;
         color: #9ca3af;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       }
       .auth-terms {
         display: none;
         text-align: center;
-        font-size: 11px;
+        font-size: 12px;
         color: #9ca3af;
-        margin-top: 8px;
+        margin-top: 6px;
+        margin-bottom: 14px;
         line-height: 1.5;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       }
       .auth-terms a {
         color: #6b7280;
@@ -544,10 +511,10 @@
         color: #1a1a1a;
         text-decoration: none;
         cursor: pointer;
-        font-weight: 500;
+        font-weight: 400;
       }
       .auth-toggle a:hover {
-        text-decoration: underline;
+        text-decoration: none;
       }
 
       /* ── Generic Buttons ── */
@@ -573,7 +540,10 @@
         background: #1a1a1a;
         color: #fff;
         border-color: #1a1a1a;
-        border-radius: 20px;
+        border-radius: 100px;
+        font-size: 14px;
+        font-weight: 400;
+        padding: 11px 12px;
       }
       .btn-primary:hover {
         opacity: 0.9;
@@ -780,7 +750,6 @@
         placeholder="Password"
         autocomplete="current-password"
       />
-      <button class="btn btn-primary" id="auth-submit-btn">Sign In</button>
       <div class="auth-terms" id="auth-terms">
         By continuing, you agree to our
         <a href="https://www.oddity1.com/terms" target="_blank">Terms</a> and
@@ -788,6 +757,7 @@
           >Privacy Policy</a
         >.
       </div>
+      <button class="btn btn-primary" id="auth-submit-btn">Sign In</button>
       <div class="auth-toggle">
         <span id="auth-toggle-text">Don't have an account? </span>
         <a id="auth-toggle-link">Sign Up</a>
@@ -803,18 +773,10 @@
             <img src="/Terry.png" alt="Terry" style="width:100%;height:100%;object-fit:contain;border-radius:50%;" />
           </div>
           <div class="profile-name-wrap">
-            <button class="profile-name-btn" id="profile-name-btn">
-              <span id="profile-name-display">Terry</span>
-              <span class="caret">▾</span>
-            </button>
-            <div
-              class="profile-name-dropdown"
-              id="profile-name-dropdown"
-              style="display: none"
-            >
-              <button class="profile-dropdown-item active" data-persona="Terry" id="persona-terry">Terry</button>
-              <button class="profile-dropdown-item" data-persona="Jerry" id="persona-jerry">Jerry</button>
-            </div>
+            <select id="profile-persona-select" class="profile-persona-select">
+              <option value="Terry">Terry</option>
+              <option value="Jerry">Jerry</option>
+            </select>
           </div>
         </div>
         <div class="profile-count-area">
