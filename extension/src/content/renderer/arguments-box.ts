@@ -637,7 +637,8 @@ const ARGUMENTS_BOX_CSS = `
   .args-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
+    gap: 10px;
     padding: 10px 18px 14px;
     flex-shrink: 0;
   }
@@ -646,7 +647,8 @@ const ARGUMENTS_BOX_CSS = `
     font-size: 13px;
     color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 400;
   }
 
   .args-footer-text:hover {
@@ -715,7 +717,7 @@ const ARGUMENTS_BOX_CSS = `
   /* ── Light mode overrides ── */
 
   :host([data-theme="light"]) .args-container {
-    background: rgba(255, 255, 255, 0.82);
+    background: rgba(255, 255, 255, 0.65);
   }
 
   :host([data-theme="light"]) .args-main-title {
