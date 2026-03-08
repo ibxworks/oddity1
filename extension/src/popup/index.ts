@@ -39,11 +39,7 @@ const authToggleText = document.getElementById("auth-toggle-text")!;
 const mainContent = document.getElementById("main-content")!;
 
 // Persona picker refs (top section)
-const profileNameDisplay = document.getElementById("profile-name-display")!;
-const profileNameBtn = document.getElementById("profile-name-btn")!;
-const profileNameDropdown = document.getElementById("profile-name-dropdown")!;
-const personaTerry = document.getElementById("persona-terry")!;
-const personaJerry = document.getElementById("persona-jerry")!;
+const profilePersonaSelect = document.getElementById("profile-persona-select") as HTMLSelectElement;
 
 // Auth bar refs (bottom)
 const profileBtn = document.getElementById("profile-btn")!;
@@ -132,6 +128,9 @@ async function init(): Promise<void> {
       annotation_font: prefs.annotation_font ?? "default",
       annotation_font_size: prefs.annotation_font_size ?? "default",
     };
+  } else {
+    // First launch — persist defaults so subsequent sessions always read from storage
+    await savePrefs();
   }
 
   // Apply state to UI
@@ -201,6 +200,7 @@ function showAuthenticatedUI(user: {
 
 function showUnauthenticatedUI(): void {
   authForm.style.display = "";
+  authForm.classList.add("sign-in-mode");
   mainContent.classList.add("hidden");
   currentUser = null;
 }
@@ -422,29 +422,17 @@ openOptions.addEventListener("click", (e) => {
 
 // ─── Persona Picker ───
 
-function setPersona(name: string): void {
-  profileNameDisplay.textContent = name;
-  for (const btn of profileNameDropdown.querySelectorAll<HTMLButtonElement>(
-    ".profile-dropdown-item",
-  )) {
-    btn.classList.toggle("active", btn.dataset["persona"] === name);
-  }
+const profileAvatarImg = document.getElementById("profile-avatar-img") as HTMLImageElement;
+const profileCircleEl = profileAvatarImg.closest('.profile-circle') as HTMLElement;
+
+function applyPersonaVisuals(name: string): void {
+  profileAvatarImg.src = `/${name}.png`;
+  profileAvatarImg.alt = name;
+  profileCircleEl.style.background = name === "Jerry" ? "#FDCB24" : "#fff";
 }
 
-profileNameBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const isVisible = profileNameDropdown.style.display !== "none";
-  profileNameDropdown.style.display = isVisible ? "none" : "";
-});
-
-personaTerry.addEventListener("click", () => {
-  setPersona("Terry");
-  profileNameDropdown.style.display = "none";
-});
-
-personaJerry.addEventListener("click", () => {
-  setPersona("Jerry");
-  profileNameDropdown.style.display = "none";
+profilePersonaSelect.addEventListener("change", () => {
+  applyPersonaVisuals(profilePersonaSelect.value);
 });
 
 // ─── Profile Popover (bottom bar) ───
@@ -463,13 +451,6 @@ document.addEventListener("click", (e) => {
     !profileBtn.contains(e.target as Node)
   ) {
     profilePopover.style.display = "none";
-  }
-  if (
-    profileNameDropdown.style.display !== "none" &&
-    !profileNameDropdown.contains(e.target as Node) &&
-    !profileNameBtn.contains(e.target as Node)
-  ) {
-    profileNameDropdown.style.display = "none";
   }
 });
 
@@ -494,6 +475,7 @@ authToggleLink.addEventListener("click", (e) => {
 
   const authTerms = document.getElementById("auth-terms")!;
   if (isSignUpMode) {
+    authForm.classList.remove("sign-in-mode");
     authFormTitle.textContent = "Sign Up";
     authSubmitBtn.textContent = "Sign Up";
     authToggleText.textContent = "Already have an account? ";
@@ -508,6 +490,7 @@ authToggleLink.addEventListener("click", (e) => {
     authName.style.display = "none";
     authName.value = "";
     authTerms.style.display = "none";
+    authForm.classList.add("sign-in-mode");
   }
 });
 

@@ -159,6 +159,11 @@ chrome.runtime.onMessage.addListener(
           return { adapters };
         }
 
+        case "openPopup": {
+          chrome.action.openPopup().catch(() => {});
+          return {};
+        }
+
         case "getAuthStatus": {
           const session = await getSession();
           if (!session) {

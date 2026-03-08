@@ -1,4 +1,5 @@
 import type { Annotation, AnnotationType } from '@oddity/shared';
+import { getThemeMode } from './theme-detector.js';
 
 const OVERLAY_ID = 'oddity-overlay';
 const Z_INDEX = 2147483646;
@@ -117,13 +118,31 @@ export function filterByTypes(visibleTypes: AnnotationType[]): void {
  * Emphasize a specific annotation's anchor spans with brightness(1.4).
  */
 const LIGHT_ACCENT_TYPES = new Set(['insight']);
+const STRONG_DARKEN_TYPES = new Set(['recall', 'vocabulary', 'provoking_question', 'caveat']);
 
 export function emphasizeAnnotation(id: string): void {
   emphasizedId = id;
+  const isLight = getThemeMode() === 'light';
   document.querySelectorAll<HTMLSpanElement>(`[data-oddity-id]`).forEach(span => {
     if (span.getAttribute('data-oddity-id') !== id) { span.style.filter = ''; return; }
     const type = span.getAttribute('data-oddity-type') ?? '';
-    span.style.filter = LIGHT_ACCENT_TYPES.has(type) ? 'brightness(1.1) saturate(1.15)' : 'brightness(1.4)';
+    if (isLight) {
+      if (STRONG_DARKEN_TYPES.has(type)) {
+        span.style.filter = 'brightness(0.62) saturate(1.4)';
+      } else if (LIGHT_ACCENT_TYPES.has(type)) {
+        span.style.filter = 'brightness(0.88) saturate(1.4)';
+      } else {
+        span.style.filter = 'brightness(0.72) saturate(1.3)'; // highlight
+      }
+    } else {
+      if (LIGHT_ACCENT_TYPES.has(type)) {
+        span.style.filter = 'brightness(1.6) saturate(1.2)';
+      } else if (type === 'recall' || type === 'vocabulary') {
+        span.style.filter = 'brightness(1.8) saturate(1.2)';
+      } else {
+        span.style.filter = 'brightness(1.4)';
+      }
+    }
   });
 }
 

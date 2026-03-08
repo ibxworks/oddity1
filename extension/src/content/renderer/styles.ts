@@ -21,8 +21,8 @@ const visualMap: Record<AnnotationType, AnnotationVisual> = {
   },
   recall: {
     type: 'recall',
-    backgroundColor: ANNOTATION_COLORS.recall + '26',
-    underlineStyle: `1.5px solid ${ANNOTATION_COLORS.recall}`,
+    backgroundColor: ANNOTATION_COLORS.recall + '99',
+    underlineStyle: `1.5px solid #5B8AC5`,
     gutterIcon: null,
     label: ANNOTATION_LABELS.recall,
     color: ANNOTATION_COLORS.recall,
@@ -37,7 +37,7 @@ const visualMap: Record<AnnotationType, AnnotationVisual> = {
   },
   insight: {
     type: 'insight',
-    backgroundColor: ANNOTATION_COLORS.insight + '26',
+    backgroundColor: '#2D7A4F' + '4d',
     underlineStyle: `1.5px solid ${ANNOTATION_COLORS.insight}`,
     gutterIcon: null,
     label: ANNOTATION_LABELS.insight,
@@ -53,8 +53,8 @@ const visualMap: Record<AnnotationType, AnnotationVisual> = {
   },
   vocabulary: {
     type: 'vocabulary',
-    backgroundColor: ANNOTATION_COLORS.vocabulary + '26',
-    underlineStyle: `1.5px solid ${ANNOTATION_COLORS.vocabulary}`,
+    backgroundColor: ANNOTATION_COLORS.vocabulary + '99',
+    underlineStyle: `1.5px solid #5B8AC5`,
     gutterIcon: null,
     label: ANNOTATION_LABELS.vocabulary,
     color: ANNOTATION_COLORS.vocabulary,

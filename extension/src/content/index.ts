@@ -24,6 +24,7 @@ import {
   destroyArgumentsBox,
   initArgumentsBox,
   setArgumentsBoxVisible,
+  setArgumentsBoxEnabled,
   updateArgumentsBox,
 } from "./renderer/arguments-box.js";
 import {
@@ -88,6 +89,7 @@ let visibleTypes: AnnotationType[] = [
 ];
 let currentIntensity: Intensity = "default";
 let regions: DetectedRegion[] = [];
+let pipelineInitialized = false;
 const longWaitManager = new LongWaitManager(
   { show: showLongWaitToast, hide: hideLongWaitToast },
   500,
@@ -203,8 +205,17 @@ async function init(): Promise<void> {
   if (prefs?.enabled === false) {
     enabled = false;
     console.log("[Oddity 1] Extension is disabled — skipping initialization");
+    initArgumentsBox();
+    setArgumentsBoxEnabled(false);
     return;
   }
+
+  await startPipeline();
+}
+
+async function startPipeline(): Promise<void> {
+  if (pipelineInitialized) return;
+  pipelineInitialized = true;
 
   // Fetch adapters from service worker
   const response = await sendMessage<{ adapters: SiteAdapter[] }>({
@@ -226,6 +237,7 @@ async function init(): Promise<void> {
     initManualAnnotations();
     initKeyboardNav();
     initArgumentsBox();
+    setArgumentsBoxEnabled(enabled);
 
     // Eagerly create the margin-notes shadow DOM container so addMarginNote()
     // never silently returns. We pass document.body as a temporary regionEl;
@@ -281,6 +293,7 @@ async function init(): Promise<void> {
   initManualAnnotations();
   initKeyboardNav();
   initArgumentsBox();
+  setArgumentsBoxEnabled(enabled);
 
   if (regions.length > 0) {
     initMarginNotes(regions[0]!.element);
@@ -811,7 +824,7 @@ onMessage((message: ExtensionMessage) => {
       syncArgumentsBox();
 
       if (enabled && hadStreaming) {
-        // Re-render with complete set (clears progressive renders, adds user annotations)
+        // Clear only this region's overlays and re-render
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
@@ -845,11 +858,12 @@ onMessage((message: ExtensionMessage) => {
         `[Oddity 1] Settings updated — enabled: ${enabled}, intensity: ${currentIntensity}, types: ${visibleTypes.join(", ")}`,
       );
 
+      setArgumentsBoxEnabled(enabled);
+
       if (!enabled) {
-        // Hide everything
+        // Hide annotations but keep the button visible
         setOverlayVisible(false);
         setMarginNotesVisible(false);
-        setArgumentsBoxVisible(false);
         clearAllAnchors();
         longWaitManager.reset();
       } else if (intensityChanged) {
@@ -871,11 +885,16 @@ onMessage((message: ExtensionMessage) => {
           handleStableRegion(region, region.element);
         }
       } else if (!wasEnabled && enabled) {
-        // Re-enable: re-render everything
-        setOverlayVisible(true);
-        setMarginNotesVisible(true);
-        setArgumentsBoxVisible(true);
-        rerenderAll();
+        // Re-enable
+        if (!pipelineInitialized) {
+          // First time enabling — run the full pipeline (was disabled on page load)
+          startPipeline().catch(console.error);
+        } else {
+          // Pipeline exists — just show everything and re-render
+          setOverlayVisible(true);
+          setMarginNotesVisible(true);
+          rerenderAll();
+        }
       } else {
         // Just filter by types
         filterByTypes(visibleTypes);
