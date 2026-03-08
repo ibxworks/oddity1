@@ -323,10 +323,13 @@ export function onAnchorHoverStart(annotationId: string): void {
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
   emphasizeAnnotation(annotationId);
   dimOtherNotes(annotationId);
+  const note = notes.find((n) => n.id === annotationId);
+  note?.element.classList.add('anchor-hovered');
 }
 
 export function onAnchorHoverEnd(): void {
   if (pinnedId) return;
+  for (const note of notes) note.element.classList.remove('anchor-hovered');
   undimAllNotes();
   deemphasizeAnnotation();
   anchorHoverTimer = setTimeout(() => {
@@ -1106,6 +1109,10 @@ const MARGIN_NOTES_CSS = `
     z-index: 10;
   }
 
+  .oddity-note.anchor-hovered:not(.expanded) {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+  }
+
   .oddity-note.expanded .note-text {
     display: block;
     -webkit-line-clamp: unset;
@@ -1404,6 +1411,10 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="light"]) .oddity-note.expanded {
     box-shadow: -5px 3px 16px rgba(0,0,0,0.13), -2px 1px 4px rgba(0,0,0,0.07);
+  }
+
+  :host([data-theme="light"]) .oddity-note.anchor-hovered:not(.expanded) {
+    box-shadow: -5px 3px 20px rgba(0,0,0,0.2), -2px 1px 4px rgba(0,0,0,0.07);
   }
 
   :host([data-theme="light"]) .note-text,
