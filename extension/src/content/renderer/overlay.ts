@@ -128,11 +128,11 @@ export function emphasizeAnnotation(id: string): void {
     const type = span.getAttribute('data-oddity-type') ?? '';
     if (isLight) {
       if (STRONG_DARKEN_TYPES.has(type)) {
-        span.style.filter = 'brightness(0.78) saturate(1.3)';
+        span.style.filter = 'brightness(0.62) saturate(1.4)';
       } else if (LIGHT_ACCENT_TYPES.has(type)) {
         span.style.filter = 'brightness(0.88) saturate(1.4)';
       } else {
-        span.style.filter = 'brightness(0.88) saturate(1.2)'; // highlight
+        span.style.filter = 'brightness(0.72) saturate(1.3)'; // highlight
       }
     } else {
       span.style.filter = LIGHT_ACCENT_TYPES.has(type) ? 'brightness(1.1) saturate(1.15)' : 'brightness(1.4)';
