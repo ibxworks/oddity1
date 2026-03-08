@@ -1446,6 +1446,11 @@ const MARGIN_NOTES_CSS = `
     color: #DCAF16 !important;
   }
 
+  :host([data-theme="light"]) [data-annotation-type="recall"] .note-label,
+  :host([data-theme="light"]) [data-annotation-type="vocabulary"] .note-label {
+    color: #243C61 !important;
+  }
+
   :host([data-theme="light"]) [data-annotation-type="insight"] .note-label {
     color: #70AC87 !important;
   }

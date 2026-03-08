@@ -135,7 +135,13 @@ export function emphasizeAnnotation(id: string): void {
         span.style.filter = 'brightness(0.72) saturate(1.3)'; // highlight
       }
     } else {
-      span.style.filter = LIGHT_ACCENT_TYPES.has(type) ? 'brightness(1.1) saturate(1.15)' : 'brightness(1.4)';
+      if (LIGHT_ACCENT_TYPES.has(type)) {
+        span.style.filter = 'brightness(1.6) saturate(1.2)';
+      } else if (type === 'recall' || type === 'vocabulary') {
+        span.style.filter = 'brightness(1.8) saturate(1.2)';
+      } else {
+        span.style.filter = 'brightness(1.4)';
+      }
     }
   });
 }
