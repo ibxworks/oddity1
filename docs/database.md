@@ -38,7 +38,7 @@ Stores AI-generated annotations keyed by `(content_hash, intensity)`. Shared acr
 | `url`            | `text`        | Page URL (informational, not part of cache key)             |
 | `intensity`      | `text`        | `'light'`, `'default'`, or `'heavy'`                        |
 | `annotations`    | `jsonb`       | Array of `Annotation` objects                               |
-| `model_version`  | `text`        | nullable. OpenAI model used                                 |
+| `model_version`  | `text`        | nullable. LLM model used                                    |
 | `prompt_version` | `text`        | nullable. Prompt config version                             |
 | `created_at`     | `timestamptz` | Auto `now()`                                                |
 | `expires_at`     | `timestamptz` | 30 days from creation. Backend filters `expires_at > now()` |

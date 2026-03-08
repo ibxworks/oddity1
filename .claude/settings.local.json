@@ -45,7 +45,8 @@
       "Bash(gh pr list --state open --repo ibxworks/oddity1 2>&1)",
       "Bash(gh pr view 1 --repo ibxworks/oddity1 2>&1)",
       "Bash(npm run build 2>&1 | tail -5 && npm test 2>&1 | tail -20)",
-      "WebFetch(domain:www.datalab.to)"
+      "WebFetch(domain:www.datalab.to)",
+      "Bash(npm install)"
     ]
   },
   "enableAllProjectMcpServers": true,

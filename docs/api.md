@@ -78,7 +78,7 @@ Generate AI annotations for a block of text. Returns cached results instantly if
 }
 ```
 
-`cached: true` means the result came from the database, not a fresh OpenAI call.
+`cached: true` means the result came from the database, not a fresh Gemini call.
 
 **Annotation types**
 

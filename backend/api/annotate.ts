@@ -14,7 +14,7 @@ import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
 import {
   generateAnnotations,
   generateAnnotationsStream,
-} from "../lib/openai.js";
+} from "../lib/gemini.js";
 import { serviceClient } from "../lib/supabase.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -70,7 +70,7 @@ router.post("/", async (req, res) => {
 
     if (dbCached) {
       // Compatibility check: ensure cached entry matches current model + prompt version
-      const currentModel = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+      const currentModel = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
       const currentPromptVersion = prompts.version;
 
       if (
@@ -107,7 +107,7 @@ router.post("/", async (req, res) => {
         url,
         intensity,
         annotations: aiAnnotations,
-        model_version: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        model_version: process.env.GEMINI_MODEL ?? "gemini-3-flash-preview",
         prompt_version: prompts.version,
         expires_at: expiresAt.toISOString(),
       },
@@ -164,7 +164,7 @@ async function handleStreamingAnnotation(
       .gt("expires_at", new Date().toISOString())
       .single();
 
-    const currentModel = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+    const currentModel = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
     const currentPromptVersion = prompts.version;
 
     if (

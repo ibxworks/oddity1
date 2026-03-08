@@ -18,7 +18,7 @@ oddity1/
 │
 ├── backend/                # Express API, deployable to Vercel
 │   ├── api/                # Route handlers (annotate, annotations, adapters, user/preferences)
-│   ├── lib/                # Auth middleware, rate limiter, schema validator, OpenAI client
+│   ├── lib/                # Auth middleware, rate limiter, schema validator, Gemini client
 │   └── config/prompts.json # System prompts per intensity (currently placeholders!)
 │
 └── docs/
@@ -33,7 +33,7 @@ oddity1/
 | `SUPABASE_URL`                | `backend/.env`                                      | Supabase Dashboard → Project Settings → API |
 | `SUPABASE_ANON_KEY`           | `backend/.env` + `extension/src/background/auth.ts` | Same                                        |
 | `SUPABASE_SERVICE_ROLE_KEY`   | `backend/.env` only — never in extension            | Same                                        |
-| `OPENAI_API_KEY`              | `backend/.env`                                      | platform.openai.com                         |
+| `GEMINI_API_KEY`              | `backend/.env`                                      | aistudio.google.com                         |
 | Google OAuth Client ID/Secret | Supabase Dashboard → Auth → Providers               | Google Cloud Console                        |
 
 ---
@@ -60,7 +60,7 @@ Create `backend/.env`:
 SUPABASE_URL=https://gmmektzvvrtttszdgiai.supabase.co
 SUPABASE_ANON_KEY=<your anon key>
 SUPABASE_SERVICE_ROLE_KEY=<your service role key>
-OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=AIza...
 PORT=3001
 ```
 
@@ -151,7 +151,7 @@ The Supabase callback URL is shown in the Supabase provider settings dialog.
 { "light": { "system_prompt": "<<PLACEHOLDER>>" }, ... }
 ```
 
-Replace the `<<PLACEHOLDER>>` values with actual system prompts before the annotation feature works. The backend won't crash without them — it'll just pass the placeholder to OpenAI and get garbage back.
+Replace the `<<PLACEHOLDER>>` values with actual system prompts before the annotation feature works. The backend won't crash without them — it'll just pass the placeholder to Gemini and get garbage back.
 
 ---
 

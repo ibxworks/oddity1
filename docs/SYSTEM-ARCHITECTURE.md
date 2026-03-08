@@ -19,7 +19,7 @@ Unlike client-only extensions, Oddity uses a first-party backend to handle LLM c
 2. User navigates to any page with long-form text.
 3. Extension detects main reading regions automatically.
 4. Extension sends extracted text to the Oddity backend.
-5. Backend calls OpenAI, parses structured annotation JSON, returns annotations.
+5. Backend calls Gemini, parses structured annotation JSON, returns annotations.
 6. Extension renders annotations in-place: type-adaptive highlights/underlines + hover-activated popovers.
 7. As user scrolls, new sections are annotated progressively.
 8. User can toggle annotations on/off, adjust intensity, edit/delete annotations, or add manual notes.
@@ -62,7 +62,7 @@ Long articles, essays, blogs, newsletters, documentation — any page with dense
 | Runtime         | Node.js                                                             |
 | Framework       | Express                                                             |
 | Database & Auth | Supabase (managed Postgres + Auth + Row Level Security)             |
-| LLM Provider    | OpenAI (single provider for MVP)                                    |
+| LLM Provider    | Google Gemini (single provider for MVP)                             |
 | Hosting         | Serverless — AWS Lambda                                             |
 | Prompt Config   | Server-side config file (JSON), hot-reloadable without redeployment |
 
@@ -80,7 +80,7 @@ Long articles, essays, blogs, newsletters, documentation — any page with dense
 ### External dependencies
 
 - Chrome Extension Platform APIs (`chrome.*` namespace)
-- OpenAI Chat Completions API (backend-side only)
+- Google Gemini API (backend-side only)
 - Supabase (Postgres, Auth, REST API)
 - Vercel/AWS for serverless hosting
 - @mozilla/readability for generic content extraction
@@ -114,7 +114,7 @@ Long articles, essays, blogs, newsletters, documentation — any page with dense
                    ┌─────┴──────┐
                    ▼            ▼
             ┌──────────┐ ┌──────────┐
-            │ OpenAI   │ │ Supabase │
+            │ Gemini   │ │ Supabase │
             │ API      │ │ (DB+Auth)│
             └──────────┘ └──────────┘
 ```
@@ -338,7 +338,7 @@ Request arrives (text, url, content_hash, intensity)
              │
              ▼
 ┌─────────────────────────┐
-│ 4. Call OpenAI API       │
+│ 4. Call Gemini API       │
 │    - JSON mode enabled   │
 │    - model: configurable │
 │    - prompt: from config │
@@ -875,7 +875,7 @@ Permissions rationale:
 
 ### Data handling
 
-- Page text is sent to the Oddity backend over HTTPS. The backend forwards to OpenAI.
+- Page text is sent to the Oddity backend over HTTPS. The backend forwards to Gemini.
 - Auth tokens (Supabase JWT) stored in `chrome.storage.session` (cleared on browser close) with refresh tokens in `chrome.storage.local`.
 - User's API keys are never involved — all LLM access is via the Oddity backend.
 - User manual annotations stored server-side, scoped by RLS to the owning user.
@@ -943,7 +943,7 @@ oddity1/
 │   │   └── user/
 │   │       └── preferences.ts     # GET/PUT /api/user/preferences
 │   ├── lib/
-│   │   ├── openai.ts              # OpenAI client + retry logic
+│   │   ├── gemini.ts              # Gemini client + retry logic
 │   │   ├── schema-validator.ts    # Annotation JSON schema validation
 │   │   ├── supabase.ts            # Supabase client initialization
 │   │   ├── rate-limiter.ts        # Per-user rate limiting
@@ -1015,7 +1015,7 @@ npx supabase gen types ts      # Generate TypeScript types from schema
 1. Set up Express with TypeScript in serverless function format.
 2. Implement auth middleware (Supabase JWT verification).
 3. Implement `POST /api/annotate`:
-   - Cache check → OpenAI call → schema validation → retry → cache persist → return.
+   - Cache check → Gemini call → schema validation → retry → cache persist → return.
 4. Implement `GET/POST/DELETE /api/annotations` for user manual annotations.
 5. Implement `GET /api/adapters` for site adapter registry.
 6. Add prompt config file with placeholder prompts.
@@ -1114,7 +1114,7 @@ npx supabase gen types ts      # Generate TypeScript types from schema
 | Failure                         | Detection                         | Mitigation                                                                                                                                                          |
 | ------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Backend unreachable             | Fetch error/timeout               | Show subtle "offline" badge in overlay. Cache hit still works.                                                                                                      |
-| OpenAI API error/timeout        | Backend error response            | Return cached if available; otherwise surface "annotations unavailable" in popup. Retry with backoff.                                                               |
+| Gemini API error/timeout        | Backend error response            | Return cached if available; otherwise surface "annotations unavailable" in popup. Retry with backoff.                                                               |
 | Malformed LLM JSON output       | Schema validation failure         | Retry once with corrective prompt. If retry fails, return partial annotations (valid subset).                                                                       |
 | TextQuoteSelector can't resolve | Fuzzy match score below threshold | Skip that annotation silently. Log for debugging.                                                                                                                   |
 | Content script killed by page   | Service worker gets no response   | Re-inject content script on next user interaction.                                                                                                                  |
@@ -1127,7 +1127,7 @@ npx supabase gen types ts      # Generate TypeScript types from schema
 
 2. **Overlay rendering vs DOM wrapping**: The overlay approach avoids DOM mutation conflicts but requires continuous scroll/resize tracking. On pages with complex scroll containers (e.g., virtualized lists), `getClientRects()` coordinates may need adjustment relative to the scroll container, not the viewport.
 
-3. **Single LLM provider (OpenAI)**: Simplifies MVP but creates vendor dependency. The backend's annotate pipeline should keep provider logic in a single module (`lib/openai.ts`) to make future provider addition straightforward.
+3. **Single LLM provider (Gemini)**: Simplifies MVP but creates vendor dependency. The backend's annotate pipeline should keep provider logic in a single module (`lib/gemini.ts`) to make future provider addition straightforward.
 
 4. **Config-file prompts require redeployment**: Unlike a DB-stored prompt system, changing prompts requires deploying a new function version. Acceptable for MVP iteration speed; can move to Supabase-stored prompts later if A/B testing becomes important.
 

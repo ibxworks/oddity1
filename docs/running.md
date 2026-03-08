@@ -6,7 +6,7 @@
 - npm 10+
 - Chrome (for loading the extension)
 - A Supabase project (already provisioned: `gmmektzvvrtttszdgiai`)
-- An OpenAI API key
+- A Gemini API key
 
 ---
 
@@ -30,7 +30,7 @@ Create `backend/.env`:
 SUPABASE_URL=https://gmmektzvvrtttszdgiai.supabase.co
 SUPABASE_ANON_KEY=<your anon key>
 SUPABASE_SERVICE_ROLE_KEY=<your service role key>
-OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=AIza...
 PORT=3001
 ```
 
@@ -121,7 +121,7 @@ The Supabase callback URL is shown in the Supabase provider settings dialog.
 { "light": { "system_prompt": "<<PLACEHOLDER>>" }, ... }
 ```
 
-Replace the `<<PLACEHOLDER>>` values with actual system prompts before the annotation feature works. The backend won't crash without them — it'll just pass the placeholder to OpenAI and get garbage back.
+Replace the `<<PLACEHOLDER>>` values with actual system prompts before the annotation feature works. The backend won't crash without them — it'll just pass the placeholder to Gemini and get garbage back.
 
 ---
 

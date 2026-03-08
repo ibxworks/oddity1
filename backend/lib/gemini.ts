@@ -1,15 +1,15 @@
 import type { Annotation, Intensity } from "@oddity/shared";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import OpenAI from "openai";
 import { validateAnnotations } from "./schema-validator.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? "" });
-const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
+const modelName = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
 
 // Load shared prompt fragments once at startup
 const promptsConfig = JSON.parse(
@@ -95,12 +95,50 @@ function assignUniqueIds(annotations: Annotation[]): Annotation[] {
   return annotations;
 }
 
+function getGenerationConfig() {
+  return {
+    responseMimeType: "application/json" as const,
+    maxOutputTokens: 4096,
+    temperature: 0.3,
+  };
+}
+
+async function callGemini(
+  text: string,
+  config: PromptProfile,
+  correctionNote?: string,
+): Promise<unknown> {
+  const systemPrompt = expandPrompt(config.system_prompt);
+  const generationConfig = getGenerationConfig();
+
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: systemPrompt,
+    generationConfig,
+  });
+
+  const userContent = correctionNote ? `${text}\n\n${correctionNote}` : text;
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: userContent }] }],
+  });
+
+  const content = result.response.text();
+  if (!content) return [];
+
+  try {
+    const parsed = JSON.parse(content);
+    return parsed.annotations ?? parsed;
+  } catch {
+    return [];
+  }
+}
+
 export async function generateAnnotations(
   text: string,
   intensity: Intensity,
   promptConfig: PromptProfile,
 ): Promise<Annotation[]> {
-  const firstAttempt = await callOpenAI(text, promptConfig);
+  const firstAttempt = await callGemini(text, promptConfig);
   const expanded = Array.isArray(firstAttempt)
     ? expandCompressedAnnotations(firstAttempt)
     : firstAttempt;
@@ -110,7 +148,7 @@ export async function generateAnnotations(
 
   // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callOpenAI(text, promptConfig, correctionPrompt);
+  const retryAttempt = await callGemini(text, promptConfig, correctionPrompt);
   const retryExpanded = Array.isArray(retryAttempt)
     ? expandCompressedAnnotations(retryAttempt)
     : retryAttempt;
@@ -122,54 +160,6 @@ export async function generateAnnotations(
   );
 }
 
-function buildMessages(
-  text: string,
-  config: PromptProfile,
-  correctionNote?: string,
-): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
-  const systemPrompt = expandPrompt(config.system_prompt);
-
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: text },
-  ];
-  if (correctionNote) {
-    messages.push({ role: "user", content: correctionNote });
-  }
-  return messages;
-}
-
-function getModelParams(): { temperature?: number } {
-  const supportsTemperature = model.includes("gpt-4o-mini");
-  return supportsTemperature ? { temperature: 0.3 } : {};
-}
-
-async function callOpenAI(
-  text: string,
-  config: PromptProfile,
-  correctionNote?: string,
-): Promise<unknown> {
-  const messages = buildMessages(text, config, correctionNote);
-
-  const response = await openai.chat.completions.create({
-    model,
-    messages,
-    response_format: { type: "json_object" },
-    max_tokens: 4096,
-    ...getModelParams(),
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) return [];
-
-  try {
-    const parsed = JSON.parse(content);
-    return parsed.annotations ?? parsed;
-  } catch {
-    return [];
-  }
-}
-
 /**
  * Streaming annotation generator. Yields individual annotation objects
  * as they are parsed from the incremental JSON stream.
@@ -179,22 +169,24 @@ export async function* generateAnnotationsStream(
   intensity: Intensity,
   promptConfig: PromptProfile,
 ): AsyncGenerator<Annotation, Annotation[], unknown> {
-  const messages = buildMessages(text, promptConfig);
+  const systemPrompt = expandPrompt(promptConfig.system_prompt);
+  const generationConfig = getGenerationConfig();
   const allAnnotations: Annotation[] = [];
 
-  const stream = await openai.chat.completions.create({
-    model,
-    messages,
-    response_format: { type: "json_object" },
-    max_tokens: 4096,
-    ...getModelParams(),
-    stream: true,
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: systemPrompt,
+    generationConfig,
+  });
+
+  const stream = await model.generateContentStream({
+    contents: [{ role: "user", parts: [{ text }] }],
   });
 
   let buffer = "";
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content;
+  for await (const chunk of stream.stream) {
+    const delta = chunk.text();
     if (!delta) continue;
     buffer += delta;
 

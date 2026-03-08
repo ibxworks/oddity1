@@ -18,7 +18,7 @@ oddity1/
 │
 ├── backend/                # Express API, deployable to Vercel
 │   ├── api/                # Route handlers (annotate, annotations, adapters, user/preferences)
-│   ├── lib/                # Auth middleware, rate limiter, schema validator, OpenAI client
+│   ├── lib/                # Auth middleware, rate limiter, schema validator, Gemini client
 │   └── config/prompts.json # System prompts per intensity (currently placeholders!)
 │
 └── docs/                   # ← you are here
@@ -33,7 +33,7 @@ oddity1/
 | `SUPABASE_URL`                | `backend/.env`                                      | Supabase Dashboard → Project Settings → API |
 | `SUPABASE_ANON_KEY`           | `backend/.env` + `extension/src/background/auth.ts` | Same                                        |
 | `SUPABASE_SERVICE_ROLE_KEY`   | `backend/.env` only — never in extension            | Same                                        |
-| `OPENAI_API_KEY`              | `backend/.env`                                      | platform.openai.com                         |
+| `GEMINI_API_KEY`              | `backend/.env`                                      | aistudio.google.com                         |
 | Google OAuth Client ID/Secret | Supabase Dashboard → Auth → Providers               | Google Cloud Console                        |
 
 ---
