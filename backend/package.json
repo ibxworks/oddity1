@@ -10,11 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "@oddity/shared": "*",
     "@supabase/supabase-js": "^2.49.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "@google/generative-ai": "^0.21.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
