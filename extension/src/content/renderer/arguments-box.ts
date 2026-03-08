@@ -675,10 +675,10 @@ const ARGUMENTS_BOX_CSS = `
     all: unset;
     position: absolute;
     /* Centered on top-left corner of container */
-    top: -13px;
-    left: -13px;
-    width: 26px;
-    height: 26px;
+    top: -10px;
+    left: -10px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: #fff;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
@@ -695,11 +695,11 @@ const ARGUMENTS_BOX_CSS = `
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
     background: #757575;
     /* Wide isosceles triangle pointing bottom-right (southeast) */
-    clip-path: polygon(0% 65%, 65% 0%, 100% 100%);
+    clip-path: polygon(0% 90%, 90% 0%, 100% 100%);
   }
 
   .args-close-btn.hovered {
