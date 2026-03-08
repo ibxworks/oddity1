@@ -37,7 +37,7 @@ const visualMap: Record<AnnotationType, AnnotationVisual> = {
   },
   insight: {
     type: 'insight',
-    backgroundColor: ANNOTATION_COLORS.insight + '26',
+    backgroundColor: ANNOTATION_COLORS.insight + '18',
     underlineStyle: `1.5px solid ${ANNOTATION_COLORS.insight}`,
     gutterIcon: null,
     label: ANNOTATION_LABELS.insight,

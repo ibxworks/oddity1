@@ -501,11 +501,11 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-main-title {
-    font-weight: 700;
-    font-size: 20px;
+    font-weight: 600;
+    font-size: 17px;
     color: #fff;
-    letter-spacing: -0.3px;
-    font-family: system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+    letter-spacing: 0.3px;
+    font-family: "Fraunces", Georgia, serif;
   }
 
   .args-toggle-row {
@@ -560,12 +560,12 @@ const ARGUMENTS_BOX_CSS = `
   /* ── Section title ── */
 
   .args-section-title {
-    font-weight: 700;
+    font-weight: 500;
     font-size: 14px;
     color: #fff;
     padding: 12px 18px 6px;
     flex-shrink: 0;
-    font-family: system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+    font-family: "Fraunces", Georgia, serif;
   }
 
   /* ── List ── */
@@ -615,8 +615,8 @@ const ARGUMENTS_BOX_CSS = `
     display: block;
     margin: 12px 18px 0;
     padding: 11px 16px;
-    background: rgba(255, 255, 255, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: #000;
+    border: 1px solid #000;
     color: #fff;
     font-size: 14px;
     font-weight: 400;
@@ -629,7 +629,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-copy-btn-full:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: #222;
   }
 
   /* ── Footer ── */
@@ -710,5 +710,65 @@ const ARGUMENTS_BOX_CSS = `
   .args-close-btn:hover {
     transform: scale(1.1);
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  }
+
+  /* ── Light mode overrides ── */
+
+  :host([data-theme="light"]) .args-container {
+    background: rgba(255, 255, 255, 0.82);
+  }
+
+  :host([data-theme="light"]) .args-main-title {
+    color: #1a1a1a;
+  }
+
+  :host([data-theme="light"]) .args-enabled-label {
+    color: rgba(0, 0, 0, 0.55);
+  }
+
+  :host([data-theme="light"]) .args-panel-toggle-slider {
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  :host([data-theme="light"]) .args-panel-toggle-input:checked + .args-panel-toggle-slider {
+    background: #22c55e;
+  }
+
+  :host([data-theme="light"]) .args-section-title {
+    color: #606060;
+  }
+
+  :host([data-theme="light"]) .args-bullet {
+    color: rgba(0, 0, 0, 0.35);
+  }
+
+  :host([data-theme="light"]) .args-text {
+    color: #606060;
+  }
+
+  :host([data-theme="light"]) .args-empty {
+    color: rgba(0, 0, 0, 0.4);
+  }
+
+  :host([data-theme="light"]) .args-copy-btn-full {
+    background: #1a1f27;
+    border-color: #1a1f27;
+    color: #fff;
+  }
+
+  :host([data-theme="light"]) .args-copy-btn-full:hover {
+    background: #2e3440;
+  }
+
+  :host([data-theme="light"]) .args-footer-text {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  :host([data-theme="light"]) .args-footer-text:hover {
+    color: rgba(0, 0, 0, 0.8);
+  }
+
+  :host([data-theme="light"]) .args-footer-avatar {
+    border-color: rgba(0, 0, 0, 0.12);
   }
 `;
