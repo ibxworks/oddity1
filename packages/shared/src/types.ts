@@ -213,4 +213,5 @@ export type ExtensionMessage =
   | { action: 'removeEnabledSite'; payload: { domain: string } }
   | { action: 'enabledSitesUpdated'; payload: { sites: string[] } }
   | { action: 'triggerManualRun'; payload: Record<string, never> }
-  | { action: 'setBadge'; payload: { text: string; color?: string } };
+  | { action: 'setBadge'; payload: { text: string; color?: string } }
+  | { action: 'openPopup'; payload: Record<string, never> };
