@@ -28,6 +28,15 @@ let liveItems: ArgumentItem[] = [];
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let closeBtnHideTimer: ReturnType<typeof setTimeout> | null = null;
+let dashToggleInput: HTMLInputElement | null = null;
+let dashToggleLabelEl: HTMLSpanElement | null = null;
+let dashCountEl: HTMLSpanElement | null = null;
+let dashProfileNameEl: HTMLSpanElement | null = null;
+let dashProfileAvatarEl: HTMLSpanElement | null = null;
+let dashTierBadgeEl: HTMLElement | null = null;
+let dashDensityBtns: HTMLButtonElement[] = [];
+let dashFontSelect: HTMLSelectElement | null = null;
+let dashFontSizeSelect: HTMLSelectElement | null = null;
 
 // ─── Public API ───
 
@@ -161,7 +170,7 @@ export function initArgumentsBox(): void {
   });
   footerText.addEventListener("click", (e) => {
     e.stopPropagation();
-    chrome.runtime.sendMessage({ action: "openPopup", payload: {} });
+    showDashboard();
   });
 
   const footerAvatar = document.createElement("div");
@@ -177,6 +186,7 @@ export function initArgumentsBox(): void {
   panelFace.appendChild(footer);
 
   contentClip.appendChild(panelFace);
+  contentClip.appendChild(buildDashboardFace());
   containerEl.appendChild(contentClip);
 
   // Hover → show close button when expanded
@@ -263,6 +273,15 @@ export function destroyArgumentsBox(): void {
   listEl = null;
   panelToggleInput = null;
   panelToggleLabelEl = null;
+  dashToggleInput = null;
+  dashToggleLabelEl = null;
+  dashCountEl = null;
+  dashProfileNameEl = null;
+  dashProfileAvatarEl = null;
+  dashTierBadgeEl = null;
+  dashDensityBtns = [];
+  dashFontSelect = null;
+  dashFontSizeSelect = null;
   expanded = false;
   dimmed = false;
   manualRunCb = null;
@@ -330,6 +349,7 @@ function toggle(): void {
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
   if (!expanded) {
+    containerEl?.classList.remove("dashboard");
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
   } else if (containerEl?.matches(":hover")) {
@@ -352,6 +372,267 @@ function hideCloseBtn(): void {
     closeBtnEl?.classList.remove("hovered");
     closeBtnHideTimer = null;
   }, 80);
+}
+
+function showDashboard(): void {
+  containerEl?.classList.add("dashboard");
+  loadDashboardData().catch(() => {});
+}
+
+function buildDashboardFace(): HTMLDivElement {
+  const face = document.createElement("div");
+  face.className = "args-dash-face";
+  face.addEventListener("click", (e) => e.stopPropagation());
+
+  // ── Header ──
+  const header = document.createElement("div");
+  header.className = "args-dash-header";
+
+  const backBtn = document.createElement("button");
+  backBtn.className = "args-dash-back";
+  backBtn.textContent = "←";
+  backBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    containerEl?.classList.remove("dashboard");
+  });
+
+  const logo = document.createElement("span");
+  logo.className = "args-dash-logo";
+  logo.textContent = "Oddity 1";
+
+  const toggleWrap = document.createElement("div");
+  toggleWrap.className = "args-dash-toggle-wrap";
+
+  dashToggleLabelEl = document.createElement("span");
+  dashToggleLabelEl.className = "args-dash-toggle-label";
+  dashToggleLabelEl.textContent = "On";
+
+  dashToggleInput = document.createElement("input");
+  dashToggleInput.type = "checkbox";
+  dashToggleInput.className = "args-dash-toggle-input";
+  dashToggleInput.id = "args-dash-toggle-chk";
+  dashToggleInput.checked = true;
+
+  const toggleSlider = document.createElement("label");
+  toggleSlider.className = "args-dash-slider";
+  toggleSlider.htmlFor = "args-dash-toggle-chk";
+
+  dashToggleInput.addEventListener("change", () => {
+    const en = dashToggleInput!.checked;
+    if (dashToggleLabelEl) dashToggleLabelEl.textContent = en ? "On" : "Off";
+    if (panelToggleInput) panelToggleInput.checked = en;
+    if (panelToggleLabelEl) panelToggleLabelEl.textContent = en ? "On" : "Off";
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
+    });
+  });
+
+  toggleWrap.appendChild(dashToggleLabelEl);
+  toggleWrap.appendChild(dashToggleInput);
+  toggleWrap.appendChild(toggleSlider);
+  header.appendChild(backBtn);
+  header.appendChild(logo);
+  header.appendChild(toggleWrap);
+  face.appendChild(header);
+
+  // ── Profile + Count ──
+  const profileSection = document.createElement("div");
+  profileSection.className = "args-dash-profile";
+
+  const avatarCircle = document.createElement("div");
+  avatarCircle.className = "args-dash-avatar-circle";
+  const avatarImg = document.createElement("img");
+  avatarImg.src = chrome.runtime.getURL("Terry.png");
+  avatarImg.alt = "Terry";
+  avatarImg.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:50%;";
+  avatarCircle.appendChild(avatarImg);
+
+  const countArea = document.createElement("div");
+  countArea.className = "args-dash-count-area";
+  dashCountEl = document.createElement("span");
+  dashCountEl.className = "args-dash-count-num";
+  dashCountEl.textContent = "0";
+  const countLabel = document.createElement("span");
+  countLabel.className = "args-dash-count-label";
+  countLabel.textContent = " annotations created with Oddity 1";
+  countArea.appendChild(dashCountEl);
+  countArea.appendChild(countLabel);
+
+  profileSection.appendChild(avatarCircle);
+  profileSection.appendChild(countArea);
+  face.appendChild(profileSection);
+
+  // ── Annotation Settings ──
+  const section = document.createElement("div");
+  section.className = "args-dash-section";
+  const sectionTitle = document.createElement("div");
+  sectionTitle.className = "args-dash-section-title";
+  sectionTitle.textContent = "Annotation";
+  section.appendChild(sectionTitle);
+
+  // Density row
+  const densityRow = document.createElement("div");
+  densityRow.className = "args-dash-row";
+  const densityLabel = document.createElement("span");
+  densityLabel.className = "args-dash-label";
+  densityLabel.textContent = "Density";
+  const densityGroup = document.createElement("div");
+  densityGroup.className = "args-dash-density-group";
+  dashDensityBtns = [];
+  for (const [value, label] of [["light", "Light"], ["default", "Default"], ["heavy", "Heavy"]] as [string, string][]) {
+    const btn = document.createElement("button");
+    btn.className = "args-dash-density-btn" + (value === "default" ? " args-dash-density-active" : "");
+    btn.dataset.intensity = value;
+    btn.textContent = label;
+    btn.addEventListener("click", () => {
+      dashDensityBtns.forEach(b => b.classList.remove("args-dash-density-active"));
+      btn.classList.add("args-dash-density-active");
+      chrome.storage.local.get("preferences").then((stored) => {
+        const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+        chrome.storage.local.set({ preferences: { ...prefs, intensity: value } });
+      });
+    });
+    dashDensityBtns.push(btn);
+    densityGroup.appendChild(btn);
+  }
+  densityRow.appendChild(densityLabel);
+  densityRow.appendChild(densityGroup);
+  section.appendChild(densityRow);
+
+  // Font row
+  const fontRow = document.createElement("div");
+  fontRow.className = "args-dash-row";
+  const fontLabel = document.createElement("span");
+  fontLabel.className = "args-dash-label";
+  fontLabel.textContent = "Font";
+  dashFontSelect = document.createElement("select");
+  dashFontSelect.className = "args-dash-select";
+  for (const [value, text] of [["default", "System"], ["fraunces", "Fraunces"], ["kalam", "Kalam"], ["helvetica", "Helvetica Neue"], ["arial", "Arial"], ["georgia", "Georgia"]] as [string, string][]) {
+    const opt = document.createElement("option");
+    opt.value = value; opt.textContent = text;
+    dashFontSelect.appendChild(opt);
+  }
+  dashFontSelect.addEventListener("change", () => {
+    const val = dashFontSelect!.value;
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({ preferences: { ...prefs, annotation_font: val } });
+    });
+  });
+  fontRow.appendChild(fontLabel);
+  fontRow.appendChild(dashFontSelect);
+  section.appendChild(fontRow);
+
+  // Size row
+  const sizeRow = document.createElement("div");
+  sizeRow.className = "args-dash-row";
+  const sizeLabel = document.createElement("span");
+  sizeLabel.className = "args-dash-label";
+  sizeLabel.textContent = "Size";
+  dashFontSizeSelect = document.createElement("select");
+  dashFontSizeSelect.className = "args-dash-select";
+  for (const [value, text] of [["small", "Small"], ["default", "Medium"], ["large", "Large"]] as [string, string][]) {
+    const opt = document.createElement("option");
+    opt.value = value; opt.textContent = text;
+    dashFontSizeSelect.appendChild(opt);
+  }
+  dashFontSizeSelect.addEventListener("change", () => {
+    const val = dashFontSizeSelect!.value;
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({ preferences: { ...prefs, annotation_font_size: val } });
+    });
+  });
+  sizeRow.appendChild(sizeLabel);
+  sizeRow.appendChild(dashFontSizeSelect);
+  section.appendChild(sizeRow);
+  face.appendChild(section);
+
+  // ── Export PDF ──
+  const exportSection = document.createElement("div");
+  exportSection.className = "args-dash-export-section";
+  const exportBtn = document.createElement("button");
+  exportBtn.className = "args-dash-export-btn";
+  exportBtn.textContent = "Export PDF";
+  exportBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "exportPdf", payload: { title: document.title, subtitle: "Created with Oddity 1" } });
+  });
+  exportSection.appendChild(exportBtn);
+  face.appendChild(exportSection);
+
+  // ── Auth bar ──
+  const authBar = document.createElement("div");
+  authBar.className = "args-dash-auth-bar";
+  const profileBtnEl = document.createElement("div");
+  profileBtnEl.className = "args-dash-profile-btn";
+  dashProfileAvatarEl = document.createElement("span");
+  dashProfileAvatarEl.className = "args-dash-profile-avatar";
+  dashProfileAvatarEl.textContent = "?";
+  dashProfileNameEl = document.createElement("span");
+  dashProfileNameEl.className = "args-dash-profile-name";
+  dashProfileNameEl.textContent = "Loading...";
+  profileBtnEl.appendChild(dashProfileAvatarEl);
+  profileBtnEl.appendChild(dashProfileNameEl);
+  dashTierBadgeEl = document.createElement("span");
+  dashTierBadgeEl.className = "args-dash-tier-badge";
+  dashTierBadgeEl.textContent = "FREE";
+  authBar.appendChild(profileBtnEl);
+  authBar.appendChild(dashTierBadgeEl);
+  face.appendChild(authBar);
+
+  // ── Footer ──
+  const dashFooter = document.createElement("div");
+  dashFooter.className = "args-dash-footer";
+  const settingsLink = document.createElement("span");
+  settingsLink.className = "args-dash-footer-link";
+  settingsLink.textContent = "Settings";
+  settingsLink.addEventListener("click", () => { chrome.runtime.openOptionsPage?.(); });
+  const sep = document.createElement("span");
+  sep.className = "args-dash-footer-sep";
+  sep.textContent = "·";
+  const feedbackLink = document.createElement("span");
+  feedbackLink.className = "args-dash-footer-link";
+  feedbackLink.textContent = "Send Feedback";
+  feedbackLink.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "openPopup", payload: {} });
+  });
+  dashFooter.appendChild(settingsLink);
+  dashFooter.appendChild(sep);
+  dashFooter.appendChild(feedbackLink);
+  face.appendChild(dashFooter);
+
+  return face;
+}
+
+async function loadDashboardData(): Promise<void> {
+  try {
+    const stored = await chrome.storage.local.get("preferences");
+    const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+    const intensity = (prefs.intensity as string) ?? "default";
+    dashDensityBtns.forEach(btn => {
+      btn.classList.toggle("args-dash-density-active", btn.dataset.intensity === intensity);
+    });
+    if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
+    if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
+    const enabled = prefs.enabled !== false;
+    if (dashToggleInput) dashToggleInput.checked = enabled;
+    if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
+  } catch { /* ignore */ }
+
+  try {
+    const auth = await chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }) as {
+      authenticated: boolean;
+      user: { email: string; display_name: string | null; tier: string; annotation_count: number } | null;
+    };
+    if (auth?.authenticated && auth.user) {
+      if (dashCountEl) dashCountEl.textContent = String(auth.user.annotation_count ?? 0);
+      const name = auth.user.display_name || auth.user.email || "?";
+      if (dashProfileNameEl) dashProfileNameEl.textContent = name;
+      if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
+      if (dashTierBadgeEl) dashTierBadgeEl.textContent = (auth.user.tier || "free").toUpperCase();
+    }
+  } catch { /* ignore */ }
 }
 
 function buildItems(
@@ -937,5 +1218,324 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .args-not-enabled-hint {
     color: rgba(0, 0, 0, 0.35);
+  }
+
+  /* ── Dashboard state ── */
+
+  .args-container.dashboard {
+    width: 290px;
+    height: 460px;
+  }
+
+  .args-container.dashboard .args-panel-face {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease;
+  }
+
+  .args-container.dashboard .args-button-face {
+    opacity: 0;
+  }
+
+  /* ── Dashboard face ── */
+
+  .args-dash-face {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    background: #fff;
+    border-radius: inherit;
+    overflow-y: auto;
+    color: #1a1a1a;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+
+  .args-container.dashboard .args-dash-face {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.2s ease 0.2s;
+  }
+
+  .args-dash-header {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .args-dash-back {
+    all: unset;
+    cursor: pointer;
+    font-size: 16px;
+    color: #9ca3af;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .args-dash-back:hover { color: #1a1a1a; }
+
+  .args-dash-logo {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a1a;
+    flex: 1;
+    letter-spacing: 0.3px;
+  }
+
+  .args-dash-toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .args-dash-toggle-label {
+    font-size: 12px;
+    color: #9ca3af;
+    font-weight: 500;
+  }
+
+  .args-dash-toggle-input { display: none; }
+
+  .args-dash-slider {
+    display: inline-block;
+    position: relative;
+    width: 36px;
+    height: 21px;
+    background: #d1d5db;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .args-dash-slider::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  .args-dash-toggle-input:checked + .args-dash-slider { background: #22c55e; }
+  .args-dash-toggle-input:checked + .args-dash-slider::after { transform: translateX(15px); }
+
+  .args-dash-profile {
+    display: flex;
+    align-items: flex-start;
+    padding: 0 16px 14px;
+    gap: 18px;
+    flex-shrink: 0;
+  }
+
+  .args-dash-avatar-circle {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #fff;
+    border: 0.5px solid #e5e7eb;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .args-dash-count-area {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    padding-top: 10px;
+  }
+
+  .args-dash-count-num {
+    font-size: 17px;
+    font-weight: 500;
+    color: #111;
+    line-height: 1;
+  }
+
+  .args-dash-count-label {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-left: 5px;
+    line-height: 1.3;
+  }
+
+  .args-dash-section {
+    padding: 12px 16px;
+    border-top: 0.5px solid #f0f0f0;
+    flex-shrink: 0;
+  }
+
+  .args-dash-section-title {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-bottom: 12px;
+  }
+
+  .args-dash-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .args-dash-row:last-child { margin-bottom: 0; }
+
+  .args-dash-label {
+    font-size: 12px;
+    color: #9ca3af;
+    min-width: 46px;
+    flex-shrink: 0;
+  }
+
+  .args-dash-density-group {
+    display: flex;
+    gap: 5px;
+    flex: 1;
+  }
+
+  .args-dash-density-btn {
+    all: unset;
+    flex: 1;
+    padding: 6px 0;
+    border: 0.5px solid #e5e7eb;
+    border-radius: 20px;
+    background: #fff;
+    font-size: 11px;
+    cursor: pointer;
+    color: #6b7280;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    text-align: center;
+    transition: all 0.15s;
+    box-sizing: border-box;
+  }
+
+  .args-dash-density-btn:hover { background: #f9fafb; }
+
+  .args-dash-density-active {
+    background: #1a1a1a !important;
+    color: #fff !important;
+    border-color: #1a1a1a !important;
+  }
+
+  .args-dash-select {
+    flex: 1;
+    padding: 6px 24px 6px 10px;
+    border: 0.5px solid #e5e7eb;
+    border-radius: 20px;
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E") no-repeat right 10px center;
+    background-size: 8px;
+    appearance: none;
+    -webkit-appearance: none;
+    font-size: 12px;
+    color: #374151;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .args-dash-export-section {
+    padding: 10px 16px 14px;
+    flex-shrink: 0;
+  }
+
+  .args-dash-export-btn {
+    all: unset;
+    display: block;
+    width: 100%;
+    padding: 12px 0;
+    background: #1a1a1a;
+    color: #fff;
+    border-radius: 28px;
+    font-size: 14px;
+    text-align: center;
+    cursor: pointer;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    box-sizing: border-box;
+    transition: opacity 0.15s;
+  }
+
+  .args-dash-export-btn:hover { opacity: 0.88; }
+
+  .args-dash-auth-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    flex-shrink: 0;
+  }
+
+  .args-dash-profile-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .args-dash-profile-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #1a1a1a;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .args-dash-profile-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .args-dash-tier-badge {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 12px;
+    background: #f3f4f6;
+    color: #9ca3af;
+  }
+
+  .args-dash-footer {
+    padding: 8px 16px 12px;
+    border-top: 0.5px solid #f0f0f0;
+    text-align: center;
+    flex-shrink: 0;
+    margin-top: auto;
+  }
+
+  .args-dash-footer-link {
+    font-size: 11px;
+    color: #9ca3af;
+    cursor: pointer;
+    font-weight: 300;
+  }
+
+  .args-dash-footer-link:hover { color: #6b7280; }
+
+  .args-dash-footer-sep {
+    color: #d1d5db;
+    margin: 0 4px;
+    font-size: 11px;
   }
 `;
