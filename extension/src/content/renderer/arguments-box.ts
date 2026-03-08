@@ -24,6 +24,7 @@ let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let closeBtnHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ─── Public API ───
 
@@ -63,7 +64,10 @@ export function initArgumentsBox(): void {
   logoImg.alt = "My Arguments";
   logoImg.className = "args-toggle-logo";
   buttonFace.appendChild(logoImg);
-  containerEl.appendChild(buttonFace);
+  // Content clip wrapper — clips button/panel faces during morph, sits inside container
+  const contentClip = document.createElement("div");
+  contentClip.className = "args-content-clip";
+  contentClip.appendChild(buttonFace);
 
   // Panel face (visible when expanded)
   const panelFace = document.createElement("div");
@@ -158,18 +162,28 @@ export function initArgumentsBox(): void {
   footer.appendChild(footerAvatar);
   panelFace.appendChild(footer);
 
-  containerEl.appendChild(panelFace);
-  shadowRoot.appendChild(containerEl);
+  contentClip.appendChild(panelFace);
+  containerEl.appendChild(contentClip);
 
-  // ── Close button (floating X, separate from container) ──
+  // Hover → show close button when expanded
+  containerEl.addEventListener("mouseenter", () => {
+    if (expanded) showCloseBtn();
+  });
+  containerEl.addEventListener("mouseleave", () => hideCloseBtn());
+
+  // ── Close button — absolute child so it follows container corner during morph ──
   closeBtnEl = document.createElement("button");
   closeBtnEl.className = "args-close-btn";
-  closeBtnEl.textContent = "✕";
   closeBtnEl.title = "Close";
-  closeBtnEl.addEventListener("click", () => {
+  closeBtnEl.addEventListener("mouseenter", () => showCloseBtn());
+  closeBtnEl.addEventListener("mouseleave", () => hideCloseBtn());
+  closeBtnEl.addEventListener("click", (e) => {
+    e.stopPropagation();
     if (expanded) toggle();
   });
-  shadowRoot.appendChild(closeBtnEl);
+  containerEl.appendChild(closeBtnEl);
+
+  shadowRoot.appendChild(containerEl);
 }
 
 export function updateArgumentsBox(
@@ -206,6 +220,7 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
 
 export function destroyArgumentsBox(): void {
   if (debounceTimer) clearTimeout(debounceTimer);
+  if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
   if (themeHandler) {
     offThemeChange(themeHandler);
     themeHandler = null;
@@ -228,7 +243,26 @@ export function destroyArgumentsBox(): void {
 function toggle(): void {
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
-  closeBtnEl?.classList.toggle("visible", expanded);
+  if (!expanded) {
+    if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
+    closeBtnEl?.classList.remove("hovered");
+  } else if (containerEl?.matches(":hover")) {
+    // Cursor was already inside when panel opened — show close button immediately
+    showCloseBtn();
+  }
+}
+
+function showCloseBtn(): void {
+  if (!expanded) return;
+  if (closeBtnHideTimer) { clearTimeout(closeBtnHideTimer); closeBtnHideTimer = null; }
+  closeBtnEl?.classList.add("hovered");
+}
+
+function hideCloseBtn(): void {
+  closeBtnHideTimer = setTimeout(() => {
+    closeBtnEl?.classList.remove("hovered");
+    closeBtnHideTimer = null;
+  }, 80);
 }
 
 function buildItems(
@@ -349,39 +383,38 @@ const ARGUMENTS_BOX_CSS = `
     right: 20px;
     z-index: 2;
     pointer-events: auto;
-    overflow: hidden;
-    background: #fff;
+    overflow: visible;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     cursor: pointer;
 
     /* Collapsed (button) state */
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    border: 2.5px solid rgba(0, 0, 0, 0.08);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
 
     transition:
       width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-      border-color 0.2s,
       box-shadow 0.3s;
   }
 
   .args-container:not(.expanded):hover {
     transform: scale(1.08);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
     transition:
       transform 0.15s,
       box-shadow 0.15s,
-      border-color 0.2s,
       width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .args-container.oddity-enabled {
-    border-color: #4ade80;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #4ade80;
   }
 
   /* Expanded (panel) state */
@@ -389,9 +422,28 @@ const ARGUMENTS_BOX_CSS = `
     width: 292px;
     height: 400px;
     border-radius: 16px;
-    border-color: rgba(0, 0, 0, 0.08);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
     cursor: default;
+  }
+
+  /* ── Transparent hover buffer (20px around panel when expanded) ── */
+
+  .args-container.expanded::before {
+    content: '';
+    position: absolute;
+    inset: -20px;
+    border-radius: 36px; /* slightly larger than panel's 16px */
+    pointer-events: auto;
+    z-index: -1;
+  }
+
+  /* ── Content clip (clips faces during morph) ── */
+
+  .args-content-clip {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
   }
 
   /* ── Button face ── */
@@ -405,6 +457,8 @@ const ARGUMENTS_BOX_CSS = `
     opacity: 1;
     transition: opacity 0.15s ease;
     pointer-events: none;
+    background: #fff;
+    border-radius: inherit;
   }
 
   .args-container.expanded .args-button-face {
@@ -449,7 +503,7 @@ const ARGUMENTS_BOX_CSS = `
   .args-main-title {
     font-weight: 700;
     font-size: 20px;
-    color: #111;
+    color: #fff;
     letter-spacing: -0.3px;
     font-family: system-ui, -apple-system, 'Helvetica Neue', sans-serif;
   }
@@ -462,7 +516,7 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-enabled-label {
     font-size: 13px;
-    color: #888;
+    color: rgba(255, 255, 255, 0.7);
     font-family: system-ui, -apple-system, sans-serif;
   }
 
@@ -475,7 +529,7 @@ const ARGUMENTS_BOX_CSS = `
     position: relative;
     width: 36px;
     height: 21px;
-    background: #ccc;
+    background: rgba(255, 255, 255, 0.25);
     border-radius: 100px;
     cursor: pointer;
     transition: background 0.2s;
@@ -508,7 +562,7 @@ const ARGUMENTS_BOX_CSS = `
   .args-section-title {
     font-weight: 700;
     font-size: 14px;
-    color: #111;
+    color: #fff;
     padding: 12px 18px 6px;
     flex-shrink: 0;
     font-family: system-ui, -apple-system, 'Helvetica Neue', sans-serif;
@@ -533,7 +587,7 @@ const ARGUMENTS_BOX_CSS = `
   .args-bullet {
     flex-shrink: 0;
     font-size: 13px;
-    color: #888;
+    color: rgba(255, 255, 255, 0.5);
     line-height: 1.5;
   }
 
@@ -541,14 +595,14 @@ const ARGUMENTS_BOX_CSS = `
     font-family: Georgia, 'Times New Roman', serif;
     font-style: italic;
     font-size: 13px;
-    color: #444;
+    color: rgba(255, 255, 255, 0.85);
     line-height: 1.5;
     word-break: break-word;
   }
 
   .args-empty {
     font-size: 12px;
-    color: #94a3b8;
+    color: rgba(255, 255, 255, 0.4);
     line-height: 1.5;
     padding: 8px 0 4px;
     font-family: system-ui, -apple-system, sans-serif;
@@ -561,7 +615,8 @@ const ARGUMENTS_BOX_CSS = `
     display: block;
     margin: 12px 18px 0;
     padding: 11px 16px;
-    background: #111;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
     color: #fff;
     font-size: 14px;
     font-weight: 400;
@@ -574,7 +629,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-copy-btn-full:hover {
-    background: #333;
+    background: rgba(255, 255, 255, 0.3);
   }
 
   /* ── Footer ── */
@@ -589,13 +644,13 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-footer-text {
     font-size: 13px;
-    color: #888;
+    color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
     font-family: system-ui, -apple-system, sans-serif;
   }
 
   .args-footer-text:hover {
-    color: #555;
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .args-footer-avatar {
@@ -603,7 +658,7 @@ const ARGUMENTS_BOX_CSS = `
     height: 32px;
     border-radius: 50%;
     overflow: hidden;
-    border: 1px solid rgba(0, 0, 0, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     background: #fff;
     flex-shrink: 0;
   }
@@ -614,37 +669,46 @@ const ARGUMENTS_BOX_CSS = `
     object-fit: contain;
   }
 
-  /* ── Close button ── */
+  /* ── Close button (Terry circle, top-right corner of panel) ── */
 
   .args-close-btn {
     all: unset;
-    position: fixed;
-    bottom: 432px;
-    right: 20px;
-    width: 30px;
-    height: 30px;
+    position: absolute;
+    /* Centered on top-left corner of container */
+    top: -13px;
+    left: -13px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.06);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    color: #555;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     cursor: pointer;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.15s ease, background 0.15s;
+    transition: opacity 0.15s ease, transform 0.15s ease;
     z-index: 3;
   }
 
-  .args-close-btn.visible {
+  .args-close-btn::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 11px;
+    height: 11px;
+    background: #757575;
+    /* Wide isosceles triangle pointing bottom-right (southeast) */
+    clip-path: polygon(0% 65%, 65% 0%, 100% 100%);
+  }
+
+  .args-close-btn.hovered {
     opacity: 1;
     pointer-events: auto;
-    transition: opacity 0.15s ease 0.25s, background 0.15s;
   }
 
   .args-close-btn:hover {
-    background: rgba(0, 0, 0, 0.12);
-    color: #222;
+    transform: scale(1.1);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
   }
 `;
