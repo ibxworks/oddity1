@@ -482,8 +482,8 @@ const ARGUMENTS_BOX_CSS = `
     cursor: pointer;
 
     /* Collapsed (button) state */
-    width: 44px;
-    height: 44px;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
 
@@ -511,8 +511,8 @@ const ARGUMENTS_BOX_CSS = `
 
   /* Expanded (panel) state */
   .args-container.expanded {
-    width: 292px;
-    height: 400px;
+    width: 234px;
+    height: 320px;
     border-radius: 16px;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
     cursor: default;
