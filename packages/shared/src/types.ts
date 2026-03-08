@@ -207,4 +207,5 @@ export type ExtensionMessage =
   | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation; url: string; contentHash: string } }
   | { action: 'sendUserFeedback'; payload: { message: string } }
   | { action: 'annotationReady'; payload: { regionId: string; annotation: Annotation } }
-  | { action: 'getUrlPrediction'; payload: { url: string } };
+  | { action: 'getUrlPrediction'; payload: { url: string } }
+  | { action: 'openPopup'; payload: Record<string, never> };
