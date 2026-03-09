@@ -1,0 +1,210 @@
+.account-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 40px 40px 60px;
+}
+
+.account-section {
+  margin-bottom: 36px;
+}
+
+.account-section-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.account-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.account-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.account-input {
+  padding: 9px 14px;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--r-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  outline: none;
+  transition: border-color 0.2s;
+  flex: 1;
+}
+
+.account-input:focus {
+  border-color: var(--text-secondary);
+}
+
+.account-value {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.account-name-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.account-save-btn {
+  padding: 9px 18px;
+  background: var(--green-500);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.account-save-btn:hover {
+  background: var(--green-600);
+}
+
+.account-tier-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-tier-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: var(--r-pill);
+  letter-spacing: 0.04em;
+}
+
+.account-tier-badge--free {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.account-tier-badge--pro {
+  background: #fef3c7;
+  color: #b8860b;
+}
+
+.account-upgrade-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green-500);
+  text-decoration: none;
+}
+
+.account-upgrade-link:hover {
+  text-decoration: underline;
+}
+
+.account-select {
+  padding: 9px 14px;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--r-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  outline: none;
+  cursor: pointer;
+}
+
+/* ── PILL BUTTONS ─────────────────────────────── */
+.pill-group {
+  display: flex;
+  gap: 8px;
+}
+
+.pill {
+  padding: 7px 18px;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--r-pill);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pill:hover {
+  border-color: var(--text-muted);
+}
+
+.pill--active {
+  background: var(--green-500);
+  color: #fff;
+  border-color: var(--green-500);
+}
+
+.pill--active:hover {
+  background: var(--green-600);
+  border-color: var(--green-600);
+}
+
+/* ── ENABLED SITES ────────────────────────────── */
+.sites-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.site-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.site-tag-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.site-tag-remove:hover {
+  color: var(--text-primary);
+}
+
+.sites-add-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 600px) {
+  .account-page { padding: 24px 16px 40px; }
+}

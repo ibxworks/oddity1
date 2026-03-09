@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import { setAuthCookie, clearAuthCookie } from './utils/authCookie'
 import AuthForm from './components/AuthForm'
-import Dashboard from './components/Dashboard'
+import Layout from './components/Layout'
+import DocumentsPage from './pages/DocumentsPage'
+import AccountPage from './pages/AccountPage'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -27,5 +30,16 @@ export default function App() {
 
   if (loading) return null
 
-  return session ? <Dashboard session={session} /> : <AuthForm />
+  if (!session) return <AuthForm />
+
+  return (
+    <Routes>
+      <Route element={<Layout session={session} />}>
+        <Route path="/documents" element={<DocumentsPage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/" element={<Navigate to="/documents" replace />} />
+        <Route path="*" element={<Navigate to="/documents" replace />} />
+      </Route>
+    </Routes>
+  )
 }

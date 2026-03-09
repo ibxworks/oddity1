@@ -55,7 +55,11 @@
       "mcp__playwright__browser_evaluate",
       "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Website && npm run build 2>&1)",
       "Bash(find /Users/realtonypark/Developer/oddity1 -type f \\\\\\( -name \".env*\" -o -name \"*.env\" \\\\\\) 2>/dev/null | grep -v node_modules)",
-      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Dashboard && npm run build 2>&1 | tail -20)"
+      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Dashboard && npm run build 2>&1 | tail -20)",
+      "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard/src -type f \\\\\\( -name \"*.jsx\" -o -name \"*.js\" -o -name \"*.json\" -o -name \"*.css\" \\\\\\) 2>/dev/null | sort)",
+      "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard -maxdepth 3 -type f \\\\\\( -name \"*.jsx\" -o -name \"*.js\" -o -name \"*.json\" -o -name \"*.css\" -o -name \"*.html\" -o -name \"*.md\" \\\\\\) ! -path \"*/node_modules/*\" ! -path \"*/dist/*\" 2>/dev/null | sort)",
+      "Bash(tree -L 3 /Users/realtonypark/Developer/oddity1/Oddity1Dashboard -I 'node_modules|dist' 2>/dev/null || find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard -type f -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)",
+      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Dashboard && npm install react-router-dom@7)"
     ]
   },
   "enableAllProjectMcpServers": true,
