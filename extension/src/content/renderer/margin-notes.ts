@@ -4,6 +4,7 @@ import type {
   AnnotationFont,
   AnnotationFontSize,
   AnnotationType,
+  TextType,
 } from "@oddity/shared";
 import { ANNOTATION_COLORS, ANNOTATION_LABELS } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
@@ -55,6 +56,7 @@ let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
 let userName: string | null = null;
+let textTypeBadgeEl: HTMLDivElement | null = null;
 
 const NOTE_EXPANDED_WIDTH = 220;
 const NOTE_GAP = 10;
@@ -230,6 +232,28 @@ export function setMarginNotesVisible(v: boolean): void {
   if (hostEl) {
     hostEl.style.display = v ? "" : "none";
   }
+}
+
+const TEXT_TYPE_LABELS: Record<TextType, string> = {
+  research_paper: "Research Paper",
+  lecture_note: "Lecture Note",
+  llm_chat: "LLM Chat",
+  essay: "Essay",
+};
+
+export function setTextType(type: TextType | undefined): void {
+  if (!shadowRoot) return;
+  if (!type) {
+    textTypeBadgeEl?.remove();
+    textTypeBadgeEl = null;
+    return;
+  }
+  if (!textTypeBadgeEl) {
+    textTypeBadgeEl = document.createElement("div");
+    textTypeBadgeEl.className = "oddity-text-type-badge";
+    shadowRoot.appendChild(textTypeBadgeEl);
+  }
+  textTypeBadgeEl.textContent = TEXT_TYPE_LABELS[type] ?? type;
 }
 
 export function filterMarginNotesByTypes(types: AnnotationType[]): void {
@@ -1457,6 +1481,31 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="light"].has-dimmed) .oddity-note.expanded {
     box-shadow: -8px 4px 28px rgba(0,0,0,0.22), -3px 2px 8px rgba(0,0,0,0.12);
+  }
+
+  .oddity-text-type-badge {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    padding: 4px 10px;
+    background: rgba(30, 30, 35, 0.82);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: rgba(255, 255, 255, 0.75);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    border-radius: 100px;
+    border: 1px solid rgba(255,255,255,0.1);
+    pointer-events: none;
+    z-index: 2147483647;
+  }
+
+  :host([data-theme="light"]) .oddity-text-type-badge {
+    background: rgba(255, 255, 255, 0.88);
+    color: rgba(0, 0, 0, 0.55);
+    border-color: rgba(0,0,0,0.08);
   }
 
 `;

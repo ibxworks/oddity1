@@ -6,6 +6,7 @@ import {
   type AnnotationFeedback,
   type FeedbackType,
   type SiteAdapter,
+  type TextType,
   type UserPreferences,
 } from '@oddity/shared';
 import { getAccessToken, getSession } from './auth.js';
@@ -123,6 +124,7 @@ export async function requestAnnotationsStreaming(
   const annotations: Annotation[] = [];
   let feedback: AnnotationFeedback[] = [];
   let cached = false;
+  let text_type: string | undefined;
   let buffer = '';
 
   try {
@@ -153,6 +155,7 @@ export async function requestAnnotationsStreaming(
           if (event.done) {
             cached = event.cached ?? false;
             feedback = event.feedback ?? [];
+            text_type = event.text_type;
             if (event.annotations) {
               annotations.length = 0;
               annotations.push(...event.annotations);
@@ -167,7 +170,7 @@ export async function requestAnnotationsStreaming(
     reader.releaseLock();
   }
 
-  return { success: true, cached, annotations, feedback };
+  return { success: true, cached, annotations, feedback, text_type: text_type as TextType | undefined };
 }
 
 export async function getAnnotations(

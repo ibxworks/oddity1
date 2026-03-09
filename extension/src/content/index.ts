@@ -48,6 +48,7 @@ import {
   onAnchorHoverStart,
   removeMarginNote,
   setMarginNotesVisible,
+  setTextType,
   updateMarginNotesStyle,
 } from "./renderer/margin-notes.js";
 import {
@@ -80,14 +81,23 @@ const activeHashes = new Map<Element, string>();
 const chatTrackedElements = new WeakSet<Element>();
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
-  "highlight",
-  "recall",
-  "provoking_question",
-  "insight",
+  "structural",
+  "provocation",
   "caveat",
-  "vocabulary",
+  "insight",
+  "labeling",
+  "recall",
+  "vocab",
+  "translation",
+  "givens",
+  "goal",
+  "hedge-check",
+  "specificity",
+  "alternative",
+  "perspective",
+  "free",
 ];
-let currentIntensity: Intensity = "default";
+let currentIntensity: Intensity = "jerry";
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
 const longWaitManager = new LongWaitManager(
@@ -583,7 +593,7 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
 
   // Sort: background-type annotations first (highlight, insight), line-type last
   // This ensures underlines render on top in the DOM stacking order
-  const backgroundTypes = new Set<AnnotationType>(["highlight", "insight"]);
+  const backgroundTypes = new Set<AnnotationType>(["insight", "free"]);
   visible.sort((a, b) => {
     const aIsBg = backgroundTypes.has(a.type) ? 0 : 1;
     const bIsBg = backgroundTypes.has(b.type) ? 0 : 1;
@@ -787,7 +797,8 @@ onMessage((message: ExtensionMessage) => {
       break;
     }
     case "annotationsReady": {
-      const { regionId, annotations, feedback } = message.payload;
+      const { regionId, annotations, feedback, text_type } = message.payload;
+      if (text_type) setTextType(text_type);
 
       // Stale response guard: ignore if this hash was invalidated by content change
       if (!pendingRegions.has(regionId) && !annotatedRegions.has(regionId)) {

@@ -20,7 +20,6 @@ const schemaExample: string = promptsConfig.schema_example ?? "";
 
 interface PromptProfile {
   system_prompt: string;
-  annotation_density: string;
 }
 
 /**
@@ -103,11 +102,16 @@ function getGenerationConfig() {
   };
 }
 
+interface GeminiCallResult {
+  annotations: unknown[];
+  text_type?: string;
+}
+
 async function callGemini(
   text: string,
   config: PromptProfile,
   correctionNote?: string,
-): Promise<unknown> {
+): Promise<GeminiCallResult> {
   const systemPrompt = expandPrompt(config.system_prompt);
   const generationConfig = getGenerationConfig();
 
@@ -123,41 +127,47 @@ async function callGemini(
   });
 
   const content = result.response.text();
-  if (!content) return [];
+  if (!content) return { annotations: [] };
 
   try {
     const parsed = JSON.parse(content);
-    return parsed.annotations ?? parsed;
+    return {
+      annotations: parsed.annotations ?? (Array.isArray(parsed) ? parsed : []),
+      text_type: parsed.text_type,
+    };
   } catch {
-    return [];
+    return { annotations: [] };
   }
+}
+
+export interface GenerateAnnotationsResult {
+  annotations: Annotation[];
+  text_type?: string;
 }
 
 export async function generateAnnotations(
   text: string,
-  intensity: Intensity,
+  _persona: Intensity,
   promptConfig: PromptProfile,
-): Promise<Annotation[]> {
+): Promise<GenerateAnnotationsResult> {
   const firstAttempt = await callGemini(text, promptConfig);
-  const expanded = Array.isArray(firstAttempt)
-    ? expandCompressedAnnotations(firstAttempt)
-    : firstAttempt;
+  const expanded = expandCompressedAnnotations(firstAttempt.annotations);
   const { valid, errors } = validateAnnotations(expanded);
 
-  if (errors.length === 0) return assignUniqueIds(valid);
+  if (errors.length === 0) {
+    return { annotations: assignUniqueIds(valid), text_type: firstAttempt.text_type };
+  }
 
   // Retry once with corrective prompt
-  const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
+  const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON object with text_type and annotations.`;
   const retryAttempt = await callGemini(text, promptConfig, correctionPrompt);
-  const retryExpanded = Array.isArray(retryAttempt)
-    ? expandCompressedAnnotations(retryAttempt)
-    : retryAttempt;
+  const retryExpanded = expandCompressedAnnotations(retryAttempt.annotations);
   const retryResult = validateAnnotations(retryExpanded);
 
-  // Return whatever valid annotations we got (partial results OK)
-  return assignUniqueIds(
-    retryResult.valid.length > 0 ? retryResult.valid : valid,
-  );
+  return {
+    annotations: assignUniqueIds(retryResult.valid.length > 0 ? retryResult.valid : valid),
+    text_type: firstAttempt.text_type ?? retryAttempt.text_type,
+  };
 }
 
 /**
@@ -166,12 +176,13 @@ export async function generateAnnotations(
  */
 export async function* generateAnnotationsStream(
   text: string,
-  intensity: Intensity,
+  _persona: Intensity,
   promptConfig: PromptProfile,
-): AsyncGenerator<Annotation, Annotation[], unknown> {
+): AsyncGenerator<Annotation, GenerateAnnotationsResult, unknown> {
   const systemPrompt = expandPrompt(promptConfig.system_prompt);
   const generationConfig = getGenerationConfig();
   const allAnnotations: Annotation[] = [];
+  let text_type: string | undefined;
 
   const model = genAI.getGenerativeModel({
     model: modelName,
@@ -190,8 +201,14 @@ export async function* generateAnnotationsStream(
     if (!delta) continue;
     buffer += delta;
 
+    // Extract text_type from the buffer as soon as it appears
+    if (!text_type) {
+      const match = buffer.match(/"text_type"\s*:\s*"([^"]+)"/);
+      if (match) text_type = match[1];
+    }
+
     // Try to extract complete annotation objects from the buffer.
-    // The LLM outputs: {"annotations": [{...}, {...}, ...]}
+    // The LLM outputs: {"text_type": "...", "annotations": [{...}, {...}, ...]}
     // We look for complete objects within the array by tracking brace depth.
     const extracted = extractCompleteObjects(buffer);
     for (const objStr of extracted.objects) {
@@ -211,7 +228,7 @@ export async function* generateAnnotationsStream(
     buffer = extracted.remaining;
   }
 
-  return allAnnotations;
+  return { annotations: allAnnotations, text_type };
 }
 
 /**

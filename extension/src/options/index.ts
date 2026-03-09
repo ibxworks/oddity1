@@ -25,9 +25,11 @@ const toast = document.getElementById('toast')!;
 
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
-  intensity: 'default',
+  intensity: 'jerry',
   visible_types: [...ALL_ANNOTATION_TYPES],
   disabled_sites: [],
+  annotation_font: 'default',
+  annotation_font_size: 'default',
 };
 
 // ─── Init ───
@@ -39,9 +41,11 @@ async function init(): Promise<void> {
     const prefs = stored['preferences'] as UserPreferences;
     currentPrefs = {
       enabled: prefs.enabled ?? true,
-      intensity: prefs.intensity ?? 'default',
+      intensity: prefs.intensity ?? 'jerry',
       visible_types: prefs.visible_types ?? [...ALL_ANNOTATION_TYPES],
       disabled_sites: prefs.disabled_sites ?? [],
+      annotation_font: prefs.annotation_font ?? 'default',
+      annotation_font_size: prefs.annotation_font_size ?? 'default',
     };
   }
 

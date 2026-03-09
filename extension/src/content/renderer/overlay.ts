@@ -118,7 +118,7 @@ export function filterByTypes(visibleTypes: AnnotationType[]): void {
  * Emphasize a specific annotation's anchor spans with brightness(1.4).
  */
 const LIGHT_ACCENT_TYPES = new Set(['insight']);
-const STRONG_DARKEN_TYPES = new Set(['recall', 'vocabulary', 'provoking_question', 'caveat']);
+const STRONG_DARKEN_TYPES = new Set(['recall', 'vocab', 'provocation', 'caveat']);
 
 export function emphasizeAnnotation(id: string): void {
   emphasizedId = id;
@@ -137,7 +137,7 @@ export function emphasizeAnnotation(id: string): void {
     } else {
       if (LIGHT_ACCENT_TYPES.has(type)) {
         span.style.filter = 'brightness(1.6) saturate(1.2)';
-      } else if (type === 'recall' || type === 'vocabulary') {
+      } else if (type === 'recall' || type === 'vocab') {
         span.style.filter = 'brightness(1.8) saturate(1.2)';
       } else {
         span.style.filter = 'brightness(1.4)';

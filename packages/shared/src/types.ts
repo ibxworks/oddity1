@@ -1,12 +1,25 @@
+// ─── Text Type (LLM-detected document category) ───
+
+export type TextType = 'research_paper' | 'lecture_note' | 'llm_chat' | 'essay';
+
 // ─── Annotation Types (LLM Output Contract) ───
 
 export type AnnotationType =
-  | 'highlight'
-  | 'recall'
-  | 'provoking_question'
-  | 'insight'
+  | 'structural'
+  | 'provocation'
   | 'caveat'
-  | 'vocabulary';
+  | 'insight'
+  | 'labeling'
+  | 'recall'
+  | 'vocab'
+  | 'translation'
+  | 'givens'
+  | 'goal'
+  | 'hedge-check'
+  | 'specificity'
+  | 'alternative'
+  | 'perspective'
+  | 'free';
 
 export type TextQuoteSelector = {
   type: 'TextQuoteSelector';
@@ -35,6 +48,7 @@ export type AnnotationResponse = {
   cached: boolean;
   annotations: Annotation[];
   feedback?: AnnotationFeedback[];
+  text_type?: TextType;
 };
 
 // ─── Feedback ───
@@ -49,9 +63,9 @@ export type AnnotationFeedback = {
   created_at: string;
 };
 
-// ─── Intensity ───
+// ─── Persona (annotation style selector) ───
 
-export type Intensity = 'light' | 'default' | 'heavy';
+export type Intensity = 'terry' | 'jerry' | 'gary';
 
 // ─── Annotation Style ───
 
@@ -138,6 +152,7 @@ export type ExtensionMessage =
         regionId: string;
         annotations: Annotation[];
         feedback: AnnotationFeedback[];
+        text_type?: TextType;
       };
     }
   | {

@@ -30,30 +30,61 @@ export const CACHE_TTL_DAYS = 30;
 // ─── Annotation Colors ───
 
 export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
-  highlight: "#FFDD69",
-  recall: "#243C61",
-  provoking_question: "#F5574C",
-  insight: "#BFF3D3",
+  // Red — critical/challenging
+  provocation: "#F5574C",
   caveat: "#F5574C",
-  vocabulary: "#243C61",
+  "hedge-check": "#F5574C",
+  perspective: "#F5574C",
+  alternative: "#F5574C",
+  specificity: "#F5574C",
+  // Green — enriching
+  insight: "#BFF3D3",
+  free: "#BFF3D3",
+  // Blue — navigating/orienting
+  structural: "#243C61",
+  recall: "#243C61",
+  labeling: "#243C61",
+  goal: "#243C61",
+  givens: "#243C61",
+  // Yellow — clarifying
+  vocab: "#FFDD69",
+  translation: "#FFDD69",
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
-  highlight: "KEY PHRASE",
-  recall: "RECALL",
-  provoking_question: "PROVOCATION",
-  insight: "INSIGHT",
+  provocation: "PROVOCATION",
   caveat: "CAVEAT",
-  vocabulary: "VOCABULARY",
+  "hedge-check": "HEDGE-CHECK",
+  perspective: "PERSPECTIVE",
+  alternative: "ALTERNATIVE",
+  specificity: "SPECIFICITY",
+  insight: "INSIGHT",
+  free: "FREE",
+  structural: "STRUCTURAL",
+  recall: "RECALL",
+  labeling: "LABELING",
+  goal: "GOAL",
+  givens: "GIVENS",
+  vocab: "VOCAB",
+  translation: "TRANSLATION",
 };
 
 // ─── All annotation types ───
 
 export const ALL_ANNOTATION_TYPES: AnnotationType[] = [
-  "highlight",
-  "recall",
-  "provoking_question",
-  "insight",
+  "provocation",
   "caveat",
-  "vocabulary",
+  "hedge-check",
+  "perspective",
+  "alternative",
+  "specificity",
+  "insight",
+  "free",
+  "structural",
+  "recall",
+  "labeling",
+  "goal",
+  "givens",
+  "vocab",
+  "translation",
 ];

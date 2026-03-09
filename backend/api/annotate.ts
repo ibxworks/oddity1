@@ -33,7 +33,7 @@ const AnnotateRequestSchema = z.object({
   url: z.string().url(),
   content_hash: z.string().min(1),
   text: z.string().min(1).max(MAX_TEXT_LENGTH),
-  intensity: z.enum(["light", "default", "heavy"]),
+  intensity: z.enum(["terry", "jerry", "gary"]),
   word_count: z.number().int().positive(),
 });
 
@@ -91,10 +91,10 @@ router.post("/", async (req, res) => {
     }
 
     // ── Layer 2: LLM generation (deduplicated) ──
-    const aiAnnotations = await dedup.run(key, async () => {
-      const profile = prompts.intensity_profiles[intensity as Intensity];
-      const rawAnnotations = await generateAnnotations(text, intensity, profile);
-      return filterAndFixAnnotations(rawAnnotations, text);
+    const { annotations: aiAnnotations, text_type } = await dedup.run(key, async () => {
+      const profile = prompts.persona_profiles[intensity as Intensity];
+      const result = await generateAnnotations(text, intensity, profile);
+      return { annotations: filterAndFixAnnotations(result.annotations, text), text_type: result.text_type };
     });
 
     // Write-through: populate DB cache
@@ -129,7 +129,7 @@ router.post("/", async (req, res) => {
       content_hash,
       authToken,
     );
-    res.json({ success: true, cached: false, source: "llm", ...merged });
+    res.json({ success: true, cached: false, source: "llm", text_type, ...merged });
   } catch (err) {
     console.error("[annotate] Error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -190,18 +190,21 @@ async function handleStreamingAnnotation(
     }
 
     // Stream from LLM — single call for the whole article
-    const profile = prompts.intensity_profiles[intensity as Intensity];
+    const profile = prompts.persona_profiles[intensity as Intensity];
     const allAnnotations: Annotation[] = [];
+    let text_type: string | undefined;
 
-    const stream = generateAnnotationsStream(text, intensity, profile);
-
-    for await (const annotation of stream) {
-      const fixed = fixSingleAnnotation(annotation, text);
+    const generator = generateAnnotationsStream(text, intensity, profile);
+    let next = await generator.next();
+    while (!next.done) {
+      const fixed = fixSingleAnnotation(next.value, text);
       if (fixed) {
         allAnnotations.push(fixed);
         res.write(`data: ${JSON.stringify({ annotation: fixed })}\n\n`);
       }
+      next = await generator.next();
     }
+    text_type = next.value.text_type;
 
     // Cache the complete result
     const expiresAt = new Date();
@@ -235,7 +238,7 @@ async function handleStreamingAnnotation(
       authToken,
     );
     res.write(
-      `data: ${JSON.stringify({ done: true, cached: false, annotations: merged.annotations, feedback: merged.feedback })}\n\n`,
+      `data: ${JSON.stringify({ done: true, cached: false, text_type, annotations: merged.annotations, feedback: merged.feedback })}\n\n`,
     );
     res.end();
   } catch (err) {

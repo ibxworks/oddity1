@@ -28,28 +28,31 @@ describe("@oddity/shared exports", () => {
     expect(shared.CACHE_TTL_DAYS).toBe(30);
   });
 
-  it("exports annotation colors for all 6 types", () => {
-    expect(Object.keys(shared.ANNOTATION_COLORS)).toHaveLength(6);
-    expect(shared.ANNOTATION_COLORS.highlight).toBe("#F59E0B");
-    expect(shared.ANNOTATION_COLORS.recall).toBe("#0D9488");
-    expect(shared.ANNOTATION_COLORS.provoking_question).toBe("#7C3AED");
-    expect(shared.ANNOTATION_COLORS.caveat).toBe("#7C3AED");
-    expect(shared.ANNOTATION_COLORS.vocabulary).toBe("#0D9488");
-    expect(shared.ANNOTATION_COLORS.insight).toBe("#2563EB");
+  it("exports annotation colors for all 15 types", () => {
+    expect(Object.keys(shared.ANNOTATION_COLORS)).toHaveLength(15);
+    expect(shared.ANNOTATION_COLORS.provocation).toBe("#F5574C");
+    expect(shared.ANNOTATION_COLORS.caveat).toBe("#F5574C");
+    expect(shared.ANNOTATION_COLORS["hedge-check"]).toBe("#F5574C");
+    expect(shared.ANNOTATION_COLORS.insight).toBe("#BFF3D3");
+    expect(shared.ANNOTATION_COLORS.free).toBe("#BFF3D3");
+    expect(shared.ANNOTATION_COLORS.structural).toBe("#243C61");
+    expect(shared.ANNOTATION_COLORS.recall).toBe("#243C61");
+    expect(shared.ANNOTATION_COLORS.vocab).toBe("#FFDD69");
+    expect(shared.ANNOTATION_COLORS.translation).toBe("#FFDD69");
   });
 
-  it("exports annotation labels for all 6 types", () => {
-    expect(Object.keys(shared.ANNOTATION_LABELS)).toHaveLength(6);
-    expect(shared.ANNOTATION_LABELS.highlight).toBe("KEY PHRASE");
+  it("exports annotation labels for all 15 types", () => {
+    expect(Object.keys(shared.ANNOTATION_LABELS)).toHaveLength(15);
+    expect(shared.ANNOTATION_LABELS.provocation).toBe("PROVOCATION");
     expect(shared.ANNOTATION_LABELS.recall).toBe("RECALL");
-    expect(shared.ANNOTATION_LABELS.provoking_question).toBe("PROVOCATION");
+    expect(shared.ANNOTATION_LABELS.vocab).toBe("VOCAB");
   });
 
-  it("exports ALL_ANNOTATION_TYPES with 6 entries", () => {
-    expect(shared.ALL_ANNOTATION_TYPES).toHaveLength(6);
-    expect(shared.ALL_ANNOTATION_TYPES).toContain("highlight");
+  it("exports ALL_ANNOTATION_TYPES with 15 entries", () => {
+    expect(shared.ALL_ANNOTATION_TYPES).toHaveLength(15);
+    expect(shared.ALL_ANNOTATION_TYPES).toContain("provocation");
     expect(shared.ALL_ANNOTATION_TYPES).toContain("recall");
-    expect(shared.ALL_ANNOTATION_TYPES).toContain("provoking_question");
-    expect(shared.ALL_ANNOTATION_TYPES).toContain("vocabulary");
+    expect(shared.ALL_ANNOTATION_TYPES).toContain("insight");
+    expect(shared.ALL_ANNOTATION_TYPES).toContain("vocab");
   });
 });
