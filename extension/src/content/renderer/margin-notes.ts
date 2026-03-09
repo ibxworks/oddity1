@@ -753,6 +753,8 @@ function enterEditMode(
   annotation: Annotation,
   textEl: HTMLDivElement,
 ): void {
+  if (noteEl.querySelector(".note-edit-textarea")) return;
+
   const textarea = document.createElement("textarea");
   textarea.className = "note-edit-textarea";
   textarea.value = annotation.content.note;
