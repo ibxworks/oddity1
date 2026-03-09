@@ -47,7 +47,6 @@ let fabHost: HTMLElement | null = null;
 let fabShadow: ShadowRoot | null = null;
 let editorHost: HTMLElement | null = null;
 let editorShadow: ShadowRoot | null = null;
-let currentSelection: Selection | null = null;
 let currentRange: Range | null = null;
 let selectionChangeListener: (() => void) | null = null;
 let escapeListener: ((e: KeyboardEvent) => void) | null = null;
@@ -106,7 +105,6 @@ function handleSelectionChange(): void {
     return;
   }
 
-  currentSelection = sel;
   currentRange = sel.getRangeAt(0).cloneContents() ? sel.getRangeAt(0).cloneRange() : null;
   if (!currentRange) return;
 
@@ -247,8 +245,7 @@ function showEditor(): void {
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 13px;
     color: ${colors.cardText};
-    min-width: 240px;
-    max-width: 320px;
+    width: 320px;
   `;
 
   // Selected text preview
@@ -415,7 +412,6 @@ async function handleSubmit(note: string): Promise<void> {
   dismissEditor();
   window.getSelection()?.removeAllRanges();
   currentRange = null;
-  currentSelection = null;
 }
 
 function renderManualAnnotation(annotation: Annotation, root: Element): void {

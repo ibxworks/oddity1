@@ -1039,7 +1039,7 @@ const MARGIN_NOTES_CSS = `
 
   .oddity-note {
     position: absolute;
-    max-width: ${NOTE_EXPANDED_WIDTH}px;
+    width: ${NOTE_EXPANDED_WIDTH}px;
     padding: 10px 12px;
     font-family: var(--oddity-note-font);
     font-size: var(--oddity-note-size);
@@ -1053,7 +1053,7 @@ const MARGIN_NOTES_CSS = `
     border-radius: 12px;
     box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
     opacity: 1;
-    transition: opacity 0.25s ease-in, filter 0.25s ease-in, max-width 0.2s, box-shadow 0.2s;
+    transition: opacity 0.25s ease-in, filter 0.25s ease-in, box-shadow 0.2s;
     box-sizing: border-box;
   }
 
@@ -1103,7 +1103,7 @@ const MARGIN_NOTES_CSS = `
 
   /* Expanded state */
   .oddity-note.expanded {
-    max-width: ${NOTE_EXPANDED_WIDTH}px;
+    width: ${NOTE_EXPANDED_WIDTH}px;
     box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
     opacity: 1;
     z-index: 10;
