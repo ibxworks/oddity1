@@ -259,12 +259,38 @@
   <div class="card" id="account-card">
     <div class="card-title">Account</div>
     <div id="auth-section">
-      <div class="auth-info">
-        <div>
-          <div class="auth-detail" id="auth-detail">Checking...</div>
-          <div class="auth-tier" id="auth-tier"></div>
+      <div id="auth-not-signed-in" style="display:none">
+        <div class="auth-detail">Not signed in</div>
+      </div>
+      <div id="auth-signed-in" style="display:none">
+        <div class="field">
+          <span class="field-label">Name</span>
+          <div class="auth-info">
+            <span class="auth-email" id="auth-display-name"></span>
+            <button class="btn btn-sm" id="change-name-btn">Change Name</button>
+          </div>
+          <div id="name-edit-row" class="site-input-row" style="display:none; margin-top:8px">
+            <input type="text" id="name-edit-input" placeholder="New display name" />
+            <button class="btn btn-sm btn-primary" id="name-save-btn">Save</button>
+            <button class="btn btn-sm" id="name-cancel-btn">Cancel</button>
+          </div>
         </div>
-        <button class="btn btn-sm btn-danger" id="logout-btn" style="display:none">Log out</button>
+        <div class="field">
+          <span class="field-label">Email</span>
+          <div class="auth-detail" id="auth-email-display"></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Tier</span>
+          <div class="auth-detail" id="auth-tier-display"></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Annotations</span>
+          <div class="auth-detail" id="auth-annotation-count">0</div>
+        </div>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn btn-sm" id="upgrade-btn" style="display:none">Upgrade to Pro</button>
+          <button class="btn btn-sm btn-danger" id="logout-btn">Log out</button>
+        </div>
       </div>
     </div>
   </div>

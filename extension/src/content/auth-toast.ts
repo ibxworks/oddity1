@@ -58,7 +58,7 @@ export function showAuthToast(): void {
       }
     </style>
     <div class="toast">
-      <span>Sign in to Oddity 1 to see annotations.</span>
+      <span>Sign in to Oddity 1 to see annotations 👇</span>
       <button class="dismiss" aria-label="Dismiss">\u00d7</button>
     </div>
   `;

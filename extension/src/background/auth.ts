@@ -79,13 +79,19 @@ export async function signUp(email: string, password: string, displayName: strin
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
+    options: {
+      data: { display_name: displayName },
+    },
   });
   if (error) throw error;
   if (data.user) {
-    await supabase.from('profiles').upsert({
+    const { error: profileError } = await supabase.from('profiles').upsert({
       id: data.user.id,
       display_name: displayName,
     }, { onConflict: 'id' });
+    if (profileError) {
+      console.error('[Oddity 1] Failed to save display_name to profiles:', profileError.message);
+    }
   }
   return data;
 }

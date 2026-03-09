@@ -2,6 +2,7 @@ import type {
   AnnotationType,
   Intensity,
   UserPreferences,
+  UserTier,
 } from '@oddity/shared';
 import { ALL_ANNOTATION_TYPES } from '@oddity/shared';
 import { sendMessage } from '../shared/messaging.js';
@@ -16,8 +17,18 @@ const siteInput = document.getElementById('site-input') as HTMLInputElement;
 const addSiteBtn = document.getElementById('add-site-btn')!;
 const clearCacheBtn = document.getElementById('clear-cache-btn')!;
 const exportAllBtn = document.getElementById('export-all-btn')!;
-const authDetail = document.getElementById('auth-detail')!;
-const authTier = document.getElementById('auth-tier')!;
+const authNotSignedIn = document.getElementById('auth-not-signed-in')!;
+const authSignedIn = document.getElementById('auth-signed-in')!;
+const authDisplayName = document.getElementById('auth-display-name')!;
+const authEmailDisplay = document.getElementById('auth-email-display')!;
+const authTierDisplay = document.getElementById('auth-tier-display')!;
+const authAnnotationCount = document.getElementById('auth-annotation-count')!;
+const changeNameBtn = document.getElementById('change-name-btn')!;
+const nameEditRow = document.getElementById('name-edit-row')!;
+const nameEditInput = document.getElementById('name-edit-input') as HTMLInputElement;
+const nameSaveBtn = document.getElementById('name-save-btn')!;
+const nameCancelBtn = document.getElementById('name-cancel-btn')!;
+const upgradeBtn = document.getElementById('upgrade-btn')!;
 const logoutBtn = document.getElementById('logout-btn')!;
 const toast = document.getElementById('toast')!;
 
@@ -83,25 +94,33 @@ async function loadAuthStatus(): Promise<void> {
   try {
     const result = await sendMessage<{
       authenticated: boolean;
-      user: { id: string; email: string } | null;
+      user: {
+        id: string;
+        email: string;
+        display_name: string | null;
+        tier: UserTier;
+        annotation_count?: number;
+      } | null;
     }>({
       action: 'getAuthStatus',
       payload: {},
     });
 
     if (result.authenticated && result.user) {
-      authDetail.innerHTML = `<span class="auth-email">${escapeHtml(result.user.email)}</span>`;
-      authTier.textContent = 'Free tier';
-      logoutBtn.style.display = 'inline-flex';
+      authNotSignedIn.style.display = 'none';
+      authSignedIn.style.display = '';
+      authDisplayName.textContent = result.user.display_name || result.user.email.split('@')[0] || result.user.email;
+      authEmailDisplay.textContent = result.user.email;
+      authTierDisplay.textContent = result.user.tier === 'pro' ? 'Pro Plan' : 'Free Plan';
+      authAnnotationCount.textContent = String(result.user.annotation_count ?? 0);
+      upgradeBtn.style.display = result.user.tier === 'pro' ? 'none' : 'inline-flex';
     } else {
-      authDetail.textContent = 'Not signed in';
-      authTier.textContent = '';
-      logoutBtn.style.display = 'none';
+      authNotSignedIn.style.display = '';
+      authSignedIn.style.display = 'none';
     }
   } catch {
-    authDetail.textContent = 'Auth unavailable';
-    authTier.textContent = '';
-    logoutBtn.style.display = 'none';
+    authNotSignedIn.style.display = '';
+    authSignedIn.style.display = 'none';
   }
 }
 
@@ -238,21 +257,54 @@ exportAllBtn.addEventListener('click', async () => {
 
 // Logout
 logoutBtn.addEventListener('click', async () => {
-  // Clear auth data from storage
-  await chrome.storage.local.remove(['session', 'auth_token']);
-  authDetail.textContent = 'Not signed in';
-  authTier.textContent = '';
-  logoutBtn.style.display = 'none';
+  try {
+    await sendMessage({ action: 'signOut', payload: {} });
+  } catch {
+    // Sign out failed; still show not-signed-in UI
+  }
+  authNotSignedIn.style.display = '';
+  authSignedIn.style.display = 'none';
   showToast('Logged out');
 });
 
-// ─── Helpers ───
+// Change name
+changeNameBtn.addEventListener('click', () => {
+  nameEditInput.value = authDisplayName.textContent ?? '';
+  nameEditRow.style.display = '';
+  changeNameBtn.style.display = 'none';
+});
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
+nameCancelBtn.addEventListener('click', () => {
+  nameEditRow.style.display = 'none';
+  changeNameBtn.style.display = '';
+});
+
+nameSaveBtn.addEventListener('click', async () => {
+  const newName = nameEditInput.value.trim();
+  if (!newName) return;
+
+  nameSaveBtn.textContent = 'Saving...';
+  nameSaveBtn.setAttribute('disabled', '');
+  try {
+    await sendMessage({ action: 'updateProfile', payload: { display_name: newName } });
+    authDisplayName.textContent = newName;
+    nameEditRow.style.display = 'none';
+    changeNameBtn.style.display = '';
+    showToast('Name updated');
+  } catch {
+    showToast('Failed to update name');
+  } finally {
+    nameSaveBtn.textContent = 'Save';
+    nameSaveBtn.removeAttribute('disabled');
+  }
+});
+
+// Upgrade to Pro
+upgradeBtn.addEventListener('click', () => {
+  window.open('https://oddity1.com/pricing', '_blank');
+});
+
+// ─── Helpers ───
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 

@@ -140,7 +140,7 @@
         font-size: 18px;
         font-weight: 500;
         color: #111;
-        letter-spacing: 0.0px;
+        letter-spacing: 0px;
         line-height: 1;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       }
@@ -725,16 +725,15 @@
 
     <!-- Auth Form (shown when not signed in) -->
     <div class="auth-form" id="auth-form" style="display: none">
-      <div class="auth-form-title" id="auth-form-title">Sign In</div>
+      <div class="auth-form-title" id="auth-form-title">Sign Up</div>
       <div class="auth-error" id="auth-error"></div>
       <div class="auth-success" id="auth-success"></div>
       <input
         class="auth-input"
         id="auth-name"
         type="text"
-        placeholder="Your name"
+        placeholder="Full name (e.g. Terry Doe)"
         autocomplete="name"
-        style="display: none"
       />
       <input
         class="auth-input"
@@ -750,17 +749,17 @@
         placeholder="Password"
         autocomplete="current-password"
       />
-      <div class="auth-terms" id="auth-terms">
+      <div class="auth-terms" id="auth-terms" style="display: block">
         By continuing, you agree to our
         <a href="https://www.oddity1.com/terms" target="_blank">Terms</a> and
         <a href="https://www.oddity1.com/privacy" target="_blank"
           >Privacy Policy</a
         >.
       </div>
-      <button class="btn btn-primary" id="auth-submit-btn">Sign In</button>
+      <button class="btn btn-primary" id="auth-submit-btn">Sign Up</button>
       <div class="auth-toggle">
-        <span id="auth-toggle-text">Don't have an account? </span>
-        <a id="auth-toggle-link">Sign Up</a>
+        <span id="auth-toggle-text">Already have an account? </span>
+        <a id="auth-toggle-link">Sign In</a>
       </div>
     </div>
 
@@ -770,7 +769,17 @@
       <div class="profile-section">
         <div class="profile-circle-area">
           <div class="profile-circle">
-            <img id="profile-avatar-img" src="/Terry.png" alt="Terry" style="width:100%;height:100%;object-fit:contain;border-radius:50%;" />
+            <img
+              id="profile-avatar-img"
+              src="/Terry.png"
+              alt="Terry"
+              style="
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                border-radius: 50%;
+              "
+            />
           </div>
           <div class="profile-name-wrap">
             <select id="profile-persona-select" class="profile-persona-select">
@@ -815,7 +824,7 @@
               </option>
               <option
                 value="helvetica"
-                style="font-family: 'Helvetica Neue', Helvetica"
+                style="font-family: &quot;Helvetica Neue&quot;, Helvetica"
               >
                 Helvetica Neue
               </option>

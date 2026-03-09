@@ -131,7 +131,7 @@ export function initArgumentsBox(): void {
   // ── Copy button ──
   const copyBtnFull = document.createElement("button");
   copyBtnFull.className = "args-copy-btn-full";
-  copyBtnFull.textContent = "Copy";
+  copyBtnFull.textContent = "Copy my arguments";
   copyBtnFull.addEventListener("click", (e) => {
     e.stopPropagation();
     handleCopy(copyBtnFull);
@@ -145,6 +145,11 @@ export function initArgumentsBox(): void {
   const footerText = document.createElement("span");
   footerText.className = "args-footer-text";
   footerText.textContent = "Go to Dashboard";
+  chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }, (result) => {
+    if (!result?.authenticated) {
+      footerText.textContent = "Sign in";
+    }
+  });
   footerText.addEventListener("click", (e) => {
     e.stopPropagation();
     chrome.runtime.sendMessage({ action: "openPopup", payload: {} });
@@ -215,7 +220,8 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
   if (!containerEl) return;
   containerEl.classList.toggle("oddity-enabled", enabled);
   if (panelToggleInput) panelToggleInput.checked = enabled;
-  if (panelToggleLabelEl) panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (panelToggleLabelEl)
+    panelToggleLabelEl.textContent = enabled ? "On" : "Off";
 }
 
 export function destroyArgumentsBox(): void {
@@ -254,7 +260,10 @@ function toggle(): void {
 
 function showCloseBtn(): void {
   if (!expanded) return;
-  if (closeBtnHideTimer) { clearTimeout(closeBtnHideTimer); closeBtnHideTimer = null; }
+  if (closeBtnHideTimer) {
+    clearTimeout(closeBtnHideTimer);
+    closeBtnHideTimer = null;
+  }
   closeBtnEl?.classList.add("hovered");
 }
 
@@ -289,13 +298,15 @@ function buildItems(
       if (fb.feedback_type === "thumbs_up") {
         items.push({
           icon: "✓",
-          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text:
+            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
         });
       } else if (fb.feedback_type === "thumbs_down") {
         items.push({
           icon: "✗",
-          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text:
+            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
         });
       } else if (fb.feedback_type === "reply") {
@@ -334,7 +345,8 @@ function renderList(): void {
   if (allItems.length === 0) {
     const empty = document.createElement("div");
     empty.className = "args-empty";
-    empty.textContent = "No arguments yet. React to annotations or create your own!";
+    empty.textContent =
+      "No arguments yet. React to annotations or create your own!";
     listEl.appendChild(empty);
     return;
   }

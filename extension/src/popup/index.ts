@@ -39,7 +39,9 @@ const authToggleText = document.getElementById("auth-toggle-text")!;
 const mainContent = document.getElementById("main-content")!;
 
 // Persona picker refs (top section)
-const profilePersonaSelect = document.getElementById("profile-persona-select") as HTMLSelectElement;
+const profilePersonaSelect = document.getElementById(
+  "profile-persona-select",
+) as HTMLSelectElement;
 
 // Auth bar refs (bottom)
 const profileBtn = document.getElementById("profile-btn")!;
@@ -74,7 +76,7 @@ const exportCancelBtn = document.getElementById("export-cancel-btn")!;
 const exportDownloadBtn = document.getElementById("export-download-btn")!;
 const exportStatusEl = document.getElementById("export-status")!;
 
-let isSignUpMode = false;
+let isSignUpMode = true;
 
 // ─── State ───
 
@@ -178,7 +180,8 @@ function showAuthenticatedUI(user: {
   authForm.style.display = "none";
   mainContent.classList.remove("hidden");
 
-  const displayName = user.display_name || user.email.split("@")[0] || user.email;
+  const displayName =
+    user.display_name || user.email.split("@")[0] || user.email;
   const initial = displayName.charAt(0).toUpperCase();
 
   // Auth bar (bottom)
@@ -200,7 +203,6 @@ function showAuthenticatedUI(user: {
 
 function showUnauthenticatedUI(): void {
   authForm.style.display = "";
-  authForm.classList.add("sign-in-mode");
   mainContent.classList.add("hidden");
   currentUser = null;
 }
@@ -324,7 +326,8 @@ fontSelect.addEventListener("change", () => {
 
 // Font size select
 fontSizeSelect.addEventListener("change", () => {
-  currentPrefs.annotation_font_size = fontSizeSelect.value as AnnotationFontSize;
+  currentPrefs.annotation_font_size =
+    fontSizeSelect.value as AnnotationFontSize;
   savePrefs();
 });
 
@@ -422,8 +425,12 @@ openOptions.addEventListener("click", (e) => {
 
 // ─── Persona Picker ───
 
-const profileAvatarImg = document.getElementById("profile-avatar-img") as HTMLImageElement;
-const profileCircleEl = profileAvatarImg.closest('.profile-circle') as HTMLElement;
+const profileAvatarImg = document.getElementById(
+  "profile-avatar-img",
+) as HTMLImageElement;
+const profileCircleEl = profileAvatarImg.closest(
+  ".profile-circle",
+) as HTMLElement;
 
 function applyPersonaVisuals(name: string): void {
   profileAvatarImg.src = `/${name}.png`;
@@ -507,7 +514,7 @@ authSubmitBtn.addEventListener("click", async () => {
   }
 
   if (isSignUpMode && !displayName) {
-    showAuthError("Please enter your name.");
+    showAuthError("Please enter your full name (e.g. Terry Doe).");
     return;
   }
 
