@@ -1445,7 +1445,7 @@ const MARGIN_NOTES_CSS = `
   }
 
   :host([data-theme="light"]) [data-annotation-type="highlight"] .note-label {
-    color: #DCAF16 !important;
+    color: #EAB308 !important;
   }
 
   :host([data-theme="light"]) [data-annotation-type="recall"] .note-label,
