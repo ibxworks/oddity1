@@ -47,7 +47,12 @@
       "Bash(npm run build 2>&1 | tail -5 && npm test 2>&1 | tail -20)",
       "WebFetch(domain:www.datalab.to)",
       "Bash(npm install)",
-      "Bash(wc -l /Users/realtonypark/Developer/oddity1/extension/src/content/*.ts)"
+      "Bash(wc -l /Users/realtonypark/Developer/oddity1/extension/src/content/*.ts)",
+      "WebFetch(domain:www.oddity1.com)",
+      "mcp__chrome-devtools__new_page",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_evaluate"
     ]
   },
   "enableAllProjectMcpServers": true,
