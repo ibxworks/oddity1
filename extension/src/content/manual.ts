@@ -14,13 +14,13 @@ import { getThemeMode } from './renderer/theme-detector.js';
 const ACCENT = '#A1927B';
 
 const LIGHT_COLORS = {
-  cardBg: 'rgba(255,255,255,0.85)',
+  cardBg: 'rgba(255,255,255,0.35)',
   cardBorder: 'rgba(0,0,0,0.08)',
   cardText: '#111111',
   previewBg: 'rgba(0,0,0,0.04)',
   previewText: '#555555',
   inputBorder: 'rgba(0,0,0,0.15)',
-  inputBg: 'rgba(255,255,255,0.6)',
+  inputBg: 'rgba(255,255,255,0.5)',
   labelColor: '#111111',
   cancelBg: 'transparent',
   cancelText: '#111111',
@@ -28,7 +28,7 @@ const LIGHT_COLORS = {
 };
 
 const DARK_COLORS = {
-  cardBg: 'rgba(18,18,18,0.85)',
+  cardBg: 'rgba(18,18,18,0.55)',
   cardBorder: 'rgba(255,255,255,0.08)',
   cardText: '#f0f0f0',
   previewBg: 'rgba(255,255,255,0.05)',
@@ -239,7 +239,7 @@ function showEditor(): void {
     background: ${colors.cardBg};
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border-radius: 10px;
+    border-radius: 16px;
     box-shadow: 0 4px 24px rgba(0,0,0,0.18);
     border: 1px solid ${colors.cardBorder};
     font-family: system-ui, -apple-system, sans-serif;
@@ -261,6 +261,7 @@ function showEditor(): void {
     font-size: 12px;
     line-height: 1.4;
     border-left: 3px solid ${ACCENT};
+    border-radius: 8px;
   `;
   container.appendChild(preview);
 
@@ -279,7 +280,7 @@ function showEditor(): void {
     font-size: 13px;
     padding: 6px 8px;
     border: 1px solid ${colors.inputBorder};
-    border-radius: 4px;
+    border-radius: 10px;
     background: ${colors.inputBg};
     color: ${colors.cardText};
     resize: vertical;
@@ -301,7 +302,7 @@ function showEditor(): void {
     font-size: 12px;
     padding: 6px 12px;
     border: 1px solid ${colors.cancelBorder};
-    border-radius: 4px;
+    border-radius: 999px;
     background: ${colors.cancelBg};
     color: ${colors.cancelText};
     cursor: pointer;
@@ -317,9 +318,9 @@ function showEditor(): void {
     font-size: 12px;
     padding: 6px 12px;
     border: none;
-    border-radius: 4px;
-    background: ${ACCENT};
-    color: white;
+    border-radius: 999px;
+    background: #111111;
+    color: #ffffff;
     cursor: pointer;
     font-weight: 600;
   `;
