@@ -52,7 +52,8 @@
       "mcp__chrome-devtools__new_page",
       "mcp__playwright__browser_navigate",
       "mcp__playwright__browser_take_screenshot",
-      "mcp__playwright__browser_evaluate"
+      "mcp__playwright__browser_evaluate",
+      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Website && npm run build 2>&1)"
     ]
   },
   "enableAllProjectMcpServers": true,
