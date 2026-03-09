@@ -1,5 +1,14 @@
 import type { AnnotationType } from "./types.js";
 
+// ─── Default Enabled Sites ───
+
+export const DEFAULT_ENABLED_SITES: string[] = [
+  'chatgpt.com', 'claude.ai', 'gemini.google.com',
+  'wikipedia.org', 'substack.com', 'medium.com',
+  'bbc.com', 'cnn.com', 'nytimes.com',
+  'washingtonpost.com', 'theatlantic.com',
+];
+
 // ─── Backend URL ───
 
 export const BACKEND_URL =

@@ -20,6 +20,9 @@ let listEl: HTMLDivElement | null = null;
 let panelToggleInput: HTMLInputElement | null = null;
 let panelToggleLabelEl: HTMLSpanElement | null = null;
 let expanded = false;
+let dimmed = false;
+let manualRunCb: (() => void) | null = null;
+let notEnabledPanelEl: HTMLDivElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
@@ -53,7 +56,13 @@ export function initArgumentsBox(): void {
   containerEl = document.createElement("div");
   containerEl.className = "args-container";
   containerEl.addEventListener("click", () => {
-    if (!expanded) toggle();
+    if (!expanded) {
+      if (dimmed) {
+        toggleDimmedPanel();
+      } else {
+        toggle();
+      }
+    }
   });
 
   // Button face (Terry.png, visible when collapsed)
@@ -184,7 +193,13 @@ export function initArgumentsBox(): void {
   closeBtnEl.addEventListener("mouseleave", () => hideCloseBtn());
   closeBtnEl.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (expanded) toggle();
+    if (expanded) {
+      if (dimmed) {
+        toggleDimmedPanel();
+      } else {
+        toggle();
+      }
+    }
   });
   containerEl.appendChild(closeBtnEl);
 
@@ -224,6 +239,15 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
     panelToggleLabelEl.textContent = enabled ? "On" : "Off";
 }
 
+export function setArgumentsBoxDimmed(isDimmed: boolean): void {
+  dimmed = isDimmed;
+  containerEl?.classList.toggle("oddity-not-enabled", isDimmed);
+}
+
+export function setManualRunCallback(cb: () => void): void {
+  manualRunCb = cb;
+}
+
 export function destroyArgumentsBox(): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
@@ -240,11 +264,67 @@ export function destroyArgumentsBox(): void {
   panelToggleInput = null;
   panelToggleLabelEl = null;
   expanded = false;
+  dimmed = false;
+  manualRunCb = null;
+  notEnabledPanelEl = null;
   canonicalItems = [];
   liveItems = [];
 }
 
 // ─── Internal ───
+
+function toggleDimmedPanel(): void {
+  expanded = !expanded;
+  containerEl?.classList.toggle("expanded", expanded);
+  if (!expanded) {
+    if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
+    closeBtnEl?.classList.remove("hovered");
+    // Remove the overlay when collapsing — re-created fresh each open
+    notEnabledPanelEl?.remove();
+    notEnabledPanelEl = null;
+    return;
+  } else if (containerEl?.matches(":hover")) {
+    showCloseBtn();
+  }
+
+  // Build a fresh overlay each time (no stale state)
+  const contentClip = shadowRoot?.querySelector(".args-content-clip");
+  if (!contentClip) return;
+
+  notEnabledPanelEl = document.createElement("div");
+  notEnabledPanelEl.className = "args-not-enabled-overlay";
+
+  const msg = document.createElement("div");
+  msg.className = "args-not-enabled-msg";
+  msg.textContent = "Oddity 1 is not enabled for this site";
+
+  const isMac = navigator.platform.toUpperCase().includes("MAC");
+  const shortcutHint = document.createElement("div");
+  shortcutHint.className = "args-not-enabled-hint";
+  shortcutHint.textContent = `${isMac ? "\u2318" : "Ctrl+"}O`;
+
+  const runBtn = document.createElement("button");
+  runBtn.className = "args-run-btn";
+  runBtn.textContent = "Run on this page";
+  runBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (manualRunCb) {
+      expanded = false;
+      containerEl?.classList.remove("expanded");
+      notEnabledPanelEl?.remove();
+      notEnabledPanelEl = null;
+      manualRunCb();
+    }
+  });
+
+  notEnabledPanelEl.appendChild(msg);
+  notEnabledPanelEl.appendChild(runBtn);
+  notEnabledPanelEl.appendChild(shortcutHint);
+  notEnabledPanelEl.addEventListener("click", (e) => e.stopPropagation());
+
+  // Append as sibling to panelFace inside content-clip (not inside panelFace)
+  contentClip.appendChild(notEnabledPanelEl);
+}
 
 function toggle(): void {
   expanded = !expanded;
@@ -784,5 +864,78 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .args-footer-avatar {
     border-color: rgba(0, 0, 0, 0.12);
+  }
+
+  /* ── Not-enabled state (red button) ── */
+
+  .args-container.oddity-not-enabled:not(.expanded) .args-button-face {
+    background: #ef4444;
+  }
+
+  .args-container.oddity-not-enabled:not(.expanded) {
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #ef4444;
+  }
+
+  /* ── Not-enabled overlay panel ── */
+
+  .args-not-enabled-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    gap: 16px;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: inherit;
+    z-index: 2;
+  }
+
+  .args-not-enabled-msg {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.8);
+    text-align: center;
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.4;
+  }
+
+  .args-run-btn {
+    all: unset;
+    display: block;
+    padding: 11px 24px;
+    background: #22c55e;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: system-ui, -apple-system, sans-serif;
+    text-align: center;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .args-run-btn:hover {
+    background: #16a34a;
+  }
+
+  .args-not-enabled-hint {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.4);
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  :host([data-theme="light"]) .args-not-enabled-overlay {
+    background: rgba(255, 255, 255, 0.9);
+  }
+
+  :host([data-theme="light"]) .args-not-enabled-msg {
+    color: #606060;
+  }
+
+  :host([data-theme="light"]) .args-not-enabled-hint {
+    color: rgba(0, 0, 0, 0.35);
   }
 `;

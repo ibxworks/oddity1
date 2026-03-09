@@ -1,4 +1,5 @@
 import type { ExtensionMessage, UserPreferences } from "@oddity/shared";
+import { DEFAULT_ENABLED_SITES } from "@oddity/shared";
 import { sendToTab } from "../shared/messaging.js";
 import {
   getAdapters,
@@ -16,7 +17,7 @@ import {
   sendUserFeedback as apiSendUserFeedback,
   updateAnnotation as apiUpdateAnnotation,
 } from "./api-client.js";
-import { getProfile, getSession, getUserTier, signIn, signOut, signUp, updateProfile } from "./auth.js";
+import { getEnabledSites, getProfile, getSession, getUserTier, signIn, signOut, signUp, updateEnabledSites, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 import { getFromSessionCache, setInSessionCache } from "./sw-cache.js";
 import { getUrlCache, setUrlCache } from "./url-cache.js";
@@ -32,10 +33,22 @@ function abortKey(tabId: number, regionId: string): string {
 
 // ─── Installed Event ───
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   console.log("[Oddity 1] Extension installed");
   setupContextMenu();
   initAdapterRefresh();
+
+  // Migration: replace disabled_sites with enabled_sites
+  const stored = await chrome.storage.local.get("preferences");
+  const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+  if ('disabled_sites' in prefs) {
+    delete prefs.disabled_sites;
+    if (!Array.isArray(prefs.enabled_sites)) {
+      prefs.enabled_sites = DEFAULT_ENABLED_SITES;
+    }
+    await chrome.storage.local.set({ preferences: prefs });
+    console.log("[Oddity 1] Migrated disabled_sites → enabled_sites");
+  }
 });
 
 // ─── Message Router ───
@@ -186,6 +199,13 @@ chrome.runtime.onMessage.addListener(
           const { email, password } = message.payload;
           const data = await signIn(email, password);
           const signInProfile = await getProfile();
+
+          // Cache enabled sites locally after sign-in
+          const signInSites = await getEnabledSites() ?? DEFAULT_ENABLED_SITES;
+          const signInStored = await chrome.storage.local.get("preferences");
+          const signInPrefs = (signInStored["preferences"] ?? {}) as Record<string, unknown>;
+          await chrome.storage.local.set({ preferences: { ...signInPrefs, enabled_sites: signInSites } });
+
           return {
             success: true,
             user: {
@@ -201,6 +221,14 @@ chrome.runtime.onMessage.addListener(
           const { email, password, displayName } = message.payload;
           const data = await signUp(email, password, displayName);
           const needsConfirmation = data.session === null;
+
+          // Cache default enabled sites locally after sign-up
+          if (!needsConfirmation) {
+            const signUpStored = await chrome.storage.local.get("preferences");
+            const signUpPrefs = (signUpStored["preferences"] ?? {}) as Record<string, unknown>;
+            await chrome.storage.local.set({ preferences: { ...signUpPrefs, enabled_sites: DEFAULT_ENABLED_SITES } });
+          }
+
           return {
             success: true,
             needsConfirmation,
@@ -272,6 +300,73 @@ chrome.runtime.onMessage.addListener(
             message.payload.message,
           );
           return feedbackResult;
+        }
+
+        case "getEnabledSites": {
+          const sites = await getEnabledSites() ?? DEFAULT_ENABLED_SITES;
+          // Cache locally
+          const esStored = await chrome.storage.local.get("preferences");
+          const esPrefs = (esStored["preferences"] ?? {}) as Record<string, unknown>;
+          await chrome.storage.local.set({ preferences: { ...esPrefs, enabled_sites: sites } });
+          return { sites };
+        }
+
+        case "addEnabledSite": {
+          const { domain } = message.payload;
+          const addStored = await chrome.storage.local.get("preferences");
+          const addPrefs = (addStored["preferences"] ?? {}) as Record<string, unknown>;
+          const addList = Array.isArray(addPrefs.enabled_sites) ? [...addPrefs.enabled_sites as string[]] : [...DEFAULT_ENABLED_SITES];
+          if (!addList.includes(domain)) {
+            addList.push(domain);
+          }
+          await chrome.storage.local.set({ preferences: { ...addPrefs, enabled_sites: addList } });
+          // Persist to Supabase (non-blocking)
+          updateEnabledSites(addList).catch((err) => {
+            console.error("[Oddity 1] Failed to sync enabled sites to Supabase:", err);
+          });
+          // Broadcast to all tabs
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id) {
+                sendToTab(tab.id, {
+                  action: "enabledSitesUpdated",
+                  payload: { sites: addList },
+                }).catch(() => {});
+              }
+            }
+          });
+          return { sites: addList };
+        }
+
+        case "setBadge": {
+          const { text, color } = message.payload;
+          chrome.action.setBadgeText({ text, tabId: sender.tab?.id });
+          if (color) chrome.action.setBadgeBackgroundColor({ color, tabId: sender.tab?.id });
+          return {};
+        }
+
+        case "removeEnabledSite": {
+          const { domain: rmDomain } = message.payload;
+          const rmStored = await chrome.storage.local.get("preferences");
+          const rmPrefs = (rmStored["preferences"] ?? {}) as Record<string, unknown>;
+          const rmList = Array.isArray(rmPrefs.enabled_sites) ? (rmPrefs.enabled_sites as string[]).filter(s => s !== rmDomain) : [...DEFAULT_ENABLED_SITES];
+          await chrome.storage.local.set({ preferences: { ...rmPrefs, enabled_sites: rmList } });
+          // Persist to Supabase (non-blocking)
+          updateEnabledSites(rmList).catch((err) => {
+            console.error("[Oddity 1] Failed to sync enabled sites to Supabase:", err);
+          });
+          // Broadcast to all tabs
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id) {
+                sendToTab(tab.id, {
+                  action: "enabledSitesUpdated",
+                  payload: { sites: rmList },
+                }).catch(() => {});
+              }
+            }
+          });
+          return { sites: rmList };
         }
 
         default:

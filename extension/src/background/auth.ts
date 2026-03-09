@@ -5,6 +5,7 @@ import {
   type SupabaseClient,
   type SupportedStorage,
 } from "@supabase/supabase-js";
+import { DEFAULT_ENABLED_SITES } from "@oddity/shared";
 
 // ─── Supabase Configuration ───
 // Replace with real values before production
@@ -88,6 +89,7 @@ export async function signUp(email: string, password: string, displayName: strin
     const { error: profileError } = await supabase.from('profiles').upsert({
       id: data.user.id,
       display_name: displayName,
+      preferences: { enabled_sites: DEFAULT_ENABLED_SITES },
     }, { onConflict: 'id' });
     if (profileError) {
       console.error('[Oddity 1] Failed to save display_name to profiles:', profileError.message);
@@ -148,6 +150,44 @@ export async function getUserTier(): Promise<"free" | "pro"> {
 
   if (error || !data) return "free";
   return (data.tier as "free" | "pro") ?? "free";
+}
+
+export async function getEnabledSites(): Promise<string[] | null> {
+  const session = await getSession();
+  if (!session) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('preferences')
+    .eq('id', session.user.id)
+    .single();
+
+  if (error || !data) return null;
+  const prefs = data.preferences as Record<string, unknown> | null;
+  if (!prefs || !Array.isArray(prefs.enabled_sites)) return null;
+  return prefs.enabled_sites as string[];
+}
+
+export async function updateEnabledSites(sites: string[]): Promise<void> {
+  const session = await getSession();
+  if (!session) throw new Error('Not authenticated');
+
+  // Read-modify-write to preserve other preference keys
+  const { data } = await supabase
+    .from('profiles')
+    .select('preferences')
+    .eq('id', session.user.id)
+    .single();
+
+  const existing = (data?.preferences as Record<string, unknown>) ?? {};
+  const updated = { ...existing, enabled_sites: sites };
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ preferences: updated })
+    .eq('id', session.user.id);
+
+  if (error) throw error;
 }
 
 export function onAuthStateChange(

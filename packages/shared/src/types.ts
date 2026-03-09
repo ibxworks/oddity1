@@ -95,7 +95,7 @@ export type UserPreferences = {
   enabled?: boolean;
   intensity?: Intensity;
   visible_types?: AnnotationType[];
-  disabled_sites?: string[];
+  enabled_sites?: string[];
   annotation_font?: AnnotationFont;
   annotation_font_size?: AnnotationFontSize;
 };
@@ -207,4 +207,10 @@ export type ExtensionMessage =
   | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation; url: string; contentHash: string } }
   | { action: 'sendUserFeedback'; payload: { message: string } }
   | { action: 'annotationReady'; payload: { regionId: string; annotation: Annotation } }
-  | { action: 'getUrlPrediction'; payload: { url: string } };
+  | { action: 'getUrlPrediction'; payload: { url: string } }
+  | { action: 'getEnabledSites'; payload: Record<string, never> }
+  | { action: 'addEnabledSite'; payload: { domain: string } }
+  | { action: 'removeEnabledSite'; payload: { domain: string } }
+  | { action: 'enabledSitesUpdated'; payload: { sites: string[] } }
+  | { action: 'triggerManualRun'; payload: Record<string, never> }
+  | { action: 'setBadge'; payload: { text: string; color?: string } };

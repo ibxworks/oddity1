@@ -6,9 +6,11 @@ import type {
   Intensity,
   SiteAdapter,
 } from "@oddity/shared";
+import { DEFAULT_ENABLED_SITES } from "@oddity/shared";
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
+import { showEnableDomainToast } from "./enable-domain-toast.js";
 import { createChatObserver, type ChatObserver } from "./chat-observer.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
 import { handleExportPdf } from "./export-pdf.js";
@@ -25,6 +27,8 @@ import {
   initArgumentsBox,
   setArgumentsBoxVisible,
   setArgumentsBoxEnabled,
+  setArgumentsBoxDimmed,
+  setManualRunCallback,
   updateArgumentsBox,
 } from "./renderer/arguments-box.js";
 import {
@@ -78,6 +82,10 @@ const activeHashes = new Map<Element, string>();
 /** Elements currently tracked by the chat observer (including in-progress streaming).
  *  Shared with body-level detection so it skips elements the chat observer owns. */
 const chatTrackedElements = new WeakSet<Element>();
+let siteWhitelisted = false;
+let manualRunTriggered = false;
+const manualRunDomainPrompted = new Set<string>();
+
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
   "highlight",
@@ -132,6 +140,10 @@ function resetAnnotationState(): void {
     clearTimeout(activeRescanTimer);
     activeRescanTimer = null;
   }
+
+  // Reset whitelist state
+  manualRunTriggered = false;
+  siteWhitelisted = false;
 
   // Clear in-flight state
   longWaitManager.reset();
@@ -191,6 +203,33 @@ function watchUrlChanges(): void {
   urlPollInterval = setInterval(onUrlChange, 500);
 }
 
+// ─── Domain Whitelist ───
+
+function extractDomain(): string {
+  return window.location.hostname.replace(/^www\./, '');
+}
+
+function isDomainWhitelisted(domain: string, sites: string[]): boolean {
+  return sites.some(site => domain === site || domain.endsWith('.' + site));
+}
+
+function manualRun(): void {
+  manualRunTriggered = true;
+  setArgumentsBoxDimmed(false);
+  pipelineInitialized = false;
+  startPipeline().catch(console.error);
+
+  // Clear the ⌘O badge
+  sendMessage({ action: "setBadge", payload: { text: "" } }).catch(() => {});
+
+  // Show enable-domain toast (once per domain per session)
+  const domain = extractDomain();
+  if (!manualRunDomainPrompted.has(domain)) {
+    manualRunDomainPrompted.add(domain);
+    showEnableDomainToast(domain);
+  }
+}
+
 // ─── Pipeline ───
 
 async function init(): Promise<void> {
@@ -210,7 +249,39 @@ async function init(): Promise<void> {
     return;
   }
 
-  await startPipeline();
+  // Auth check — require sign-in before any whitelist/manual-run functionality
+  const authStatus = await sendMessage<{ authenticated: boolean }>({
+    action: "getAuthStatus",
+    payload: {},
+  });
+
+  if (!authStatus?.authenticated) {
+    console.log("[Oddity 1] Not signed in — showing auth toast");
+    showAuthToast();
+    initArgumentsBox();
+    setArgumentsBoxEnabled(enabled);
+    return;
+  }
+
+  // Whitelist check — only auto-run on enabled sites
+  const enabledSites: string[] = prefs?.enabled_sites ?? DEFAULT_ENABLED_SITES;
+  const domain = extractDomain();
+
+  if (isDomainWhitelisted(domain, enabledSites)) {
+    siteWhitelisted = true;
+    await startPipeline();
+  } else {
+    siteWhitelisted = false;
+    console.log(`[Oddity 1] Site not whitelisted: ${domain} — waiting for manual run`);
+    initArgumentsBox();
+    setArgumentsBoxEnabled(enabled);
+    setArgumentsBoxDimmed(true);
+    setManualRunCallback(manualRun);
+
+    // Set ⌘O / Ctrl+O badge to hint about the shortcut
+    const isMac = navigator.platform.toUpperCase().includes("MAC");
+    sendMessage({ action: "setBadge", payload: { text: isMac ? "\u2318O" : "^O", color: "#6B7280" } }).catch(() => {});
+  }
 }
 
 async function startPipeline(): Promise<void> {
@@ -907,6 +978,27 @@ onMessage((message: ExtensionMessage) => {
       handleAnnotationDeleted(message.payload.annotationId);
       break;
     }
+
+    case "triggerManualRun": {
+      if (!siteWhitelisted && !manualRunTriggered && enabled) {
+        manualRun();
+      }
+      break;
+    }
+
+    case "enabledSitesUpdated": {
+      const { sites } = message.payload;
+      const currentDomain = extractDomain();
+      if (!siteWhitelisted && isDomainWhitelisted(currentDomain, sites)) {
+        siteWhitelisted = true;
+        setArgumentsBoxDimmed(false);
+        sendMessage({ action: "setBadge", payload: { text: "" } }).catch(() => {});
+        if (!pipelineInitialized) {
+          startPipeline().catch(console.error);
+        }
+      }
+      break;
+    }
   }
 });
 
@@ -989,6 +1081,17 @@ function matchHostname(hostname: string, pattern: string): boolean {
   }
   return hostname === pattern;
 }
+
+// ─── Ctrl+O Manual Run Handler ───
+
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+    if (!siteWhitelisted && !manualRunTriggered && enabled) {
+      e.preventDefault();
+      manualRun();
+    }
+  }
+});
 
 // ─── Start ───
 

@@ -5,7 +5,7 @@ import type {
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
-import { ALL_ANNOTATION_TYPES } from "@oddity/shared";
+import { ALL_ANNOTATION_TYPES, DEFAULT_ENABLED_SITES } from "@oddity/shared";
 import { sendMessage } from "../shared/messaging.js";
 
 // ─── DOM refs ───
@@ -37,6 +37,11 @@ const authSubmitBtn = document.getElementById("auth-submit-btn")!;
 const authToggleLink = document.getElementById("auth-toggle-link")!;
 const authToggleText = document.getElementById("auth-toggle-text")!;
 const mainContent = document.getElementById("main-content")!;
+const notEnabledSection = document.getElementById("not-enabled-section")!;
+const popupRunBtn = document.getElementById("popup-run-btn")!;
+const popupEnableBtn = document.getElementById("popup-enable-btn")!;
+const popupEnableDomain = document.getElementById("popup-enable-domain")!;
+const popupShortcutHint = document.getElementById("popup-shortcut-hint")!;
 
 // Persona picker refs (top section)
 const profilePersonaSelect = document.getElementById(
@@ -84,7 +89,7 @@ let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   intensity: "default",
   visible_types: [...ALL_ANNOTATION_TYPES],
-  disabled_sites: [],
+  enabled_sites: [],
   annotation_font: "default",
   annotation_font_size: "default",
 };
@@ -126,7 +131,7 @@ async function init(): Promise<void> {
       enabled: prefs.enabled ?? true,
       intensity: prefs.intensity ?? "default",
       visible_types: [...ALL_ANNOTATION_TYPES], // always show all types
-      disabled_sites: prefs.disabled_sites ?? [],
+      enabled_sites: prefs.enabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "default",
       annotation_font_size: prefs.annotation_font_size ?? "default",
     };
@@ -264,12 +269,19 @@ async function loadAuthStatus(): Promise<void> {
 
     if (result.authenticated && result.user) {
       currentUser = result.user;
-      showAuthenticatedUI(result.user);
       chrome.action.setBadgeText({ text: "" });
 
       if (!currentPrefs.enabled) {
         chrome.action.setBadgeText({ text: "OFF" });
         chrome.action.setBadgeBackgroundColor({ color: "#6B7280" });
+      }
+
+      // Check if current tab's domain is whitelisted
+      const isWhitelisted = await checkActiveTabWhitelist();
+      if (!isWhitelisted && currentPrefs.enabled) {
+        showNotEnabledUI();
+      } else {
+        showAuthenticatedUI(result.user);
       }
     } else {
       showUnauthenticatedUI();
@@ -277,6 +289,34 @@ async function loadAuthStatus(): Promise<void> {
   } catch {
     showUnauthenticatedUI();
   }
+}
+
+// ─── Whitelist Check ───
+
+let activeTabDomain = '';
+
+async function checkActiveTabWhitelist(): Promise<boolean> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.url) return true; // Can't determine — assume whitelisted
+    const url = new URL(tab.url);
+    activeTabDomain = url.hostname.replace(/^www\./, '');
+    const sites: string[] = currentPrefs.enabled_sites.length > 0
+      ? currentPrefs.enabled_sites
+      : DEFAULT_ENABLED_SITES;
+    return sites.some(site => activeTabDomain === site || activeTabDomain.endsWith('.' + site));
+  } catch {
+    return true; // Can't determine — assume whitelisted
+  }
+}
+
+function showNotEnabledUI(): void {
+  mainContent.classList.add("hidden");
+  notEnabledSection.style.display = "";
+
+  const isMac = navigator.platform.toUpperCase().includes("MAC");
+  popupShortcutHint.textContent = isMac ? "\u2318O" : "Ctrl+O";
+  popupEnableDomain.textContent = activeTabDomain;
 }
 
 // ─── Event Handlers ───
@@ -665,6 +705,36 @@ feedbackSendBtn.addEventListener("click", async () => {
   } finally {
     feedbackSendBtn.textContent = "Send";
     feedbackSendBtn.removeAttribute("disabled");
+  }
+});
+
+// ─── Not-Enabled Section Handlers ───
+
+popupRunBtn.addEventListener("click", async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) {
+      await chrome.tabs.sendMessage(tab.id, { action: "triggerManualRun", payload: {} });
+    }
+  } catch {
+    // Content script may not be loaded
+  }
+  // Switch to main content view
+  notEnabledSection.style.display = "none";
+  if (currentUser) {
+    showAuthenticatedUI(currentUser);
+  }
+});
+
+popupEnableBtn.addEventListener("click", async () => {
+  if (activeTabDomain) {
+    await sendMessage({ action: "addEnabledSite", payload: { domain: activeTabDomain } });
+    currentPrefs.enabled_sites.push(activeTabDomain);
+  }
+  // Switch to main content view
+  notEnabledSection.style.display = "none";
+  if (currentUser) {
+    showAuthenticatedUI(currentUser);
   }
 });
 

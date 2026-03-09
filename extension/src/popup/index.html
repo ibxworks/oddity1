@@ -763,6 +763,24 @@
       </div>
     </div>
 
+    <!-- Not Enabled Section (shown when site is not whitelisted) -->
+    <div id="not-enabled-section" style="display: none">
+      <div style="padding: 32px 24px; text-align: center;">
+        <div style="font-size: 14px; color: #6b7280; margin-bottom: 20px; line-height: 1.5;">
+          Oddity 1 is not enabled for this site
+        </div>
+        <button class="btn btn-primary" id="popup-run-btn" style="margin-bottom: 12px;">
+          Run on this page
+        </button>
+        <div style="font-size: 11px; color: #9ca3af; margin-bottom: 16px;">
+          or press <span id="popup-shortcut-hint"></span>
+        </div>
+        <button class="btn" id="popup-enable-btn" style="font-size: 12px;">
+          Enable for <span id="popup-enable-domain"></span>
+        </button>
+      </div>
+    </div>
+
     <!-- Main Content (shown when signed in) -->
     <div class="main-content" id="main-content">
       <!-- Profile + Annotation Count -->

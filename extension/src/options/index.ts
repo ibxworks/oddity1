@@ -38,7 +38,9 @@ let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   intensity: 'default',
   visible_types: [...ALL_ANNOTATION_TYPES],
-  disabled_sites: [],
+  enabled_sites: [],
+  annotation_font: 'default',
+  annotation_font_size: 'default',
 };
 
 // ─── Init ───
@@ -52,12 +54,28 @@ async function init(): Promise<void> {
       enabled: prefs.enabled ?? true,
       intensity: prefs.intensity ?? 'default',
       visible_types: prefs.visible_types ?? [...ALL_ANNOTATION_TYPES],
-      disabled_sites: prefs.disabled_sites ?? [],
+      enabled_sites: prefs.enabled_sites ?? [],
+      annotation_font: prefs.annotation_font ?? 'default',
+      annotation_font_size: prefs.annotation_font_size ?? 'default',
     };
   }
 
   applyPrefsToUI();
   loadAuthStatus();
+
+  // Fetch enabled sites from background (synced with Supabase)
+  try {
+    const result = await sendMessage<{ sites: string[] }>({
+      action: 'getEnabledSites',
+      payload: {},
+    });
+    if (result?.sites) {
+      currentPrefs.enabled_sites = result.sites;
+      renderSiteList();
+    }
+  } catch {
+    // Use locally stored list
+  }
 }
 
 function applyPrefsToUI(): void {
@@ -127,8 +145,8 @@ async function loadAuthStatus(): Promise<void> {
 // ─── Site List ───
 
 function renderSiteList(): void {
-  siteList.innerHTML = '';
-  const sites = currentPrefs.disabled_sites;
+  while (siteList.firstChild) siteList.removeChild(siteList.firstChild);
+  const sites = currentPrefs.enabled_sites;
 
   if (sites.length === 0) {
     siteEmpty.style.display = 'block';
@@ -144,12 +162,26 @@ function renderSiteList(): void {
     const removeBtn = document.createElement('button');
     removeBtn.className = 'site-remove';
     removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', () => {
-      currentPrefs.disabled_sites = currentPrefs.disabled_sites.filter(
-        (s) => s !== site,
-      );
+    removeBtn.addEventListener('click', async () => {
+      try {
+        const result = await sendMessage<{ sites: string[] }>({
+          action: 'removeEnabledSite',
+          payload: { domain: site },
+        });
+        if (result?.sites) {
+          currentPrefs.enabled_sites = result.sites;
+        } else {
+          currentPrefs.enabled_sites = currentPrefs.enabled_sites.filter(
+            (s) => s !== site,
+          );
+        }
+      } catch {
+        currentPrefs.enabled_sites = currentPrefs.enabled_sites.filter(
+          (s) => s !== site,
+        );
+      }
       renderSiteList();
-      savePrefs();
+      showToast('Site removed');
     });
 
     li.appendChild(removeBtn);
@@ -197,8 +229,8 @@ typeCheckboxes.addEventListener('change', (e) => {
   savePrefs();
 });
 
-// Add disabled site
-addSiteBtn.addEventListener('click', () => {
+// Add enabled site
+addSiteBtn.addEventListener('click', async () => {
   const site = siteInput.value.trim().toLowerCase();
   if (!site) return;
 
@@ -208,15 +240,27 @@ addSiteBtn.addEventListener('click', () => {
     return;
   }
 
-  if (currentPrefs.disabled_sites.includes(site)) {
-    showToast('Site already disabled');
+  if (currentPrefs.enabled_sites.includes(site)) {
+    showToast('Site already enabled');
     return;
   }
 
-  currentPrefs.disabled_sites.push(site);
+  try {
+    const result = await sendMessage<{ sites: string[] }>({
+      action: 'addEnabledSite',
+      payload: { domain: site },
+    });
+    if (result?.sites) {
+      currentPrefs.enabled_sites = result.sites;
+    } else {
+      currentPrefs.enabled_sites.push(site);
+    }
+  } catch {
+    currentPrefs.enabled_sites.push(site);
+  }
   siteInput.value = '';
   renderSiteList();
-  savePrefs();
+  showToast('Site added');
 });
 
 // Enter key on site input
