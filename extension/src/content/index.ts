@@ -94,6 +94,7 @@ let visibleTypes: AnnotationType[] = [
   "insight",
   "caveat",
   "vocabulary",
+  "user_written",
 ];
 let currentIntensity: Intensity = "default";
 let regions: DetectedRegion[] = [];

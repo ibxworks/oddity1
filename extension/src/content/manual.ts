@@ -1,5 +1,5 @@
-import type { Annotation, AnnotationType } from '@oddity/shared';
-import { ALL_ANNOTATION_TYPES, ANNOTATION_LABELS, ANNOTATION_COLORS } from '@oddity/shared';
+import type { Annotation } from '@oddity/shared';
+import { ANNOTATION_LABELS } from '@oddity/shared';
 import { sendMessage, onMessage } from '../shared/messaging.js';
 import { sha256 } from '../shared/hash.js';
 import { resolveSelector } from './selector.js';
@@ -11,32 +11,34 @@ import { getThemeMode } from './renderer/theme-detector.js';
 
 // ─── Theme Color Maps ───
 
+const ACCENT = '#A1927B';
+
 const LIGHT_COLORS = {
-  cardBg: 'white',
-  cardBorder: '#E5E7EB',
-  cardText: '#1F2937',
-  previewBg: '#F9FAFB',
-  previewText: '#6B7280',
-  inputBorder: '#D1D5DB',
-  inputBg: 'white',
-  labelColor: '#374151',
-  cancelBg: 'white',
-  cancelText: '#374151',
-  cancelBorder: '#D1D5DB',
+  cardBg: 'rgba(255,255,255,0.85)',
+  cardBorder: 'rgba(0,0,0,0.08)',
+  cardText: '#111111',
+  previewBg: 'rgba(0,0,0,0.04)',
+  previewText: '#555555',
+  inputBorder: 'rgba(0,0,0,0.15)',
+  inputBg: 'rgba(255,255,255,0.6)',
+  labelColor: '#111111',
+  cancelBg: 'transparent',
+  cancelText: '#111111',
+  cancelBorder: 'rgba(0,0,0,0.2)',
 };
 
 const DARK_COLORS = {
-  cardBg: '#1e293b',
-  cardBorder: '#334155',
-  cardText: '#e2e8f0',
-  previewBg: '#0f172a',
-  previewText: '#94a3b8',
-  inputBorder: '#475569',
-  inputBg: '#0f172a',
-  labelColor: '#cbd5e1',
-  cancelBg: '#334155',
-  cancelText: '#e2e8f0',
-  cancelBorder: '#475569',
+  cardBg: 'rgba(18,18,18,0.85)',
+  cardBorder: 'rgba(255,255,255,0.08)',
+  cardText: '#f0f0f0',
+  previewBg: 'rgba(255,255,255,0.05)',
+  previewText: '#aaaaaa',
+  inputBorder: 'rgba(255,255,255,0.15)',
+  inputBg: 'rgba(255,255,255,0.07)',
+  labelColor: '#f0f0f0',
+  cancelBg: 'transparent',
+  cancelText: '#f0f0f0',
+  cancelBorder: 'rgba(255,255,255,0.2)',
 };
 
 // ─── State ───
@@ -129,8 +131,13 @@ function showFab(range: Range): void {
   fabHost.style.left = `${rect.right + scrollX + 4}px`;
   fabHost.style.top = `${rect.top + scrollY - 4}px`;
 
+  const isDark = getThemeMode() === 'dark';
+  const fabBg = isDark ? 'white' : 'black';
+  const fabStroke = isDark ? 'black' : 'white';
+  const fabBorder = isDark ? '#CBD5E1' : '#374151';
+
   const button = document.createElement('button');
-  button.textContent = '+';
+  button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="7" y1="1" x2="7" y2="13" stroke="${fabStroke}" stroke-width="2.5" stroke-linecap="round"/><line x1="1" y1="7" x2="13" y2="7" stroke="${fabStroke}" stroke-width="2.5" stroke-linecap="round"/></svg>`;
   button.setAttribute('aria-label', 'Annotate selection');
   button.style.cssText = `
     all: initial;
@@ -140,16 +147,12 @@ function showFab(range: Range): void {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: #3B82F6;
-    color: white;
-    font-size: 18px;
-    font-weight: bold;
-    font-family: system-ui, sans-serif;
+    background: ${fabBg};
     cursor: pointer;
-    border: 2px solid white;
+    border: 2px solid ${fabBorder};
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     transition: transform 0.1s;
-    line-height: 1;
+    box-sizing: border-box;
   `;
 
   button.addEventListener('mouseenter', () => {
@@ -234,10 +237,12 @@ function showEditor(): void {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 12px;
+    padding: 14px;
     background: ${colors.cardBg};
-    border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 10px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18);
     border: 1px solid ${colors.cardBorder};
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 13px;
@@ -258,39 +263,9 @@ function showEditor(): void {
     color: ${colors.previewText};
     font-size: 12px;
     line-height: 1.4;
-    border-left: 3px solid #3B82F6;
+    border-left: 3px solid ${ACCENT};
   `;
   container.appendChild(preview);
-
-  // Type selector
-  const typeLabel = document.createElement('label');
-  typeLabel.textContent = 'Type';
-  typeLabel.style.cssText = `font-weight: 600; font-size: 12px; color: ${colors.labelColor};`;
-  container.appendChild(typeLabel);
-
-  const typeSelect = document.createElement('select');
-  typeSelect.style.cssText = `
-    all: initial;
-    font-family: system-ui, sans-serif;
-    font-size: 13px;
-    padding: 6px 8px;
-    border: 1px solid ${colors.inputBorder};
-    border-radius: 4px;
-    background: ${colors.inputBg};
-    color: ${colors.cardText};
-    cursor: pointer;
-    width: 100%;
-    box-sizing: border-box;
-  `;
-
-  for (const type of ALL_ANNOTATION_TYPES) {
-    const option = document.createElement('option');
-    option.value = type;
-    option.textContent = ANNOTATION_LABELS[type];
-    option.style.cssText = `color: ${ANNOTATION_COLORS[type]};`;
-    typeSelect.appendChild(option);
-  }
-  container.appendChild(typeSelect);
 
   // Note textarea
   const noteLabel = document.createElement('label');
@@ -346,16 +321,13 @@ function showEditor(): void {
     padding: 6px 12px;
     border: none;
     border-radius: 4px;
-    background: #3B82F6;
+    background: ${ACCENT};
     color: white;
     cursor: pointer;
     font-weight: 600;
   `;
   submitBtn.addEventListener('click', () => {
-    handleSubmit(
-      typeSelect.value as AnnotationType,
-      noteArea.value.trim(),
-    );
+    handleSubmit(noteArea.value.trim());
   });
 
   buttonRow.appendChild(cancelBtn);
@@ -382,7 +354,8 @@ function dismissEditor(): void {
 
 // ─── Submit ───
 
-async function handleSubmit(type: AnnotationType, note: string): Promise<void> {
+async function handleSubmit(note: string): Promise<void> {
+  const type = 'user_written' as const;
   if (!currentRange) return;
 
   const exact = currentRange.toString().trim();

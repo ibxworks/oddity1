@@ -11,6 +11,7 @@ const MARK_STYLES: Record<AnnotationType, string> = {
   insight: `background:${ANNOTATION_COLORS.insight}28;border-radius:2px;padding:0 2px`,
   caveat: `border-bottom:2px dashed ${ANNOTATION_COLORS.caveat};padding-bottom:1px`,
   vocabulary: `border-bottom:2px dotted ${ANNOTATION_COLORS.vocabulary};padding-bottom:1px`,
+  user_written: `border-bottom:1.5px solid ${ANNOTATION_COLORS.user_written};padding-bottom:1px`,
 };
 
 // ─── Main Export ───

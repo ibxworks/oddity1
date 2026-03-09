@@ -445,6 +445,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
                   "insight",
                   "caveat",
                   "vocabulary",
+                  "user_written",
                 ],
                 annotationFont: prefs.annotation_font,
                 annotationFontSize: prefs.annotation_font_size,

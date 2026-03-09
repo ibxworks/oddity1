@@ -6,7 +6,8 @@ export type AnnotationType =
   | 'provoking_question'
   | 'insight'
   | 'caveat'
-  | 'vocabulary';
+  | 'vocabulary'
+  | 'user_written';
 
 export type TextQuoteSelector = {
   type: 'TextQuoteSelector';
