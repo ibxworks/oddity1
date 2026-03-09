@@ -53,7 +53,9 @@
       "mcp__playwright__browser_navigate",
       "mcp__playwright__browser_take_screenshot",
       "mcp__playwright__browser_evaluate",
-      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Website && npm run build 2>&1)"
+      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Website && npm run build 2>&1)",
+      "Bash(find /Users/realtonypark/Developer/oddity1 -type f \\\\\\( -name \".env*\" -o -name \"*.env\" \\\\\\) 2>/dev/null | grep -v node_modules)",
+      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Dashboard && npm run build 2>&1 | tail -20)"
     ]
   },
   "enableAllProjectMcpServers": true,
