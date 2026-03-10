@@ -189,16 +189,24 @@ export function initArgumentsBox(): void {
   contentClip.appendChild(buildDashboardFace());
   containerEl.appendChild(contentClip);
 
-  // Hover → show close button when expanded
-  containerEl.addEventListener("mouseenter", () => {
-    if (expanded) showCloseBtn();
+  // Track mouse position to show close button only in top half
+  containerEl.addEventListener("mousemove", (e) => {
+    if (!expanded) return;
+    const rect = containerEl!.getBoundingClientRect();
+    const inTopHalf = e.clientY < rect.top + rect.height / 2;
+    if (inTopHalf) {
+      showCloseBtn();
+    } else {
+      hideCloseBtn();
+    }
   });
   containerEl.addEventListener("mouseleave", () => hideCloseBtn());
 
-  // ── Close button — absolute child so it follows container corner during morph ──
+  // ── Close button — slides down from top-center ──
   closeBtnEl = document.createElement("button");
   closeBtnEl.className = "args-close-btn";
   closeBtnEl.title = "Close";
+  closeBtnEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   closeBtnEl.addEventListener("mouseenter", () => showCloseBtn());
   closeBtnEl.addEventListener("mouseleave", () => hideCloseBtn());
   closeBtnEl.addEventListener("click", (e) => {
@@ -352,9 +360,6 @@ function toggle(): void {
     containerEl?.classList.remove("dashboard");
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
-  } else if (containerEl?.matches(":hover")) {
-    // Cursor was already inside when panel opened — show close button immediately
-    showCloseBtn();
   }
 }
 
@@ -1044,47 +1049,51 @@ const ARGUMENTS_BOX_CSS = `
     object-fit: contain;
   }
 
-  /* ── Close button (Terry circle, top-right corner of panel) ── */
+  /* ── Close button (top-center, slides in from above) ── */
 
   .args-close-btn {
     all: unset;
     position: absolute;
-    /* Centered on top-left corner of container */
-    top: -10px;
-    left: -10px;
-    width: 20px;
-    height: 20px;
+    top: -40px;
+    left: 50%;
+    /* Hidden: pushed down so it sits behind the top of the box */
+    transform: translateX(-50%) translateY(32px);
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    background: rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
     cursor: pointer;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.15s ease, transform 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    transition: opacity 0.18s ease, transform 0.22s ease;
     z-index: 3;
-  }
-
-  .args-close-btn::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 10px;
-    height: 10px;
-    background: #757575;
-    /* Wide isosceles triangle pointing bottom-right (southeast) */
-    clip-path: polygon(0% 90%, 90% 0%, 100% 100%);
   }
 
   .args-close-btn.hovered {
     opacity: 1;
     pointer-events: auto;
+    /* Shown: slides up to 8px above the box (top:-40px + translateY(0) → bottom edge at -8px) */
+    transform: translateX(-50%) translateY(0);
   }
 
   .args-close-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  :host([data-theme="light"]) .args-close-btn {
+    color: #111111;
+    background: rgba(255, 255, 255, 0.45);
+  }
+
+  :host([data-theme="light"]) .args-close-btn:hover {
+    background: rgba(255, 255, 255, 0.65);
   }
 
   /* ── Light mode overrides ── */
