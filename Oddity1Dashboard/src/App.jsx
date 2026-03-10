@@ -6,6 +6,7 @@ import AuthForm from './components/AuthForm'
 import Layout from './components/Layout'
 import DocumentsPage from './pages/DocumentsPage'
 import AccountPage from './pages/AccountPage'
+import EditorPage from './pages/EditorPage'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -34,6 +35,7 @@ export default function App() {
 
   return (
     <Routes>
+      <Route path="/documents/:id" element={<EditorPage session={session} />} />
       <Route element={<Layout session={session} />}>
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/account" element={<AccountPage />} />

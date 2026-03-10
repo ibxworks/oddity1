@@ -1,0 +1,303 @@
+.editor-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-secondary, #f7f8f9);
+}
+
+/* ─── Top Bar ─── */
+
+.editor-topbar {
+  display: flex;
+  align-items: center;
+  height: 52px;
+  padding: 0 16px;
+  background: var(--bg-primary, #fff);
+  border-bottom: 1px solid var(--border-light, #e5e7eb);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.editor-topbar__back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: none;
+  border-radius: var(--r-sm, 8px);
+  cursor: pointer;
+  color: var(--text-secondary, #6b7280);
+  transition: background 0.15s, color 0.15s;
+}
+
+.editor-topbar__back:hover {
+  background: var(--bg-secondary, #f7f8f9);
+  color: var(--text-primary, #1a1a1a);
+}
+
+.editor-topbar__title {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: var(--r-sm, 8px);
+  transition: background 0.15s;
+}
+
+.editor-topbar__title:focus {
+  background: var(--bg-secondary, #f7f8f9);
+}
+
+.editor-topbar__title::placeholder {
+  color: var(--text-muted, #9ca3af);
+}
+
+.editor-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.editor-topbar__status {
+  font-size: 12px;
+  color: var(--text-muted, #9ca3af);
+  white-space: nowrap;
+}
+
+.editor-topbar__annotate {
+  padding: 7px 18px;
+  border-radius: var(--r-sm, 8px);
+  border: none;
+  background: var(--green-500, #22c55e);
+  color: #fff;
+  font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.editor-topbar__annotate:hover:not(:disabled) {
+  background: var(--green-600, #16a34a);
+}
+
+.editor-topbar__annotate:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.editor-topbar__export {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-light, #e5e7eb);
+  background: var(--bg-primary, #fff);
+  border-radius: var(--r-sm, 8px);
+  cursor: pointer;
+  color: var(--text-secondary, #6b7280);
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.editor-topbar__export:hover {
+  border-color: var(--text-muted, #9ca3af);
+  color: var(--text-primary, #1a1a1a);
+}
+
+/* ─── Toolbar ─── */
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  background: var(--bg-primary, #fff);
+  border-bottom: 1px solid var(--border-light, #e5e7eb);
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 30px;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary, #6b7280);
+  font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
+  font-size: 13px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.toolbar-btn:hover {
+  background: var(--bg-secondary, #f7f8f9);
+  color: var(--text-primary, #1a1a1a);
+}
+
+.toolbar-btn.active {
+  background: var(--bg-secondary, #f7f8f9);
+  color: var(--green-600, #16a34a);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-light, #e5e7eb);
+  margin: 0 6px;
+}
+
+/* ─── Error Banner ─── */
+
+.editor-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  color: #dc2626;
+  font-size: 13px;
+  font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
+}
+
+.editor-error button {
+  border: none;
+  background: none;
+  color: #dc2626;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ─── Editor Area ─── */
+
+.editor-area {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px 80px;
+}
+
+.editor-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+}
+
+/* TipTap editor styles */
+.editor-content-inner {
+  background: var(--bg-primary, #fff);
+  border-radius: var(--r, 12px);
+  padding: 40px 48px;
+  min-height: 600px;
+  outline: none;
+  font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-primary, #1a1a1a);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-light, #e5e7eb);
+}
+
+.editor-content-inner:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--green-500, #22c55e)20, 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* TipTap placeholder */
+.editor-content-inner p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-muted, #9ca3af);
+  pointer-events: none;
+  height: 0;
+}
+
+/* TipTap content typography */
+.editor-content-inner h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 24px 0 12px;
+  line-height: 1.3;
+}
+
+.editor-content-inner h2 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 20px 0 10px;
+  line-height: 1.35;
+}
+
+.editor-content-inner h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 16px 0 8px;
+  line-height: 1.4;
+}
+
+.editor-content-inner p {
+  margin-bottom: 12px;
+}
+
+.editor-content-inner blockquote {
+  border-left: 3px solid var(--border-light, #e5e7eb);
+  padding-left: 16px;
+  margin: 12px 0;
+  color: var(--text-secondary, #6b7280);
+  font-style: italic;
+}
+
+.editor-content-inner ul,
+.editor-content-inner ol {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+
+.editor-content-inner li {
+  margin-bottom: 4px;
+}
+
+.editor-content-inner strong {
+  font-weight: 600;
+}
+
+/* Annotation highlight shared styles */
+.annotation-highlight {
+  cursor: default;
+  transition: opacity 0.15s;
+}
+
+.annotation-highlight:hover {
+  opacity: 0.8;
+}
+
+/* ─── Responsive ─── */
+
+@media (max-width: 768px) {
+  .editor-content-inner {
+    padding: 24px 20px;
+  }
+
+  .editor-area {
+    padding: 20px 12px 60px;
+  }
+
+  .editor-topbar__title {
+    font-size: 14px;
+  }
+}

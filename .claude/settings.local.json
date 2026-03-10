@@ -59,7 +59,11 @@
       "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard/src -type f \\\\\\( -name \"*.jsx\" -o -name \"*.js\" -o -name \"*.json\" -o -name \"*.css\" \\\\\\) 2>/dev/null | sort)",
       "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard -maxdepth 3 -type f \\\\\\( -name \"*.jsx\" -o -name \"*.js\" -o -name \"*.json\" -o -name \"*.css\" -o -name \"*.html\" -o -name \"*.md\" \\\\\\) ! -path \"*/node_modules/*\" ! -path \"*/dist/*\" 2>/dev/null | sort)",
       "Bash(tree -L 3 /Users/realtonypark/Developer/oddity1/Oddity1Dashboard -I 'node_modules|dist' 2>/dev/null || find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard -type f -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)",
-      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Dashboard && npm install react-router-dom@7)"
+      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Dashboard && npm install react-router-dom@7)",
+      "Bash(find /Users/realtonypark/Developer/oddity1 -name \".env*\" -type f 2>/dev/null | grep -v node_modules)",
+      "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Dashboard && npm install @tiptap/react @tiptap/starter-kit @tiptap/extension-placeholder @tiptap/pm)",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "mcp__plugin_supabase_supabase__apply_migration"
     ]
   },
   "enableAllProjectMcpServers": true,

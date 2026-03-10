@@ -148,7 +148,38 @@
   flex: 1;
 }
 
+.doc-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
 .doc-card-time {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.doc-card-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.doc-card:hover .doc-card-delete {
+  opacity: 1;
+}
+
+.doc-card-delete:hover {
+  color: #dc2626;
+  background: #fef2f2;
 }

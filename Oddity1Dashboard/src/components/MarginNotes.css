@@ -1,0 +1,73 @@
+.margin-notes {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.margin-note {
+  position: absolute;
+  width: 160px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  border-left: 3px solid #ccc;
+  font-family: 'Caveat', 'Segoe Script', cursive;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #2a1a08;
+  pointer-events: auto;
+  cursor: default;
+  transition: box-shadow 0.15s ease;
+}
+
+.margin-note:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.margin-note--right {
+  right: -180px;
+}
+
+.margin-note--left {
+  left: -180px;
+}
+
+.margin-note__label {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  margin-bottom: 2px;
+  font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
+}
+
+.margin-note__body {
+  display: block;
+}
+
+.margin-note__extra {
+  display: block;
+  font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
+  font-size: 10px;
+  line-height: 1.35;
+  color: #4a3a28;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #d8d0c4;
+}
+
+.margin-note__extra strong {
+  font-weight: 600;
+  margin-right: 3px;
+}
+
+/* Hide margin notes on small screens */
+@media (max-width: 1100px) {
+  .margin-note--left,
+  .margin-note--right {
+    display: none;
+  }
+}

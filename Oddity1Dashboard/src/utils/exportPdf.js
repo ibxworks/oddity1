@@ -1,0 +1,302 @@
+import { ANNOTATION_COLORS, ANNOTATION_LABELS } from './annotationConstants';
+
+// ─── Inline highlight styles per annotation type ───
+
+const MARK_STYLES = {
+  highlight: `background:${ANNOTATION_COLORS.highlight}30;border-radius:2px;padding:0 2px`,
+  recall: `border-bottom:2px solid ${ANNOTATION_COLORS.recall};padding-bottom:1px`,
+  provoking_question: `border-bottom:2px dotted ${ANNOTATION_COLORS.provoking_question};padding-bottom:1px`,
+  insight: `background:${ANNOTATION_COLORS.insight}28;border-radius:2px;padding:0 2px`,
+  caveat: `border-bottom:2px dashed ${ANNOTATION_COLORS.caveat};padding-bottom:1px`,
+  vocabulary: `border-bottom:2px dotted ${ANNOTATION_COLORS.vocabulary};padding-bottom:1px`,
+};
+
+// ─── Main Export ───
+
+export function exportPdf(title, editorHtml, annotations) {
+  const { bodyHtml, unmatchedAnnotations } = highlightAndAnnotate(editorHtml, annotations);
+  const fullHtml = buildDocument(title, bodyHtml, annotations.length, unmatchedAnnotations);
+  openPrintDialog(fullHtml);
+}
+
+// ─── Highlight Text + Inject Sidenotes ───
+// SECURITY NOTE: All content here is user-authored document text from the TipTap editor.
+// No external/untrusted HTML is processed. This mirrors the extension's export-pdf.ts approach.
+
+function highlightAndAnnotate(html, annotations) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const body = doc.body;
+  const byId = new Map(annotations.map((a) => [a.id, a]));
+  const matchedIds = new Set();
+
+  const sorted = [...annotations].sort(
+    (a, b) => b.anchor.exact.length - a.anchor.exact.length,
+  );
+  for (const ann of sorted) {
+    if (ann.anchor.exact) {
+      const found = markTextInNode(body, ann.anchor.exact, ann.type, ann.id);
+      if (found) matchedIds.add(ann.id);
+    }
+  }
+
+  const marks = body.querySelectorAll('mark[data-ann-id]');
+  let counter = 0;
+  for (const mark of marks) {
+    const ann = byId.get(mark.dataset.annId ?? '');
+    if (!ann) continue;
+    const side = counter % 2 === 0 ? 'right' : 'left';
+    const span = doc.createElement('span');
+    span.className = `sn sn-${side} note-${ann.type}`;
+    // Safe: content is from our annotation API responses, not user-supplied HTML
+    span.textContent = '';
+    appendSidenoteContent(doc, span, ann);
+    mark.after(span);
+    counter++;
+  }
+
+  const unmatched = annotations.filter((a) => !matchedIds.has(a.id));
+  return { bodyHtml: body.innerHTML, unmatchedAnnotations: unmatched };
+}
+
+// ─── Recursive Text Marker ───
+
+function markTextInNode(root, searchText, type, annId) {
+  if (root.nodeType === Node.TEXT_NODE) {
+    const text = root.textContent ?? '';
+    const idx = text.indexOf(searchText);
+    if (idx === -1) return false;
+    const parent = root.parentNode;
+    if (!parent) return false;
+
+    const ownerDoc = root.ownerDocument;
+    const frag = ownerDoc.createDocumentFragment();
+    if (idx > 0) frag.appendChild(ownerDoc.createTextNode(text.slice(0, idx)));
+
+    const mark = ownerDoc.createElement('mark');
+    mark.setAttribute('style', MARK_STYLES[type] || '');
+    mark.setAttribute('data-ann-type', type);
+    mark.setAttribute('data-ann-id', annId);
+    mark.textContent = text.slice(idx, idx + searchText.length);
+    frag.appendChild(mark);
+
+    const tail = text.slice(idx + searchText.length);
+    if (tail) frag.appendChild(ownerDoc.createTextNode(tail));
+    parent.replaceChild(frag, root);
+    return true;
+  }
+
+  for (const child of Array.from(root.childNodes)) {
+    if (child.nodeType === Node.ELEMENT_NODE && child.tagName === 'MARK') continue;
+    if (markTextInNode(child, searchText, type, annId)) return true;
+  }
+  return false;
+}
+
+// ─── Build Sidenote Content using safe DOM methods ───
+
+function appendSidenoteContent(doc, container, ann) {
+  const label = ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase();
+
+  const labelEl = doc.createElement('span');
+  labelEl.className = 'sn-label';
+  labelEl.textContent = label;
+  container.appendChild(labelEl);
+
+  if (ann.content.note) {
+    const bodyEl = doc.createElement('span');
+    bodyEl.className = 'sn-body';
+    bodyEl.textContent = ann.content.note;
+    container.appendChild(bodyEl);
+  }
+
+  if (ann.content.why_it_matters) {
+    const extra = doc.createElement('span');
+    extra.className = 'sn-extra';
+    const b = doc.createElement('b');
+    b.textContent = 'Why it matters ';
+    extra.appendChild(b);
+    extra.appendChild(doc.createTextNode(ann.content.why_it_matters));
+    container.appendChild(extra);
+  }
+
+  if (ann.content.question) {
+    const extra = doc.createElement('span');
+    extra.className = 'sn-extra';
+    const b = doc.createElement('b');
+    b.textContent = 'Question ';
+    extra.appendChild(b);
+    extra.appendChild(doc.createTextNode(ann.content.question));
+    container.appendChild(extra);
+  }
+
+  const suggestions = ann.content.suggestions ?? [];
+  if (suggestions.length > 0) {
+    const extra = doc.createElement('span');
+    extra.className = 'sn-extra';
+    extra.textContent = suggestions.join('; ');
+    container.appendChild(extra);
+  }
+}
+
+// ─── Per-Type Accent CSS ───
+
+function typeCSS() {
+  const types = ['highlight', 'recall', 'provoking_question', 'insight', 'caveat', 'vocabulary'];
+  return types.map((t) => {
+    const c = ANNOTATION_COLORS[t];
+    return `.note-${t}{background:${c}10;border-left:3px solid ${c}}
+.note-${t} .sn-label{color:${c}}`;
+  }).join('\n');
+}
+
+// ─── Build Full HTML Document ───
+// SECURITY NOTE: All content is user-authored. The esc() function HTML-escapes all dynamic text.
+// The bodyHtml comes from DOMParser processing of the user's own TipTap editor content.
+
+function buildDocument(title, bodyHtml, totalAnnotations, unmatchedAnnotations) {
+  const dateStr = new Date().toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  let unmatchedSection = '';
+  if (unmatchedAnnotations.length > 0) {
+    const items = unmatchedAnnotations.map((ann) => {
+      const label = ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase();
+      const note = ann.content.note ? esc(ann.content.note) : '';
+      return `<li class="extra-note note-${ann.type}">
+  <span class="sn-label">${esc(label)}</span>
+  <span class="extra-anchor">\u201C${esc(ann.anchor.exact)}\u201D</span>
+  ${note ? `<span class="sn-body">${note}</span>` : ''}
+</li>`;
+    }).join('');
+    unmatchedSection = `<div class="extra-section">
+  <h3>Additional Annotations</h3>
+  <ul>${items}</ul>
+</div>`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${esc(title)} \u2014 Oddity Export</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Caveat:wght@400;600&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+@page{size:A4 portrait;margin:14mm 10mm 16mm 10mm}
+body{
+  background:#faf8f5;
+  font-family:'Lora',Georgia,'Times New Roman',serif;
+  color:#1a1a1a;
+  -webkit-print-color-adjust:exact;
+  print-color-adjust:exact;
+  padding:32px 16px;
+}
+@media print{body{background:#fff;padding:0}}
+.wrapper{max-width:750px;margin:0 auto}
+@media print{.wrapper{max-width:none}}
+.hdr{text-align:center;padding-bottom:16px;margin-bottom:20px;border-bottom:1px solid #e0d8cc}
+.hdr h1{font-size:22px;font-weight:700;letter-spacing:-.3px;margin-bottom:4px}
+.hdr .meta{font-size:11px;color:#b0a090;margin-top:6px}
+.content{position:relative;padding:0 150px}
+@media print{.content{padding:0 142px}}
+.content::before,.content::after{
+  content:'';position:absolute;top:0;bottom:0;width:1px;
+  background:#d8d0c4;opacity:.3;pointer-events:none;
+}
+.content::before{left:150px}
+.content::after{right:150px}
+@media print{.content::before{left:142px}.content::after{right:142px}}
+.sn{
+  display:block;width:130px;margin-bottom:10px;padding:5px 7px;border-radius:3px;
+  break-inside:avoid;font-family:'Caveat','Segoe Script',cursive;
+  font-size:13px;line-height:1.3;color:#2a1a08;
+}
+.sn-right{float:right;clear:right;margin-right:-144px}
+.sn-left{float:left;clear:left;margin-left:-144px}
+@media print{.sn-right{margin-right:-136px}.sn-left{margin-left:-136px}}
+.sn-label{display:block;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;margin-bottom:2px}
+.sn-body{display:block}
+.sn-extra{display:block;font-family:'Lora',Georgia,serif;font-size:9.5px;line-height:1.3;color:#4a3a28;margin-top:3px;padding-top:3px;border-top:1px dashed #d8d0c4}
+.sn-extra b{font-weight:600;margin-right:3px}
+${typeCSS()}
+.content p{font-size:14px;line-height:1.8;margin-bottom:13px;text-align:justify;hyphens:auto}
+.content h1,.content h2,.content h3{font-family:'Lora',Georgia,serif;margin:18px 0 10px;clear:both}
+.content h1{font-size:19px;font-weight:700}
+.content h2{font-size:16.5px;font-weight:600}
+.content h3{font-size:14.5px;font-weight:600}
+.content blockquote{border-left:3px solid #d0c8b8;padding-left:14px;margin:13px 0;font-style:italic;color:#5a5040;clear:both}
+.content ul,.content ol{margin:10px 0;padding-left:22px}
+.content li{font-size:14px;line-height:1.8;margin-bottom:3px}
+.content img{max-width:100%;height:auto;border-radius:2px;margin:6px 0}
+.content div:not(.extra-section){max-width:100%;overflow-wrap:break-word}
+.content *{max-width:100%}
+.extra-section{clear:both;margin-top:24px;padding-top:14px;border-top:1px solid #e0d8cc}
+.extra-section h3{font-size:14px;font-weight:600;margin-bottom:10px}
+.extra-section ul{list-style:none;padding:0}
+.extra-note{padding:6px 8px;border-radius:3px;margin-bottom:8px;break-inside:avoid}
+.extra-anchor{display:block;font-style:italic;font-size:12px;color:#8a7d6b;margin:2px 0}
+.ftr{clear:both;text-align:center;margin-top:24px;padding-top:14px;border-top:1px solid #e0d8cc;font-size:10px;color:#b0a090;letter-spacing:.5px}
+@media print{
+  .hdr{break-after:avoid}
+  .content p,.content li,.content blockquote{break-inside:avoid}
+  .sn{break-inside:avoid}
+  .extra-note{break-inside:avoid}
+  .ftr{break-before:avoid}
+}
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="hdr">
+    <h1>${esc(title)}</h1>
+    <div class="meta">${totalAnnotations} annotation${totalAnnotations !== 1 ? 's' : ''} \u00B7 ${esc(dateStr)}</div>
+  </div>
+  <div class="content">
+    ${bodyHtml}
+  </div>
+  ${unmatchedSection}
+  <div class="ftr">Exported with Oddity</div>
+</div>
+</body>
+</html>`;
+}
+
+// ─── Print Dialog ───
+
+function openPrintDialog(htmlContent) {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText =
+    'position:fixed;left:-9999px;top:0;width:210mm;height:297mm;border:none;visibility:hidden';
+  document.body.appendChild(iframe);
+
+  iframe.addEventListener('load', async () => {
+    const iDoc = iframe.contentDocument;
+    const iWin = iframe.contentWindow;
+    if (!iDoc || !iWin) { iframe.remove(); return; }
+
+    try {
+      if (iDoc.fonts?.ready) await iDoc.fonts.ready;
+      await new Promise((r) => setTimeout(r, 500));
+      requestAnimationFrame(() => {
+        iframe.style.visibility = 'visible';
+        iWin.print();
+        setTimeout(() => iframe.remove(), 3000);
+      });
+    } catch {
+      iframe.remove();
+    }
+  });
+
+  iframe.srcdoc = htmlContent;
+}
+
+// ─── Helpers ───
+
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
