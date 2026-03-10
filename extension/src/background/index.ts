@@ -177,6 +177,11 @@ chrome.runtime.onMessage.addListener(
           return {};
         }
 
+        case "openOptions": {
+          chrome.runtime.openOptionsPage();
+          return {};
+        }
+
         case "getAuthStatus": {
           const session = await getSession();
           if (!session) {

@@ -37,6 +37,12 @@ let dashTierBadgeEl: HTMLElement | null = null;
 let dashDensityBtns: HTMLButtonElement[] = [];
 let dashFontSelect: HTMLSelectElement | null = null;
 let dashFontSizeSelect: HTMLSelectElement | null = null;
+let dashSignOutPopoverEl: HTMLDivElement | null = null;
+let dashSignOutPopoverNameEl: HTMLSpanElement | null = null;
+let dashSignOutPopoverEmailEl: HTMLSpanElement | null = null;
+let dashSignOutPopoverPlanEl: HTMLSpanElement | null = null;
+let dashUserEmail = "";
+let dashUserTier = "free";
 
 // ─── Public API ───
 
@@ -287,6 +293,12 @@ export function destroyArgumentsBox(): void {
   dashProfileNameEl = null;
   dashProfileAvatarEl = null;
   dashTierBadgeEl = null;
+  dashSignOutPopoverEl = null;
+  dashSignOutPopoverNameEl = null;
+  dashSignOutPopoverEmailEl = null;
+  dashSignOutPopoverPlanEl = null;
+  dashUserEmail = "";
+  dashUserTier = "free";
   dashDensityBtns = [];
   dashFontSelect = null;
   dashFontSizeSelect = null;
@@ -561,7 +573,9 @@ function buildDashboardFace(): HTMLDivElement {
   exportBtn.className = "args-dash-export-btn";
   exportBtn.textContent = "Export PDF";
   exportBtn.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ action: "exportPdf", payload: { title: document.title, subtitle: "Created with Oddity 1" } });
+    document.dispatchEvent(new CustomEvent("oddity:exportPdf", {
+      detail: { title: document.title, subtitle: "Created with Oddity 1" },
+    }));
   });
   exportSection.appendChild(exportBtn);
   face.appendChild(exportSection);
@@ -569,8 +583,11 @@ function buildDashboardFace(): HTMLDivElement {
   // ── Auth bar ──
   const authBar = document.createElement("div");
   authBar.className = "args-dash-auth-bar";
+  authBar.style.position = "relative";
+
   const profileBtnEl = document.createElement("div");
   profileBtnEl.className = "args-dash-profile-btn";
+  profileBtnEl.style.cursor = "pointer";
   dashProfileAvatarEl = document.createElement("span");
   dashProfileAvatarEl.className = "args-dash-profile-avatar";
   dashProfileAvatarEl.textContent = "?";
@@ -582,6 +599,54 @@ function buildDashboardFace(): HTMLDivElement {
   dashTierBadgeEl = document.createElement("span");
   dashTierBadgeEl.className = "args-dash-tier-badge";
   dashTierBadgeEl.textContent = "FREE";
+
+  // ── Sign-out popover ──
+  dashSignOutPopoverEl = document.createElement("div");
+  dashSignOutPopoverEl.className = "args-dash-signout-popover";
+  dashSignOutPopoverEl.style.display = "none";
+
+  dashSignOutPopoverNameEl = document.createElement("span");
+  dashSignOutPopoverNameEl.className = "args-dash-signout-name";
+  dashSignOutPopoverEmailEl = document.createElement("span");
+  dashSignOutPopoverEmailEl.className = "args-dash-signout-email";
+  dashSignOutPopoverPlanEl = document.createElement("span");
+  dashSignOutPopoverPlanEl.className = "args-dash-signout-plan";
+
+  const popoverDivider = document.createElement("div");
+  popoverDivider.className = "args-dash-signout-divider";
+
+  const signOutBtn = document.createElement("button");
+  signOutBtn.className = "args-dash-signout-btn";
+  signOutBtn.textContent = "Sign out";
+  signOutBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    chrome.runtime.sendMessage({ action: "signOut", payload: {} }).then(() => {
+      if (dashSignOutPopoverEl) dashSignOutPopoverEl.style.display = "none";
+      if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
+      if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
+      if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
+      if (dashCountEl) dashCountEl.textContent = "0";
+      dashUserEmail = "";
+      dashUserTier = "free";
+    });
+  });
+
+  dashSignOutPopoverEl.appendChild(dashSignOutPopoverNameEl);
+  dashSignOutPopoverEl.appendChild(dashSignOutPopoverEmailEl);
+  dashSignOutPopoverEl.appendChild(dashSignOutPopoverPlanEl);
+  dashSignOutPopoverEl.appendChild(popoverDivider);
+  dashSignOutPopoverEl.appendChild(signOutBtn);
+
+  // Toggle popover on profile click; close on outside click
+  profileBtnEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!dashSignOutPopoverEl) return;
+    const isOpen = dashSignOutPopoverEl.style.display !== "none";
+    dashSignOutPopoverEl.style.display = isOpen ? "none" : "flex";
+  });
+  dashSignOutPopoverEl.addEventListener("click", (e) => e.stopPropagation());
+
+  authBar.appendChild(dashSignOutPopoverEl);
   authBar.appendChild(profileBtnEl);
   authBar.appendChild(dashTierBadgeEl);
   face.appendChild(authBar);
@@ -592,7 +657,9 @@ function buildDashboardFace(): HTMLDivElement {
   const settingsLink = document.createElement("span");
   settingsLink.className = "args-dash-footer-link";
   settingsLink.textContent = "Settings";
-  settingsLink.addEventListener("click", () => { chrome.runtime.openOptionsPage?.(); });
+  settingsLink.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "openOptions", payload: {} });
+  });
   const sep = document.createElement("span");
   sep.className = "args-dash-footer-sep";
   sep.textContent = "·";
@@ -600,7 +667,10 @@ function buildDashboardFace(): HTMLDivElement {
   feedbackLink.className = "args-dash-footer-link";
   feedbackLink.textContent = "Send Feedback";
   feedbackLink.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ action: "openPopup", payload: {} });
+    const msg = prompt("Send feedback to the Oddity 1 team:");
+    if (msg?.trim()) {
+      chrome.runtime.sendMessage({ action: "sendUserFeedback", payload: { message: msg.trim() } });
+    }
   });
   dashFooter.appendChild(settingsLink);
   dashFooter.appendChild(sep);
@@ -633,9 +703,18 @@ async function loadDashboardData(): Promise<void> {
     if (auth?.authenticated && auth.user) {
       if (dashCountEl) dashCountEl.textContent = String(auth.user.annotation_count ?? 0);
       const name = auth.user.display_name || auth.user.email || "?";
+      dashUserEmail = auth.user.email || "";
+      dashUserTier = auth.user.tier || "free";
       if (dashProfileNameEl) dashProfileNameEl.textContent = name;
       if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
-      if (dashTierBadgeEl) dashTierBadgeEl.textContent = (auth.user.tier || "free").toUpperCase();
+      if (dashTierBadgeEl) dashTierBadgeEl.textContent = dashUserTier.toUpperCase();
+      if (dashSignOutPopoverNameEl) dashSignOutPopoverNameEl.textContent = name;
+      if (dashSignOutPopoverEmailEl) dashSignOutPopoverEmailEl.textContent = dashUserEmail;
+      if (dashSignOutPopoverPlanEl) dashSignOutPopoverPlanEl.textContent = dashUserTier === "pro" ? "Pro Plan" : "Free Plan";
+    } else {
+      if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
+      if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
+      if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
     }
   } catch { /* ignore */ }
 }
@@ -1542,5 +1621,69 @@ const ARGUMENTS_BOX_CSS = `
     color: #d1d5db;
     margin: 0 4px;
     font-size: 11px;
+  }
+
+  /* ── Sign-out popover ── */
+
+  .args-dash-signout-popover {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.08);
+    border: 0.5px solid #e5e7eb;
+    padding: 14px 16px 10px;
+    flex-direction: column;
+    gap: 3px;
+    z-index: 10;
+  }
+
+  .args-dash-signout-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111;
+    line-height: 1.4;
+  }
+
+  .args-dash-signout-email {
+    font-size: 12px;
+    color: #6b7280;
+    line-height: 1.4;
+  }
+
+  .args-dash-signout-plan {
+    font-size: 12px;
+    color: #9ca3af;
+    margin-top: 2px;
+    line-height: 1.4;
+  }
+
+  .args-dash-signout-divider {
+    height: 0.5px;
+    background: #f0f0f0;
+    margin: 10px 0 8px;
+  }
+
+  .args-dash-signout-btn {
+    all: unset;
+    display: block;
+    width: 100%;
+    padding: 10px 0;
+    text-align: center;
+    font-size: 14px;
+    color: #ef4444;
+    font-weight: 400;
+    cursor: pointer;
+    border: 0.5px solid #fca5a5;
+    border-radius: 100px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    box-sizing: border-box;
+    transition: background 0.15s;
+  }
+
+  .args-dash-signout-btn:hover {
+    background: #fff5f5;
   }
 `;
