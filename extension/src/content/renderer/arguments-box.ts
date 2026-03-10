@@ -1308,7 +1308,7 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-container.dashboard {
     width: 290px;
-    height: 460px;
+    height: 420px;
   }
 
   .args-container.dashboard .args-panel-face {
@@ -1605,7 +1605,6 @@ const ARGUMENTS_BOX_CSS = `
     border-top: 0.5px solid #f0f0f0;
     text-align: center;
     flex-shrink: 0;
-    margin-top: auto;
   }
 
   .args-dash-footer-link {

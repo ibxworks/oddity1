@@ -1190,7 +1190,7 @@ const MARGIN_NOTES_CSS = `
     background: rgba(255,255,255,0.08);
     border-radius: 8px;
     padding: 4px 10px;
-    font-size: 11px;
+    font-size: var(--oddity-note-size);
     margin-bottom: 3px;
     word-break: break-word;
     font-family: 'Inter', system-ui, sans-serif;
@@ -1209,10 +1209,11 @@ const MARGIN_NOTES_CSS = `
   .note-reply-input {
     all: unset;
     flex: 1;
+    min-width: 0;
     background: #DFE7EF;
     border-radius: 100px;
     padding: 5px 12px;
-    font-size: 11.5px;
+    font-size: var(--oddity-note-size);
     font-weight: 450;
     color: #293038;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
