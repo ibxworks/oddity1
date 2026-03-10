@@ -63,7 +63,9 @@
       "Bash(find /Users/realtonypark/Developer/oddity1 -name \".env*\" -type f 2>/dev/null | grep -v node_modules)",
       "Bash(cd /Users/realtonypark/Developer/oddity1/Oddity1Dashboard && npm install @tiptap/react @tiptap/starter-kit @tiptap/extension-placeholder @tiptap/pm)",
       "mcp__plugin_supabase_supabase__list_projects",
-      "mcp__plugin_supabase_supabase__apply_migration"
+      "mcp__plugin_supabase_supabase__apply_migration",
+      "Bash(ls -la /Users/realtonypark/Developer/oddity1/backend/*.ts)",
+      "Bash(grep -r \"response_selector\\\\|stability_signal\" /Users/realtonypark/Developer/oddity1 --include=\"*.ts\" --include=\"*.json\" 2>/dev/null | head -20)"
     ]
   },
   "enableAllProjectMcpServers": true,

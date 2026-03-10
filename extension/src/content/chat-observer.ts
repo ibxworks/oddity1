@@ -256,6 +256,12 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
       for (const [, state] of responseStates) {
         if (state.completionTimer) clearTimeout(state.completionTimer);
         state.observer.disconnect();
+        // Flush: fire onResponse for responses with content so they aren't lost
+        const text = state.element.textContent?.trim() ?? '';
+        if (text.length > 0 && !processedElements.has(state.element)) {
+          processedElements.add(state.element);
+          onResponse(`chat-${state.responseIndex}`, state.element);
+        }
       }
       responseStates.clear();
     },

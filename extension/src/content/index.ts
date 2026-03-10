@@ -156,6 +156,7 @@ function resetAnnotationState(): void {
   regionByHash.clear();
   activeHashes.clear();
   regions = [];
+  pipelineInitialized = false;
   bodyDetectionActive = false;
   marginNotesInitFromBody = false;
   keyboardFocusIndex = -1;
