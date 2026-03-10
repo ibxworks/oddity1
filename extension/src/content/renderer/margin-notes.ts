@@ -332,6 +332,10 @@ export function onAnchorHoverEnd(): void {
   for (const note of notes) note.element.classList.remove('anchor-hovered');
   undimAllNotes();
   deemphasizeAnnotation();
+  // If a note is already expanded the cursor entered it before mouseleave fired
+  // on the anchor span (cross-DOM event ordering). Don't set a collapse timer —
+  // the note will collapse normally when the cursor leaves it.
+  if (expandedId) return;
   anchorHoverTimer = setTimeout(() => {
     collapseAllMarginNotes();
     anchorHoverTimer = null;
