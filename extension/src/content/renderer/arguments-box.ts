@@ -1149,10 +1149,6 @@ const ARGUMENTS_BOX_CSS = `
 
   /* ── Not-enabled state (red button) ── */
 
-  .args-container.oddity-not-enabled:not(.expanded) .args-button-face {
-    background: #ef4444;
-  }
-
   .args-container.oddity-not-enabled:not(.expanded) {
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #ef4444;
   }
