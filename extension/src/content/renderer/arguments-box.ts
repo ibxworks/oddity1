@@ -1,5 +1,5 @@
 import type { Annotation, AnnotationFeedback } from "@oddity/shared";
-import { ANNOTATION_LABELS } from "@oddity/shared";
+
 import {
   getThemeMode,
   offThemeChange,
@@ -728,10 +728,9 @@ function buildItems(
   for (const [, anns] of annotations) {
     for (const ann of anns) {
       if (ann.id.startsWith("manual-")) {
-        const label = ANNOTATION_LABELS[ann.type] ?? ann.type;
         items.push({
           icon: "✎",
-          text: `(${label}) ${ann.content.note}`,
+          text: ann.content.note,
           sortKey: ann.id,
         });
       }
