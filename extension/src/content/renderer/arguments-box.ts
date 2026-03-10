@@ -705,7 +705,7 @@ async function loadDashboardData(): Promise<void> {
       const name = auth.user.display_name || auth.user.email || "?";
       dashUserEmail = auth.user.email || "";
       dashUserTier = auth.user.tier || "free";
-      if (dashProfileNameEl) dashProfileNameEl.textContent = name;
+      if (dashProfileNameEl) dashProfileNameEl.textContent = auth.user.display_name || auth.user.email || "?";
       if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
       if (dashTierBadgeEl) dashTierBadgeEl.textContent = dashUserTier.toUpperCase();
       if (dashSignOutPopoverNameEl) dashSignOutPopoverNameEl.textContent = name;
