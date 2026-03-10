@@ -677,6 +677,10 @@ function createNoteElement(
       clearTimeout(anchorHoverTimer);
       anchorHoverTimer = null;
     }
+    if (collapseTimer) {
+      clearTimeout(collapseTimer);
+      collapseTimer = null;
+    }
     expandMarginNote(annotation.id);
     emphasizeAnnotation(annotation.id);
     dimOtherNotes(annotation.id);
@@ -699,9 +703,12 @@ function createNoteElement(
 
   el.addEventListener("mouseleave", () => {
     if (pinnedId) return;
-    collapseAllMarginNotes();
-    undimAllNotes();
-    deemphasizeAnnotation();
+    collapseTimer = setTimeout(() => {
+      collapseTimer = null;
+      collapseAllMarginNotes();
+      undimAllNotes();
+      deemphasizeAnnotation();
+    }, 100);
   });
 
   return el;
