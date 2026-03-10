@@ -23,6 +23,7 @@ const AnnotationSchema = z.object({
     'insight',
     'caveat',
     'vocabulary',
+    'user_written',
   ]),
   anchor: TextQuoteSelectorSchema,
   content: AnnotationContentSchema,

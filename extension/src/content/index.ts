@@ -94,6 +94,7 @@ let visibleTypes: AnnotationType[] = [
   "insight",
   "caveat",
   "vocabulary",
+  "user_written",
 ];
 let currentIntensity: Intensity = "default";
 let regions: DetectedRegion[] = [];
@@ -1081,6 +1082,18 @@ function matchHostname(hostname: string, pattern: string): boolean {
   }
   return hostname === pattern;
 }
+
+// ─── Export PDF DOM Event (from arguments-box dashboard) ───
+
+document.addEventListener("oddity:exportPdf", (e) => {
+  const { title, subtitle } = (e as CustomEvent<{ title: string; subtitle: string }>).detail;
+  const allAnnotations: Annotation[] = [];
+  for (const annotations of currentAnnotations.values()) {
+    allAnnotations.push(...annotations);
+  }
+  const regionHtml = collectRegionHtml();
+  handleExportPdf(title, subtitle, allAnnotations, regionHtml).catch(() => {});
+});
 
 // ─── Ctrl+O Manual Run Handler ───
 

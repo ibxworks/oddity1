@@ -45,6 +45,7 @@ export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
   insight: "#BFF3D3",
   caveat: "#F5574C",
   vocabulary: "#243C61",
+  user_written: "#A1927B",
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
@@ -54,6 +55,7 @@ export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
   insight: "INSIGHT",
   caveat: "CAVEAT",
   vocabulary: "VOCABULARY",
+  user_written: "USER-WRITTEN",
 };
 
 // ─── All annotation types ───
@@ -65,4 +67,5 @@ export const ALL_ANNOTATION_TYPES: AnnotationType[] = [
   "insight",
   "caveat",
   "vocabulary",
+  "user_written",
 ];

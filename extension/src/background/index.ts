@@ -177,6 +177,11 @@ chrome.runtime.onMessage.addListener(
           return {};
         }
 
+        case "openOptions": {
+          chrome.runtime.openOptionsPage();
+          return {};
+        }
+
         case "getAuthStatus": {
           const session = await getSession();
           if (!session) {
@@ -445,6 +450,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
                   "insight",
                   "caveat",
                   "vocabulary",
+                  "user_written",
                 ],
                 annotationFont: prefs.annotation_font,
                 annotationFontSize: prefs.annotation_font_size,

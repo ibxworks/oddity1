@@ -59,6 +59,14 @@ const visualMap: Record<AnnotationType, AnnotationVisual> = {
     label: ANNOTATION_LABELS.vocabulary,
     color: ANNOTATION_COLORS.vocabulary,
   },
+  user_written: {
+    type: 'user_written',
+    backgroundColor: ANNOTATION_COLORS.user_written + '26',
+    underlineStyle: `1.5px solid ${ANNOTATION_COLORS.user_written}`,
+    gutterIcon: null,
+    label: ANNOTATION_LABELS.user_written,
+    color: ANNOTATION_COLORS.user_written,
+  },
 };
 
 export function getVisual(type: AnnotationType): AnnotationVisual {
