@@ -2,13 +2,21 @@ import { useState, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { BACKEND_URL } from '../utils/annotationConstants';
 
+async function sha256(text) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export function useAnnotation() {
   const [annotations, setAnnotations] = useState([]);
   const [isAnnotating, setIsAnnotating] = useState(false);
   const [error, setError] = useState(null);
   const abortRef = useRef(null);
 
-  const annotate = useCallback(async (plainText, wordCount) => {
+  const annotate = useCallback(async (plainText, wordCount, { docId } = {}) => {
     // Abort previous request if any
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
@@ -23,6 +31,7 @@ export function useAnnotation() {
       if (!session) throw new Error('Not authenticated');
 
       const token = session.access_token;
+      const contentHash = await sha256(plainText);
 
       const res = await fetch(`${BACKEND_URL}/api/annotate`, {
         method: 'POST',
@@ -34,13 +43,17 @@ export function useAnnotation() {
         body: JSON.stringify({
           text: plainText,
           word_count: wordCount,
-          url: 'dashboard://document',
-          content_hash: '',
+          url: `https://app.oddity1.com/documents/${docId || 'untitled'}`,
+          content_hash: contentHash,
+          intensity: 'default',
         }),
         signal: controller.signal,
       });
 
-      if (!res.ok) throw new Error(`Annotation failed: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Annotation failed (${res.status}): ${body || res.statusText}`);
+      }
       if (!res.body) throw new Error('No response body for SSE stream');
 
       const reader = res.body.getReader();

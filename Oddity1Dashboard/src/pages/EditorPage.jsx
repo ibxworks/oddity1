@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -19,23 +19,32 @@ export default function EditorPage({ session }) {
   const [title, setTitle] = useState('Untitled');
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [loaded, setLoaded] = useState(false);
+  const loadedRef = useRef(false);
   const editorContainerRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
   const annotationPlugin = useRef(createAnnotationPlugin());
+
+  // Read initial content synchronously before editor creation
+  const initialContent = useMemo(() => {
+    const doc = getDocument(id);
+    if (!doc) return '';
+    return doc.content || '';
+  }, [id, getDocument]);
 
   const editor = useEditor({
     extensions: [
       StarterKit,
       Placeholder.configure({ placeholder: 'Start typing or paste your text...' }),
     ],
+    content: initialContent,
     editorProps: {
       attributes: {
         class: 'editor-content-inner',
       },
     },
     onUpdate({ editor }) {
-      if (!loaded) return;
+      if (!loadedRef.current) return;
       setSaveStatus('Saving...');
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
@@ -54,25 +63,22 @@ export default function EditorPage({ session }) {
   // Register annotation plugin
   useEffect(() => {
     if (!editor) return;
-    // Add plugin on editor creation
     const { state } = editor.view;
     if (!annotationPluginKey.getState(state)) {
       editor.registerPlugin(annotationPlugin.current);
     }
   }, [editor]);
 
-  // Load document content
+  // Load document metadata, handle HTML-to-JSON conversion, restore annotations
   useEffect(() => {
     if (!editor || loaded) return;
     const doc = getDocument(id);
     if (doc) {
       setTitle(doc.title || 'Untitled');
-      if (doc.content) {
+
+      // If content was stored as HTML string (from file import), convert to JSON
+      if (doc.content && typeof doc.content === 'string') {
         editor.commands.setContent(doc.content);
-      } else if (doc._importedHtml) {
-        // File import: HTML stored temporarily, load into editor and clear
-        editor.commands.setContent(doc._importedHtml);
-        // Save as TipTap JSON and remove temp HTML
         const plainText = editor.getText();
         const wordCount = plainText.split(/\s+/).filter(Boolean).length;
         updateDocument(id, {
@@ -80,16 +86,15 @@ export default function EditorPage({ session }) {
           plain_text: plainText,
           word_count: wordCount,
         });
-        const local = JSON.parse(localStorage.getItem('oddity_docs') || '{}');
-        if (local[id]) { delete local[id]._importedHtml; localStorage.setItem('oddity_docs', JSON.stringify(local)); }
       }
+
       if (doc.annotations) {
-        // Restore previous annotations
         editor.view.dispatch(
           editor.state.tr.setMeta(annotationPluginKey, { annotations: doc.annotations })
         );
       }
     }
+    loadedRef.current = true;
     setLoaded(true);
   }, [editor, id, loaded, getDocument, updateDocument]);
 
@@ -125,7 +130,7 @@ export default function EditorPage({ session }) {
     const plainText = editor.getText();
     if (!plainText.trim()) return;
     const wordCount = plainText.split(/\s+/).filter(Boolean).length;
-    const result = await annotate(plainText, wordCount);
+    const result = await annotate(plainText, wordCount, { docId: id });
     if (result?.length) {
       updateDocument(id, { annotations: result });
     }

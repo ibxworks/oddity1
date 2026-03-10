@@ -47,15 +47,9 @@ export default function DocumentsPage() {
       const { content, title } = await importFile(file);
       const id = await createDocument({
         title,
-        content: null, // Will be set when editor parses HTML
-        plain_text: content, // Store HTML for now; editor will parse on load
+        content, // Store HTML directly — editor accepts HTML strings in content option
+        plain_text: content,
       });
-      // Store imported HTML separately so editor can load it
-      const docs = JSON.parse(localStorage.getItem('oddity_docs') || '{}');
-      if (docs[id]) {
-        docs[id]._importedHtml = content;
-        localStorage.setItem('oddity_docs', JSON.stringify(docs));
-      }
       navigate(`/documents/${id}`);
     } catch (err) {
       showToast('Failed to import file');
