@@ -1,17 +1,58 @@
 import { Readability } from '@mozilla/readability';
-import type { Annotation, AnnotationType } from '@oddity/shared';
-import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '@oddity/shared';
+import type { Annotation, AnnotationFont, AnnotationFontSize, AnnotationType } from '@oddity/shared';
+import { ANNOTATION_LABELS } from '@oddity/shared';
+import { getVisual } from './renderer/styles';
 
-// ─── Inline highlight styles per annotation type ───
+// ─── Inline highlight styles per annotation type (derived from frontend visual map) ───
 
-const MARK_STYLES: Record<AnnotationType, string> = {
-  highlight: `background:${ANNOTATION_COLORS.highlight}30;border-radius:2px;padding:0 2px`,
-  recall: `border-bottom:2px solid ${ANNOTATION_COLORS.recall};padding-bottom:1px`,
-  provoking_question: `border-bottom:2px dotted ${ANNOTATION_COLORS.provoking_question};padding-bottom:1px`,
-  insight: `background:${ANNOTATION_COLORS.insight}28;border-radius:2px;padding:0 2px`,
-  caveat: `border-bottom:2px dashed ${ANNOTATION_COLORS.caveat};padding-bottom:1px`,
-  vocabulary: `border-bottom:2px dotted ${ANNOTATION_COLORS.vocabulary};padding-bottom:1px`,
-  user_written: `border-bottom:1.5px solid ${ANNOTATION_COLORS.user_written};padding-bottom:1px`,
+function buildMarkStyle(type: AnnotationType): string {
+  const v = getVisual(type);
+  const parts: string[] = [];
+  if (v.backgroundColor) parts.push(`background:${v.backgroundColor};border-radius:2px`);
+  if (v.underlineStyle) parts.push(`border-bottom:${v.underlineStyle};padding-bottom:1px`);
+  return parts.join(';');
+}
+
+const ALL_TYPES: AnnotationType[] = [
+  'highlight', 'recall', 'provoking_question', 'insight', 'caveat', 'vocabulary', 'user_written',
+];
+
+const MARK_STYLES = Object.fromEntries(
+  ALL_TYPES.map((t) => [t, buildMarkStyle(t)]),
+) as Record<AnnotationType, string>;
+
+// ─── Font maps (mirrors margin-notes.ts) ───
+
+const FONT_MAP: Record<AnnotationFont, string> = {
+  default: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+  fraunces: "'Fraunces', Georgia, serif",
+  kalam: "'Kalam', cursive, system-ui, sans-serif",
+  helvetica: "Helvetica, 'Helvetica Neue', Arial, sans-serif",
+  arial: "Arial, 'Helvetica Neue', sans-serif",
+  georgia: "Georgia, 'Times New Roman', serif",
+};
+
+const SIZE_MAP: Record<AnnotationFontSize, string> = {
+  small: '12px',
+  default: '14px',
+  large: '16px',
+};
+
+// Google Fonts query strings for fonts that need loading
+const GFONT_MAP: Partial<Record<AnnotationFont, string>> = {
+  fraunces: 'family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500',
+  kalam: 'family=Kalam:wght@400',
+};
+
+// Label colors — matches frontend light mode overrides (PDF is always light)
+const LABEL_COLORS: Record<AnnotationType, string> = {
+  highlight: '#EAB308',
+  recall: '#243C61',
+  provoking_question: '#F5574C',
+  insight: '#70AC87',
+  caveat: '#F5574C',
+  vocabulary: '#243C61',
+  user_written: '#A1927B',
 };
 
 // ─── Main Export ───
@@ -22,12 +63,24 @@ export async function handleExportPdf(
   annotations: Annotation[],
   regionHtml: string,
 ): Promise<void> {
+  // Read user font preferences from storage
+  const prefs = await new Promise<{ annotation_font?: AnnotationFont; annotation_font_size?: AnnotationFontSize }>(
+    (resolve) => chrome.storage.local.get('preferences', (r) => resolve((r['preferences'] as any) ?? {})),
+  );
+
+  const fontFamily = FONT_MAP[prefs.annotation_font ?? 'default'];
+  const noteSize = SIZE_MAP[prefs.annotation_font_size ?? 'default'];
+  const gfontQuery = GFONT_MAP[prefs.annotation_font ?? 'default'];
+
   const rawHtml = regionHtml || extractArticleHtmlFallback();
   if (!rawHtml) throw new Error('Could not extract page content for export');
 
   const cleanHtml = sanitizeHtml(rawHtml);
   const { bodyHtml, unmatchedAnnotations } = highlightAndAnnotate(cleanHtml, annotations);
-  const fullHtml = buildDocument(title, subtitle, bodyHtml, annotations.length, unmatchedAnnotations);
+  const fullHtml = buildDocument(
+    title, subtitle, bodyHtml, annotations.length, unmatchedAnnotations,
+    fontFamily, noteSize, gfontQuery,
+  );
 
   await openPrintDialog(fullHtml);
 }
@@ -169,32 +222,25 @@ function buildSidenoteInner(ann: Annotation): string {
   const label = ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase();
   const note = ann.content.note ? esc(ann.content.note) : '';
 
-  let extra = '';
+  let sections = '';
   if (ann.content.why_it_matters) {
-    extra += `<span class="sn-extra"><b>Why it matters</b> ${esc(ann.content.why_it_matters)}</span>`;
+    sections += `<div class="sn-section"><span class="sn-section-label">Why it matters</span><p>${esc(ann.content.why_it_matters)}</p></div>`;
   }
   if (ann.content.question) {
-    extra += `<span class="sn-extra"><b>Question</b> ${esc(ann.content.question)}</span>`;
+    sections += `<div class="sn-section"><span class="sn-section-label">Question</span><p>${esc(ann.content.question)}</p></div>`;
   }
   const suggestions = ann.content.suggestions ?? [];
   if (suggestions.length > 0) {
-    extra += `<span class="sn-extra">${suggestions.map((s) => esc(s)).join('; ')}</span>`;
+    sections += `<div class="sn-section"><p>${suggestions.map((s) => esc(s)).join('; ')}</p></div>`;
   }
 
-  return `<span class="sn-label">${esc(label)}</span><span class="sn-body">${note}</span>${extra}`;
+  return `<span class="sn-label">${esc(label)}</span><span class="sn-body">${note}</span>${sections}`;
 }
 
-// ─── Per-Type Accent CSS ───
+// ─── Per-Type Label Color CSS ───
 
 function typeCSS(): string {
-  const types: AnnotationType[] = [
-    'highlight', 'recall', 'provoking_question', 'insight', 'caveat', 'vocabulary',
-  ];
-  return types.map((t) => {
-    const c = ANNOTATION_COLORS[t];
-    return `.note-${t}{background:${c}10;border-left:3px solid ${c}}
-.note-${t} .sn-label{color:${c}}`;
-  }).join('\n');
+  return ALL_TYPES.map((t) => `.note-${t} .sn-label{color:${LABEL_COLORS[t]}}`).join('\n');
 }
 
 // ─── Build Full HTML Document ───
@@ -205,10 +251,18 @@ function buildDocument(
   bodyHtml: string,
   totalAnnotations: number,
   unmatchedAnnotations: Annotation[],
+  fontFamily: string,
+  noteSize: string,
+  gfontQuery: string | undefined,
 ): string {
   const dateStr = new Date().toLocaleDateString('en-US', {
     year: 'numeric', month: 'long', day: 'numeric',
   });
+
+  // Build Google Fonts URL — always load Lora for body; add user's note font if needed
+  const gfontUrl = gfontQuery
+    ? `https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&${gfontQuery}&display=swap`
+    : `https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap`;
 
   // Annotations that couldn't be matched to text — show at the bottom
   let unmatchedSection = '';
@@ -235,7 +289,7 @@ function buildDocument(
 <title>${esc(title)} — Oddity Export</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Caveat:wght@400;600&display=swap">
+<link rel="stylesheet" href="${gfontUrl}">
 <style>
 /* ── Reset ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -276,18 +330,20 @@ body{
   .content::after{right:142px}
 }
 
-/* ── Tufte-style float sidenotes ── */
+/* ── Sidenote cards — matches frontend light mode card design ── */
 .sn{
   display:block;
   width:130px;
   margin-bottom:10px;
-  padding:5px 7px;
-  border-radius:3px;
+  padding:10px 12px;
+  border-radius:12px;
+  background:#FFFFFF;
+  box-shadow:-4px 2px 10px rgba(0,0,0,0.10),-1px 1px 3px rgba(0,0,0,0.06);
   break-inside:avoid;
-  font-family:'Caveat','Segoe Script',cursive;
-  font-size:13px;
-  line-height:1.3;
-  color:#2a1a08;
+  font-family:${fontFamily};
+  font-size:${noteSize};
+  line-height:1.45;
+  color:#293038;
 }
 .sn-right{float:right;clear:right;margin-right:-144px}
 .sn-left{float:left;clear:left;margin-left:-144px}
@@ -295,20 +351,48 @@ body{
   .sn-right{margin-right:-136px}
   .sn-left{margin-left:-136px}
 }
-.sn-label{
-  display:block;font-size:9.5px;font-weight:600;
-  text-transform:uppercase;letter-spacing:.7px;margin-bottom:2px;
-}
-.sn-body{display:block}
-.sn-extra{
-  display:block;
-  font-family:'Lora',Georgia,serif;
-  font-size:9.5px;line-height:1.3;color:#4a3a28;
-  margin-top:3px;padding-top:3px;border-top:1px dashed #d8d0c4;
-}
-.sn-extra b{font-weight:600;margin-right:3px}
 
-/* Per-type accent colors */
+/* Label — matches .note-label */
+.sn-label{
+  display:block;
+  font-size:${noteSize};
+  font-weight:900;
+  letter-spacing:normal;
+  text-transform:lowercase;
+  margin-bottom:4px;
+  color:#FFFFFF;
+}
+.sn-label::first-letter{text-transform:uppercase}
+
+/* Body text — matches .note-text */
+.sn-body{
+  display:block;
+  font-weight:300;
+  color:#293038;
+}
+
+/* Section extras — matches .note-section */
+.sn-section{
+  margin-top:6px;
+  padding-top:6px;
+  border-top:1px solid rgba(41,48,56,0.1);
+}
+.sn-section-label{
+  display:block;
+  font-size:9px;
+  font-weight:500;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  color:rgba(41,48,56,0.45);
+  margin-bottom:2px;
+}
+.sn-section p{
+  margin:0;
+  font-size:${noteSize};
+  color:#293038;
+}
+
+/* Per-type label colors */
 ${typeCSS()}
 
 /* ── Main text typography ── */
@@ -352,8 +436,13 @@ ${typeCSS()}
 }
 .extra-section h3{font-size:14px;font-weight:600;margin-bottom:10px}
 .extra-section ul{list-style:none;padding:0}
-.extra-note{padding:6px 8px;border-radius:3px;margin-bottom:8px;break-inside:avoid}
-.extra-anchor{display:block;font-style:italic;font-size:12px;color:#8a7d6b;margin:2px 0}
+.extra-note{
+  padding:10px 12px;border-radius:12px;margin-bottom:8px;break-inside:avoid;
+  background:#FFFFFF;color:#293038;
+  box-shadow:-4px 2px 10px rgba(0,0,0,0.10),-1px 1px 3px rgba(0,0,0,0.06);
+  font-family:${fontFamily};font-size:${noteSize};
+}
+.extra-anchor{display:block;font-style:italic;font-size:12px;color:rgba(255,255,255,0.45);margin:2px 0}
 
 /* ── Footer ── */
 .ftr{
