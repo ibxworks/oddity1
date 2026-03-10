@@ -1140,7 +1140,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(120, 120, 120, 0.7);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
@@ -1163,22 +1163,22 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-close-btn:hover {
-    background: rgba(255, 255, 255, 0.35);
+    background: rgba(100, 100, 100, 0.85);
   }
 
   :host([data-theme="light"]) .args-close-btn {
-    color: #111111;
-    background: rgba(255, 255, 255, 0.45);
+    color: #ffffff;
+    background: rgba(120, 120, 120, 0.7);
   }
 
   :host([data-theme="light"]) .args-close-btn:hover {
-    background: rgba(255, 255, 255, 0.65);
+    background: rgba(100, 100, 100, 0.85);
   }
 
   /* ── Light mode overrides ── */
 
   :host([data-theme="light"]) .args-container {
-    background: rgba(255, 255, 255, 0.65);
+    background: rgba(255, 255, 255, 0.4);
   }
 
   :host([data-theme="light"]) .args-main-title {
