@@ -40,6 +40,11 @@ let dashFontSizeSelect: HTMLSelectElement | null = null;
 let dashPersonaSelect: HTMLSelectElement | null = null;
 let dashPersonaAvatarImgEl: HTMLImageElement | null = null;
 let dashPersonaCircleEl: HTMLDivElement | null = null;
+let dashFeedbackViewEl: HTMLDivElement | null = null;
+let dashFeedbackEmailEl: HTMLDivElement | null = null;
+let dashFeedbackTextareaEl: HTMLTextAreaElement | null = null;
+let dashFeedbackStatusEl: HTMLDivElement | null = null;
+let dashFeedbackSendBtnEl: HTMLButtonElement | null = null;
 let dashSignOutPopoverEl: HTMLDivElement | null = null;
 let dashSignOutPopoverNameEl: HTMLSpanElement | null = null;
 let dashSignOutPopoverEmailEl: HTMLSpanElement | null = null;
@@ -308,6 +313,11 @@ export function destroyArgumentsBox(): void {
   dashPersonaSelect = null;
   dashPersonaAvatarImgEl = null;
   dashPersonaCircleEl = null;
+  dashFeedbackViewEl = null;
+  dashFeedbackEmailEl = null;
+  dashFeedbackTextareaEl = null;
+  dashFeedbackStatusEl = null;
+  dashFeedbackSendBtnEl = null;
   expanded = false;
   dimmed = false;
   manualRunCb = null;
@@ -376,6 +386,8 @@ function toggle(): void {
   containerEl?.classList.toggle("expanded", expanded);
   if (!expanded) {
     containerEl?.classList.remove("dashboard");
+    if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+    if (containerEl) containerEl.style.height = "";
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
   }
@@ -417,6 +429,8 @@ function buildDashboardFace(): HTMLDivElement {
   backBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     containerEl?.classList.remove("dashboard");
+    if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+    if (containerEl) containerEl.style.height = "";
   });
 
   const logo = document.createElement("span");
@@ -700,15 +714,86 @@ function buildDashboardFace(): HTMLDivElement {
   feedbackLink.className = "args-dash-footer-link";
   feedbackLink.textContent = "Send Feedback";
   feedbackLink.addEventListener("click", () => {
-    const msg = prompt("Send feedback to the Oddity 1 team:");
-    if (msg?.trim()) {
-      chrome.runtime.sendMessage({ action: "sendUserFeedback", payload: { message: msg.trim() } });
-    }
+    if (!dashFeedbackViewEl || !dashFeedbackEmailEl || !dashFeedbackTextareaEl || !dashFeedbackStatusEl) return;
+    dashFeedbackEmailEl.textContent = dashUserEmail;
+    dashFeedbackTextareaEl.value = "";
+    dashFeedbackStatusEl.style.display = "none";
+    dashFeedbackStatusEl.className = "args-dash-feedback-status";
+    dashFeedbackViewEl.style.display = "flex";
+    if (containerEl) containerEl.style.height = "290px";
   });
   dashFooter.appendChild(settingsLink);
   dashFooter.appendChild(sep);
   dashFooter.appendChild(feedbackLink);
   face.appendChild(dashFooter);
+
+  // ── Feedback View (overlay) ──
+  dashFeedbackViewEl = document.createElement("div");
+  dashFeedbackViewEl.className = "args-dash-feedback-view";
+
+  const fbTitle = document.createElement("div");
+  fbTitle.className = "args-dash-feedback-title";
+  fbTitle.textContent = "Send Feedback";
+
+  dashFeedbackEmailEl = document.createElement("div");
+  dashFeedbackEmailEl.className = "args-dash-feedback-email";
+
+  dashFeedbackTextareaEl = document.createElement("textarea");
+  dashFeedbackTextareaEl.className = "args-dash-feedback-textarea";
+  dashFeedbackTextareaEl.placeholder = "Enter your feedback...";
+  dashFeedbackTextareaEl.rows = 5;
+
+  const fbBtnRow = document.createElement("div");
+  fbBtnRow.className = "args-dash-feedback-btn-row";
+
+  const fbCancelBtn = document.createElement("button");
+  fbCancelBtn.className = "args-dash-feedback-cancel-btn";
+  fbCancelBtn.textContent = "Cancel";
+  fbCancelBtn.addEventListener("click", () => {
+    if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+    if (containerEl) containerEl.style.height = "";
+  });
+
+  dashFeedbackSendBtnEl = document.createElement("button");
+  dashFeedbackSendBtnEl.className = "args-dash-feedback-send-btn";
+  dashFeedbackSendBtnEl.textContent = "Send";
+  dashFeedbackSendBtnEl.addEventListener("click", async () => {
+    const message = dashFeedbackTextareaEl!.value.trim();
+    if (!message) return;
+    dashFeedbackSendBtnEl!.textContent = "Sending...";
+    dashFeedbackSendBtnEl!.setAttribute("disabled", "");
+    dashFeedbackStatusEl!.style.display = "none";
+    try {
+      const result = await chrome.runtime.sendMessage({ action: "sendUserFeedback", payload: { message } }) as { success?: boolean; error?: string };
+      if (result?.error) throw new Error(result.error);
+      dashFeedbackStatusEl!.textContent = "Feedback sent! Thank you.";
+      dashFeedbackStatusEl!.className = "args-dash-feedback-status success";
+      dashFeedbackStatusEl!.style.display = "block";
+      setTimeout(() => {
+        if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+        if (containerEl) containerEl.style.height = "";
+      }, 1500);
+    } catch (err) {
+      dashFeedbackStatusEl!.textContent = String(err instanceof Error ? err.message : "Failed to send feedback");
+      dashFeedbackStatusEl!.className = "args-dash-feedback-status error";
+      dashFeedbackStatusEl!.style.display = "block";
+    } finally {
+      dashFeedbackSendBtnEl!.textContent = "Send";
+      dashFeedbackSendBtnEl!.removeAttribute("disabled");
+    }
+  });
+
+  dashFeedbackStatusEl = document.createElement("div");
+  dashFeedbackStatusEl.className = "args-dash-feedback-status";
+
+  fbBtnRow.appendChild(fbCancelBtn);
+  fbBtnRow.appendChild(dashFeedbackSendBtnEl);
+  dashFeedbackViewEl.appendChild(fbTitle);
+  dashFeedbackViewEl.appendChild(dashFeedbackEmailEl);
+  dashFeedbackViewEl.appendChild(dashFeedbackTextareaEl);
+  dashFeedbackViewEl.appendChild(fbBtnRow);
+  dashFeedbackViewEl.appendChild(dashFeedbackStatusEl);
+  face.appendChild(dashFeedbackViewEl);
 
   return face;
 }
@@ -1753,4 +1838,110 @@ const ARGUMENTS_BOX_CSS = `
   .args-dash-signout-btn:hover {
     background: #fff5f5;
   }
+
+  /* ── Feedback View ── */
+
+  .args-dash-feedback-view {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    border-radius: inherit;
+    z-index: 2;
+    display: none;
+    flex-direction: column;
+    padding: 18px 16px;
+  }
+
+  .args-dash-feedback-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: #111;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-feedback-email {
+    font-size: 12px;
+    color: #8a8a80;
+    margin-bottom: 10px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-feedback-textarea {
+    display: block;
+    width: 100%;
+    padding: 9px 12px;
+    border: 0.5px solid #e8e8e2;
+    border-radius: 12px;
+    font-size: 13px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    outline: none;
+    transition: border-color 0.15s;
+    background: #fff;
+    color: #111;
+    resize: vertical;
+    min-height: 80px;
+    box-sizing: border-box;
+  }
+
+  .args-dash-feedback-textarea:focus { border-color: #111; }
+
+  .args-dash-feedback-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .args-dash-feedback-cancel-btn {
+    all: unset;
+    flex: 1;
+    display: block;
+    padding: 10px 12px;
+    border: 0.5px solid #e8e8e2;
+    border-radius: 100px;
+    background: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #3a3a36;
+    transition: all 0.15s;
+    text-align: center;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    box-sizing: border-box;
+  }
+
+  .args-dash-feedback-cancel-btn:hover { background: #f5f4f0; }
+
+  .args-dash-feedback-send-btn {
+    all: unset;
+    flex: 1;
+    display: block;
+    padding: 10px 12px;
+    background: #111;
+    color: #fff;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    transition: opacity 0.15s;
+    box-sizing: border-box;
+  }
+
+  .args-dash-feedback-send-btn:hover { opacity: 0.9; }
+  .args-dash-feedback-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .args-dash-feedback-status {
+    display: none;
+    text-align: center;
+    padding: 8px;
+    font-size: 12px;
+    border-radius: 10px;
+    margin-top: 8px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-feedback-status.success { display: block; color: #16a34a; background: #f0fdf4; }
+  .args-dash-feedback-status.error { display: block; color: #dc2626; background: #fef2f2; }
 `;
