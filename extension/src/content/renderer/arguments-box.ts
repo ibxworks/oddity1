@@ -37,6 +37,9 @@ let dashTierBadgeEl: HTMLElement | null = null;
 let dashDensityBtns: HTMLButtonElement[] = [];
 let dashFontSelect: HTMLSelectElement | null = null;
 let dashFontSizeSelect: HTMLSelectElement | null = null;
+let dashPersonaSelect: HTMLSelectElement | null = null;
+let dashPersonaAvatarImgEl: HTMLImageElement | null = null;
+let dashPersonaCircleEl: HTMLDivElement | null = null;
 let dashSignOutPopoverEl: HTMLDivElement | null = null;
 let dashSignOutPopoverNameEl: HTMLSpanElement | null = null;
 let dashSignOutPopoverEmailEl: HTMLSpanElement | null = null;
@@ -155,7 +158,7 @@ export function initArgumentsBox(): void {
   // ── Copy button ──
   const copyBtnFull = document.createElement("button");
   copyBtnFull.className = "args-copy-btn-full";
-  copyBtnFull.textContent = "Copy my arguments";
+  copyBtnFull.textContent = "Copy";
   copyBtnFull.addEventListener("click", (e) => {
     e.stopPropagation();
     handleCopy(copyBtnFull);
@@ -302,6 +305,9 @@ export function destroyArgumentsBox(): void {
   dashDensityBtns = [];
   dashFontSelect = null;
   dashFontSizeSelect = null;
+  dashPersonaSelect = null;
+  dashPersonaAvatarImgEl = null;
+  dashPersonaCircleEl = null;
   expanded = false;
   dimmed = false;
   manualRunCb = null;
@@ -457,13 +463,40 @@ function buildDashboardFace(): HTMLDivElement {
   const profileSection = document.createElement("div");
   profileSection.className = "args-dash-profile";
 
-  const avatarCircle = document.createElement("div");
-  avatarCircle.className = "args-dash-avatar-circle";
-  const avatarImg = document.createElement("img");
-  avatarImg.src = chrome.runtime.getURL("Terry.png");
-  avatarImg.alt = "Terry";
-  avatarImg.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:50%;";
-  avatarCircle.appendChild(avatarImg);
+  const avatarArea = document.createElement("div");
+  avatarArea.className = "args-dash-avatar-area";
+
+  dashPersonaCircleEl = document.createElement("div");
+  dashPersonaCircleEl.className = "args-dash-avatar-circle";
+  dashPersonaAvatarImgEl = document.createElement("img");
+  dashPersonaAvatarImgEl.src = chrome.runtime.getURL("Terry.png");
+  dashPersonaAvatarImgEl.alt = "Terry";
+  dashPersonaAvatarImgEl.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:50%;";
+  dashPersonaCircleEl.appendChild(dashPersonaAvatarImgEl);
+
+  dashPersonaSelect = document.createElement("select");
+  dashPersonaSelect.className = "args-dash-persona-select";
+  for (const name of ["Terry", "Jerry"]) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    dashPersonaSelect.appendChild(opt);
+  }
+  dashPersonaSelect.addEventListener("change", () => {
+    const name = dashPersonaSelect!.value;
+    if (dashPersonaAvatarImgEl) {
+      dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${name}.png`);
+      dashPersonaAvatarImgEl.alt = name;
+    }
+    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = name === "Jerry" ? "#FDCB24" : "#fff";
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({ preferences: { ...prefs, persona: name } });
+    });
+  });
+
+  avatarArea.appendChild(dashPersonaCircleEl);
+  avatarArea.appendChild(dashPersonaSelect);
 
   const countArea = document.createElement("div");
   countArea.className = "args-dash-count-area";
@@ -476,7 +509,7 @@ function buildDashboardFace(): HTMLDivElement {
   countArea.appendChild(dashCountEl);
   countArea.appendChild(countLabel);
 
-  profileSection.appendChild(avatarCircle);
+  profileSection.appendChild(avatarArea);
   profileSection.appendChild(countArea);
   face.appendChild(profileSection);
 
@@ -690,6 +723,10 @@ async function loadDashboardData(): Promise<void> {
     });
     if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
     if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
+    const persona = (prefs.persona as string) ?? "Terry";
+    if (dashPersonaSelect) dashPersonaSelect.value = persona;
+    if (dashPersonaAvatarImgEl) { dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`); dashPersonaAvatarImgEl.alt = persona; }
+    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = persona === "Jerry" ? "#FDCB24" : "#fff";
     const enabled = prefs.enabled !== false;
     if (dashToggleInput) dashToggleInput.checked = enabled;
     if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
@@ -1303,11 +1340,18 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(0, 0, 0, 0.35);
   }
 
+  :host([data-theme="light"]) .args-container.dashboard {
+    height: 440px;
+  }
+
   /* ── Dashboard state ── */
 
   .args-container.dashboard {
     width: 290px;
-    height: 420px;
+    height: 440px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: #fff;
   }
 
   .args-container.dashboard .args-panel-face {
@@ -1337,6 +1381,7 @@ const ARGUMENTS_BOX_CSS = `
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 13px;
     letter-spacing: -0.01em;
+    color-scheme: light;
   }
 
   .args-container.dashboard .args-dash-face {
@@ -1425,6 +1470,14 @@ const ARGUMENTS_BOX_CSS = `
     flex-shrink: 0;
   }
 
+  .args-dash-avatar-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+
   .args-dash-avatar-circle {
     width: 44px;
     height: 44px;
@@ -1433,6 +1486,21 @@ const ARGUMENTS_BOX_CSS = `
     border: 0.5px solid #e5e7eb;
     overflow: hidden;
     flex-shrink: 0;
+  }
+
+  .args-dash-persona-select {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: #111;
+    outline: none;
+    appearance: auto;
+    height: 20px;
+    line-height: 20px;
   }
 
   .args-dash-count-area {
@@ -1495,7 +1563,7 @@ const ARGUMENTS_BOX_CSS = `
   .args-dash-density-btn {
     all: unset;
     flex: 1;
-    padding: 6px 0;
+    height: 28px;
     border: 0.5px solid #e5e7eb;
     border-radius: 20px;
     background: #fff;
@@ -1560,6 +1628,7 @@ const ARGUMENTS_BOX_CSS = `
     justify-content: space-between;
     padding: 8px 16px;
     flex-shrink: 0;
+    margin-top: auto;
   }
 
   .args-dash-profile-btn {
