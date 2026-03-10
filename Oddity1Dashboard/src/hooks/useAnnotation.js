@@ -66,6 +66,9 @@ export function useAnnotation() {
           const { done, value } = await reader.read();
           if (done) break;
 
+          // Check if this request was superseded
+          if (abortRef.current !== controller) return [];
+
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop() ?? '';
@@ -98,6 +101,8 @@ export function useAnnotation() {
         reader.releaseLock();
       }
 
+      // Only update state if this is still the active request
+      if (abortRef.current !== controller) return [];
       setIsAnnotating(false);
       return collected;
     } catch (err) {

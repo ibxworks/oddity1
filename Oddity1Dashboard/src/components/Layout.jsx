@@ -9,6 +9,7 @@ export default function Layout({ session }) {
 
   async function handleSignOut() {
     await supabase.auth.signOut()
+    window.location.href = 'https://oddity1.com'
   }
 
   return (

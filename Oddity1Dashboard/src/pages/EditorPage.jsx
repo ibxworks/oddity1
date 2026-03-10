@@ -19,11 +19,12 @@ export default function EditorPage({ session }) {
   const [title, setTitle] = useState('Untitled');
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [loaded, setLoaded] = useState(false);
-  const loadedRef = useRef(false);
-  const editorContainerRef = useRef(null);
-  const saveTimeoutRef = useRef(null);
+  const [mode, setMode] = useState('edit'); // 'edit' | 'read'
+  const [storedAnnotations, setStoredAnnotations] = useState([]);
 
-  const annotationPlugin = useRef(createAnnotationPlugin());
+  const loadedRef = useRef(false);
+  const saveTimeoutRef = useRef(null);
+  const editorWrapperRef = useRef(null);
 
   // Read initial content synchronously before editor creation
   const initialContent = useMemo(() => {
@@ -60,13 +61,20 @@ export default function EditorPage({ session }) {
     },
   });
 
-  // Register annotation plugin
+  // Register AnnotationPlugin once editor is ready
   useEffect(() => {
     if (!editor) return;
-    const { state } = editor.view;
-    if (!annotationPluginKey.getState(state)) {
-      editor.registerPlugin(annotationPlugin.current);
+    const plugin = createAnnotationPlugin();
+    // Only register if not already registered
+    const existing = editor.view.state.plugins.find(
+      (p) => p.spec.key === annotationPluginKey
+    );
+    if (!existing) {
+      editor.registerPlugin(plugin);
     }
+    return () => {
+      try { editor.unregisterPlugin(annotationPluginKey); } catch { /* already destroyed */ }
+    };
   }, [editor]);
 
   // Load document metadata, handle HTML-to-JSON conversion, restore annotations
@@ -88,30 +96,50 @@ export default function EditorPage({ session }) {
         });
       }
 
-      if (doc.annotations) {
-        editor.view.dispatch(
-          editor.state.tr.setMeta(annotationPluginKey, { annotations: doc.annotations })
-        );
+      // Restore stored annotations
+      if (doc.annotations?.length) {
+        setStoredAnnotations(doc.annotations);
       }
     }
     loadedRef.current = true;
     setLoaded(true);
   }, [editor, id, loaded, getDocument, updateDocument]);
 
-  // Push streaming annotations into the plugin
-  useEffect(() => {
-    if (!editor || !annotations.length) return;
-    editor.view.dispatch(
-      editor.state.tr.setMeta(annotationPluginKey, { annotations })
-    );
-  }, [editor, annotations]);
-
   // Cleanup on unmount
   useEffect(() => cleanup, [cleanup]);
 
+  // Annotations to display: streaming takes priority over stored
+  const displayAnnotations = isAnnotating || annotations.length > 0
+    ? annotations
+    : storedAnnotations;
+
+  // Push annotations into the ProseMirror plugin whenever they change
+  useEffect(() => {
+    if (!editor || !displayAnnotations) return;
+    const { tr } = editor.view.state;
+    tr.setMeta(annotationPluginKey, { annotations: displayAnnotations });
+    editor.view.dispatch(tr);
+  }, [editor, displayAnnotations]);
+
+  const switchToEdit = useCallback(() => {
+    if (editor) {
+      // Clear annotations from plugin
+      const { tr } = editor.view.state;
+      tr.setMeta(annotationPluginKey, { annotations: [] });
+      editor.view.dispatch(tr);
+      editor.setEditable(true);
+    }
+    setMode('edit');
+    setTimeout(() => editor?.commands.focus(), 50);
+  }, [editor]);
+
+  const switchToRead = useCallback(() => {
+    if (editor) editor.setEditable(false);
+    setMode('read');
+  }, [editor]);
+
   const handleTitleChange = useCallback((e) => {
-    const newTitle = e.target.value;
-    setTitle(newTitle);
+    setTitle(e.target.value);
   }, []);
 
   const handleTitleBlur = useCallback(() => {
@@ -129,18 +157,23 @@ export default function EditorPage({ session }) {
     if (!editor || isAnnotating) return;
     const plainText = editor.getText();
     if (!plainText.trim()) return;
+
+    // Switch to read mode
+    editor.setEditable(false);
+    setMode('read');
+
     const wordCount = plainText.split(/\s+/).filter(Boolean).length;
     const result = await annotate(plainText, wordCount, { docId: id });
     if (result?.length) {
+      setStoredAnnotations(result);
       updateDocument(id, { annotations: result });
     }
   }, [editor, isAnnotating, annotate, id, updateDocument]);
 
   const handleExportPdf = useCallback(() => {
     if (!editor) return;
-    const currentAnnotations = annotationPluginKey.getState(editor.state)?.annotations || [];
-    exportPdf(title, editor.getHTML(), currentAnnotations);
-  }, [editor, title]);
+    exportPdf(title, editor.getHTML(), displayAnnotations);
+  }, [editor, title, displayAnnotations]);
 
   if (!editor) return null;
 
@@ -163,6 +196,22 @@ export default function EditorPage({ session }) {
           placeholder="Untitled"
         />
 
+        {/* Mode Toggle */}
+        <div className="editor-topbar__mode-toggle">
+          <button
+            className={`mode-toggle-btn ${mode === 'edit' ? 'active' : ''}`}
+            onClick={switchToEdit}
+          >
+            Edit
+          </button>
+          <button
+            className={`mode-toggle-btn ${mode === 'read' ? 'active' : ''}`}
+            onClick={switchToRead}
+          >
+            Read
+          </button>
+        </div>
+
         <div className="editor-topbar__actions">
           <span className="editor-topbar__status">{saveStatus}</span>
           <button
@@ -182,81 +231,92 @@ export default function EditorPage({ session }) {
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="editor-toolbar">
-        <button
-          className={`toolbar-btn ${editor.isActive('bold') ? 'active' : ''}`}
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          title="Bold"
-        >
-          <strong>B</strong>
-        </button>
-        <button
-          className={`toolbar-btn ${editor.isActive('italic') ? 'active' : ''}`}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          title="Italic"
-        >
-          <em>I</em>
-        </button>
-        <span className="toolbar-divider" />
-        <button
-          className={`toolbar-btn ${editor.isActive('heading', { level: 1 }) ? 'active' : ''}`}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-          title="Heading 1"
-        >
-          H1
-        </button>
-        <button
-          className={`toolbar-btn ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          title="Heading 2"
-        >
-          H2
-        </button>
-        <button
-          className={`toolbar-btn ${editor.isActive('heading', { level: 3 }) ? 'active' : ''}`}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          title="Heading 3"
-        >
-          H3
-        </button>
-        <span className="toolbar-divider" />
-        <button
-          className={`toolbar-btn ${editor.isActive('bulletList') ? 'active' : ''}`}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          title="Bullet List"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
-        </button>
-        <button
-          className={`toolbar-btn ${editor.isActive('orderedList') ? 'active' : ''}`}
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          title="Ordered List"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="2" y="8" fontSize="8" fill="currentColor" stroke="none" fontFamily="sans-serif">1</text><text x="2" y="14" fontSize="8" fill="currentColor" stroke="none" fontFamily="sans-serif">2</text><text x="2" y="20" fontSize="8" fill="currentColor" stroke="none" fontFamily="sans-serif">3</text></svg>
-        </button>
-        <button
-          className={`toolbar-btn ${editor.isActive('blockquote') ? 'active' : ''}`}
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          title="Blockquote"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
-        </button>
-      </div>
+      {/* Toolbar — only in edit mode */}
+      {mode === 'edit' && (
+        <div className="editor-toolbar">
+          <button
+            className={`toolbar-btn ${editor.isActive('bold') ? 'active' : ''}`}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            title="Bold"
+          >
+            <strong>B</strong>
+          </button>
+          <button
+            className={`toolbar-btn ${editor.isActive('italic') ? 'active' : ''}`}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            title="Italic"
+          >
+            <em>I</em>
+          </button>
+          <span className="toolbar-divider" />
+          <button
+            className={`toolbar-btn ${editor.isActive('heading', { level: 1 }) ? 'active' : ''}`}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+            title="Heading 1"
+          >
+            H1
+          </button>
+          <button
+            className={`toolbar-btn ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+            title="Heading 2"
+          >
+            H2
+          </button>
+          <button
+            className={`toolbar-btn ${editor.isActive('heading', { level: 3 }) ? 'active' : ''}`}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+            title="Heading 3"
+          >
+            H3
+          </button>
+          <span className="toolbar-divider" />
+          <button
+            className={`toolbar-btn ${editor.isActive('bulletList') ? 'active' : ''}`}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            title="Bullet List"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
+          </button>
+          <button
+            className={`toolbar-btn ${editor.isActive('orderedList') ? 'active' : ''}`}
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            title="Ordered List"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="2" y="8" fontSize="8" fill="currentColor" stroke="none" fontFamily="sans-serif">1</text><text x="2" y="14" fontSize="8" fill="currentColor" stroke="none" fontFamily="sans-serif">2</text><text x="2" y="20" fontSize="8" fill="currentColor" stroke="none" fontFamily="sans-serif">3</text></svg>
+          </button>
+          <button
+            className={`toolbar-btn ${editor.isActive('blockquote') ? 'active' : ''}`}
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+            title="Blockquote"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
+          </button>
+        </div>
+      )}
 
       {/* Error banner */}
       {annotateError && (
         <div className="editor-error">
           Annotation error: {annotateError}
-          <button onClick={clearAnnotations}>Dismiss</button>
+          <button onClick={() => { clearAnnotations(); setStoredAnnotations([]); }}>Dismiss</button>
         </div>
       )}
 
-      {/* Editor Area */}
+      {/* Loading indicator */}
+      {isAnnotating && annotations.length === 0 && (
+        <div className="editor-annotating-banner">
+          Analyzing text...
+        </div>
+      )}
+
+      {/* Content Area — editor always mounted */}
       <div className="editor-area">
-        <div className="editor-wrapper" ref={editorContainerRef}>
+        <div className="editor-wrapper" ref={editorWrapperRef}>
           <EditorContent editor={editor} />
-          <MarginNotes annotations={annotations} editorRef={editorContainerRef} />
+          {mode === 'read' && displayAnnotations.length > 0 && (
+            <MarginNotes annotations={displayAnnotations} editorRef={editorWrapperRef} />
+          )}
         </div>
       </div>
     </div>

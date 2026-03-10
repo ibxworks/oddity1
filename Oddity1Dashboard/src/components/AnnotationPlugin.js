@@ -1,17 +1,16 @@
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { ANNOTATION_COLORS } from '../utils/annotationConstants';
 
 export const annotationPluginKey = new PluginKey('annotations');
 
-// CSS class + inline style for each annotation type
+// Visual styles matching extension/renderer/styles.ts
 const TYPE_STYLES = {
-  highlight: { bg: `${ANNOTATION_COLORS.highlight}30` },
-  recall: { border: `2px solid ${ANNOTATION_COLORS.recall}` },
-  provoking_question: { border: `2px dotted ${ANNOTATION_COLORS.provoking_question}` },
-  insight: { bg: `${ANNOTATION_COLORS.insight}28` },
-  caveat: { border: `2px dashed ${ANNOTATION_COLORS.caveat}` },
-  vocabulary: { border: `2px dotted ${ANNOTATION_COLORS.vocabulary}` },
+  highlight:          { bg: '#FFDD6926', underline: '1.5px solid #FFDD69' },
+  recall:             { bg: '#243C6199', underline: '1.5px solid #5B8AC5' },
+  provoking_question: { bg: '#F5574C26', underline: '1.5px solid #F5574C' },
+  insight:            { bg: '#2D7A4F4d', underline: '1.5px solid #BFF3D3' },
+  caveat:             { bg: '#F5574C26', underline: '1.5px solid #F5574C' },
+  vocabulary:         { bg: '#243C6199', underline: '1.5px solid #5B8AC5' },
 };
 
 function buildDecorations(doc, annotations) {
@@ -20,7 +19,6 @@ function buildDecorations(doc, annotations) {
   // Extract all text from the ProseMirror doc with position mapping.
   // Insert \n between block nodes to match editor.getText() output.
   const textParts = []; // { text, pos, virtual }
-  let prevBlockEnd = 0;
 
   doc.descendants((node, pos) => {
     if (node.isText) {
@@ -83,7 +81,7 @@ function buildDecorations(doc, annotations) {
     const style = TYPE_STYLES[ann.type] || {};
     const cssProps = [];
     if (style.bg) cssProps.push(`background:${style.bg}`);
-    if (style.border) cssProps.push(`border-bottom:${style.border}`, 'padding-bottom:1px');
+    if (style.underline) cssProps.push(`border-bottom:${style.underline}`, 'padding-bottom:1px');
     cssProps.push('border-radius:2px', 'padding:0 2px');
 
     decorations.push(
