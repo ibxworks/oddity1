@@ -6,7 +6,7 @@ import type {
   Intensity,
   SiteAdapter,
 } from "@oddity/shared";
-import { DEFAULT_ENABLED_SITES } from "@oddity/shared";
+import { DEFAULT_ENABLED_SITES, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
@@ -490,6 +490,17 @@ async function handleStableRegion(
       : extractText(region);
 
   if (!extracted || !extracted.text) return;
+
+  // Guard: skip if no real words (whitespace/symbols only)
+  if (extracted.wordCount <= 0) return;
+
+  // Guard: truncate text exceeding backend limit and recalculate word count
+  if (extracted.text.length > MAX_TEXT_LENGTH) {
+    console.log(`[Oddity 1] Text too long (${extracted.text.length} chars), truncating to ${MAX_TEXT_LENGTH}`);
+    extracted.text = extracted.text.slice(0, MAX_TEXT_LENGTH);
+    extracted.wordCount = extracted.text.split(/\s+/).filter(Boolean).length;
+    if (extracted.wordCount <= 0) return;
+  }
 
   // Compute content hash
   const contentHash = await sha256(extracted.text);

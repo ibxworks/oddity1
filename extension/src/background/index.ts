@@ -1,5 +1,5 @@
 import type { ExtensionMessage, UserPreferences } from "@oddity/shared";
-import { DEFAULT_ENABLED_SITES } from "@oddity/shared";
+import { DEFAULT_ENABLED_SITES, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { sendToTab } from "../shared/messaging.js";
 import {
   getAdapters,
@@ -103,12 +103,26 @@ chrome.runtime.onMessage.addListener(
           inflight.set(key, controller);
 
           try {
+            // Defense-in-depth: validate payload before sending to API
+            let validatedText = text;
+            let validatedWordCount = wordCount;
+
+            if (validatedText.length > MAX_TEXT_LENGTH) {
+              console.log(`[Oddity 1] Truncating text from ${validatedText.length} to ${MAX_TEXT_LENGTH} chars`);
+              validatedText = validatedText.slice(0, MAX_TEXT_LENGTH);
+              validatedWordCount = validatedText.split(/\s+/).filter(Boolean).length;
+            }
+
+            if (validatedWordCount <= 0) {
+              return { error: "No words to annotate" };
+            }
+
             const requestPayload = {
               url,
               content_hash: contentHash,
-              text,
+              text: validatedText,
               intensity,
-              word_count: wordCount,
+              word_count: validatedWordCount,
             };
 
             // Use streaming to progressively render annotations

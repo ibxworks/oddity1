@@ -85,7 +85,10 @@ export async function requestAnnotations(
     body: JSON.stringify(req),
     signal,
   });
-  if (!res.ok) throw new Error(`requestAnnotations failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`requestAnnotations failed (${res.status}): ${body}`);
+  }
   return res.json() as Promise<AnnotationResponse>;
 }
 
@@ -115,7 +118,10 @@ export async function requestAnnotationsStreaming(
     signal,
   });
 
-  if (!res.ok) throw new Error(`requestAnnotationsStreaming failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`requestAnnotationsStreaming failed (${res.status}): ${body}`);
+  }
   if (!res.body) throw new Error('No response body for SSE stream');
 
   const reader = res.body.getReader();
