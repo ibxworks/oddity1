@@ -26,6 +26,13 @@ function isInsideEditable(node: Node): boolean {
  * Returns the created spans (also stored internally for cleanup).
  */
 export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanElement[] {
+  // Remove any previously injected spans for this annotation before re-injecting.
+  // This prevents orphaned spans when the same annotation is rendered twice
+  // (e.g. URL prediction renders speculatively, then the normal pipeline re-renders).
+  if (anchorMap.has(annotation.id)) {
+    removeAnchors(annotation.id);
+  }
+
   const spans: HTMLSpanElement[] = [];
 
   // Collect text nodes within the range

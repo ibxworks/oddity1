@@ -117,8 +117,6 @@ export function filterByTypes(visibleTypes: AnnotationType[]): void {
 /**
  * Emphasize a specific annotation's anchor spans with brightness(1.4).
  */
-const LIGHT_ACCENT_TYPES = new Set(['insight']);
-const STRONG_DARKEN_TYPES = new Set(['recall', 'vocabulary', 'provoking_question', 'caveat']);
 
 export function emphasizeAnnotation(id: string): void {
   emphasizedId = id;
@@ -127,21 +125,9 @@ export function emphasizeAnnotation(id: string): void {
     if (span.getAttribute('data-oddity-id') !== id) { span.style.filter = ''; return; }
     const type = span.getAttribute('data-oddity-type') ?? '';
     if (isLight) {
-      if (STRONG_DARKEN_TYPES.has(type)) {
-        span.style.filter = 'brightness(0.62) saturate(1.4)';
-      } else if (LIGHT_ACCENT_TYPES.has(type)) {
-        span.style.filter = 'brightness(0.88) saturate(1.4)';
-      } else {
-        span.style.filter = 'brightness(0.72) saturate(1.3)'; // highlight
-      }
+      span.style.filter = type === 'user_written' ? 'saturate(2.0)' : 'saturate(1.6)';
     } else {
-      if (LIGHT_ACCENT_TYPES.has(type)) {
-        span.style.filter = 'brightness(1.6) saturate(1.2)';
-      } else if (type === 'recall' || type === 'vocabulary') {
-        span.style.filter = 'brightness(1.8) saturate(1.2)';
-      } else {
-        span.style.filter = 'brightness(1.4)';
-      }
+      span.style.filter = 'brightness(1.5)';
     }
   });
 }

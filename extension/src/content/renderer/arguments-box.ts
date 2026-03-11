@@ -1,5 +1,5 @@
 import type { Annotation, AnnotationFeedback } from "@oddity/shared";
-import { ANNOTATION_LABELS } from "@oddity/shared";
+
 import {
   getThemeMode,
   offThemeChange,
@@ -37,6 +37,14 @@ let dashTierBadgeEl: HTMLElement | null = null;
 let dashDensityBtns: HTMLButtonElement[] = [];
 let dashFontSelect: HTMLSelectElement | null = null;
 let dashFontSizeSelect: HTMLSelectElement | null = null;
+let dashPersonaSelect: HTMLSelectElement | null = null;
+let dashPersonaAvatarImgEl: HTMLImageElement | null = null;
+let dashPersonaCircleEl: HTMLDivElement | null = null;
+let dashFeedbackViewEl: HTMLDivElement | null = null;
+let dashFeedbackEmailEl: HTMLDivElement | null = null;
+let dashFeedbackTextareaEl: HTMLTextAreaElement | null = null;
+let dashFeedbackStatusEl: HTMLDivElement | null = null;
+let dashFeedbackSendBtnEl: HTMLButtonElement | null = null;
 let dashSignOutPopoverEl: HTMLDivElement | null = null;
 let dashSignOutPopoverNameEl: HTMLSpanElement | null = null;
 let dashSignOutPopoverEmailEl: HTMLSpanElement | null = null;
@@ -155,7 +163,7 @@ export function initArgumentsBox(): void {
   // ── Copy button ──
   const copyBtnFull = document.createElement("button");
   copyBtnFull.className = "args-copy-btn-full";
-  copyBtnFull.textContent = "Copy my arguments";
+  copyBtnFull.textContent = "Copy";
   copyBtnFull.addEventListener("click", (e) => {
     e.stopPropagation();
     handleCopy(copyBtnFull);
@@ -302,6 +310,14 @@ export function destroyArgumentsBox(): void {
   dashDensityBtns = [];
   dashFontSelect = null;
   dashFontSizeSelect = null;
+  dashPersonaSelect = null;
+  dashPersonaAvatarImgEl = null;
+  dashPersonaCircleEl = null;
+  dashFeedbackViewEl = null;
+  dashFeedbackEmailEl = null;
+  dashFeedbackTextareaEl = null;
+  dashFeedbackStatusEl = null;
+  dashFeedbackSendBtnEl = null;
   expanded = false;
   dimmed = false;
   manualRunCb = null;
@@ -370,6 +386,8 @@ function toggle(): void {
   containerEl?.classList.toggle("expanded", expanded);
   if (!expanded) {
     containerEl?.classList.remove("dashboard");
+    if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+    if (containerEl) containerEl.style.height = "";
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
   }
@@ -411,6 +429,8 @@ function buildDashboardFace(): HTMLDivElement {
   backBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     containerEl?.classList.remove("dashboard");
+    if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+    if (containerEl) containerEl.style.height = "";
   });
 
   const logo = document.createElement("span");
@@ -457,13 +477,40 @@ function buildDashboardFace(): HTMLDivElement {
   const profileSection = document.createElement("div");
   profileSection.className = "args-dash-profile";
 
-  const avatarCircle = document.createElement("div");
-  avatarCircle.className = "args-dash-avatar-circle";
-  const avatarImg = document.createElement("img");
-  avatarImg.src = chrome.runtime.getURL("Terry.png");
-  avatarImg.alt = "Terry";
-  avatarImg.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:50%;";
-  avatarCircle.appendChild(avatarImg);
+  const avatarArea = document.createElement("div");
+  avatarArea.className = "args-dash-avatar-area";
+
+  dashPersonaCircleEl = document.createElement("div");
+  dashPersonaCircleEl.className = "args-dash-avatar-circle";
+  dashPersonaAvatarImgEl = document.createElement("img");
+  dashPersonaAvatarImgEl.src = chrome.runtime.getURL("Terry.png");
+  dashPersonaAvatarImgEl.alt = "Terry";
+  dashPersonaAvatarImgEl.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:50%;";
+  dashPersonaCircleEl.appendChild(dashPersonaAvatarImgEl);
+
+  dashPersonaSelect = document.createElement("select");
+  dashPersonaSelect.className = "args-dash-persona-select";
+  for (const name of ["Terry", "Jerry"]) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    dashPersonaSelect.appendChild(opt);
+  }
+  dashPersonaSelect.addEventListener("change", () => {
+    const name = dashPersonaSelect!.value;
+    if (dashPersonaAvatarImgEl) {
+      dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${name}.png`);
+      dashPersonaAvatarImgEl.alt = name;
+    }
+    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = name === "Jerry" ? "#FDCB24" : "#fff";
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({ preferences: { ...prefs, persona: name } });
+    });
+  });
+
+  avatarArea.appendChild(dashPersonaCircleEl);
+  avatarArea.appendChild(dashPersonaSelect);
 
   const countArea = document.createElement("div");
   countArea.className = "args-dash-count-area";
@@ -476,7 +523,7 @@ function buildDashboardFace(): HTMLDivElement {
   countArea.appendChild(dashCountEl);
   countArea.appendChild(countLabel);
 
-  profileSection.appendChild(avatarCircle);
+  profileSection.appendChild(avatarArea);
   profileSection.appendChild(countArea);
   face.appendChild(profileSection);
 
@@ -667,15 +714,86 @@ function buildDashboardFace(): HTMLDivElement {
   feedbackLink.className = "args-dash-footer-link";
   feedbackLink.textContent = "Send Feedback";
   feedbackLink.addEventListener("click", () => {
-    const msg = prompt("Send feedback to the Oddity 1 team:");
-    if (msg?.trim()) {
-      chrome.runtime.sendMessage({ action: "sendUserFeedback", payload: { message: msg.trim() } });
-    }
+    if (!dashFeedbackViewEl || !dashFeedbackEmailEl || !dashFeedbackTextareaEl || !dashFeedbackStatusEl) return;
+    dashFeedbackEmailEl.textContent = dashUserEmail;
+    dashFeedbackTextareaEl.value = "";
+    dashFeedbackStatusEl.style.display = "none";
+    dashFeedbackStatusEl.className = "args-dash-feedback-status";
+    dashFeedbackViewEl.style.display = "flex";
+    if (containerEl) containerEl.style.height = "290px";
   });
   dashFooter.appendChild(settingsLink);
   dashFooter.appendChild(sep);
   dashFooter.appendChild(feedbackLink);
   face.appendChild(dashFooter);
+
+  // ── Feedback View (overlay) ──
+  dashFeedbackViewEl = document.createElement("div");
+  dashFeedbackViewEl.className = "args-dash-feedback-view";
+
+  const fbTitle = document.createElement("div");
+  fbTitle.className = "args-dash-feedback-title";
+  fbTitle.textContent = "Send Feedback";
+
+  dashFeedbackEmailEl = document.createElement("div");
+  dashFeedbackEmailEl.className = "args-dash-feedback-email";
+
+  dashFeedbackTextareaEl = document.createElement("textarea");
+  dashFeedbackTextareaEl.className = "args-dash-feedback-textarea";
+  dashFeedbackTextareaEl.placeholder = "Enter your feedback...";
+  dashFeedbackTextareaEl.rows = 5;
+
+  const fbBtnRow = document.createElement("div");
+  fbBtnRow.className = "args-dash-feedback-btn-row";
+
+  const fbCancelBtn = document.createElement("button");
+  fbCancelBtn.className = "args-dash-feedback-cancel-btn";
+  fbCancelBtn.textContent = "Cancel";
+  fbCancelBtn.addEventListener("click", () => {
+    if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+    if (containerEl) containerEl.style.height = "";
+  });
+
+  dashFeedbackSendBtnEl = document.createElement("button");
+  dashFeedbackSendBtnEl.className = "args-dash-feedback-send-btn";
+  dashFeedbackSendBtnEl.textContent = "Send";
+  dashFeedbackSendBtnEl.addEventListener("click", async () => {
+    const message = dashFeedbackTextareaEl!.value.trim();
+    if (!message) return;
+    dashFeedbackSendBtnEl!.textContent = "Sending...";
+    dashFeedbackSendBtnEl!.setAttribute("disabled", "");
+    dashFeedbackStatusEl!.style.display = "none";
+    try {
+      const result = await chrome.runtime.sendMessage({ action: "sendUserFeedback", payload: { message } }) as { success?: boolean; error?: string };
+      if (result?.error) throw new Error(result.error);
+      dashFeedbackStatusEl!.textContent = "Feedback sent! Thank you.";
+      dashFeedbackStatusEl!.className = "args-dash-feedback-status success";
+      dashFeedbackStatusEl!.style.display = "block";
+      setTimeout(() => {
+        if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+        if (containerEl) containerEl.style.height = "";
+      }, 1500);
+    } catch (err) {
+      dashFeedbackStatusEl!.textContent = String(err instanceof Error ? err.message : "Failed to send feedback");
+      dashFeedbackStatusEl!.className = "args-dash-feedback-status error";
+      dashFeedbackStatusEl!.style.display = "block";
+    } finally {
+      dashFeedbackSendBtnEl!.textContent = "Send";
+      dashFeedbackSendBtnEl!.removeAttribute("disabled");
+    }
+  });
+
+  dashFeedbackStatusEl = document.createElement("div");
+  dashFeedbackStatusEl.className = "args-dash-feedback-status";
+
+  fbBtnRow.appendChild(fbCancelBtn);
+  fbBtnRow.appendChild(dashFeedbackSendBtnEl);
+  dashFeedbackViewEl.appendChild(fbTitle);
+  dashFeedbackViewEl.appendChild(dashFeedbackEmailEl);
+  dashFeedbackViewEl.appendChild(dashFeedbackTextareaEl);
+  dashFeedbackViewEl.appendChild(fbBtnRow);
+  dashFeedbackViewEl.appendChild(dashFeedbackStatusEl);
+  face.appendChild(dashFeedbackViewEl);
 
   return face;
 }
@@ -690,6 +808,10 @@ async function loadDashboardData(): Promise<void> {
     });
     if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
     if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
+    const persona = (prefs.persona as string) ?? "Terry";
+    if (dashPersonaSelect) dashPersonaSelect.value = persona;
+    if (dashPersonaAvatarImgEl) { dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`); dashPersonaAvatarImgEl.alt = persona; }
+    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = persona === "Jerry" ? "#FDCB24" : "#fff";
     const enabled = prefs.enabled !== false;
     if (dashToggleInput) dashToggleInput.checked = enabled;
     if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
@@ -705,7 +827,7 @@ async function loadDashboardData(): Promise<void> {
       const name = auth.user.display_name || auth.user.email || "?";
       dashUserEmail = auth.user.email || "";
       dashUserTier = auth.user.tier || "free";
-      if (dashProfileNameEl) dashProfileNameEl.textContent = name;
+      if (dashProfileNameEl) dashProfileNameEl.textContent = auth.user.display_name || auth.user.email || "?";
       if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
       if (dashTierBadgeEl) dashTierBadgeEl.textContent = dashUserTier.toUpperCase();
       if (dashSignOutPopoverNameEl) dashSignOutPopoverNameEl.textContent = name;
@@ -728,10 +850,9 @@ function buildItems(
   for (const [, anns] of annotations) {
     for (const ann of anns) {
       if (ann.id.startsWith("manual-")) {
-        const label = ANNOTATION_LABELS[ann.type] ?? ann.type;
         items.push({
           icon: "✎",
-          text: `(${label}) ${ann.content.note}`,
+          text: ann.content.note,
           sortKey: ann.id,
         });
       }
@@ -1140,7 +1261,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(120, 120, 120, 0.7);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
@@ -1163,22 +1284,22 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-close-btn:hover {
-    background: rgba(255, 255, 255, 0.35);
+    background: rgba(100, 100, 100, 0.85);
   }
 
   :host([data-theme="light"]) .args-close-btn {
-    color: #111111;
-    background: rgba(255, 255, 255, 0.45);
+    color: #ffffff;
+    background: rgba(120, 120, 120, 0.7);
   }
 
   :host([data-theme="light"]) .args-close-btn:hover {
-    background: rgba(255, 255, 255, 0.65);
+    background: rgba(100, 100, 100, 0.85);
   }
 
   /* ── Light mode overrides ── */
 
   :host([data-theme="light"]) .args-container {
-    background: rgba(255, 255, 255, 0.65);
+    background: rgba(255, 255, 255, 0.4);
   }
 
   :host([data-theme="light"]) .args-main-title {
@@ -1304,11 +1425,18 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(0, 0, 0, 0.35);
   }
 
+  :host([data-theme="light"]) .args-container.dashboard {
+    height: 440px;
+  }
+
   /* ── Dashboard state ── */
 
   .args-container.dashboard {
     width: 290px;
-    height: 460px;
+    height: 440px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: #fff;
   }
 
   .args-container.dashboard .args-panel-face {
@@ -1338,6 +1466,7 @@ const ARGUMENTS_BOX_CSS = `
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 13px;
     letter-spacing: -0.01em;
+    color-scheme: light;
   }
 
   .args-container.dashboard .args-dash-face {
@@ -1426,6 +1555,14 @@ const ARGUMENTS_BOX_CSS = `
     flex-shrink: 0;
   }
 
+  .args-dash-avatar-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+
   .args-dash-avatar-circle {
     width: 44px;
     height: 44px;
@@ -1434,6 +1571,21 @@ const ARGUMENTS_BOX_CSS = `
     border: 0.5px solid #e5e7eb;
     overflow: hidden;
     flex-shrink: 0;
+  }
+
+  .args-dash-persona-select {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: #111;
+    outline: none;
+    appearance: auto;
+    height: 20px;
+    line-height: 20px;
   }
 
   .args-dash-count-area {
@@ -1496,7 +1648,7 @@ const ARGUMENTS_BOX_CSS = `
   .args-dash-density-btn {
     all: unset;
     flex: 1;
-    padding: 6px 0;
+    height: 28px;
     border: 0.5px solid #e5e7eb;
     border-radius: 20px;
     background: #fff;
@@ -1561,6 +1713,7 @@ const ARGUMENTS_BOX_CSS = `
     justify-content: space-between;
     padding: 8px 16px;
     flex-shrink: 0;
+    margin-top: auto;
   }
 
   .args-dash-profile-btn {
@@ -1605,7 +1758,6 @@ const ARGUMENTS_BOX_CSS = `
     border-top: 0.5px solid #f0f0f0;
     text-align: center;
     flex-shrink: 0;
-    margin-top: auto;
   }
 
   .args-dash-footer-link {
@@ -1686,4 +1838,110 @@ const ARGUMENTS_BOX_CSS = `
   .args-dash-signout-btn:hover {
     background: #fff5f5;
   }
+
+  /* ── Feedback View ── */
+
+  .args-dash-feedback-view {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    border-radius: inherit;
+    z-index: 2;
+    display: none;
+    flex-direction: column;
+    padding: 18px 16px;
+  }
+
+  .args-dash-feedback-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: #111;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-feedback-email {
+    font-size: 12px;
+    color: #8a8a80;
+    margin-bottom: 10px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-feedback-textarea {
+    display: block;
+    width: 100%;
+    padding: 9px 12px;
+    border: 0.5px solid #e8e8e2;
+    border-radius: 12px;
+    font-size: 13px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    outline: none;
+    transition: border-color 0.15s;
+    background: #fff;
+    color: #111;
+    resize: vertical;
+    min-height: 80px;
+    box-sizing: border-box;
+  }
+
+  .args-dash-feedback-textarea:focus { border-color: #111; }
+
+  .args-dash-feedback-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .args-dash-feedback-cancel-btn {
+    all: unset;
+    flex: 1;
+    display: block;
+    padding: 10px 12px;
+    border: 0.5px solid #e8e8e2;
+    border-radius: 100px;
+    background: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #3a3a36;
+    transition: all 0.15s;
+    text-align: center;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    box-sizing: border-box;
+  }
+
+  .args-dash-feedback-cancel-btn:hover { background: #f5f4f0; }
+
+  .args-dash-feedback-send-btn {
+    all: unset;
+    flex: 1;
+    display: block;
+    padding: 10px 12px;
+    background: #111;
+    color: #fff;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    transition: opacity 0.15s;
+    box-sizing: border-box;
+  }
+
+  .args-dash-feedback-send-btn:hover { opacity: 0.9; }
+  .args-dash-feedback-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .args-dash-feedback-status {
+    display: none;
+    text-align: center;
+    padding: 8px;
+    font-size: 12px;
+    border-radius: 10px;
+    margin-top: 8px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-feedback-status.success { display: block; color: #16a34a; background: #f0fdf4; }
+  .args-dash-feedback-status.error { display: block; color: #dc2626; background: #fef2f2; }
 `;

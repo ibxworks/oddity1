@@ -332,6 +332,10 @@ export function onAnchorHoverEnd(): void {
   for (const note of notes) note.element.classList.remove('anchor-hovered');
   undimAllNotes();
   deemphasizeAnnotation();
+  // If a note is already expanded the cursor entered it before mouseleave fired
+  // on the anchor span (cross-DOM event ordering). Don't set a collapse timer —
+  // the note will collapse normally when the cursor leaves it.
+  if (expandedId) return;
   anchorHoverTimer = setTimeout(() => {
     collapseAllMarginNotes();
     anchorHoverTimer = null;
@@ -673,6 +677,10 @@ function createNoteElement(
       clearTimeout(anchorHoverTimer);
       anchorHoverTimer = null;
     }
+    if (collapseTimer) {
+      clearTimeout(collapseTimer);
+      collapseTimer = null;
+    }
     expandMarginNote(annotation.id);
     emphasizeAnnotation(annotation.id);
     dimOtherNotes(annotation.id);
@@ -695,9 +703,12 @@ function createNoteElement(
 
   el.addEventListener("mouseleave", () => {
     if (pinnedId) return;
-    collapseAllMarginNotes();
-    undimAllNotes();
-    deemphasizeAnnotation();
+    collapseTimer = setTimeout(() => {
+      collapseTimer = null;
+      collapseAllMarginNotes();
+      undimAllNotes();
+      deemphasizeAnnotation();
+    }, 100);
   });
 
   return el;
@@ -1186,7 +1197,7 @@ const MARGIN_NOTES_CSS = `
     background: rgba(255,255,255,0.08);
     border-radius: 8px;
     padding: 4px 10px;
-    font-size: 11px;
+    font-size: var(--oddity-note-size);
     margin-bottom: 3px;
     word-break: break-word;
     font-family: 'Inter', system-ui, sans-serif;
@@ -1205,10 +1216,11 @@ const MARGIN_NOTES_CSS = `
   .note-reply-input {
     all: unset;
     flex: 1;
+    min-width: 0;
     background: #DFE7EF;
     border-radius: 100px;
     padding: 5px 12px;
-    font-size: 11.5px;
+    font-size: var(--oddity-note-size);
     font-weight: 450;
     color: #293038;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
