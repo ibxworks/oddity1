@@ -51,6 +51,17 @@ let dashSignOutPopoverEmailEl: HTMLSpanElement | null = null;
 let dashSignOutPopoverPlanEl: HTMLSpanElement | null = null;
 let dashUserEmail = "";
 let dashUserTier = "free";
+let dashSignInViewEl: HTMLDivElement | null = null;
+let dashSignInEmailEl: HTMLInputElement | null = null;
+let dashSignInPasswordEl: HTMLInputElement | null = null;
+let dashSignInStatusEl: HTMLDivElement | null = null;
+let dashSignInNameEl: HTMLInputElement | null = null;
+let dashAuthTitleEl: HTMLDivElement | null = null;
+let dashAuthSubmitBtnEl: HTMLButtonElement | null = null;
+let dashAuthToggleLinkEl: HTMLSpanElement | null = null;
+let dashSignInMode: "signin" | "signup" = "signup";
+let dashFaceEl: HTMLDivElement | null = null;
+let footerTextEl: HTMLSpanElement | null = null;
 
 // ─── Public API ───
 
@@ -174,14 +185,15 @@ export function initArgumentsBox(): void {
   const footer = document.createElement("div");
   footer.className = "args-footer";
 
-  const footerText = document.createElement("span");
-  footerText.className = "args-footer-text";
-  footerText.textContent = "Go to Dashboard";
+  footerTextEl = document.createElement("span");
+  footerTextEl.className = "args-footer-text";
+  footerTextEl.textContent = "Go to Dashboard";
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }, (result) => {
     if (!result?.authenticated) {
-      footerText.textContent = "Sign in";
+      footerTextEl!.textContent = "Sign in";
     }
   });
+  const footerText = footerTextEl;
   footerText.addEventListener("click", (e) => {
     e.stopPropagation();
     showDashboard();
@@ -236,6 +248,16 @@ export function initArgumentsBox(): void {
   containerEl.appendChild(closeBtnEl);
 
   shadowRoot.appendChild(containerEl);
+
+  // Auto-expand to auth view if not signed in
+  chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
+    if (!result?.authenticated) {
+      toggle();
+      showDashboard();
+      const stored = await chrome.storage.local.get("hadAccount");
+      showAuthView(stored["hadAccount"] ? "signin" : "signup");
+    }
+  }).catch(() => {});
 }
 
 export function updateArgumentsBox(
@@ -328,21 +350,9 @@ export function destroyArgumentsBox(): void {
 
 // ─── Internal ───
 
-function toggleDimmedPanel(): void {
-  expanded = !expanded;
-  containerEl?.classList.toggle("expanded", expanded);
-  if (!expanded) {
-    if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
-    closeBtnEl?.classList.remove("hovered");
-    // Remove the overlay when collapsing — re-created fresh each open
-    notEnabledPanelEl?.remove();
-    notEnabledPanelEl = null;
-    return;
-  } else if (containerEl?.matches(":hover")) {
-    showCloseBtn();
-  }
-
-  // Build a fresh overlay each time (no stale state)
+function showNotEnabledOverlay(): void {
+  if (notEnabledPanelEl) return; // already showing
+  containerEl?.classList.remove("dashboard");
   const contentClip = shadowRoot?.querySelector(".args-content-clip");
   if (!contentClip) return;
 
@@ -353,7 +363,7 @@ function toggleDimmedPanel(): void {
   msg.className = "args-not-enabled-msg";
   msg.textContent = "Oddity 1 is not enabled for this site";
 
-  const isMac = navigator.platform.toUpperCase().includes("MAC");
+  const isMac = /mac/i.test(navigator.userAgent) && !/iphone|ipad/i.test(navigator.userAgent);
   const shortcutHint = document.createElement("div");
   shortcutHint.className = "args-not-enabled-hint";
   shortcutHint.textContent = `${isMac ? "\u2318" : "Ctrl+"}O`;
@@ -376,9 +386,22 @@ function toggleDimmedPanel(): void {
   notEnabledPanelEl.appendChild(runBtn);
   notEnabledPanelEl.appendChild(shortcutHint);
   notEnabledPanelEl.addEventListener("click", (e) => e.stopPropagation());
-
-  // Append as sibling to panelFace inside content-clip (not inside panelFace)
   contentClip.appendChild(notEnabledPanelEl);
+}
+
+function toggleDimmedPanel(): void {
+  expanded = !expanded;
+  containerEl?.classList.toggle("expanded", expanded);
+  if (!expanded) {
+    if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
+    closeBtnEl?.classList.remove("hovered");
+    notEnabledPanelEl?.remove();
+    notEnabledPanelEl = null;
+    return;
+  } else if (containerEl?.matches(":hover")) {
+    showCloseBtn();
+  }
+  showNotEnabledOverlay();
 }
 
 function toggle(): void {
@@ -387,9 +410,29 @@ function toggle(): void {
   if (!expanded) {
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
+    if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
+    if (dashFaceEl) dashFaceEl.style.overflow = "";
     if (containerEl) containerEl.style.height = "";
+    notEnabledPanelEl?.remove();
+    notEnabledPanelEl = null;
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
+  } else {
+    chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
+      if (!result?.authenticated) {
+        showDashboard();
+        const stored = await chrome.storage.local.get("hadAccount");
+        showAuthView(stored["hadAccount"] ? "signin" : "signup");
+      } else {
+        const prefsStored = await chrome.storage.local.get("preferences");
+        const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+        const hostname = window.location.hostname.replace(/^www\./, "");
+        const siteEnabled = Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s));
+        if (!siteEnabled) {
+          showNotEnabledOverlay();
+        }
+      }
+    }).catch(() => {});
   }
 }
 
@@ -414,9 +457,22 @@ function showDashboard(): void {
   loadDashboardData().catch(() => {});
 }
 
+function showAuthView(mode: "signin" | "signup"): void {
+  dashSignInMode = mode;
+  if (dashAuthTitleEl) dashAuthTitleEl.textContent = mode === "signup" ? "Create Account" : "Sign In";
+  if (dashAuthSubmitBtnEl) dashAuthSubmitBtnEl.textContent = mode === "signup" ? "Create Account" : "Sign In";
+  if (dashAuthToggleLinkEl) dashAuthToggleLinkEl.textContent = mode === "signup" ? "Already have an account? Sign in" : "New user? Create account";
+  if (dashSignInNameEl) dashSignInNameEl.style.display = mode === "signup" ? "block" : "none";
+  if (dashSignInStatusEl) { dashSignInStatusEl.style.display = "none"; dashSignInStatusEl.className = "args-dash-feedback-status"; }
+  if (dashSignInViewEl) { dashSignInViewEl.style.display = "flex"; }
+  if (dashFaceEl) dashFaceEl.style.overflow = "hidden";
+  if (containerEl) containerEl.style.height = mode === "signup" ? "310px" : "270px";
+}
+
 function buildDashboardFace(): HTMLDivElement {
   const face = document.createElement("div");
   face.className = "args-dash-face";
+  dashFaceEl = face;
   face.addEventListener("click", (e) => e.stopPropagation());
 
   // ── Header ──
@@ -675,6 +731,10 @@ function buildDashboardFace(): HTMLDivElement {
       if (dashCountEl) dashCountEl.textContent = "0";
       dashUserEmail = "";
       dashUserTier = "free";
+      if (dashSignInEmailEl) dashSignInEmailEl.value = "";
+      if (dashSignInPasswordEl) dashSignInPasswordEl.value = "";
+      if (dashSignInNameEl) dashSignInNameEl.value = "";
+      showAuthView("signin");
     });
   });
 
@@ -806,6 +866,106 @@ function buildDashboardFace(): HTMLDivElement {
   dashFeedbackViewEl.appendChild(dashFeedbackStatusEl);
   face.appendChild(dashFeedbackViewEl);
 
+  // ── Auth View (sign-in / sign-up overlay) ──
+  dashSignInViewEl = document.createElement("div");
+  dashSignInViewEl.className = "args-dash-signin-view";
+
+  dashAuthTitleEl = document.createElement("div");
+  dashAuthTitleEl.className = "args-dash-feedback-title";
+  dashAuthTitleEl.textContent = "Create Account";
+
+  dashSignInNameEl = document.createElement("input");
+  dashSignInNameEl.className = "args-dash-signin-input";
+  dashSignInNameEl.type = "text";
+  dashSignInNameEl.placeholder = "Name";
+
+  dashSignInEmailEl = document.createElement("input");
+  dashSignInEmailEl.className = "args-dash-signin-input";
+  dashSignInEmailEl.type = "email";
+  dashSignInEmailEl.placeholder = "Email";
+
+  dashSignInPasswordEl = document.createElement("input");
+  dashSignInPasswordEl.className = "args-dash-signin-input";
+  dashSignInPasswordEl.type = "password";
+  dashSignInPasswordEl.placeholder = "Password";
+
+  dashSignInStatusEl = document.createElement("div");
+  dashSignInStatusEl.className = "args-dash-feedback-status";
+
+  dashAuthSubmitBtnEl = document.createElement("button");
+  dashAuthSubmitBtnEl.className = "args-dash-feedback-send-btn";
+  dashAuthSubmitBtnEl.style.width = "100%";
+  dashAuthSubmitBtnEl.textContent = "Create Account";
+  dashAuthSubmitBtnEl.addEventListener("click", async () => {
+    const email = dashSignInEmailEl!.value.trim();
+    const password = dashSignInPasswordEl!.value;
+    const name = dashSignInNameEl!.value.trim();
+    if (!email || !password) return;
+    if (dashSignInMode === "signup" && !name) return;
+    const isSignUp = dashSignInMode === "signup";
+    dashAuthSubmitBtnEl!.textContent = isSignUp ? "Creating..." : "Signing in...";
+    dashAuthSubmitBtnEl!.setAttribute("disabled", "");
+    dashSignInStatusEl!.style.display = "none";
+    try {
+      if (isSignUp) {
+        const result = await chrome.runtime.sendMessage({ action: "signUp", payload: { email, password, displayName: name } }) as { success?: boolean; needsConfirmation?: boolean; error?: string };
+        if (result?.error) throw new Error(result.error);
+        if (result?.needsConfirmation) {
+          dashSignInStatusEl!.textContent = "Check your email to confirm your account.";
+          dashSignInStatusEl!.className = "args-dash-feedback-status success";
+          dashSignInStatusEl!.style.display = "block";
+          return;
+        }
+      } else {
+        const result = await chrome.runtime.sendMessage({ action: "signIn", payload: { email, password } }) as { success?: boolean; error?: string };
+        if (result?.error) throw new Error(result.error);
+      }
+      await chrome.storage.local.set({ hadAccount: true });
+      if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
+      if (dashFaceEl) dashFaceEl.style.overflow = "";
+      if (containerEl) containerEl.style.height = "";
+      dashSignInEmailEl!.value = "";
+      dashSignInPasswordEl!.value = "";
+      dashSignInNameEl!.value = "";
+      const prefsStored = await chrome.storage.local.get("preferences");
+      const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+      const hostname = window.location.hostname.replace(/^www\./, "");
+      const siteEnabled = Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s));
+      if (!siteEnabled) {
+        showNotEnabledOverlay();
+      } else {
+        await loadDashboardData();
+      }
+    } catch (err) {
+      dashSignInStatusEl!.textContent = String(err instanceof Error ? err.message : "Something went wrong");
+      dashSignInStatusEl!.className = "args-dash-feedback-status error";
+      dashSignInStatusEl!.style.display = "block";
+    } finally {
+      dashAuthSubmitBtnEl!.textContent = dashSignInMode === "signup" ? "Create Account" : "Sign In";
+      dashAuthSubmitBtnEl!.removeAttribute("disabled");
+    }
+  });
+
+  dashSignInPasswordEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") dashAuthSubmitBtnEl!.click();
+  });
+
+  dashAuthToggleLinkEl = document.createElement("span");
+  dashAuthToggleLinkEl.className = "args-dash-signin-toggle";
+  dashAuthToggleLinkEl.textContent = "Already have an account? Sign in";
+  dashAuthToggleLinkEl.addEventListener("click", () => {
+    showAuthView(dashSignInMode === "signup" ? "signin" : "signup");
+  });
+
+  dashSignInViewEl.appendChild(dashAuthTitleEl);
+  dashSignInViewEl.appendChild(dashSignInNameEl);
+  dashSignInViewEl.appendChild(dashSignInEmailEl);
+  dashSignInViewEl.appendChild(dashSignInPasswordEl);
+  dashSignInViewEl.appendChild(dashAuthSubmitBtnEl);
+  dashSignInViewEl.appendChild(dashSignInStatusEl);
+  dashSignInViewEl.appendChild(dashAuthToggleLinkEl);
+  face.appendChild(dashSignInViewEl);
+
   return face;
 }
 
@@ -834,6 +994,7 @@ async function loadDashboardData(): Promise<void> {
       user: { email: string; display_name: string | null; tier: string; annotation_count: number } | null;
     };
     if (auth?.authenticated && auth.user) {
+      if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
       if (dashCountEl) dashCountEl.textContent = String(auth.user.annotation_count ?? 0);
       const name = auth.user.display_name || auth.user.email || "?";
       dashUserEmail = auth.user.email || "";
@@ -848,6 +1009,8 @@ async function loadDashboardData(): Promise<void> {
       if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
       if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
       if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
+      const stored = await chrome.storage.local.get("hadAccount");
+      showAuthView(stored["hadAccount"] ? "signin" : "signup");
     }
   } catch { /* ignore */ }
 }
@@ -1955,4 +2118,52 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-dash-feedback-status.success { display: block; color: #16a34a; background: #f0fdf4; }
   .args-dash-feedback-status.error { display: block; color: #dc2626; background: #fef2f2; }
+
+  .args-dash-signin-view {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    border-radius: inherit;
+    z-index: 2;
+    display: none;
+    flex-direction: column;
+    padding: 18px 16px;
+    gap: 10px;
+  }
+
+  .args-dash-signin-subtitle {
+    font-size: 12px;
+    color: #8a8a80;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    margin-bottom: 2px;
+  }
+
+  .args-dash-signin-input {
+    all: unset;
+    display: block;
+    width: 100%;
+    padding: 9px 12px;
+    border: 0.5px solid #e8e8e2;
+    border-radius: 12px;
+    font-size: 13px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: #111;
+    background: #fff;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+  }
+
+  .args-dash-signin-input:focus { border-color: #111; }
+  .args-dash-signin-input::placeholder { color: #aaa; }
+
+  .args-dash-signin-toggle {
+    font-size: 12px;
+    color: #8a8a80;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    text-align: center;
+    cursor: pointer;
+    margin-top: 2px;
+  }
+
+  .args-dash-signin-toggle:hover { color: #111; }
 `;
