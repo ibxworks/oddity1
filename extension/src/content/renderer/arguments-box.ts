@@ -352,6 +352,8 @@ export function destroyArgumentsBox(): void {
 
 function showNotEnabledOverlay(): void {
   if (notEnabledPanelEl) return; // already showing
+  dimmed = true;
+  containerEl?.classList.add("oddity-not-enabled");
   containerEl?.classList.remove("dashboard");
   const contentClip = shadowRoot?.querySelector(".args-content-clip");
   if (!contentClip) return;
