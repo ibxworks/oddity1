@@ -722,8 +722,19 @@ function buildDashboardFace(): HTMLDivElement {
     dashFeedbackViewEl.style.display = "flex";
     if (containerEl) containerEl.style.height = "290px";
   });
+  const sep2 = document.createElement("span");
+  sep2.className = "args-dash-footer-sep";
+  sep2.textContent = "·";
+  const archiveLink = document.createElement("span");
+  archiveLink.className = "args-dash-footer-link";
+  archiveLink.textContent = "Archive";
+  archiveLink.addEventListener("click", () => {
+    window.open("https://app.oddity1.com/archive", "_blank");
+  });
   dashFooter.appendChild(settingsLink);
   dashFooter.appendChild(sep);
+  dashFooter.appendChild(archiveLink);
+  dashFooter.appendChild(sep2);
   dashFooter.appendChild(feedbackLink);
   face.appendChild(dashFooter);
 

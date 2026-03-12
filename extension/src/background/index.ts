@@ -263,8 +263,8 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "saveManualAnnotation": {
-          const { url, contentHash, annotation } = message.payload;
-          const saved = await saveAnnotation(url, contentHash, annotation);
+          const { url, contentHash, annotation, pageTitle } = message.payload;
+          const saved = await saveAnnotation(url, contentHash, annotation, pageTitle);
           return saved;
         }
 
@@ -290,7 +290,7 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "saveFeedback": {
-          const { annotationId, contentHash, url, feedbackType, replyText } =
+          const { annotationId, contentHash, url, feedbackType, replyText, pageTitle } =
             message.payload;
           const fb = await apiSaveFeedback({
             annotation_id: annotationId,
@@ -298,6 +298,7 @@ chrome.runtime.onMessage.addListener(
             url,
             feedback_type: feedbackType,
             reply_text: replyText,
+            page_title: pageTitle,
           });
           return fb;
         }
@@ -308,9 +309,9 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "updateAnnotation": {
-          const { annotationId: annId, annotation: updatedAnn, url: updUrl, contentHash: updHash } =
+          const { annotationId: annId, annotation: updatedAnn, url: updUrl, contentHash: updHash, pageTitle: updTitle } =
             message.payload;
-          const result = await apiUpdateAnnotation(annId, updatedAnn, updUrl, updHash);
+          const result = await apiUpdateAnnotation(annId, updatedAnn, updUrl, updHash, updTitle);
           return result;
         }
 

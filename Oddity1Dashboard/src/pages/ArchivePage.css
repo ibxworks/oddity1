@@ -1,0 +1,130 @@
+.archive-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 40px 60px;
+}
+
+.archive-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.archive-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.archive-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg-primary);
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--r-sm);
+  margin-bottom: 32px;
+  color: var(--text-muted);
+}
+
+.archive-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.archive-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.archive-section {
+  margin-bottom: 32px;
+}
+
+.archive-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.archive-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1024px) {
+  .archive-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .archive-grid { grid-template-columns: 1fr; }
+  .archive-page { padding: 24px 16px 40px; }
+}
+
+.archive-card {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  padding: 20px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.archive-card:hover {
+  box-shadow: var(--shadow-card);
+  border-color: transparent;
+}
+
+.archive-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.archive-card-url {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.archive-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: auto;
+}
+
+.archive-card-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.archive-card-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 2px 8px;
+  border-radius: 99px;
+}

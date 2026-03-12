@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
 // POST /api/annotations/feedback
 router.post('/', async (req, res) => {
   try {
-    const { annotation_id, content_hash, url, feedback_type, reply_text } = req.body;
+    const { annotation_id, content_hash, url, feedback_type, reply_text, page_title } = req.body;
     if (!annotation_id || !content_hash || !url || !feedback_type) {
       res.status(400).json({ error: 'annotation_id, content_hash, url, and feedback_type required' });
       return;
@@ -64,6 +64,7 @@ router.post('/', async (req, res) => {
         url,
         feedback_type,
         reply_text: reply_text ?? null,
+        page_title: page_title ?? null,
       })
       .select()
       .single();

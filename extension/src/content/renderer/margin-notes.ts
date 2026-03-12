@@ -589,6 +589,7 @@ function createNoteElement(
               contentHash: getAnnotationContentHash(annotation),
               url: window.location.href,
               feedbackType: "thumbs_up",
+              pageTitle: document.title,
             },
           }).then((fb: any) => {
             if (fb?.id) currentFeedbackId = fb.id;
@@ -630,6 +631,7 @@ function createNoteElement(
               contentHash: getAnnotationContentHash(annotation),
               url: window.location.href,
               feedbackType: "thumbs_down",
+              pageTitle: document.title,
             },
           }).then((fb: any) => {
             if (fb?.id) currentFeedbackId = fb.id;
@@ -748,6 +750,7 @@ function submitReply(
       url: window.location.href,
       feedbackType: "reply",
       replyText: text,
+      pageTitle: document.title,
     },
   });
 
@@ -795,6 +798,7 @@ function enterEditMode(
         annotation: updatedAnnotation,
         url: window.location.href,
         contentHash: getAnnotationContentHash(annotation),
+        pageTitle: document.title,
       },
     }).then(() => {
       annotation.content.note = newNote;

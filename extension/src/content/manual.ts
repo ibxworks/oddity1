@@ -401,6 +401,7 @@ async function handleSubmit(note: string): Promise<void> {
       url: window.location.href,
       contentHash,
       annotation,
+      pageTitle: document.title,
     },
   });
 

@@ -191,10 +191,11 @@ export async function saveAnnotation(
   url: string,
   contentHash: string,
   annotation: Annotation,
+  pageTitle?: string,
 ): Promise<Annotation> {
   const res = await authFetch('/api/annotations', {
     method: 'POST',
-    body: JSON.stringify({ url, content_hash: contentHash, annotation }),
+    body: JSON.stringify({ url, content_hash: contentHash, annotation, page_title: pageTitle }),
   });
   if (!res.ok) throw new Error(`saveAnnotation failed: ${res.status}`);
   return res.json() as Promise<Annotation>;
@@ -213,10 +214,11 @@ export async function updateAnnotation(
   annotation: Annotation,
   url?: string,
   contentHash?: string,
+  pageTitle?: string,
 ): Promise<Annotation> {
   const res = await authFetch(`/api/annotations/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify({ annotation, url, content_hash: contentHash }),
+    body: JSON.stringify({ annotation, url, content_hash: contentHash, page_title: pageTitle }),
   });
   if (!res.ok) throw new Error(`updateAnnotation failed: ${res.status}`);
   return res.json() as Promise<Annotation>;
@@ -238,6 +240,7 @@ export async function saveFeedback(data: {
   url: string;
   feedback_type: FeedbackType;
   reply_text?: string;
+  page_title?: string;
 }): Promise<AnnotationFeedback> {
   const res = await authFetch('/api/annotations/feedback', {
     method: 'POST',

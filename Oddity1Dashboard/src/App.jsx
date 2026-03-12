@@ -7,6 +7,7 @@ import Layout from './components/Layout'
 import DocumentsPage from './pages/DocumentsPage'
 import AccountPage from './pages/AccountPage'
 import EditorPage from './pages/EditorPage'
+import ArchivePage from './pages/ArchivePage'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -39,6 +40,7 @@ export default function App() {
       <Route element={<Layout session={session} />}>
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/archive" element={<ArchivePage />} />
         <Route path="/" element={<Navigate to="/documents" replace />} />
         <Route path="*" element={<Navigate to="/documents" replace />} />
       </Route>

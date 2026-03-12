@@ -60,7 +60,7 @@ router.get('/', async (req, res) => {
 // POST /api/annotations — save manual annotation
 router.post('/', async (req, res) => {
   try {
-    const { url, content_hash, annotation } = req.body;
+    const { url, content_hash, annotation, page_title } = req.body;
     if (!url || !content_hash || !annotation) {
       res.status(400).json({ error: 'url, content_hash, and annotation required' });
       return;
@@ -76,6 +76,7 @@ router.post('/', async (req, res) => {
         url,
         content_hash,
         annotation,
+        page_title: page_title ?? null,
       })
       .select()
       .single();
@@ -95,7 +96,7 @@ router.post('/', async (req, res) => {
 // PUT /api/annotations/:id — upsert annotation (update if exists, insert if not)
 router.put('/:id', async (req, res) => {
   try {
-    const { annotation, url, content_hash } = req.body;
+    const { annotation, url, content_hash, page_title } = req.body;
     if (!annotation) {
       res.status(400).json({ error: 'annotation required' });
       return;
@@ -107,7 +108,7 @@ router.put('/:id', async (req, res) => {
     // Try UPDATE first
     const { data, error } = await userClient
       .from('user_annotations')
-      .update({ annotation })
+      .update({ annotation, ...(page_title !== undefined ? { page_title } : {}) })
       .eq('annotation->>id', req.params.id)
       .select()
       .single();
@@ -130,6 +131,7 @@ router.put('/:id', async (req, res) => {
         url,
         content_hash,
         annotation,
+        page_title: page_title ?? null,
       })
       .select()
       .single();
