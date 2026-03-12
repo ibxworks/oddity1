@@ -239,6 +239,7 @@ async function init(): Promise<void> {
     console.log("[Oddity 1] Extension is disabled — skipping initialization");
     initArgumentsBox();
     setArgumentsBoxEnabled(false);
+    setManualRunCallback(manualRun);
     return;
   }
 

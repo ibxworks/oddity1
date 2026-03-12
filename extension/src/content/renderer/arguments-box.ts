@@ -250,13 +250,23 @@ export function initArgumentsBox(): void {
 
   shadowRoot.appendChild(containerEl);
 
-  // Auto-expand to auth view if not signed in
+  // On init: set auth/site state without requiring user interaction
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
     if (!result?.authenticated) {
       toggle();
       showDashboard();
       const stored = await chrome.storage.local.get("hadAccount");
       showAuthView(stored["hadAccount"] ? "signin" : "signup");
+    } else {
+      // Authenticated — mark red stroke if site not whitelisted (even if extension is off)
+      const prefsStored = await chrome.storage.local.get("preferences");
+      const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+      const hostname = window.location.hostname.replace(/^www\./, "");
+      const siteEnabled = sessionSiteEnabled || (Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s)));
+      if (!siteEnabled) {
+        dimmed = true;
+        containerEl?.classList.add("oddity-not-enabled");
+      }
     }
   }).catch(() => {});
 }
@@ -379,16 +389,22 @@ function showNotEnabledOverlay(): void {
     notEnabledPanelEl = null;
   };
 
+  const enableExtension = () => {
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = ((stored["preferences"] ?? {}) as Record<string, unknown>);
+      chrome.storage.local.set({ preferences: { ...prefs, enabled: true } });
+    }).catch(() => {});
+  };
+
   const runOnceBtn = document.createElement("button");
   runOnceBtn.className = "args-run-btn args-run-btn--secondary";
   runOnceBtn.textContent = "Run once";
   runOnceBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (manualRunCb) {
-      sessionSiteEnabled = true;
-      removeOverlay();
-      manualRunCb();
-    }
+    enableExtension();
+    sessionSiteEnabled = true;
+    removeOverlay();
+    manualRunCb?.();
   });
 
   const alwaysEnableBtn = document.createElement("button");
@@ -398,11 +414,10 @@ function showNotEnabledOverlay(): void {
     e.stopPropagation();
     const domain = window.location.hostname.replace(/^www\./, "");
     chrome.runtime.sendMessage({ action: "addEnabledSite", payload: { domain } }).catch(() => {});
-    if (manualRunCb) {
-      sessionSiteEnabled = true;
-      removeOverlay();
-      manualRunCb();
-    }
+    enableExtension();
+    sessionSiteEnabled = true;
+    removeOverlay();
+    manualRunCb?.();
   });
 
   btnRow.appendChild(alwaysEnableBtn);
