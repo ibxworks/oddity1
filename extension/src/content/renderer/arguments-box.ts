@@ -1644,6 +1644,15 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(0, 0, 0, 0.35);
   }
 
+  :host([data-theme="light"]) .args-run-btn--secondary {
+    background: rgba(0, 0, 0, 0.07);
+    color: #3a3a36;
+  }
+
+  :host([data-theme="light"]) .args-run-btn--secondary:hover {
+    background: rgba(0, 0, 0, 0.13);
+  }
+
   :host([data-theme="light"]) .args-container.dashboard {
     height: 440px;
   }
