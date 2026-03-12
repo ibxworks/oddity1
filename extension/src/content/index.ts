@@ -10,7 +10,6 @@ import { DEFAULT_ENABLED_SITES, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
-import { showEnableDomainToast } from "./enable-domain-toast.js";
 import { createChatObserver, type ChatObserver } from "./chat-observer.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
 import { handleExportPdf } from "./export-pdf.js";
@@ -84,7 +83,6 @@ const activeHashes = new Map<Element, string>();
 const chatTrackedElements = new WeakSet<Element>();
 let siteWhitelisted = false;
 let manualRunTriggered = false;
-const manualRunDomainPrompted = new Set<string>();
 
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
@@ -223,13 +221,6 @@ function manualRun(): void {
 
   // Clear the ⌘O badge
   sendMessage({ action: "setBadge", payload: { text: "" } }).catch(() => {});
-
-  // Show enable-domain toast (once per domain per session)
-  const domain = extractDomain();
-  if (!manualRunDomainPrompted.has(domain)) {
-    manualRunDomainPrompted.add(domain);
-    showEnableDomainToast(domain);
-  }
 }
 
 // ─── Pipeline ───
@@ -262,6 +253,7 @@ async function init(): Promise<void> {
     showAuthToast();
     initArgumentsBox();
     setArgumentsBoxEnabled(enabled);
+    setManualRunCallback(manualRun);
     return;
   }
 

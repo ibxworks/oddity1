@@ -62,6 +62,7 @@ let dashAuthToggleLinkEl: HTMLSpanElement | null = null;
 let dashSignInMode: "signin" | "signup" = "signup";
 let dashFaceEl: HTMLDivElement | null = null;
 let footerTextEl: HTMLSpanElement | null = null;
+let sessionSiteEnabled = false; // set to true when user runs once or always-enables this session
 
 // ─── Public API ───
 
@@ -370,22 +371,45 @@ function showNotEnabledOverlay(): void {
   shortcutHint.className = "args-not-enabled-hint";
   shortcutHint.textContent = `${isMac ? "\u2318" : "Ctrl+"}O`;
 
-  const runBtn = document.createElement("button");
-  runBtn.className = "args-run-btn";
-  runBtn.textContent = "Run on this page";
-  runBtn.addEventListener("click", (e) => {
+  const btnRow = document.createElement("div");
+  btnRow.className = "args-not-enabled-btn-row";
+
+  const removeOverlay = () => {
+    notEnabledPanelEl?.remove();
+    notEnabledPanelEl = null;
+  };
+
+  const runOnceBtn = document.createElement("button");
+  runOnceBtn.className = "args-run-btn args-run-btn--secondary";
+  runOnceBtn.textContent = "Run once";
+  runOnceBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (manualRunCb) {
-      expanded = false;
-      containerEl?.classList.remove("expanded");
-      notEnabledPanelEl?.remove();
-      notEnabledPanelEl = null;
+      sessionSiteEnabled = true;
+      removeOverlay();
       manualRunCb();
     }
   });
 
+  const alwaysEnableBtn = document.createElement("button");
+  alwaysEnableBtn.className = "args-run-btn";
+  alwaysEnableBtn.textContent = "Always enable";
+  alwaysEnableBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const domain = window.location.hostname.replace(/^www\./, "");
+    chrome.runtime.sendMessage({ action: "addEnabledSite", payload: { domain } }).catch(() => {});
+    if (manualRunCb) {
+      sessionSiteEnabled = true;
+      removeOverlay();
+      manualRunCb();
+    }
+  });
+
+  btnRow.appendChild(alwaysEnableBtn);
+  btnRow.appendChild(runOnceBtn);
+
   notEnabledPanelEl.appendChild(msg);
-  notEnabledPanelEl.appendChild(runBtn);
+  notEnabledPanelEl.appendChild(btnRow);
   notEnabledPanelEl.appendChild(shortcutHint);
   notEnabledPanelEl.addEventListener("click", (e) => e.stopPropagation());
   contentClip.appendChild(notEnabledPanelEl);
@@ -429,7 +453,7 @@ function toggle(): void {
         const prefsStored = await chrome.storage.local.get("preferences");
         const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
         const hostname = window.location.hostname.replace(/^www\./, "");
-        const siteEnabled = Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s));
+        const siteEnabled = sessionSiteEnabled || (Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s)));
         if (!siteEnabled) {
           showNotEnabledOverlay();
         }
@@ -929,6 +953,7 @@ function buildDashboardFace(): HTMLDivElement {
       dashSignInEmailEl!.value = "";
       dashSignInPasswordEl!.value = "";
       dashSignInNameEl!.value = "";
+      if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
       const prefsStored = await chrome.storage.local.get("preferences");
       const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
       const hostname = window.location.hostname.replace(/^www\./, "");
@@ -1564,23 +1589,41 @@ const ARGUMENTS_BOX_CSS = `
     line-height: 1.4;
   }
 
+  .args-not-enabled-btn-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
   .args-run-btn {
     all: unset;
+    flex: 1;
     display: block;
-    padding: 11px 24px;
+    padding: 11px 12px;
     background: #22c55e;
     color: #fff;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     font-family: system-ui, -apple-system, sans-serif;
     text-align: center;
     border-radius: 100px;
     cursor: pointer;
     transition: background 0.15s;
+    box-sizing: border-box;
   }
 
   .args-run-btn:hover {
     background: #16a34a;
+  }
+
+  .args-run-btn--secondary {
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .args-run-btn--secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
   }
 
   .args-not-enabled-hint {
