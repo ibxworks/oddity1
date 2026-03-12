@@ -313,6 +313,12 @@ export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
 }
 
+let signOutCb: (() => void) | null = null;
+
+export function setSignOutCallback(cb: () => void): void {
+  signOutCb = cb;
+}
+
 export function destroyArgumentsBox(): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
@@ -776,6 +782,7 @@ function buildDashboardFace(): HTMLDivElement {
       if (dashSignInPasswordEl) dashSignInPasswordEl.value = "";
       if (dashSignInNameEl) dashSignInNameEl.value = "";
       showAuthView("signin");
+      signOutCb?.();
     });
   });
 

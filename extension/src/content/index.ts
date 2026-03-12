@@ -28,6 +28,7 @@ import {
   setArgumentsBoxEnabled,
   setArgumentsBoxDimmed,
   setManualRunCallback,
+  setSignOutCallback,
   updateArgumentsBox,
 } from "./renderer/arguments-box.js";
 import {
@@ -1116,6 +1117,13 @@ document.addEventListener("keydown", (e) => {
 window.addEventListener("pagehide", () => {
   longWaitManager.reset();
   destroyArgumentsBox();
+});
+
+// Clear all annotations when the user signs out
+setSignOutCallback(() => {
+  clearOverlay();
+  clearAllAnchors();
+  clearMarginNotes();
 });
 
 // Install SPA navigation watcher once (survives across re-inits)
