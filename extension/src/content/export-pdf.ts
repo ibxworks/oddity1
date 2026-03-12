@@ -295,7 +295,7 @@ function buildDocument(
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 /* ── Page ── */
-@page{size:A4 portrait;margin:14mm 10mm 16mm 10mm}
+@page{size:A4 landscape;margin:10mm 14mm 10mm 14mm}
 @page{@top-center{content:none}@bottom-center{content:none}}
 body{
   background:#faf8f5;
@@ -316,19 +316,19 @@ body{
 .hdr .meta{font-size:11px;color:#b0a090;margin-top:6px}
 
 /* ── Content area with sidenote gutters ── */
-.content{position:relative;padding:0 150px}
-@media print{.content{padding:0 142px}}
+.content{position:relative;padding:0 160px}
+@media print{.content{padding:0 152px}}
 
 /* Subtle vertical column dividers (screen only) */
 .content::before,.content::after{
   content:'';position:absolute;top:0;bottom:0;width:1px;
   background:#d8d0c4;opacity:.3;pointer-events:none;
 }
-.content::before{left:150px}
-.content::after{right:150px}
+.content::before{left:160px}
+.content::after{right:160px}
 @media print{
-  .content::before{left:142px}
-  .content::after{right:142px}
+  .content::before{left:152px}
+  .content::after{right:152px}
 }
 
 /* ── Sidenote cards — matches frontend light mode card design ── */
@@ -346,11 +346,11 @@ body{
   line-height:1.45;
   color:#293038;
 }
-.sn-right{float:right;clear:right;margin-right:-144px}
-.sn-left{float:left;clear:left;margin-left:-144px}
+.sn-right{float:right;clear:right;margin-right:-154px}
+.sn-left{float:left;clear:left;margin-left:-154px}
 @media print{
-  .sn-right{margin-right:-136px}
-  .sn-left{margin-left:-136px}
+  .sn-right{margin-right:-146px}
+  .sn-left{margin-left:-146px}
 }
 
 /* Label — matches .note-label */
@@ -484,7 +484,7 @@ ${typeCSS()}
 async function openPrintDialog(htmlContent: string): Promise<void> {
   const iframe = document.createElement('iframe');
   iframe.style.cssText =
-    'position:fixed;left:-9999px;top:0;width:210mm;height:297mm;border:none;visibility:hidden';
+    'position:fixed;left:-9999px;top:0;width:297mm;height:210mm;border:none;visibility:hidden';
   document.body.appendChild(iframe);
 
   return new Promise<void>((resolve, reject) => {
