@@ -1119,11 +1119,25 @@ window.addEventListener("pagehide", () => {
   destroyArgumentsBox();
 });
 
-// Clear all annotations when the user signs out
+// Clear all annotations and reset pipeline state when the user signs out
 setSignOutCallback(() => {
-  clearOverlay();
+  // Tear down DOM containers so startPipeline() reinitializes them cleanly
+  destroyOverlay();
+  destroyMarginNotes();
   clearAllAnchors();
-  clearMarginNotes();
+  // Reset all annotation state
+  currentAnnotations.clear();
+  currentFeedback.clear();
+  annotatedRegions.clear();
+  pendingRegions.clear();
+  streamedRegions.clear();
+  regionByHash.clear();
+  activeHashes.clear();
+  regions = [];
+  pipelineInitialized = false;
+  bodyDetectionActive = false;
+  marginNotesInitFromBody = false;
+  longWaitManager.reset();
 });
 
 // Install SPA navigation watcher once (survives across re-inits)
