@@ -296,6 +296,7 @@ function buildDocument(
 
 /* ── Page ── */
 @page{size:A4 portrait;margin:14mm 10mm 16mm 10mm}
+@page{@top-center{content:none}@bottom-center{content:none}}
 body{
   background:#faf8f5;
   font-family:'Lora',Georgia,'Times New Roman',serif;
