@@ -6,7 +6,7 @@ import type {
   Intensity,
   SiteAdapter,
 } from "@oddity/shared";
-import { DEFAULT_ENABLED_SITES, MAX_TEXT_LENGTH } from "@oddity/shared";
+import { DEFAULT_ENABLED_SITES, isBlockedDomain, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
@@ -27,6 +27,7 @@ import {
   setArgumentsBoxVisible,
   setArgumentsBoxEnabled,
   setArgumentsBoxDimmed,
+  setArgumentsBoxBlocked,
   setManualRunCallback,
   setSignOutCallback,
   updateArgumentsBox,
@@ -84,6 +85,7 @@ const activeHashes = new Map<Element, string>();
 const chatTrackedElements = new WeakSet<Element>();
 let siteWhitelisted = false;
 let manualRunTriggered = false;
+let blocked = false;
 
 let enabled = true;
 let visibleTypes: AnnotationType[] = [
@@ -215,6 +217,7 @@ function isDomainWhitelisted(domain: string, sites: string[]): boolean {
 }
 
 function manualRun(): void {
+  if (blocked) return;
   manualRunTriggered = true;
   setArgumentsBoxDimmed(false);
   pipelineInitialized = false;
@@ -231,6 +234,15 @@ async function init(): Promise<void> {
 
   // Keep URL in sync (used by SPA navigation watcher)
   lastKnownUrl = window.location.href;
+
+  // Block pipeline on app.oddity1.com — the webapp has its own annotation system
+  const domain = extractDomain();
+  if (isBlockedDomain(domain)) {
+    blocked = true;
+    initArgumentsBox();
+    setArgumentsBoxBlocked(true);
+    return;
+  }
 
   // Load stored enabled state before doing any work
   const stored = await chrome.storage.local.get("preferences");
@@ -261,14 +273,14 @@ async function init(): Promise<void> {
 
   // Whitelist check — only auto-run on enabled sites
   const enabledSites: string[] = prefs?.enabled_sites ?? DEFAULT_ENABLED_SITES;
-  const domain = extractDomain();
+  const currentDomain = extractDomain();
 
-  if (isDomainWhitelisted(domain, enabledSites)) {
+  if (isDomainWhitelisted(currentDomain, enabledSites)) {
     siteWhitelisted = true;
     await startPipeline();
   } else {
     siteWhitelisted = false;
-    console.log(`[Oddity 1] Site not whitelisted: ${domain} — waiting for manual run`);
+    console.log(`[Oddity 1] Site not whitelisted: ${currentDomain} — waiting for manual run`);
     initArgumentsBox();
     setArgumentsBoxEnabled(enabled);
     setArgumentsBoxDimmed(true);
@@ -987,6 +999,7 @@ onMessage((message: ExtensionMessage) => {
     }
 
     case "triggerManualRun": {
+      if (blocked) break;
       if (!siteWhitelisted && !manualRunTriggered && enabled) {
         manualRun();
       }
@@ -994,6 +1007,7 @@ onMessage((message: ExtensionMessage) => {
     }
 
     case "enabledSitesUpdated": {
+      if (blocked) break;
       const { sites } = message.payload;
       const currentDomain = extractDomain();
       if (!siteWhitelisted && isDomainWhitelisted(currentDomain, sites)) {
@@ -1105,6 +1119,7 @@ document.addEventListener("oddity:exportPdf", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+    if (blocked) return;
     if (!siteWhitelisted && !manualRunTriggered && enabled) {
       e.preventDefault();
       manualRun();

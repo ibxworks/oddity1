@@ -4,6 +4,8 @@ import { useProfile } from '../hooks/useProfile'
 import { useToast } from '../context/ToastContext'
 import './AccountPage.css'
 
+const BLOCKED_DOMAINS = ['app.oddity1.com']
+
 const FONT_OPTIONS = [
   { value: 'system', label: 'System Default' },
   { value: 'Fraunces', label: 'Fraunces' },
@@ -55,6 +57,10 @@ export default function AccountPage() {
   async function handleAddSite() {
     const site = newSite.trim().toLowerCase()
     if (!site || enabledSites.includes(site)) return
+    if (BLOCKED_DOMAINS.includes(site)) {
+      showToast('Cannot enable — annotations are built into the dashboard')
+      return
+    }
     await updatePreferences({ enabled_sites: [...enabledSites, site] })
     setNewSite('')
     showToast('Site added')

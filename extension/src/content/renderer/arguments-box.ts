@@ -21,8 +21,10 @@ let panelToggleInput: HTMLInputElement | null = null;
 let panelToggleLabelEl: HTMLSpanElement | null = null;
 let expanded = false;
 let dimmed = false;
+let blocked = false;
 let manualRunCb: (() => void) | null = null;
 let notEnabledPanelEl: HTMLDivElement | null = null;
+let blockedPanelEl: HTMLDivElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
@@ -91,6 +93,7 @@ export function initArgumentsBox(): void {
   containerEl = document.createElement("div");
   containerEl.className = "args-container";
   containerEl.addEventListener("click", () => {
+    if (blocked) return; // blocked overlay is always expanded
     if (!expanded) {
       if (dimmed) {
         toggleDimmedPanel();
@@ -252,6 +255,7 @@ export function initArgumentsBox(): void {
 
   // On init: set auth/site state without requiring user interaction
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
+    if (blocked) return; // blocked domains skip auth/whitelist UI
     if (!result?.authenticated) {
       toggle();
       showDashboard();
@@ -309,6 +313,14 @@ export function setArgumentsBoxDimmed(isDimmed: boolean): void {
   containerEl?.classList.toggle("oddity-not-enabled", isDimmed);
 }
 
+export function setArgumentsBoxBlocked(isBlocked: boolean): void {
+  blocked = isBlocked;
+  containerEl?.classList.toggle("oddity-blocked", isBlocked);
+  if (isBlocked) {
+    showBlockedOverlay();
+  }
+}
+
 export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
 }
@@ -359,8 +371,10 @@ export function destroyArgumentsBox(): void {
   dashFeedbackSendBtnEl = null;
   expanded = false;
   dimmed = false;
+  blocked = false;
   manualRunCb = null;
   notEnabledPanelEl = null;
+  blockedPanelEl = null;
   canonicalItems = [];
   liveItems = [];
 }
@@ -434,6 +448,42 @@ function showNotEnabledOverlay(): void {
   notEnabledPanelEl.appendChild(shortcutHint);
   notEnabledPanelEl.addEventListener("click", (e) => e.stopPropagation());
   contentClip.appendChild(notEnabledPanelEl);
+}
+
+function showBlockedOverlay(): void {
+  if (blockedPanelEl) return;
+  containerEl?.classList.add("oddity-blocked");
+  containerEl?.classList.remove("dashboard");
+  const contentClip = shadowRoot?.querySelector(".args-content-clip");
+  if (!contentClip) return;
+
+  blockedPanelEl = document.createElement("div");
+  blockedPanelEl.className = "args-not-enabled-overlay";
+
+  const msg = document.createElement("div");
+  msg.className = "args-not-enabled-msg";
+  msg.textContent = "Oddity 1 annotations are built into the dashboard";
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "args-not-enabled-btn-row";
+
+  const openDashBtn = document.createElement("button");
+  openDashBtn.className = "args-run-btn";
+  openDashBtn.textContent = "Open Dashboard";
+  openDashBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    window.open("https://app.oddity1.com", "_blank");
+  });
+
+  btnRow.appendChild(openDashBtn);
+  blockedPanelEl.appendChild(msg);
+  blockedPanelEl.appendChild(btnRow);
+  blockedPanelEl.addEventListener("click", (e) => e.stopPropagation());
+  contentClip.appendChild(blockedPanelEl);
+
+  // Auto-expand so the blocked overlay is visible
+  expanded = true;
+  containerEl?.classList.add("expanded");
 }
 
 function toggleDimmedPanel(): void {
@@ -1673,6 +1723,12 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .args-run-btn--secondary:hover {
     background: rgba(0, 0, 0, 0.13);
+  }
+
+  /* ── Blocked state (uses same overlay styles as not-enabled) ── */
+
+  .args-container.oddity-blocked:not(.expanded) {
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #6B7280;
   }
 
   :host([data-theme="light"]) .args-container.dashboard {

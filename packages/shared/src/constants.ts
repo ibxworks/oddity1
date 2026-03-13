@@ -1,5 +1,13 @@
 import type { AnnotationType } from "./types.js";
 
+// ─── Blocked Domains ───
+
+export const BLOCKED_DOMAINS = ['app.oddity1.com'];
+
+export function isBlockedDomain(domain: string): boolean {
+  return BLOCKED_DOMAINS.includes(domain);
+}
+
 // ─── Default Enabled Sites ───
 
 export const DEFAULT_ENABLED_SITES: string[] = [

@@ -1,5 +1,5 @@
 import type { ExtensionMessage, UserPreferences } from "@oddity/shared";
-import { DEFAULT_ENABLED_SITES, MAX_TEXT_LENGTH } from "@oddity/shared";
+import { DEFAULT_ENABLED_SITES, isBlockedDomain, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { sendToTab } from "../shared/messaging.js";
 import {
   getAdapters,
@@ -333,6 +333,9 @@ chrome.runtime.onMessage.addListener(
 
         case "addEnabledSite": {
           const { domain } = message.payload;
+          if (isBlockedDomain(domain)) {
+            return { error: "Cannot enable extension on app.oddity1.com — annotations are built into the dashboard" };
+          }
           const addStored = await chrome.storage.local.get("preferences");
           const addPrefs = (addStored["preferences"] ?? {}) as Record<string, unknown>;
           const addList = Array.isArray(addPrefs.enabled_sites) ? [...addPrefs.enabled_sites as string[]] : [...DEFAULT_ENABLED_SITES];

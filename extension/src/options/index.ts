@@ -4,7 +4,7 @@ import type {
   UserPreferences,
   UserTier,
 } from '@oddity/shared';
-import { ALL_ANNOTATION_TYPES } from '@oddity/shared';
+import { ALL_ANNOTATION_TYPES, isBlockedDomain } from '@oddity/shared';
 import { sendMessage } from '../shared/messaging.js';
 
 // ─── DOM refs ───
@@ -242,6 +242,11 @@ addSiteBtn.addEventListener('click', async () => {
 
   if (currentPrefs.enabled_sites.includes(site)) {
     showToast('Site already enabled');
+    return;
+  }
+
+  if (isBlockedDomain(site)) {
+    showToast('Cannot enable — annotations are built into the dashboard');
     return;
   }
 

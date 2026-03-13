@@ -25,6 +25,10 @@ export function useProfile(session) {
 
   async function updatePreferences(partial) {
     const merged = { ...preferences, ...partial }
+    // Safety net: silently strip app.oddity1.com from enabled_sites
+    if (Array.isArray(merged.enabled_sites)) {
+      merged.enabled_sites = merged.enabled_sites.filter(s => s !== 'app.oddity1.com')
+    }
     setPreferences(merged)
     await supabase
       .from('profiles')

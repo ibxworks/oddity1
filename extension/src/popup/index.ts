@@ -5,7 +5,7 @@ import type {
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
-import { ALL_ANNOTATION_TYPES, DEFAULT_ENABLED_SITES } from "@oddity/shared";
+import { ALL_ANNOTATION_TYPES, DEFAULT_ENABLED_SITES, isBlockedDomain } from "@oddity/shared";
 import { sendMessage } from "../shared/messaging.js";
 
 // ─── DOM refs ───
@@ -38,6 +38,7 @@ const authToggleLink = document.getElementById("auth-toggle-link")!;
 const authToggleText = document.getElementById("auth-toggle-text")!;
 const mainContent = document.getElementById("main-content")!;
 const notEnabledSection = document.getElementById("not-enabled-section")!;
+const blockedDomainSection = document.getElementById("blocked-domain-section")!;
 const popupRunBtn = document.getElementById("popup-run-btn")!;
 const popupEnableBtn = document.getElementById("popup-enable-btn")!;
 const popupEnableDomain = document.getElementById("popup-enable-domain")!;
@@ -278,6 +279,15 @@ async function loadAuthStatus(): Promise<void> {
 
       // Check if current tab's domain is whitelisted
       const isWhitelisted = await checkActiveTabWhitelist();
+
+      // Blocked domain — show blocked section instead of any other UI
+      if (isBlockedDomain(activeTabDomain)) {
+        mainContent.classList.add("hidden");
+        notEnabledSection.style.display = "none";
+        blockedDomainSection.style.display = "";
+        return;
+      }
+
       if (!isWhitelisted && currentPrefs.enabled) {
         showNotEnabledUI();
       } else {
@@ -711,6 +721,7 @@ feedbackSendBtn.addEventListener("click", async () => {
 // ─── Not-Enabled Section Handlers ───
 
 popupRunBtn.addEventListener("click", async () => {
+  if (isBlockedDomain(activeTabDomain)) return;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.id) {
@@ -727,6 +738,7 @@ popupRunBtn.addEventListener("click", async () => {
 });
 
 popupEnableBtn.addEventListener("click", async () => {
+  if (isBlockedDomain(activeTabDomain)) return;
   if (activeTabDomain) {
     await sendMessage({ action: "addEnabledSite", payload: { domain: activeTabDomain } });
     currentPrefs.enabled_sites.push(activeTabDomain);
