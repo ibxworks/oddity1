@@ -1,19 +1,18 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '../utils/annotationConstants';
 import './MarginNotes.css';
 
 export default function MarginNotes({ annotations, editorRef }) {
   const [positions, setPositions] = useState([]);
   const [hoveredId, setHoveredId] = useState(null);
-  const containerRef = useRef(null);
 
   useEffect(() => {
     if (!annotations?.length || !editorRef?.current) return;
 
     function computePositions() {
-      const container = containerRef.current;
-      if (!container) return;
-      const containerRect = container.getBoundingClientRect();
+      const wrapper = editorRef.current;
+      if (!wrapper) return;
+      const wrapperRect = wrapper.getBoundingClientRect();
 
       const notes = [];
       for (const ann of annotations) {
@@ -22,7 +21,7 @@ export default function MarginNotes({ annotations, editorRef }) {
         const rect = el.getBoundingClientRect();
         notes.push({
           id: ann.id,
-          top: rect.top - containerRect.top,
+          top: rect.top - wrapperRect.top,
           annotation: ann,
         });
       }
@@ -39,7 +38,7 @@ export default function MarginNotes({ annotations, editorRef }) {
       setPositions(notes);
     }
 
-    computePositions();
+    const rafId = requestAnimationFrame(computePositions);
 
     // Throttled recompute on scroll/resize
     let ticking = false;
@@ -55,15 +54,14 @@ export default function MarginNotes({ annotations, editorRef }) {
     window.addEventListener('scroll', onUpdate, true);
     window.addEventListener('resize', onUpdate);
     return () => {
+      cancelAnimationFrame(rafId);
       window.removeEventListener('scroll', onUpdate, true);
       window.removeEventListener('resize', onUpdate);
     };
   }, [annotations, editorRef]);
 
-  if (!positions.length) return null;
-
   return (
-    <div className="margin-notes" ref={containerRef}>
+    <div className="margin-notes">
       {positions.map((pos, i) => {
         const ann = pos.annotation;
         const side = i % 2 === 0 ? 'right' : 'left';
