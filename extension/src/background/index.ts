@@ -480,4 +480,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ─── Eager Session Refresh on SW Boot ───
+// MV3 service workers suspend/resume frequently, killing Supabase's
+// autoRefreshToken timer. Re-arm it on every boot so the first API
+// call after wake-up already has a fresh token.
+getSession().catch(() => {});
+
 console.log("[Oddity 1] Service worker loaded");

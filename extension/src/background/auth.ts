@@ -138,6 +138,21 @@ export async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
+/**
+ * Force-refresh the session using the refresh token.
+ * Returns the new access token, or null if refresh failed.
+ * This is needed because getSession() only reads from storage
+ * and the autoRefreshToken timer dies when the MV3 service worker suspends.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error || !data.session) {
+    console.error("[Oddity 1] refreshSession failed:", error?.message);
+    return null;
+  }
+  return data.session.access_token;
+}
+
 export async function getUserTier(): Promise<"free" | "pro"> {
   const session = await getSession();
   if (!session) return "free";

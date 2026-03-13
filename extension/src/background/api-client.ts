@@ -8,7 +8,7 @@ import {
   type SiteAdapter,
   type UserPreferences,
 } from '@oddity/shared';
-import { getAccessToken, getSession } from './auth.js';
+import { getAccessToken, refreshAccessToken } from './auth.js';
 
 // ─── Error Types ───
 
@@ -38,15 +38,9 @@ async function authFetch(
     headers,
   });
 
-  // On 401, attempt token refresh and retry once
+  // On 401, force-refresh the token and retry once
   if (response.status === 401) {
-    const session = await getSession();
-    if (!session) {
-      throw new AuthError();
-    }
-
-    // Retry with the (possibly refreshed) token
-    const retryToken = await getAccessToken();
+    const retryToken = await refreshAccessToken();
     if (!retryToken) {
       throw new AuthError();
     }
@@ -101,22 +95,32 @@ export async function requestAnnotationsStreaming(
   onAnnotation: (annotation: Annotation) => void,
   signal?: AbortSignal,
 ): Promise<AnnotationResponse> {
-  const token = await getAccessToken();
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Accept': 'text/event-stream',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  async function doStreamingFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(`${BACKEND_URL}/api/annotate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(req),
+      signal,
+    });
   }
 
-  const res = await fetch(`${BACKEND_URL}/api/annotate`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(req),
-    signal,
-  });
+  let res = await doStreamingFetch(await getAccessToken());
+
+  // On 401, force-refresh the token and retry once
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) {
+      throw new AuthError();
+    }
+    res = await doStreamingFetch(retryToken);
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
