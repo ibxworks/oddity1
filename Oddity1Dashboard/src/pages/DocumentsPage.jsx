@@ -11,6 +11,7 @@ export default function DocumentsPage() {
   const navigate = useNavigate();
   const { documents, loading, createDocument, deleteDocument } = useDocuments();
   const [search, setSearch] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
   const filtered = search
@@ -31,6 +32,41 @@ export default function DocumentsPage() {
     } catch (err) {
       showToast('Failed to create document');
     }
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set to false if leaving the entire container
+    if (e.currentTarget === e.target) {
+      setIsDragging(false);
+    }
+  }
+
+  async function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!['txt', 'md'].includes(ext)) {
+      showToast('Only .txt and .md files are supported');
+      return;
+    }
+
+    // Reuse existing file change handler
+    const fakeEvent = { target: { files: [file], value: '' } };
+    await handleFileChange(fakeEvent);
   }
 
   function handleUploadClick() {
@@ -90,7 +126,17 @@ export default function DocumentsPage() {
   }
 
   return (
-    <div className="docs-page">
+    <div
+      className="docs-page"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div className="docs-drop-overlay">
+          <div className="docs-drop-overlay-text">Drop files to import</div>
+        </div>
+      )}
       <div className="docs-header">
         <h1 className="docs-title">Documents</h1>
         <div className="docs-actions">
