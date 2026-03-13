@@ -1,17 +1,51 @@
+export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'pptx', 'txt', 'md'];
+export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
 /**
- * Import a .txt or .md file, returning HTML content and a title.
+ * Import a file, returning HTML content and a title.
+ * .md files are processed client-side; all others go through the API.
  */
-export function importFile(file) {
+export async function importFile(file) {
+  const ext = file.name.split('.').pop()?.toLowerCase();
+
+  if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+    throw new Error(`Unsupported file type: .${ext}`);
+  }
+
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error('File exceeds 10MB limit');
+  }
+
+  const title = file.name.replace(/\.\w+$/i, '');
+
+  // .md files: client-side processing
+  if (ext === 'md') {
+    const text = await readFileAsText(file);
+    return { content: mdToHtml(text), title };
+  }
+
+  // All other formats: API conversion
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch('/api/convert', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Conversion failed');
+  }
+
+  const { markdown } = await res.json();
+  return { content: mdToHtml(markdown), title };
+}
+
+function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      const text = reader.result;
-      const title = file.name.replace(/\.(txt|md)$/i, '');
-      const ext = file.name.split('.').pop()?.toLowerCase();
-
-      const content = ext === 'md' ? mdToHtml(text) : txtToHtml(text);
-      resolve({ content, title });
-    };
+    reader.onload = () => resolve(reader.result);
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsText(file);
   });
@@ -19,14 +53,6 @@ export function importFile(file) {
 
 function esc(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function txtToHtml(text) {
-  return text
-    .split(/\n\n+/)
-    .filter(Boolean)
-    .map((p) => `<p>${esc(p.trim())}</p>`)
-    .join('');
 }
 
 function mdToHtml(text) {

@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
 import { useDocuments } from '../hooks/useDocuments';
-import { importFile } from '../utils/fileImport';
+import { importFile, SUPPORTED_EXTENSIONS } from '../utils/fileImport';
 import { formatTimeAgo, groupByTime } from '../utils/mockDocuments';
 import './DocumentsPage.css';
 
@@ -12,6 +12,7 @@ export default function DocumentsPage() {
   const { documents, loading, createDocument, deleteDocument } = useDocuments();
   const [search, setSearch] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [converting, setConverting] = useState(false);
   const fileInputRef = useRef(null);
 
   const filtered = search
@@ -59,8 +60,8 @@ export default function DocumentsPage() {
 
     // Validate file type
     const ext = file.name.split('.').pop()?.toLowerCase();
-    if (!['txt', 'md'].includes(ext)) {
-      showToast('Only .txt and .md files are supported');
+    if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+      showToast('Unsupported file type. Use PDF, DOCX, PPTX, TXT, or MD.');
       return;
     }
 
@@ -79,6 +80,7 @@ export default function DocumentsPage() {
     // Reset input so same file can be re-selected
     e.target.value = '';
 
+    setConverting(true);
     try {
       const { content, title } = await importFile(file);
       const id = await createDocument({
@@ -88,7 +90,9 @@ export default function DocumentsPage() {
       });
       navigate(`/documents/${id}`);
     } catch (err) {
-      showToast('Failed to import file');
+      showToast(err.message || 'Failed to import file');
+    } finally {
+      setConverting(false);
     }
   }
 
@@ -125,6 +129,8 @@ export default function DocumentsPage() {
     );
   }
 
+  const acceptExtensions = SUPPORTED_EXTENSIONS.map((e) => `.${e}`).join(',');
+
   return (
     <div
       className="docs-page"
@@ -137,19 +143,32 @@ export default function DocumentsPage() {
           <div className="docs-drop-overlay-text">Drop files to import</div>
         </div>
       )}
+      {converting && (
+        <div className="docs-converting-overlay">
+          <div className="docs-converting-spinner" />
+          <div className="docs-converting-text">Converting document...</div>
+        </div>
+      )}
       <div className="docs-header">
         <h1 className="docs-title">Documents</h1>
         <div className="docs-actions">
           <button className="docs-btn docs-btn--primary" onClick={handleNewDoc}>
             New doc
           </button>
-          <button className="docs-btn docs-btn--outlined" onClick={handleUploadClick}>
-            Upload
-          </button>
+          <div className="docs-upload-wrapper">
+            <button
+              className="docs-btn docs-btn--outlined"
+              onClick={handleUploadClick}
+              disabled={converting}
+            >
+              Upload
+            </button>
+            <div className="docs-upload-tooltip">PDF, DOCX, PPTX, TXT, MD</div>
+          </div>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".txt,.md"
+            accept={acceptExtensions}
             style={{ display: 'none' }}
             onChange={handleFileChange}
           />

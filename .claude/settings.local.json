@@ -73,7 +73,15 @@
       "Bash(find /Users/realtonypark/Developer/oddity1/backend -type f -name \"*.sql\" 2>/dev/null | head -10)",
       "Bash(cd /Users/realtonypark/Developer/oddity1/backend && npm run build 2>&1)",
       "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard/src -type f -name \"*.ts\" -o -name \"*.tsx\" 2>/dev/null | head -30)",
-      "Bash(find /Users/realtonypark/Developer/oddity1/extension -type f -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.js\" -o -name \"*.jsx\" -o -name \"*.json\" | grep -E \"\\\\.\\(ts|tsx|js|jsx|json\\)$\" | head -30)"
+      "Bash(find /Users/realtonypark/Developer/oddity1/extension -type f -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.js\" -o -name \"*.jsx\" -o -name \"*.json\" | grep -E \"\\\\.\\(ts|tsx|js|jsx|json\\)$\" | head -30)",
+      "Bash(find /Users/realtonypark/Developer/oddity1/markitdown* -type f -name \"*.md\" -o -name \"*.json\" -o -name \"*.ts\" -o -name \"*.js\" | head -30)",
+      "Bash(grep -r \"vercel\\\\|deployment\\\\|serverless\\\\|edge\" /Users/realtonypark/Developer/oddity1 --include=\"*.json\" --include=\"*.md\" --include=\"*.ts\" --include=\"*.js\" 2>/dev/null | head -20)",
+      "Bash(grep \"\\\\.py$\")",
+      "Bash(grep -r \"CREATE TABLE\\\\|create table\" /Users/realtonypark/Developer/oddity1 --include=\"*.sql\" --include=\"*.ts\" --include=\"*.js\" 2>/dev/null | head -20)",
+      "Bash(pip show:*)",
+      "Bash(python3 -c \"import markitdown; print\\(dir\\(markitdown\\)\\)\" 2>&1)",
+      "Bash(pip install:*)",
+      "Bash(python3 -c \"from markitdown import MarkItDown; print\\('OK'\\)\" 2>&1)"
     ]
   },
   "enableAllProjectMcpServers": true,
