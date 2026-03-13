@@ -1,2 +1,3 @@
 fastapi
+python-multipart
 markitdown[pdf,docx,pptx]
