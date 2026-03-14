@@ -550,13 +550,19 @@ export function updateArgumentsBox(
   }, 150);
 }
 
-export function addLiveFeedback(icon: string, text: string): void {
+export function addLiveFeedback(
+  icon: string,
+  text: string,
+  opts?: { quote?: string; type?: ArgumentItem["type"]; replyHeader?: string },
+): void {
   if (!hostEl) return;
   liveItems.push({
     icon,
     text,
+    quote: opts?.quote,
+    replyHeader: opts?.replyHeader,
     sortKey: `live-${Date.now()}`,
-    type: "reaction",
+    type: opts?.type ?? "reaction",
   });
   renderList();
 }
