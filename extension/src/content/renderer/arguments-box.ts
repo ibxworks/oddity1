@@ -2317,7 +2317,7 @@ const ARGUMENTS_BOX_CSS = `
     font-size: 12px;
     color: rgba(255, 255, 255, 0.4);
     line-height: 1.5;
-    padding: 8px 0 4px;
+    padding: 8px 16px 4px;
     font-family: system-ui, -apple-system, sans-serif;
   }
 
