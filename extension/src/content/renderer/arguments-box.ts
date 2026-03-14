@@ -129,6 +129,18 @@ let modeToggleThemeHandler: ((mode: "light" | "dark") => void) | null = null;
 
 const TOGGLE_OVERLAY_WIDTH = 168; // px — approximate rendered width of the two buttons
 
+// ── Button drag state ──
+const BTN_DEFAULT_RIGHT = 20;
+const BTN_DEFAULT_BOTTOM = 20;
+let btnDragging = false;
+let btnDragDelta = 0;
+let btnDragStartX = 0;
+let btnDragStartY = 0;
+let btnCurrentRight = BTN_DEFAULT_RIGHT;
+let btnCurrentBottom = BTN_DEFAULT_BOTTOM;
+let btnDragMoveHandler: ((e: MouseEvent) => void) | null = null;
+let btnDragUpHandler: (() => void) | null = null;
+
 // ─── Public API ───
 
 export function initArgumentsBox(): void {
