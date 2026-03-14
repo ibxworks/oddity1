@@ -537,7 +537,6 @@ export async function handleRemoteSignIn(user: { email: string; display_name: st
   localAuthState = true;
   // Hide auth overlay and update UI directly — no re-query needed (avoids service worker race)
   if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
-  if (dashFaceEl) dashFaceEl.style.overflow = "";
   if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
   const name = user.display_name || user.email || "?";
   dashUserEmail = user.email;
@@ -748,8 +747,7 @@ function toggle(): void {
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
     if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
-    if (dashFaceEl) dashFaceEl.style.overflow = "";
-    if (containerEl) containerEl.style.height = "";
+    if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
@@ -797,9 +795,21 @@ function hideCloseBtn(): void {
   }, 80);
 }
 
+function fitDashboardHeight(): void {
+  if (!dashFaceEl || !containerEl) return;
+  let h = 0;
+  for (const child of Array.from(dashFaceEl.children)) {
+    h += (child as HTMLElement).offsetHeight;
+  }
+  if (h > 0) containerEl.style.height = `${h}px`;
+}
+
 function showDashboard(): void {
   containerEl?.classList.add("dashboard");
-  loadDashboardData().catch(() => {});
+  if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
+  loadDashboardData()
+    .catch(() => {})
+    .finally(() => requestAnimationFrame(() => fitDashboardHeight()));
 }
 
 function showAuthView(mode: "signin" | "signup"): void {
@@ -810,8 +820,8 @@ function showAuthView(mode: "signin" | "signup"): void {
   if (dashSignInNameEl) dashSignInNameEl.style.display = mode === "signup" ? "block" : "none";
   if (dashSignInStatusEl) { dashSignInStatusEl.style.display = "none"; dashSignInStatusEl.className = "args-dash-feedback-status"; }
   if (dashSignInViewEl) { dashSignInViewEl.style.display = "flex"; }
-  if (dashFaceEl) dashFaceEl.style.overflow = "hidden";
-  if (containerEl) containerEl.style.height = mode === "signup" ? "310px" : "270px";
+  if (containerEl) containerEl.style.width = "240px";
+  requestAnimationFrame(() => fitDashboardHeight());
 }
 
 function buildDashboardFace(): HTMLDivElement {
@@ -831,7 +841,7 @@ function buildDashboardFace(): HTMLDivElement {
     e.stopPropagation();
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
-    if (containerEl) containerEl.style.height = "";
+    if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
   });
 
   const logo = document.createElement("span");
@@ -1243,6 +1253,7 @@ function buildDashboardFace(): HTMLDivElement {
   dashAuthSubmitBtnEl = document.createElement("button");
   dashAuthSubmitBtnEl.className = "args-dash-feedback-send-btn";
   dashAuthSubmitBtnEl.style.width = "100%";
+  dashAuthSubmitBtnEl.style.flex = "none";
   dashAuthSubmitBtnEl.textContent = "Create Account";
   dashAuthSubmitBtnEl.addEventListener("click", async () => {
     const email = dashSignInEmailEl!.value.trim();
@@ -1271,8 +1282,7 @@ function buildDashboardFace(): HTMLDivElement {
       localAuthState = true;
       await chrome.storage.local.set({ hadAccount: true });
       if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
-      if (dashFaceEl) dashFaceEl.style.overflow = "";
-      if (containerEl) containerEl.style.height = "";
+      if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
       dashSignInEmailEl!.value = "";
       dashSignInPasswordEl!.value = "";
       dashSignInNameEl!.value = "";
@@ -1890,6 +1900,7 @@ const ARGUMENTS_BOX_CSS = `
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #4ade80;
   }
 
+
   /* Expanded (panel) state — blur moves to ::after so child cards blur independently */
   .args-container.expanded {
     width: var(--panel-width, 300px);
@@ -2405,7 +2416,7 @@ const ARGUMENTS_BOX_CSS = `
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
-    padding: 10px 14px 16px;
+    padding: 16px 14px 24px;
     flex-shrink: 0;
   }
 
@@ -2729,7 +2740,7 @@ const ARGUMENTS_BOX_CSS = `
     transition: opacity 0.15s ease;
     background: #fff;
     border-radius: inherit;
-    overflow-y: auto;
+    overflow: hidden;
     color: #1a1a1a;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 13px;
@@ -3022,7 +3033,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-dash-footer {
-    padding: 8px 16px 12px;
+    padding: 14px 16px 22px;
     border-top: 0.5px solid #f0f0f0;
     text-align: center;
     flex-shrink: 0;
@@ -3221,8 +3232,8 @@ const ARGUMENTS_BOX_CSS = `
     z-index: 2;
     display: none;
     flex-direction: column;
-    padding: 18px 16px;
-    gap: 10px;
+    padding: 14px 12px;
+    gap: 7px;
   }
 
   .args-dash-signin-subtitle {
@@ -3236,10 +3247,10 @@ const ARGUMENTS_BOX_CSS = `
     all: unset;
     display: block;
     width: 100%;
-    padding: 9px 12px;
+    padding: 7px 10px;
     border: 0.5px solid #e8e8e2;
     border-radius: 6.5px;
-    font-size: 13px;
+    font-size: 12px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     color: #111;
     background: #fff;
