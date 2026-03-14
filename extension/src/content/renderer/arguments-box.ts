@@ -265,7 +265,25 @@ export function initArgumentsBox(): void {
   addBtn.className = "args-header-icon-btn";
   addBtn.title = "Add";
   addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><line x1="7.5" y1="2" x2="7.5" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="2" y1="7.5" x2="13" y2="7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
-  addBtn.addEventListener("click", (e) => e.stopPropagation());
+  // ── Plus-button tooltip ──
+  const addTooltip = document.createElement("div");
+  addTooltip.className = "add-tooltip";
+  addTooltip.innerHTML = `
+    <span class="add-tooltip-title">Add your thoughts</span>
+    <span class="add-tooltip-desc">Highlight text on the page, then click <b>+</b> to attach your note.</span>
+  `;
+  addBtn.style.position = "relative";
+  addBtn.appendChild(addTooltip);
+
+  addBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    addTooltip.classList.toggle("visible");
+  });
+
+  // Close tooltip when clicking outside
+  document.addEventListener("click", () => {
+    addTooltip.classList.remove("visible");
+  });
 
   const copyIconBtn = document.createElement("button");
   copyIconBtn.className = "args-header-icon-btn";
@@ -2162,8 +2180,29 @@ function renderList(): void {
 
 function handleCopy(btn: HTMLButtonElement): void {
   const allItems = [...canonicalItems, ...liveItems];
-  const text = allItems.map((i) => `${i.icon} ${i.text}`).join("\n");
-  navigator.clipboard.writeText(text).then(() => {
+
+  function getLabel(item: ArgumentItem): string {
+    if (item.type === "reply") {
+      return item.replyHeader ? `Reply to \u201c${item.replyHeader}\u201d` : "Reply";
+    }
+    const src = item.quote || item.text;
+    const MAX = 60;
+    return src.length > MAX ? `\u201c${src.slice(0, MAX)}\u2026\u201d` : `\u201c${src}\u201d`;
+  }
+
+  const plainText = allItems
+    .map((i) => `${getLabel(i)}\n${i.text}`)
+    .join("\n\n");
+
+  const html = allItems
+    .map((i) => `<b>${getLabel(i)}</b><br>${i.text}`)
+    .join("<br><br>");
+
+  const blob = new Blob([html], { type: "text/html" });
+  const textBlob = new Blob([plainText], { type: "text/plain" });
+  navigator.clipboard.write([
+    new ClipboardItem({ "text/html": blob, "text/plain": textBlob }),
+  ]).then(() => {
     btn.classList.add("copied");
     setTimeout(() => btn.classList.remove("copied"), 1500);
   });
@@ -2593,6 +2632,48 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-header-icon-btn.copied {
     color: #4ade80;
+  }
+
+  /* ── Plus-button tooltip ── */
+  .add-tooltip {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 200px;
+    padding: 10px 12px;
+    background: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .add-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .add-tooltip-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .add-tooltip-desc {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.4;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .add-tooltip-desc b {
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 600;
   }
 
   /* ── Toggle bar ── */
@@ -3168,6 +3249,21 @@ const ARGUMENTS_BOX_CSS = `
   :host([data-theme="light"]) .args-header-icon-btn:hover {
     background: rgba(0, 0, 0, 0.07);
     color: #1a1a1a;
+  }
+
+  :host([data-theme="light"]) .add-tooltip {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  }
+  :host([data-theme="light"]) .add-tooltip-title {
+    color: #1a1a1a;
+  }
+  :host([data-theme="light"]) .add-tooltip-desc {
+    color: rgba(0, 0, 0, 0.5);
+  }
+  :host([data-theme="light"]) .add-tooltip-desc b {
+    color: rgba(0, 0, 0, 0.75);
   }
 
   :host([data-theme="light"]) .args-enabled-label {
