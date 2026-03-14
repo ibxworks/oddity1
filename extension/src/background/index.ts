@@ -78,8 +78,8 @@ chrome.runtime.onMessage.addListener(
           // Session exists — clear any stale badge
           chrome.action.setBadgeText({ text: "" });
 
-          // Build session cache key that includes mode + personality
-          const sessionCacheKey = `${mode}:${personality ?? "terry"}`;
+          // Build session cache key; overview is persona-independent
+          const sessionCacheKey = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
 
           // ── Session cache: stale-while-revalidate for revisits ──
           const cached = await getFromSessionCache(contentHash, sessionCacheKey);

@@ -33,7 +33,8 @@ function cacheKey(
   mode: string,
   personality?: string,
 ): string {
-  return `${contentHash}:${mode}:${personality ?? "none"}`;
+  const intensityPart = mode === "overview" ? "terry" : (personality ?? "none");
+  return `${contentHash}:${mode}:${intensityPart}`;
 }
 
 const AnnotateRequestSchema = z.object({
@@ -68,8 +69,8 @@ router.post("/", async (req, res) => {
     const authToken = req.headers.authorization?.slice(7) ?? "";
 
     // ── Layer 1: DB cache (Supabase) ──
-    // Use mode+personality in cache lookup
-    const cacheIntensity = `${mode}:${personality ?? "terry"}`;
+    // Overview is persona-independent; depth varies by personality
+    const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
@@ -170,7 +171,8 @@ async function handleStreamingAnnotation(
 
   try {
     // Check DB cache first
-    const cacheIntensity = `${mode}:${personality ?? "terry"}`;
+    // Overview is persona-independent; depth varies by personality
+    const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
