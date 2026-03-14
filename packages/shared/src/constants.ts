@@ -49,29 +49,22 @@ export const CACHE_TTL_DAYS = 30;
 export const OVERVIEW_COLORS: Record<OverviewLabel, string> = {
   core_claim: "#4A90D9",
   evidence: "#7B61FF",
-  assumption: "#E8913A",
-  consequence: "#50B87A",
+  outcome: "#F5C842",
   background: "#8E8E93",
   transition: "#A1927B",
-  caveat: "#F5574C",
-  open_question: "#E06B9E",
 };
 
 export const OVERVIEW_LABELS: Record<OverviewLabel, string> = {
   core_claim: "CORE CLAIM",
   evidence: "EVIDENCE",
-  assumption: "ASSUMPTION",
-  consequence: "CONSEQUENCE",
+  outcome: "OUTCOME",
   background: "BACKGROUND",
   transition: "TRANSITION",
-  caveat: "CAVEAT",
-  open_question: "OPEN QUESTION",
 };
 
 // ─── Depth Annotation Colors & Labels ───
 
 export const DEPTH_COLORS: Record<DepthType, string> = {
-  assumption: "#E8913A",
   caveat: "#F5574C",
   counterargument: "#D94A4A",
   alternative: "#9B59B6",
@@ -87,7 +80,6 @@ export const DEPTH_COLORS: Record<DepthType, string> = {
 };
 
 export const DEPTH_LABELS: Record<DepthType, string> = {
-  assumption: "ASSUMPTION",
   caveat: "CAVEAT",
   counterargument: "COUNTERARGUMENT",
   alternative: "ALTERNATIVE",
@@ -121,16 +113,12 @@ export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
 export const ALL_OVERVIEW_TYPES: OverviewLabel[] = [
   "core_claim",
   "evidence",
-  "assumption",
-  "consequence",
+  "outcome",
   "background",
   "transition",
-  "caveat",
-  "open_question",
 ];
 
 export const ALL_DEPTH_TYPES: DepthType[] = [
-  "assumption",
   "caveat",
   "counterargument",
   "alternative",

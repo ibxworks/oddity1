@@ -1,24 +1,20 @@
 // ─── Annotation Modes ───
 
 export type AnnotationMode = 'overview' | 'depth';
-export type DepthPersonality = 'terry' | 'jerry' | 'gary';
+export type DepthPersonality = 'terry' | 'jerry' | 'sally';
 
 // ─── Overview Labels ───
 
 export type OverviewLabel =
   | 'core_claim'
   | 'evidence'
-  | 'assumption'
-  | 'consequence'
+  | 'outcome'
   | 'background'
-  | 'transition'
-  | 'caveat'
-  | 'open_question';
+  | 'transition';
 
 // ─── Depth Types ───
 
 export type DepthType =
-  | 'assumption'
   | 'caveat'
   | 'counterargument'
   | 'alternative'

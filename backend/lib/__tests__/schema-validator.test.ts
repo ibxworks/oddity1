@@ -87,8 +87,8 @@ describe('validateAnnotations', () => {
 
   it('accepts all valid annotation types', () => {
     const types = [
-      'core_claim', 'evidence', 'assumption', 'consequence', 'background', 'transition', 'caveat', 'open_question',
-      'counterargument', 'alternative', 'fallacy', 'criteria', 'perspective',
+      'core_claim', 'evidence', 'outcome', 'background', 'transition',
+      'caveat', 'counterargument', 'alternative', 'fallacy', 'criteria', 'perspective', 'consequence',
       'insight', 'recall', 'study', 'translation', 'vocabulary',
       'user_written',
     ];

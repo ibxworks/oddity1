@@ -33,7 +33,7 @@ const AnnotateRequestSchema = z.object({
   content_hash: z.string().min(1),
   text: z.string().min(1).max(MAX_TEXT_LENGTH),
   mode: z.enum(["overview", "depth"]),
-  personality: z.enum(["terry", "jerry", "gary"]).optional(),
+  personality: z.enum(["terry", "jerry", "sally"]).optional(),
   word_count: z.number().int().positive(),
 });
 

@@ -1000,7 +1000,7 @@ function buildDashboardFace(): HTMLDivElement {
   const personalityGroup = document.createElement("div");
   personalityGroup.className = "args-dash-density-group";
   dashDensityBtns = [];
-  for (const [value, label] of [["terry", "Terry"], ["jerry", "Jerry"], ["gary", "Gary"]] as [string, string][]) {
+  for (const [value, label] of [["terry", "Terry"], ["jerry", "Jerry"], ["sally", "Sally"]] as [string, string][]) {
     const btn = document.createElement("button");
     btn.className = "args-dash-density-btn" + (value === "terry" ? " args-dash-density-active" : "");
     btn.dataset.intensity = value;
