@@ -892,6 +892,8 @@ function hideCloseBtn(): void {
 
 function fitDashboardHeight(): void {
   if (!dashFaceEl || !containerEl) return;
+  // Don't override height when auth overlay is showing — it sets its own height
+  if (dashSignInViewEl && dashSignInViewEl.style.display !== "none") return;
   let h = 0;
   for (const child of Array.from(dashFaceEl.children)) {
     const el = child as HTMLElement;
