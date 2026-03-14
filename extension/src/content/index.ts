@@ -1175,22 +1175,43 @@ onMessage((message: ExtensionMessage) => {
         // signOutCb (via handleRemoteSignOut) handles state reset + DOM teardown
         handleRemoteSignOut();
       } else {
-        handleRemoteSignIn(message.payload.user).catch(() => {});
+        const user = (message.payload as { user: { email: string; display_name: string | null; tier: string; annotation_count: number } }).user;
         // init() returned early (unauthenticated), so re-check whitelist and start pipeline
         if (!pipelineInitialized) {
           (async () => {
             const stored = await chrome.storage.local.get("preferences");
             const enabledSites: string[] = stored?.preferences?.enabled_sites ?? DEFAULT_ENABLED_SITES;
             const domain = extractDomain();
-            if (isDomainWhitelisted(domain, enabledSites)) {
+            const whitelisted = isDomainWhitelisted(domain, enabledSites);
+            await handleRemoteSignIn(user);
+            if (whitelisted) {
               siteWhitelisted = true;
+              setArgumentsBoxDimmed(false);
               await startPipeline();
             }
           })().catch(console.error);
+        } else {
+          handleRemoteSignIn(user).catch(() => {});
         }
       }
       break;
     }
+  }
+});
+
+// ─── Local Sign-In (same tab) — background skips authStateChanged for the signing-in tab ───
+document.addEventListener("oddity:localSignIn", () => {
+  if (!pipelineInitialized) {
+    (async () => {
+      const stored = await chrome.storage.local.get("preferences");
+      const enabledSites: string[] = stored?.preferences?.enabled_sites ?? DEFAULT_ENABLED_SITES;
+      const domain = extractDomain();
+      if (isDomainWhitelisted(domain, enabledSites)) {
+        siteWhitelisted = true;
+        setArgumentsBoxDimmed(false);
+        await startPipeline();
+      }
+    })().catch(console.error);
   }
 });
 

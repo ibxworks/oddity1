@@ -1543,6 +1543,8 @@ function buildDashboardFace(): HTMLDivElement {
       } else {
         await loadDashboardData();
       }
+      // Notify index.ts so it can start the annotation pipeline on this tab
+      document.dispatchEvent(new CustomEvent("oddity:localSignIn"));
     } catch (err) {
       dashSignInStatusEl!.textContent = String(
         err instanceof Error ? err.message : "Something went wrong",
