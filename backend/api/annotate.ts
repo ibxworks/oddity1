@@ -1,4 +1,4 @@
-import type { Annotation, Intensity } from "@oddity/shared";
+import type { Annotation, AnnotationMode, DepthPersonality } from "@oddity/shared";
 import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { Router } from "express";
 import { readFileSync } from "node:fs";
@@ -22,18 +22,18 @@ const promptsPath = resolve(__dirname, "../config/prompts.json");
 const prompts = JSON.parse(readFileSync(promptsPath, "utf-8"));
 
 // ─── Optimization: in-flight request dedup ───
-// If two identical requests arrive concurrently, only one LLM call is made.
 const dedup = createInflightDedup();
 
-function cacheKey(contentHash: string, intensity: string): string {
-  return `${contentHash}:${intensity}`;
+function cacheKey(contentHash: string, mode: string, personality?: string): string {
+  return `${contentHash}:${mode}:${personality ?? "none"}`;
 }
 
 const AnnotateRequestSchema = z.object({
   url: z.string().url(),
   content_hash: z.string().min(1),
   text: z.string().min(1).max(MAX_TEXT_LENGTH),
-  intensity: z.enum(["light", "default", "heavy"]),
+  mode: z.enum(["overview", "depth"]),
+  personality: z.enum(["terry", "jerry", "gary"]).optional(),
   word_count: z.number().int().positive(),
 });
 
@@ -55,21 +55,22 @@ router.post("/", async (req, res) => {
       return handleStreamingAnnotation(req, res, parsed.data);
     }
 
-    const { url, content_hash, text, intensity } = parsed.data;
-    const key = cacheKey(content_hash, intensity);
+    const { url, content_hash, text, mode, personality } = parsed.data;
+    const key = cacheKey(content_hash, mode, personality);
     const authToken = req.headers.authorization?.slice(7) ?? "";
 
     // ── Layer 1: DB cache (Supabase) ──
+    // Use mode+personality in cache lookup
+    const cacheIntensity = mode === "depth" ? `depth:${personality ?? "terry"}` : "overview";
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
       .eq("content_hash", content_hash)
-      .eq("intensity", intensity)
+      .eq("intensity", cacheIntensity)
       .gt("expires_at", new Date().toISOString())
       .single();
 
     if (dbCached) {
-      // Compatibility check: ensure cached entry matches current model + prompt version
       const currentModel = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
       const currentPromptVersion = prompts.version;
 
@@ -77,7 +78,6 @@ router.post("/", async (req, res) => {
         dbCached.model_version === currentModel &&
         dbCached.prompt_version === currentPromptVersion
       ) {
-        // Merge with user annotations + feedback in single response
         const merged = await mergeAnnotationsAndFeedback(
           dbCached.annotations,
           url,
@@ -87,13 +87,15 @@ router.post("/", async (req, res) => {
         res.json({ success: true, cached: true, source: "db", ...merged });
         return;
       }
-      // Stale entry (model/prompt changed) — fall through to re-generate
     }
 
     // ── Layer 2: LLM generation (deduplicated) ──
     const aiAnnotations = await dedup.run(key, async () => {
-      const profile = prompts.intensity_profiles[intensity as Intensity];
-      const rawAnnotations = await generateAnnotations(text, intensity, profile);
+      const rawAnnotations = await generateAnnotations(
+        text,
+        mode as AnnotationMode,
+        personality as DepthPersonality | undefined,
+      );
       return filterAndFixAnnotations(rawAnnotations, text);
     });
 
@@ -105,7 +107,7 @@ router.post("/", async (req, res) => {
       {
         content_hash,
         url,
-        intensity,
+        intensity: cacheIntensity,
         annotations: aiAnnotations,
         model_version: process.env.GEMINI_MODEL ?? "gemini-3-flash-preview",
         prompt_version: prompts.version,
@@ -122,7 +124,6 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Merge with user annotations + feedback in single response
     const merged = await mergeAnnotationsAndFeedback(
       aiAnnotations,
       url,
@@ -145,7 +146,7 @@ async function handleStreamingAnnotation(
   res: import("express").Response,
   data: z.infer<typeof AnnotateRequestSchema>,
 ): Promise<void> {
-  const { url, content_hash, text, intensity } = data;
+  const { url, content_hash, text, mode, personality } = data;
   const authToken = req.headers.authorization?.slice(7) ?? "";
 
   // SSE headers
@@ -155,12 +156,13 @@ async function handleStreamingAnnotation(
   res.flushHeaders();
 
   try {
-    // Check DB cache first — if cached, send all at once and close
+    // Check DB cache first
+    const cacheIntensity = mode === "depth" ? `depth:${personality ?? "terry"}` : "overview";
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
       .eq("content_hash", content_hash)
-      .eq("intensity", intensity)
+      .eq("intensity", cacheIntensity)
       .gt("expires_at", new Date().toISOString())
       .single();
 
@@ -178,7 +180,6 @@ async function handleStreamingAnnotation(
         content_hash,
         authToken,
       );
-      // Send all cached annotations at once
       for (const ann of merged.annotations) {
         res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
       }
@@ -189,11 +190,14 @@ async function handleStreamingAnnotation(
       return;
     }
 
-    // Stream from LLM — single call for the whole article
-    const profile = prompts.intensity_profiles[intensity as Intensity];
+    // Stream from LLM
     const allAnnotations: Annotation[] = [];
 
-    const stream = generateAnnotationsStream(text, intensity, profile);
+    const stream = generateAnnotationsStream(
+      text,
+      mode as AnnotationMode,
+      personality as DepthPersonality | undefined,
+    );
 
     for await (const annotation of stream) {
       const fixed = fixSingleAnnotation(annotation, text);
@@ -211,7 +215,7 @@ async function handleStreamingAnnotation(
       {
         content_hash,
         url,
-        intensity,
+        intensity: cacheIntensity,
         annotations: allAnnotations,
         model_version: currentModel,
         prompt_version: currentPromptVersion,
@@ -227,7 +231,6 @@ async function handleStreamingAnnotation(
       });
     }
 
-    // Send final event with feedback
     const merged = await mergeAnnotationsAndFeedback(
       allAnnotations,
       url,

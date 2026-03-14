@@ -1,13 +1,40 @@
-// ─── Annotation Types (LLM Output Contract) ───
+// ─── Annotation Modes ───
 
-export type AnnotationType =
-  | 'highlight'
-  | 'recall'
-  | 'provoking_question'
-  | 'insight'
+export type AnnotationMode = 'overview' | 'depth';
+export type DepthPersonality = 'terry' | 'jerry' | 'gary';
+
+// ─── Overview Labels ───
+
+export type OverviewLabel =
+  | 'core_claim'
+  | 'evidence'
+  | 'assumption'
+  | 'consequence'
+  | 'background'
+  | 'transition'
   | 'caveat'
-  | 'vocabulary'
-  | 'user_written';
+  | 'open_question';
+
+// ─── Depth Types ───
+
+export type DepthType =
+  | 'assumption'
+  | 'caveat'
+  | 'counterargument'
+  | 'alternative'
+  | 'fallacy'
+  | 'criteria'
+  | 'perspective'
+  | 'consequence'
+  | 'insight'
+  | 'recall'
+  | 'study'
+  | 'translation'
+  | 'vocabulary';
+
+// ─── Unified Annotation Type ───
+
+export type AnnotationType = OverviewLabel | DepthType | 'user_written';
 
 export type TextQuoteSelector = {
   type: 'TextQuoteSelector';
@@ -26,6 +53,7 @@ export type AnnotationContent = {
 
 export type Annotation = {
   id: string;
+  mode: AnnotationMode;
   type: AnnotationType;
   anchor: TextQuoteSelector;
   content: AnnotationContent;
@@ -49,10 +77,6 @@ export type AnnotationFeedback = {
   reply_text: string | null;
   created_at: string;
 };
-
-// ─── Intensity ───
-
-export type Intensity = 'light' | 'default' | 'heavy';
 
 // ─── Annotation Style ───
 
@@ -94,7 +118,8 @@ export type UserProfile = {
 
 export type UserPreferences = {
   enabled?: boolean;
-  intensity?: Intensity;
+  annotation_mode?: AnnotationMode;
+  depth_personality?: DepthPersonality;
   visible_types?: AnnotationType[];
   enabled_sites?: string[];
   annotation_font?: AnnotationFont;
@@ -107,7 +132,8 @@ export type AnnotateRequest = {
   url: string;
   content_hash: string;
   text: string;
-  intensity: Intensity;
+  mode: AnnotationMode;
+  personality?: DepthPersonality;
   word_count: number;
 };
 
@@ -129,7 +155,8 @@ export type ExtensionMessage =
         regionId: string;
         contentHash: string;
         text: string;
-        intensity: Intensity;
+        mode: AnnotationMode;
+        personality?: DepthPersonality;
         wordCount: number;
       };
     }
@@ -162,7 +189,8 @@ export type ExtensionMessage =
       action: 'settingsUpdated';
       payload: {
         enabled: boolean;
-        intensity: Intensity;
+        annotationMode: AnnotationMode;
+        depthPersonality: DepthPersonality;
         visibleTypes: AnnotationType[];
         annotationFont?: AnnotationFont;
         annotationFontSize?: AnnotationFontSize;
