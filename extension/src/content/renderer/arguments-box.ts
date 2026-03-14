@@ -106,6 +106,18 @@ let footerTextEl: HTMLSpanElement | null = null;
 let sessionSiteEnabled = false; // set to true when user runs once or always-enables this session
 let localAuthState: boolean | null = null; // cached auth state — avoids re-querying background on every toggle
 
+// ── Button drag state ──
+const BTN_DEFAULT_RIGHT = 20;
+const BTN_DEFAULT_BOTTOM = 20;
+let btnDragging = false;
+let btnDragDelta = 0;
+let btnDragStartX = 0;
+let btnDragStartY = 0;
+let btnCurrentRight = BTN_DEFAULT_RIGHT;
+let btnCurrentBottom = BTN_DEFAULT_BOTTOM;
+let btnDragMoveHandler: ((e: MouseEvent) => void) | null = null;
+let btnDragUpHandler: (() => void) | null = null;
+
 // ─── Public API ───
 
 export function initArgumentsBox(): void {
@@ -144,14 +156,61 @@ export function initArgumentsBox(): void {
   containerEl = document.createElement("div");
   containerEl.className = "args-container";
   containerEl.addEventListener("click", () => {
-    if (blocked) return; // blocked overlay is always expanded
+    if (blocked) return;
     if (!expanded) {
+      if (Math.abs(btnDragDelta) > 4) return; // suppress click after drag
+      // Reset to default position before opening
+      btnCurrentRight = BTN_DEFAULT_RIGHT;
+      btnCurrentBottom = BTN_DEFAULT_BOTTOM;
+      if (outerWrapperEl) {
+        outerWrapperEl.style.right = `${BTN_DEFAULT_RIGHT}px`;
+        outerWrapperEl.style.bottom = `${BTN_DEFAULT_BOTTOM}px`;
+      }
       if (dimmed) {
         toggleDimmedPanel();
       } else {
         toggle();
       }
     }
+  });
+
+  // ── Button drag-to-reposition (collapsed only) ──
+  containerEl.addEventListener("mousedown", (e) => {
+    if (expanded) return;
+    btnDragging = true;
+    btnDragDelta = 0;
+    // Origin: fixed for total-distance check (never updated during drag)
+    const originX = e.clientX;
+    const originY = e.clientY;
+    // Prev: updated each frame for incremental position movement
+    btnDragStartX = e.clientX;
+    btnDragStartY = e.clientY;
+
+    btnDragMoveHandler = (ev: MouseEvent) => {
+      if (!btnDragging || !outerWrapperEl) return;
+      // Total distance from mousedown origin — used to distinguish click vs drag
+      const totalDx = ev.clientX - originX;
+      const totalDy = ev.clientY - originY;
+      btnDragDelta = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
+      // Incremental movement for smooth repositioning
+      const dx = ev.clientX - btnDragStartX;
+      const dy = ev.clientY - btnDragStartY;
+      btnCurrentRight -= dx;
+      btnCurrentBottom -= dy;
+      outerWrapperEl.style.right = `${btnCurrentRight}px`;
+      outerWrapperEl.style.bottom = `${btnCurrentBottom}px`;
+      btnDragStartX = ev.clientX;
+      btnDragStartY = ev.clientY;
+    };
+
+    btnDragUpHandler = () => {
+      btnDragging = false;
+      document.removeEventListener("mousemove", btnDragMoveHandler!);
+      document.removeEventListener("mouseup", btnDragUpHandler!);
+    };
+
+    document.addEventListener("mousemove", btnDragMoveHandler);
+    document.addEventListener("mouseup", btnDragUpHandler);
   });
 
   // Button face (Terry.png, visible when collapsed)
@@ -1879,6 +1938,7 @@ const ARGUMENTS_BOX_CSS = `
     pointer-events: none;
     background: #fff;
     border-radius: inherit;
+    cursor: grab;
   }
 
   .args-container.expanded .args-button-face {
