@@ -47,11 +47,11 @@ export const CACHE_TTL_DAYS = 30;
 // ─── Overview Annotation Colors & Labels ───
 
 export const OVERVIEW_COLORS: Record<OverviewLabel, string> = {
-  core_claim: "#4A90D9",
-  evidence: "#7B61FF",
+  core_claim: "#F5C842",
+  evidence: "#F5C842",
   outcome: "#F5C842",
-  background: "#8E8E93",
-  transition: "#A1927B",
+  background: "#F5C842",
+  transition: "#F5C842",
 };
 
 export const OVERVIEW_LABELS: Record<OverviewLabel, string> = {
@@ -65,18 +65,20 @@ export const OVERVIEW_LABELS: Record<OverviewLabel, string> = {
 // ─── Depth Annotation Colors & Labels ───
 
 export const DEPTH_COLORS: Record<DepthType, string> = {
+  // Critical — red
   caveat: "#F5574C",
-  counterargument: "#D94A4A",
-  alternative: "#9B59B6",
-  fallacy: "#E74C3C",
-  criteria: "#F39C12",
-  perspective: "#3498DB",
-  consequence: "#50B87A",
-  insight: "#2ECC71",
-  recall: "#243C61",
-  study: "#1ABC9C",
-  translation: "#8E44AD",
-  vocabulary: "#243C61",
+  counterargument: "#F5574C",
+  alternative: "#F5574C",
+  fallacy: "#F5574C",
+  criteria: "#F5574C",
+  perspective: "#F5574C",
+  consequence: "#F5574C",
+  // Enrichment — green
+  insight: "#50B87A",
+  recall: "#50B87A",
+  study: "#50B87A",
+  translation: "#50B87A",
+  vocabulary: "#50B87A",
 };
 
 export const DEPTH_LABELS: Record<DepthType, string> = {

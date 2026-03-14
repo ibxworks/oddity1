@@ -267,7 +267,9 @@ async function init(): Promise<void> {
 
   // Restore mode and personality from stored preferences
   if (prefs?.annotation_mode) currentMode = prefs.annotation_mode;
-  if (prefs?.depth_personality) currentPersonality = prefs.depth_personality;
+  if (prefs?.depth_personality) {
+    currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
+  }
   visibleTypes = [
     ...(currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
     "user_written",
