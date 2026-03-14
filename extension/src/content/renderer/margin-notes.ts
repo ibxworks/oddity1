@@ -59,7 +59,8 @@ let userName: string | null = null;
 const NOTE_EXPANDED_WIDTH = 220;
 const NOTE_GAP = 10;
 const MARGIN_PADDING = 16;
-const MIN_MARGIN_WIDTH = 120;
+const NOTE_MIN_WIDTH = NOTE_EXPANDED_WIDTH / 2;
+const MIN_MARGIN_WIDTH = NOTE_MIN_WIDTH;
 
 const FONT_MAP: Record<AnnotationFont, string> = {
   default: "system-ui, -apple-system, 'Segoe UI', sans-serif",
@@ -149,28 +150,17 @@ export function addMarginNote(
   // so multi-response chat pages position correctly per response.
   const noteRegion = regionEl;
 
-  // Determine side using the content column bounds
+  // Always place notes on the left margin
   const bounds = getContentBounds(noteRegion, range);
   const leftMarginWidth = bounds.left - MARGIN_PADDING;
-  const rightMarginWidth =
-    window.innerWidth - bounds.right - MARGIN_PADDING;
 
-  let side: "left" | "right";
-  const preferLeft = noteIndex % 2 === 0;
-
-  if (preferLeft && leftMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = "left";
-  } else if (!preferLeft && rightMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = "right";
-  } else if (leftMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = "left";
-  } else if (rightMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = "right";
-  } else {
-    // Both margins too narrow — skip this note
+  if (leftMarginWidth < MIN_MARGIN_WIDTH) {
+    // Left margin too narrow — skip this note
     noteIndex++;
     return;
   }
+
+  const side: "left" | "right" = "left";
 
   noteIndex++;
 
@@ -946,15 +936,10 @@ function getContentBounds(
 }
 
 function resolveOverlaps(): void {
-  const leftNotes = notes.filter(
-    (n) => n.side === "left" && n.element.style.display !== "none",
+  const visibleNotes = notes.filter(
+    (n) => n.element.style.display !== "none",
   );
-  const rightNotes = notes.filter(
-    (n) => n.side === "right" && n.element.style.display !== "none",
-  );
-
-  resolveOverlapsForSide(leftNotes);
-  resolveOverlapsForSide(rightNotes);
+  resolveOverlapsForSide(visibleNotes);
 }
 
 function resolveOverlapsForSide(sideNotes: MarginNote[]): void {
@@ -986,9 +971,10 @@ function applyPositions(): void {
     note.element.style.right = "auto";
 
     if (note.side === "left") {
-      const noteWidth = note.element.offsetWidth || NOTE_EXPANDED_WIDTH;
-      const rightEdge = contentLeft - MARGIN_PADDING;
-      note.element.style.left = `${rightEdge - noteWidth}px`;
+      const availableWidth = contentLeft - MARGIN_PADDING;
+      const noteWidth = Math.min(NOTE_EXPANDED_WIDTH, Math.max(NOTE_MIN_WIDTH, availableWidth));
+      note.element.style.width = `${noteWidth}px`;
+      note.element.style.left = `${availableWidth - noteWidth}px`;
     } else {
       note.element.style.left = `${contentRight + MARGIN_PADDING}px`;
     }
