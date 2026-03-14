@@ -1820,7 +1820,8 @@ const ARGUMENTS_BOX_CSS = `
     width: var(--panel-width, 300px);
     height: calc(100vh - 90px);
     border-radius: 16px;
-    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
+    box-shadow: none;
+    border: 2px solid #E7E7E7;
     cursor: default;
     background: transparent;
     backdrop-filter: none;

@@ -979,19 +979,28 @@ function resolveOverlapsForSide(sideNotes: MarginNote[]): void {
 }
 
 function applyPositions(): void {
+  // Compute a single shared contentLeft for all left-side notes so they
+  // all align on the same leading edge with no stagger.
+  const leftNotes = notes.filter((n) => n.side === "left");
+  let sharedContentLeft = Infinity;
+  for (const note of leftNotes) {
+    const bounds = getContentBounds(note.region, note.range);
+    const cl = bounds.left + window.scrollX;
+    if (cl < sharedContentLeft) sharedContentLeft = cl;
+  }
+  if (!isFinite(sharedContentLeft)) sharedContentLeft = 0;
+
   for (const note of notes) {
     const bounds = getContentBounds(note.region, note.range);
     const contentRight = bounds.right + window.scrollX;
 
-    // Always use `left` positioning — `right` depends on the containing
-    // block width which varies across pages and changes on scroll/resize.
     note.element.style.right = "auto";
 
     if (note.side === "left") {
-      const regionLeft = note.region.getBoundingClientRect().left + window.scrollX;
-      const fixedLeft = regionLeft - MARGIN_PADDING - NOTE_EXPANDED_WIDTH;
-      note.element.style.width = `${NOTE_EXPANDED_WIDTH}px`;
-      note.element.style.left = `${fixedLeft}px`;
+      const availableWidth = sharedContentLeft - MARGIN_PADDING - 8;
+      const noteWidth = Math.min(NOTE_EXPANDED_WIDTH, Math.max(100, availableWidth));
+      note.element.style.width = `${noteWidth}px`;
+      note.element.style.left = `${Math.max(8, sharedContentLeft - MARGIN_PADDING - noteWidth)}px`;
     } else {
       note.element.style.left = `${contentRight + MARGIN_PADDING}px`;
     }
