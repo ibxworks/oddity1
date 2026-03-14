@@ -43,6 +43,7 @@ type ArgumentItem = {
   feedbackId?: string;
   annotationId?: string;
   annotation?: Annotation; // Full annotation object for manual type
+  contentHash?: string; // region content hash for feedback API calls
 };
 
 // ─── State ───
@@ -59,6 +60,8 @@ let panelToggleLabelEl: HTMLSpanElement | null = null;
 let expanded = false;
 let dimmed = false;
 let blocked = false;
+let extensionEnabled = true;
+let boxVisible = true;
 let expandedCardId: string | null = null;
 
 // Drag-to-scroll state
@@ -265,7 +268,25 @@ export function initArgumentsBox(): void {
   addBtn.className = "args-header-icon-btn";
   addBtn.title = "Add";
   addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><line x1="7.5" y1="2" x2="7.5" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="2" y1="7.5" x2="13" y2="7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
-  addBtn.addEventListener("click", (e) => e.stopPropagation());
+  // ── Plus-button tooltip ──
+  const addTooltip = document.createElement("div");
+  addTooltip.className = "add-tooltip";
+  addTooltip.innerHTML = `
+    <span class="add-tooltip-title">Add your thoughts</span>
+    <span class="add-tooltip-desc">Highlight text on the page, then click <b>+</b> to attach your note.</span>
+  `;
+  addBtn.style.position = "relative";
+  addBtn.appendChild(addTooltip);
+
+  addBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    addTooltip.classList.toggle("visible");
+  });
+
+  // Close tooltip when clicking outside
+  document.addEventListener("click", () => {
+    addTooltip.classList.remove("visible");
+  });
 
   const copyIconBtn = document.createElement("button");
   copyIconBtn.className = "args-header-icon-btn";
@@ -507,7 +528,9 @@ export function initArgumentsBox(): void {
   // On init: set auth/site state without requiring user interaction
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
     if (blocked) return; // blocked domains skip auth/whitelist UI
+    localAuthState = result?.authenticated ?? false;
     if (!result?.authenticated) {
+      updateModeToggleVisibility();
       toggle();
       showDashboard();
       const stored = await chrome.storage.local.get("hadAccount");
@@ -521,7 +544,7 @@ export function initArgumentsBox(): void {
       if (!siteEnabled) {
         dimmed = true;
         containerEl?.classList.add("oddity-not-enabled");
-        if (modeToggleHostEl) modeToggleHostEl.style.display = "none";
+        updateModeToggleVisibility();
       }
     }
   }).catch(() => {});
@@ -559,27 +582,36 @@ export function addLiveFeedback(
   renderList();
 }
 
+/** Mode toggle should only show when the user is signed in, the extension is enabled, and the site is not dimmed. */
+function updateModeToggleVisibility(): void {
+  if (!modeToggleHostEl) return;
+  const show = boxVisible && extensionEnabled && !dimmed && localAuthState === true;
+  modeToggleHostEl.style.display = show ? "" : "none";
+}
+
 export function setArgumentsBoxVisible(visible: boolean): void {
   if (!hostEl) return;
+  boxVisible = visible;
   hostEl.style.display = visible ? "" : "none";
-  if (modeToggleHostEl) modeToggleHostEl.style.display = (visible && !dimmed) ? "" : "none";
+  updateModeToggleVisibility();
 }
 
 export function setArgumentsBoxEnabled(enabled: boolean): void {
   if (!containerEl) return;
+  extensionEnabled = enabled;
   containerEl.classList.toggle("oddity-enabled", enabled);
   if (panelToggleInput) panelToggleInput.checked = enabled;
   if (panelToggleLabelEl)
     panelToggleLabelEl.textContent = enabled ? "On" : "Off";
   if (dashToggleInput) dashToggleInput.checked = enabled;
   if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
-  if (modeToggleHostEl) modeToggleHostEl.style.display = enabled ? "" : "none";
+  updateModeToggleVisibility();
 }
 
 export function setArgumentsBoxDimmed(isDimmed: boolean): void {
   dimmed = isDimmed;
   containerEl?.classList.toggle("oddity-not-enabled", isDimmed);
-  if (modeToggleHostEl) modeToggleHostEl.style.display = isDimmed ? "none" : "";
+  updateModeToggleVisibility();
 }
 
 export function setArgumentsBoxBlocked(isBlocked: boolean): void {
@@ -620,8 +652,8 @@ export function handleRemoteSignOut(): void {
     notEnabledPanelEl = null;
     dimmed = false;
     containerEl?.classList.remove("oddity-not-enabled");
-    if (modeToggleHostEl) modeToggleHostEl.style.display = "";
   }
+  updateModeToggleVisibility();
   showDashboard();
   showAuthView("signin");
 }
@@ -664,7 +696,7 @@ export async function handleRemoteSignIn(user: {
     // Collapse to button with red stroke — don't auto-expand the "not enabled" panel
     dimmed = true;
     containerEl?.classList.add("oddity-not-enabled");
-    if (modeToggleHostEl) modeToggleHostEl.style.display = "none";
+    updateModeToggleVisibility();
     if (expanded) {
       expanded = false;
       containerEl?.classList.remove("expanded", "dashboard");
@@ -674,6 +706,8 @@ export async function handleRemoteSignIn(user: {
         containerEl.style.width = "";
       }
     }
+  } else {
+    updateModeToggleVisibility();
   }
   // Load prefs (density, font, toggle state) without re-querying auth
   loadDashboardPrefs().catch(() => {});
@@ -812,10 +846,13 @@ function showNotEnabledOverlay(): void {
   alwaysEnableBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     const domain = window.location.hostname.replace(/^www\./, "");
+    // Await addEnabledSite BEFORE enableExtension to avoid a race condition
+    // where enableExtension's read-modify-write on preferences overwrites
+    // the enabled_sites update from the background script.
     chrome.runtime
       .sendMessage({ action: "addEnabledSite", payload: { domain } })
-      .catch(() => {});
-    enableExtension();
+      .then(() => enableExtension())
+      .catch(() => enableExtension());
     sessionSiteEnabled = true;
     removeOverlay();
     manualRunCb?.();
@@ -1304,6 +1341,7 @@ function buildDashboardFace(): HTMLDivElement {
     if (dashSignInPasswordEl) dashSignInPasswordEl.value = "";
     if (dashSignInNameEl) dashSignInNameEl.value = "";
     localAuthState = false;
+    updateModeToggleVisibility();
     showAuthView("signin");
     signOutCb?.();
     // Best-effort backend sign-out
@@ -1543,6 +1581,9 @@ function buildDashboardFace(): HTMLDivElement {
       } else {
         await loadDashboardData();
       }
+      updateModeToggleVisibility();
+      // Notify index.ts so it can start the annotation pipeline on this tab
+      document.dispatchEvent(new CustomEvent("oddity:localSignIn"));
     } catch (err) {
       dashSignInStatusEl!.textContent = String(
         err instanceof Error ? err.message : "Something went wrong",
@@ -1675,7 +1716,15 @@ function buildItems(
 ): ArgumentItem[] {
   const items: ArgumentItem[] = [];
 
-  for (const [, anns] of annotations) {
+  // Build annotation ID → content hash lookup
+  const annHashMap = new Map<string, string>();
+  for (const [hash, anns] of annotations) {
+    for (const ann of anns) {
+      annHashMap.set(ann.id, hash);
+    }
+  }
+
+  for (const [hash, anns] of annotations) {
     for (const ann of anns) {
       if (ann.id.startsWith("manual-")) {
         items.push({
@@ -1686,13 +1735,15 @@ function buildItems(
           type: "manual",
           annotationId: ann.id,
           annotation: ann,
+          contentHash: hash,
         });
       }
     }
   }
 
-  for (const [, fbs] of feedback) {
+  for (const [hash, fbs] of feedback) {
     for (const fb of fbs) {
+      const fbHash = annHashMap.get(fb.annotation_id) ?? hash;
       if (fb.feedback_type === "thumbs_up") {
         items.push({
           icon: "✓",
@@ -1703,6 +1754,7 @@ function buildItems(
           type: "reaction",
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
+          contentHash: fbHash,
         });
       } else if (fb.feedback_type === "thumbs_down") {
         items.push({
@@ -1714,6 +1766,7 @@ function buildItems(
           type: "reaction",
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
+          contentHash: fbHash,
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
@@ -1726,6 +1779,7 @@ function buildItems(
           replyHeader: excerpt,
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
+          contentHash: fbHash,
         });
       }
     }
@@ -1907,16 +1961,12 @@ function renderList(): void {
 
       // Send to background
       if (item.annotationId) {
-        const hashEl = document.querySelector(
-          "[data-oddity-hash]",
-        ) as HTMLElement | null;
-        const contentHash = hashEl?.dataset.oddityHash ?? "";
         chrome.runtime
           .sendMessage({
             action: "saveFeedback",
             payload: {
               annotationId: item.annotationId,
-              contentHash,
+              contentHash: item.contentHash ?? "",
               url: window.location.href,
               feedbackType: "reply",
               replyText: text,
@@ -2012,9 +2062,6 @@ function renderList(): void {
             ...item.annotation,
             content: { ...item.annotation.content, note: newText },
           };
-          const hashEl = document.querySelector(
-            "[data-oddity-hash]",
-          ) as HTMLElement | null;
           chrome.runtime
             .sendMessage({
               action: "updateAnnotation",
@@ -2022,7 +2069,7 @@ function renderList(): void {
                 annotationId: item.annotationId,
                 annotation: updatedAnnotation,
                 url: window.location.href,
-                contentHash: hashEl?.dataset.oddityHash ?? "",
+                contentHash: item.contentHash ?? "",
                 pageTitle: document.title,
               },
             })
@@ -2075,16 +2122,13 @@ function renderList(): void {
           }),
         );
       } else if (item.annotationId) {
-        const hashEl = document.querySelector(
-          "[data-oddity-hash]",
-        ) as HTMLElement | null;
         chrome.runtime
           .sendMessage({
             action: "deleteAnnotation",
             payload: {
               annotationId: item.annotationId,
               url: window.location.href,
-              contentHash: hashEl?.dataset.oddityHash ?? "",
+              contentHash: item.contentHash ?? "",
             },
           })
           .catch(() => {});
@@ -2160,8 +2204,29 @@ function renderList(): void {
 
 function handleCopy(btn: HTMLButtonElement): void {
   const allItems = [...canonicalItems, ...liveItems];
-  const text = allItems.map((i) => `${i.icon} ${i.text}`).join("\n");
-  navigator.clipboard.writeText(text).then(() => {
+
+  function getLabel(item: ArgumentItem): string {
+    if (item.type === "reply") {
+      return item.replyHeader ? `Reply to \u201c${item.replyHeader}\u201d` : "Reply";
+    }
+    const src = item.quote || item.text;
+    const MAX = 60;
+    return src.length > MAX ? `\u201c${src.slice(0, MAX)}\u2026\u201d` : `\u201c${src}\u201d`;
+  }
+
+  const plainText = allItems
+    .map((i) => `${getLabel(i)}\n${i.text}`)
+    .join("\n\n");
+
+  const html = allItems
+    .map((i) => `<b>${getLabel(i)}</b><br>${i.text}`)
+    .join("<br><br>");
+
+  const blob = new Blob([html], { type: "text/html" });
+  const textBlob = new Blob([plainText], { type: "text/plain" });
+  navigator.clipboard.write([
+    new ClipboardItem({ "text/html": blob, "text/plain": textBlob }),
+  ]).then(() => {
     btn.classList.add("copied");
     setTimeout(() => btn.classList.remove("copied"), 1500);
   });
@@ -2244,16 +2309,6 @@ function initModeToggleOverlay(): void {
   toggleEl.appendChild(modeToggleOverviewBtn);
   toggleEl.appendChild(modeToggleDepthBtn);
   modeToggleShadowRoot.appendChild(toggleEl);
-
-  // Restore stored mode
-  chrome.storage.local.get("preferences", (result) => {
-    const prefs = result["preferences"] as Record<string, unknown> | undefined;
-    if ((prefs?.annotation_mode as string | undefined) === "depth") {
-      modeToggleOverviewBtn?.classList.remove("mode-active");
-      modeToggleDepthBtn?.classList.add("mode-active");
-      toggleEl.dataset.active = "depth";
-    }
-  });
 
   // Position — update immediately, on layout changes, and on resize
   updateModeTogglePosition();
@@ -2591,6 +2646,48 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-header-icon-btn.copied {
     color: #4ade80;
+  }
+
+  /* ── Plus-button tooltip ── */
+  .add-tooltip {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 200px;
+    padding: 10px 12px;
+    background: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .add-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .add-tooltip-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .add-tooltip-desc {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.4;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .add-tooltip-desc b {
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 600;
   }
 
   /* ── Toggle bar ── */
@@ -3166,6 +3263,21 @@ const ARGUMENTS_BOX_CSS = `
   :host([data-theme="light"]) .args-header-icon-btn:hover {
     background: rgba(0, 0, 0, 0.07);
     color: #1a1a1a;
+  }
+
+  :host([data-theme="light"]) .add-tooltip {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  }
+  :host([data-theme="light"]) .add-tooltip-title {
+    color: #1a1a1a;
+  }
+  :host([data-theme="light"]) .add-tooltip-desc {
+    color: rgba(0, 0, 0, 0.5);
+  }
+  :host([data-theme="light"]) .add-tooltip-desc b {
+    color: rgba(0, 0, 0, 0.75);
   }
 
   :host([data-theme="light"]) .args-enabled-label {
