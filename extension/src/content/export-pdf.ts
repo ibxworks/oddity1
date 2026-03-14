@@ -14,8 +14,8 @@ function buildMarkStyle(type: AnnotationType): string {
 }
 
 const ALL_TYPES: AnnotationType[] = [
-  'core_claim', 'evidence', 'consequence', 'background', 'transition',
-  'caveat', 'counterargument', 'alternative', 'fallacy', 'criteria', 'perspective',
+  'core_claim', 'evidence', 'outcome', 'background', 'transition',
+  'caveat', 'counterargument', 'alternative', 'fallacy', 'criteria', 'perspective', 'consequence',
   'insight', 'recall', 'study', 'translation', 'vocabulary',
   'user_written',
 ];

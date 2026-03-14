@@ -20,7 +20,7 @@ const AllAnnotationTypes = z.enum([
   // Overview labels
   'core_claim',
   'evidence',
-  'consequence',
+  'outcome',
   'background',
   'transition',
   // Depth types
@@ -30,6 +30,7 @@ const AllAnnotationTypes = z.enum([
   'fallacy',
   'criteria',
   'perspective',
+  'consequence',
   'insight',
   'recall',
   'study',
@@ -37,6 +38,9 @@ const AllAnnotationTypes = z.enum([
   'vocabulary',
   // User-written
   'user_written',
+  // Legacy (backward compat for cached data)
+  'assumption',
+  'open_question',
 ]);
 
 const AnnotationSchema = z.object({
