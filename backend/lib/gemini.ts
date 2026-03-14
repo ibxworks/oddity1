@@ -15,8 +15,9 @@ const modelName = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
 const promptsConfig = JSON.parse(
   readFileSync(resolve(__dirname, "../config/prompts.json"), "utf-8"),
 );
-const overviewPrompt: string = promptsConfig.overview_prompt ?? "";
+const overviewPromptTemplate: string = promptsConfig.overview_prompt_template ?? promptsConfig.overview_prompt ?? "";
 const depthPromptTemplate: string = promptsConfig.depth_prompt_template ?? "";
+const overviewPersonalities: Record<string, string> = promptsConfig.overview_personalities ?? {};
 const personalities: Record<string, string> = promptsConfig.personalities ?? {};
 
 /**
@@ -24,7 +25,8 @@ const personalities: Record<string, string> = promptsConfig.personalities ?? {};
  */
 function buildSystemPrompt(mode: AnnotationMode, personality?: DepthPersonality): string {
   if (mode === "overview") {
-    return overviewPrompt;
+    const personalityText = overviewPersonalities[personality ?? "terry"] ?? overviewPersonalities.terry ?? "";
+    return overviewPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
   }
   // Depth mode: substitute personality into template
   const personalityText = personalities[personality ?? "terry"] ?? personalities.terry ?? "";

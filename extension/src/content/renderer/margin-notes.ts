@@ -56,6 +56,7 @@ let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
 let userName: string | null = null;
 let sharedContentRight = 0;
+let sharedContentLeftViewport = 0;
 
 const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
@@ -371,6 +372,10 @@ export function destroyMarginNotes(): void {
 
 export function getMarginNotesContentRight(): number {
   return sharedContentRight;
+}
+
+export function getMarginNotesContentLeft(): number {
+  return sharedContentLeftViewport;
 }
 
 export function updateMarginNotesStyle(
@@ -995,6 +1000,7 @@ function applyPositions(): void {
     if (cl < sharedContentLeft) sharedContentLeft = cl;
   }
   if (!isFinite(sharedContentLeft)) sharedContentLeft = 0;
+  sharedContentLeftViewport = sharedContentLeft - window.scrollX;
 
   for (const note of notes) {
     const bounds = getContentBounds(note.region, note.range);
@@ -1014,6 +1020,7 @@ function applyPositions(): void {
     note.element.style.top = `${note.topPx}px`;
   }
   sharedContentRight = maxContentRight;
+  document.dispatchEvent(new CustomEvent("oddity:layoutUpdated"));
 }
 
 // ─── Scroll / Resize Tracking ───

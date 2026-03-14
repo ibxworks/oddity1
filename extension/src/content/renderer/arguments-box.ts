@@ -5,7 +5,7 @@ import {
   offThemeChange,
   onThemeChange,
 } from "./theme-detector.js";
-import { getMarginNotesContentRight } from "./margin-notes.js";
+import { getMarginNotesContentLeft, getMarginNotesContentRight } from "./margin-notes.js";
 
 // ─── Font / Size maps (mirrors margin-notes) ───
 
@@ -117,6 +117,17 @@ let btnCurrentRight = BTN_DEFAULT_RIGHT;
 let btnCurrentBottom = BTN_DEFAULT_BOTTOM;
 let btnDragMoveHandler: ((e: MouseEvent) => void) | null = null;
 let btnDragUpHandler: (() => void) | null = null;
+
+// ─── Mode Toggle Overlay (fixed, left margin) ───
+
+let modeToggleHostEl: HTMLElement | null = null;
+let modeToggleShadowRoot: ShadowRoot | null = null;
+let modeToggleOverviewBtn: HTMLButtonElement | null = null;
+let modeToggleDepthBtn: HTMLButtonElement | null = null;
+let modeToggleResizeHandler: (() => void) | null = null;
+let modeToggleThemeHandler: ((mode: "light" | "dark") => void) | null = null;
+
+const TOGGLE_OVERLAY_WIDTH = 168; // px — approximate rendered width of the two buttons
 
 // ─── Public API ───
 
@@ -327,51 +338,6 @@ export function initArgumentsBox(): void {
   document.addEventListener("mousemove", listDragMoveHandler);
   document.addEventListener("mouseup", listDragUpHandler);
 
-  // ── Mode Toggle (Overview / Depth) ──
-  const modeToggle = document.createElement("div");
-  modeToggle.className = "args-mode-toggle";
-
-  const overviewBtn = document.createElement("button");
-  overviewBtn.className = "args-mode-btn args-mode-active";
-  overviewBtn.textContent = "Overview";
-  overviewBtn.dataset.mode = "overview";
-
-  const depthBtn = document.createElement("button");
-  depthBtn.className = "args-mode-btn";
-  depthBtn.textContent = "Depth";
-  depthBtn.dataset.mode = "depth";
-
-  function handleModeClick(e: MouseEvent): void {
-    e.stopPropagation();
-    const target = e.currentTarget as HTMLButtonElement;
-    const mode = target.dataset.mode as "overview" | "depth";
-
-    overviewBtn.classList.toggle("args-mode-active", mode === "overview");
-    depthBtn.classList.toggle("args-mode-active", mode === "depth");
-
-    // Dispatch mode change event to content script
-    document.dispatchEvent(new CustomEvent("oddity:modeChange", {
-      detail: { mode },
-    }));
-  }
-
-  overviewBtn.addEventListener("click", handleModeClick);
-  depthBtn.addEventListener("click", handleModeClick);
-
-  modeToggle.appendChild(overviewBtn);
-  modeToggle.appendChild(depthBtn);
-  panelFace.appendChild(modeToggle);
-
-  // Load stored mode to set initial toggle state
-  chrome.storage.local.get("preferences", (result) => {
-    const prefs = result["preferences"] as Record<string, unknown> | undefined;
-    const storedMode = prefs?.annotation_mode as string | undefined;
-    if (storedMode === "depth") {
-      overviewBtn.classList.remove("args-mode-active");
-      depthBtn.classList.add("args-mode-active");
-    }
-  });
-
   // ── Footer ──
   const footer = document.createElement("div");
   footer.className = "args-footer";
@@ -474,6 +440,8 @@ export function initArgumentsBox(): void {
 
   shadowRoot.appendChild(outerWrapperEl);
 
+  initModeToggleOverlay();
+
   // On init: set auth/site state without requiring user interaction
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
     if (blocked) return; // blocked domains skip auth/whitelist UI
@@ -519,6 +487,7 @@ export function addLiveFeedback(icon: string, text: string): void {
 export function setArgumentsBoxVisible(visible: boolean): void {
   if (!hostEl) return;
   hostEl.style.display = visible ? "" : "none";
+  if (modeToggleHostEl) modeToggleHostEl.style.display = visible ? "" : "none";
 }
 
 export function setArgumentsBoxEnabled(enabled: boolean): void {
@@ -613,6 +582,20 @@ export function destroyArgumentsBox(): void {
     offThemeChange(themeHandler);
     themeHandler = null;
   }
+  if (modeToggleResizeHandler) {
+    window.removeEventListener("resize", modeToggleResizeHandler);
+    modeToggleResizeHandler = null;
+  }
+  if (modeToggleThemeHandler) {
+    offThemeChange(modeToggleThemeHandler);
+    modeToggleThemeHandler = null;
+  }
+  document.removeEventListener("oddity:layoutUpdated", updateModeTogglePosition);
+  modeToggleHostEl?.remove();
+  modeToggleHostEl = null;
+  modeToggleShadowRoot = null;
+  modeToggleOverviewBtn = null;
+  modeToggleDepthBtn = null;
   if (listDragMoveHandler) {
     document.removeEventListener("mousemove", listDragMoveHandler);
     listDragMoveHandler = null;
@@ -1843,7 +1826,135 @@ function handleCopy(btn: HTMLButtonElement): void {
   });
 }
 
+// ─── Mode Toggle Overlay ───
+
+function updateModeTogglePosition(): void {
+  if (!modeToggleHostEl) return;
+  const contentLeft = getMarginNotesContentLeft() || (() => {
+    const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+    return hashEl ? hashEl.getBoundingClientRect().left : window.innerWidth * 0.3;
+  })();
+  const availableWidth = contentLeft - 16 - 8;
+  if (availableWidth < 80) {
+    modeToggleHostEl.style.visibility = "hidden";
+    return;
+  }
+  modeToggleHostEl.style.visibility = "";
+  const left = Math.max(8, contentLeft - 16 - TOGGLE_OVERLAY_WIDTH);
+  modeToggleHostEl.style.left = `${left}px`;
+}
+
+function initModeToggleOverlay(): void {
+  if (modeToggleHostEl) return;
+
+  modeToggleHostEl = document.createElement("div");
+  modeToggleHostEl.style.cssText = "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto; display: none;";
+  document.body.appendChild(modeToggleHostEl);
+
+  modeToggleShadowRoot = modeToggleHostEl.attachShadow({ mode: "closed" });
+
+  const style = document.createElement("style");
+  style.textContent = TOGGLE_OVERLAY_CSS;
+  modeToggleShadowRoot.appendChild(style);
+
+  // Theme
+  modeToggleHostEl.dataset.theme = getThemeMode();
+  modeToggleThemeHandler = (mode) => {
+    if (modeToggleHostEl) modeToggleHostEl.dataset.theme = mode;
+  };
+  onThemeChange(modeToggleThemeHandler);
+
+  const toggleEl = document.createElement("div");
+  toggleEl.className = "mode-toggle";
+
+  modeToggleOverviewBtn = document.createElement("button");
+  modeToggleOverviewBtn.className = "mode-btn mode-active";
+  modeToggleOverviewBtn.textContent = "Overview";
+  modeToggleOverviewBtn.dataset.mode = "overview";
+
+  modeToggleDepthBtn = document.createElement("button");
+  modeToggleDepthBtn.className = "mode-btn";
+  modeToggleDepthBtn.textContent = "Depth";
+  modeToggleDepthBtn.dataset.mode = "depth";
+
+  function handleModeClick(e: MouseEvent): void {
+    e.stopPropagation();
+    const target = e.currentTarget as HTMLButtonElement;
+    const mode = target.dataset.mode as "overview" | "depth";
+    modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
+    modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
+    document.dispatchEvent(new CustomEvent("oddity:modeChange", { detail: { mode } }));
+  }
+
+  modeToggleOverviewBtn.addEventListener("click", handleModeClick);
+  modeToggleDepthBtn.addEventListener("click", handleModeClick);
+
+  toggleEl.appendChild(modeToggleOverviewBtn);
+  toggleEl.appendChild(modeToggleDepthBtn);
+  modeToggleShadowRoot.appendChild(toggleEl);
+
+  // Restore stored mode
+  chrome.storage.local.get("preferences", (result) => {
+    const prefs = result["preferences"] as Record<string, unknown> | undefined;
+    if ((prefs?.annotation_mode as string | undefined) === "depth") {
+      modeToggleOverviewBtn?.classList.remove("mode-active");
+      modeToggleDepthBtn?.classList.add("mode-active");
+    }
+  });
+
+  // Position — update immediately, on layout changes, and on resize
+  updateModeTogglePosition();
+  document.addEventListener("oddity:layoutUpdated", updateModeTogglePosition);
+
+  modeToggleResizeHandler = () => updateModeTogglePosition();
+  window.addEventListener("resize", modeToggleResizeHandler, { passive: true });
+}
+
 // ─── CSS ───
+
+const TOGGLE_OVERLAY_CSS = `
+  :host { display: block; }
+  * { box-sizing: border-box; }
+
+  .mode-toggle {
+    display: flex;
+    gap: 0;
+  }
+
+  .mode-btn {
+    all: unset;
+    flex: 1;
+    padding: 7px 13px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+    color: #888;
+    background: transparent;
+    border: 1px solid #333;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+
+  .mode-btn:first-child { border-radius: 6px 0 0 6px; border-right: none; }
+  .mode-btn:last-child  { border-radius: 0 6px 6px 0; }
+
+  .mode-active {
+    background: #363636;
+    color: #fff;
+    border-color: #363636;
+  }
+
+  .mode-btn:hover:not(.mode-active) {
+    background: rgba(255, 255, 255, 0.05);
+    color: #ccc;
+  }
+
+  :host([data-theme="light"]) .mode-btn          { color: #999; border-color: #ddd; }
+  :host([data-theme="light"]) .mode-active       { background: #333; color: #fff; border-color: #333; }
+  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { background: #f5f5f5; color: #666; }
+`;
 
 const ARGUMENTS_BOX_CSS = `
   :host {

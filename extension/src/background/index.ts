@@ -11,7 +11,6 @@ import {
   deleteAnnotation as apiDeleteAnnotation,
   deleteFeedback as apiDeleteFeedback,
   updateFeedback as apiUpdateFeedback,
-  requestAnnotations,
   requestAnnotationsStreaming,
   saveAnnotation,
   saveFeedback as apiSaveFeedback,
@@ -63,8 +62,10 @@ chrome.runtime.onMessage.addListener(
     const handleAsync = async (): Promise<unknown> => {
       switch (message.action) {
         case "requestAnnotations": {
-          const { url, regionId, contentHash, text, mode, personality, wordCount } =
+          const { url, regionId, contentHash, text, mode: rawMode, personality, wordCount } =
             message.payload;
+          // Guard against stale content scripts (pre-mode-refactor) sending undefined mode
+          const mode = (rawMode === "overview" || rawMode === "depth") ? rawMode : "overview";
 
           // Proactive auth check — fail fast with badge if not signed in
           const session = await getSession();
@@ -78,9 +79,7 @@ chrome.runtime.onMessage.addListener(
           chrome.action.setBadgeText({ text: "" });
 
           // Build session cache key that includes mode + personality
-          const sessionCacheKey = mode === "depth"
-            ? `${mode}:${personality ?? "terry"}`
-            : mode;
+          const sessionCacheKey = `${mode}:${personality ?? "terry"}`;
 
           // ── Session cache: stale-while-revalidate for revisits ──
           const cached = await getFromSessionCache(contentHash, sessionCacheKey);

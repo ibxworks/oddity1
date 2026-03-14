@@ -8,17 +8,13 @@ export type DepthPersonality = 'terry' | 'jerry' | 'gary';
 export type OverviewLabel =
   | 'core_claim'
   | 'evidence'
-  | 'assumption'
   | 'consequence'
   | 'background'
-  | 'transition'
-  | 'caveat'
-  | 'open_question';
+  | 'transition';
 
 // ─── Depth Types ───
 
 export type DepthType =
-  | 'assumption'
   | 'caveat'
   | 'counterargument'
   | 'alternative'

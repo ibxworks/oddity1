@@ -61,7 +61,7 @@ router.post("/", async (req, res) => {
 
     // ── Layer 1: DB cache (Supabase) ──
     // Use mode+personality in cache lookup
-    const cacheIntensity = mode === "depth" ? `depth:${personality ?? "terry"}` : "overview";
+    const cacheIntensity = `${mode}:${personality ?? "terry"}`;
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
@@ -157,7 +157,7 @@ async function handleStreamingAnnotation(
 
   try {
     // Check DB cache first
-    const cacheIntensity = mode === "depth" ? `depth:${personality ?? "terry"}` : "overview";
+    const cacheIntensity = `${mode}:${personality ?? "terry"}`;
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")

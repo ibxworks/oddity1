@@ -91,7 +91,7 @@ export function filterAndFixAnnotations(
     );
   }
 
-  return results;
+  return deduplicateOverlapping(results, normalizedSource);
 }
 
 /**
@@ -170,6 +170,81 @@ function mapNormalizedOffset(original: string, normalizedOffset: number): number
   }
 
   return origIdx;
+}
+
+/**
+ * Remove annotations whose anchors overlap with a previously-kept annotation
+ * in the same whitespace-normalized source. Earlier start position wins.
+ * Annotations whose position cannot be located are passed through unchanged.
+ */
+function deduplicateOverlapping(
+  annotations: Annotation[],
+  normalizedSource: string,
+): Annotation[] {
+  type Positioned = { ann: Annotation; start: number; end: number };
+  const locatable: Positioned[] = [];
+  const unlocatable: Annotation[] = [];
+
+  for (const ann of annotations) {
+    const exact = normalizeWs(ann.anchor.exact);
+    const prefix = ann.anchor.prefix ? normalizeWs(ann.anchor.prefix) : '';
+    const suffix = ann.anchor.suffix ? normalizeWs(ann.anchor.suffix) : '';
+    const start = findAnchorPosition(normalizedSource, exact, prefix, suffix);
+    if (start === -1) {
+      unlocatable.push(ann);
+    } else {
+      locatable.push({ ann, start, end: start + exact.length });
+    }
+  }
+
+  locatable.sort((a, b) => a.start - b.start);
+
+  const kept: Positioned[] = [];
+  for (const item of locatable) {
+    const overlaps = kept.some((k) => item.start < k.end && item.end > k.start);
+    if (overlaps) {
+      console.log(
+        `[annotation-filter] Dropping overlapping annotation ${item.ann.id}: "${item.ann.anchor.exact.slice(0, 50)}"`,
+      );
+    } else {
+      kept.push(item);
+    }
+  }
+
+  return [...kept.map((k) => k.ann), ...unlocatable];
+}
+
+/**
+ * Find the start position of `exact` in `source`, using prefix/suffix context
+ * to pick the right occurrence when the phrase appears multiple times.
+ * Returns -1 if not found.
+ */
+function findAnchorPosition(
+  source: string,
+  exact: string,
+  prefix: string,
+  suffix: string,
+): number {
+  let searchFrom = 0;
+  while (true) {
+    const pos = source.indexOf(exact, searchFrom);
+    if (pos === -1) return -1;
+
+    if (prefix || suffix) {
+      const contextBefore = source.slice(Math.max(0, pos - prefix.length), pos);
+      const contextAfter = source.slice(pos + exact.length, pos + exact.length + suffix.length);
+      if (
+        (!prefix || contextBefore.endsWith(prefix)) &&
+        (!suffix || contextAfter.startsWith(suffix))
+      ) {
+        return pos;
+      }
+      searchFrom = pos + 1;
+      continue;
+    }
+
+    return pos;
+  }
 }
 
 /**

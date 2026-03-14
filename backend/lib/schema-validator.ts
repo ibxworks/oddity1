@@ -20,13 +20,11 @@ const AllAnnotationTypes = z.enum([
   // Overview labels
   'core_claim',
   'evidence',
-  'assumption',
   'consequence',
   'background',
   'transition',
-  'caveat',
-  'open_question',
   // Depth types
+  'caveat',
   'counterargument',
   'alternative',
   'fallacy',

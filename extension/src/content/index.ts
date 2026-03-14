@@ -577,7 +577,7 @@ async function handleStableRegion(
         contentHash,
         text: extracted.text,
         mode: currentMode,
-        personality: currentMode === "depth" ? currentPersonality : undefined,
+        personality: currentPersonality,
         wordCount: extracted.wordCount,
       },
     });
@@ -686,6 +686,37 @@ function attachAnchorHoverListeners(
   }
 }
 
+/**
+ * Remove annotations whose anchors overlap with an earlier annotation in the
+ * same render batch. Uses the root element's text content to find positions.
+ * Annotations whose exact string cannot be located are passed through unchanged.
+ */
+function deduplicateOverlappingAnchors(annotations: Annotation[], root: Element): Annotation[] {
+  const text = root.textContent ?? '';
+  type Positioned = { ann: Annotation; start: number; end: number };
+  const locatable: Positioned[] = [];
+  const unlocatable: Annotation[] = [];
+
+  for (const ann of annotations) {
+    const start = text.indexOf(ann.anchor.exact);
+    if (start === -1) {
+      unlocatable.push(ann);
+    } else {
+      locatable.push({ ann, start, end: start + ann.anchor.exact.length });
+    }
+  }
+
+  locatable.sort((a, b) => a.start - b.start);
+
+  const kept: Positioned[] = [];
+  for (const item of locatable) {
+    const overlaps = kept.some((k) => item.start < k.end && item.end > k.start);
+    if (!overlaps) kept.push(item);
+  }
+
+  return [...kept.map((k) => k.ann), ...unlocatable];
+}
+
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   const region =
     regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
@@ -704,6 +735,9 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
     return aIsBg - bIsBg;
   });
 
+  // Remove annotations whose anchors overlap with an earlier annotation
+  const nonOverlapping = deduplicateOverlappingAnchors(visible, root);
+
   // Invalidate text-node index once before the batch — ensures a clean index.
   // The index is reused across all annotations in this region (5–10× fewer TreeWalker traversals).
   // Later annotations may see slightly shifted positions due to prior injectAnchors DOM mutations,
@@ -712,7 +746,7 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
 
   // Single-pass: resolve + render one annotation at a time
   // This avoids stale ranges from prior DOM mutations (injectAnchors splits text nodes)
-  for (const annotation of visible) {
+  for (const annotation of nonOverlapping) {
     const range = resolveSelector(root, annotation.anchor);
     if (!range) {
       console.warn(
@@ -930,9 +964,9 @@ onMessage((message: ExtensionMessage) => {
         }
 
         renderAnnotation(annotation, stableRange);
-        const fb = currentFeedback.get(streamRegionId) ?? [];
+        const fb = currentFeedbackMap().get(streamRegionId) ?? [];
         const noteFeedback = fb.filter(
-          (f) => f.annotation_id === annotation.id,
+          (f: AnnotationFeedback) => f.annotation_id === annotation.id,
         );
         addMarginNote(
           annotation,
@@ -1030,15 +1064,21 @@ onMessage((message: ExtensionMessage) => {
       } else if (modeChanged) {
         // Mode changed: switch annotation display
         switchMode(newMode, newPersonality);
-      } else if (personalityChanged && currentMode === "depth") {
-        // Personality changed in depth mode: clear depth cache and re-generate
+      } else if (personalityChanged) {
+        // Personality changed: clear current mode's cache and re-generate
         currentPersonality = newPersonality;
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
-        depthAnnotations.clear();
-        depthFeedback.clear();
-        depthGenerated.clear();
+        if (currentMode === "depth") {
+          depthAnnotations.clear();
+          depthFeedback.clear();
+          depthGenerated.clear();
+        } else {
+          overviewAnnotations.clear();
+          overviewFeedback.clear();
+          overviewGenerated.clear();
+        }
         annotatedRegions.clear();
         pendingRegions.clear();
         streamedRegions.clear();

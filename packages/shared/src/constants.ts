@@ -33,7 +33,7 @@ export const EAGER_WORD_LIMIT = 6000;
 
 // ─── Rate Limits ───
 
-export const RATE_LIMIT_FREE = 50000;
+export const RATE_LIMIT_FREE = 50;
 export const RATE_LIMIT_PRO = 500;
 
 // ─── Request Limits ───
@@ -47,47 +47,41 @@ export const CACHE_TTL_DAYS = 30;
 // ─── Overview Annotation Colors & Labels ───
 
 export const OVERVIEW_COLORS: Record<OverviewLabel, string> = {
-  core_claim: "#4A90D9",
-  evidence: "#7B61FF",
-  assumption: "#E8913A",
-  consequence: "#50B87A",
-  background: "#8E8E93",
-  transition: "#A1927B",
-  caveat: "#F5574C",
-  open_question: "#E06B9E",
+  core_claim: "#E8C547",
+  evidence: "#E8C547",
+  consequence: "#E8C547",
+  background: "#E8C547",
+  transition: "#E8C547",
 };
 
 export const OVERVIEW_LABELS: Record<OverviewLabel, string> = {
   core_claim: "CORE CLAIM",
   evidence: "EVIDENCE",
-  assumption: "ASSUMPTION",
   consequence: "CONSEQUENCE",
   background: "BACKGROUND",
   transition: "TRANSITION",
-  caveat: "CAVEAT",
-  open_question: "OPEN QUESTION",
 };
 
 // ─── Depth Annotation Colors & Labels ───
 
 export const DEPTH_COLORS: Record<DepthType, string> = {
-  assumption: "#E8913A",
-  caveat: "#F5574C",
-  counterargument: "#D94A4A",
-  alternative: "#9B59B6",
-  fallacy: "#E74C3C",
-  criteria: "#F39C12",
-  perspective: "#3498DB",
-  consequence: "#50B87A",
-  insight: "#2ECC71",
-  recall: "#243C61",
-  study: "#1ABC9C",
-  translation: "#8E44AD",
-  vocabulary: "#243C61",
+  // CRITICAL
+  caveat: "#E05252",
+  counterargument: "#E05252",
+  alternative: "#E05252",
+  fallacy: "#E05252",
+  criteria: "#E05252",
+  perspective: "#E05252",
+  consequence: "#E05252",
+  // ENRICHMENT
+  insight: "#52B86E",
+  recall: "#52B86E",
+  study: "#52B86E",
+  translation: "#52B86E",
+  vocabulary: "#52B86E",
 };
 
 export const DEPTH_LABELS: Record<DepthType, string> = {
-  assumption: "ASSUMPTION",
   caveat: "CAVEAT",
   counterargument: "COUNTERARGUMENT",
   alternative: "ALTERNATIVE",
@@ -121,16 +115,12 @@ export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
 export const ALL_OVERVIEW_TYPES: OverviewLabel[] = [
   "core_claim",
   "evidence",
-  "assumption",
   "consequence",
   "background",
   "transition",
-  "caveat",
-  "open_question",
 ];
 
 export const ALL_DEPTH_TYPES: DepthType[] = [
-  "assumption",
   "caveat",
   "counterargument",
   "alternative",
