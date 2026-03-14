@@ -86,16 +86,15 @@ describe('validateAnnotations', () => {
   });
 
   it('accepts all valid annotation types', () => {
-    const overviewTypes = ['core_claim', 'evidence', 'consequence', 'background', 'transition'];
-    const depthTypes = [
-      'caveat', 'counterargument', 'alternative', 'fallacy', 'criteria', 'perspective',
+    const types = [
+      'core_claim', 'evidence', 'outcome', 'background', 'transition',
+      'caveat', 'counterargument', 'alternative', 'fallacy', 'criteria', 'perspective', 'consequence',
       'insight', 'recall', 'study', 'translation', 'vocabulary',
       'user_written',
     ];
-    const types = [...overviewTypes, ...depthTypes];
     const annotations = types.map((type, i) => ({
       id: `ann_${i}`,
-      mode: i < overviewTypes.length ? 'overview' : 'depth',
+      mode: i < 5 ? 'overview' : 'depth',
       type,
       anchor: { type: 'TextQuoteSelector', exact: `text ${i}` },
       content: { note: `Note ${i}` },

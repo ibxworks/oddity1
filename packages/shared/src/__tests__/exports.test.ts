@@ -32,10 +32,12 @@ describe("@oddity/shared exports", () => {
     // 5 overview + 12 depth + 1 user_written = 18, but consequence overlaps so unique keys = 17
     const keys = Object.keys(shared.ANNOTATION_COLORS);
     expect(keys.length).toBeGreaterThanOrEqual(17);
-    expect(shared.ANNOTATION_COLORS.core_claim).toBe("#E8C547");
-    expect(shared.ANNOTATION_COLORS.evidence).toBe("#E8C547");
-    expect(shared.ANNOTATION_COLORS.insight).toBe("#52B86E");
-    expect(shared.ANNOTATION_COLORS.vocabulary).toBe("#52B86E");
+    expect(shared.ANNOTATION_COLORS.core_claim).toBe("#F5C842");
+    expect(shared.ANNOTATION_COLORS.evidence).toBe("#F5C842");
+    expect(shared.ANNOTATION_COLORS.outcome).toBe("#F5C842");
+    expect(shared.ANNOTATION_COLORS.caveat).toBe("#F5574C");
+    expect(shared.ANNOTATION_COLORS.insight).toBe("#50B87A");
+    expect(shared.ANNOTATION_COLORS.vocabulary).toBe("#50B87A");
     expect(shared.ANNOTATION_COLORS.user_written).toBe("#A1927B");
   });
 
@@ -51,7 +53,7 @@ describe("@oddity/shared exports", () => {
     expect(shared.ALL_OVERVIEW_TYPES).toHaveLength(5);
     expect(shared.ALL_OVERVIEW_TYPES).toContain("core_claim");
     expect(shared.ALL_OVERVIEW_TYPES).toContain("evidence");
-    expect(shared.ALL_OVERVIEW_TYPES).toContain("consequence");
+    expect(shared.ALL_OVERVIEW_TYPES).toContain("outcome");
     expect(shared.ALL_OVERVIEW_TYPES).toContain("background");
     expect(shared.ALL_OVERVIEW_TYPES).toContain("transition");
   });

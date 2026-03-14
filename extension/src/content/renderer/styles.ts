@@ -36,7 +36,7 @@ const visualMap: Partial<Record<AnnotationType, AnnotationVisual>> = {
   // ── Overview labels ──
   core_claim: makeVisual("core_claim"),
   evidence: makeVisual("evidence"),
-  consequence: makeVisual("consequence"),
+  outcome: makeVisual("outcome"),
   background: makeVisual("background"),
   transition: makeVisual("transition"),
 
