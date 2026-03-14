@@ -2164,24 +2164,23 @@ function handleCopy(btn: HTMLButtonElement): void {
 
 function updateModeTogglePosition(): void {
   if (!modeToggleHostEl) return;
-  const contentLeft =
-    getMarginNotesContentLeft() ||
-    (() => {
-      const hashEl = document.querySelector(
-        "[data-oddity-hash]",
-      ) as HTMLElement | null;
-      return hashEl
-        ? hashEl.getBoundingClientRect().left
-        : window.innerWidth * 0.3;
-    })();
-  const availableWidth = contentLeft - 16 - 8;
+  const contentLeft = getMarginNotesContentLeft() || (() => {
+    const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+    return hashEl ? hashEl.getBoundingClientRect().left : window.innerWidth * 0.3;
+  })();
+  // The left margin column runs from ~8px to contentLeft - 16px (MARGIN_PADDING).
+  // Center the toggle within that column.
+  const marginLeft = 8;
+  const marginRight = contentLeft - 16;
+  const availableWidth = marginRight - marginLeft;
   if (availableWidth < 80) {
     modeToggleHostEl.style.visibility = "hidden";
     return;
   }
   modeToggleHostEl.style.visibility = "";
-  const left = Math.max(8, contentLeft - 16 - TOGGLE_OVERLAY_WIDTH);
-  modeToggleHostEl.style.left = `${left}px`;
+  const marginCenter = (marginLeft + marginRight) / 2;
+  const left = marginCenter - TOGGLE_OVERLAY_WIDTH / 2;
+  modeToggleHostEl.style.left = `${Math.max(marginLeft, left)}px`;
 }
 
 function initModeToggleOverlay(): void {
@@ -2207,6 +2206,10 @@ function initModeToggleOverlay(): void {
 
   const toggleEl = document.createElement("div");
   toggleEl.className = "mode-toggle";
+  toggleEl.dataset.active = "overview";
+
+  const sliderEl = document.createElement("div");
+  sliderEl.className = "mode-slider";
 
   modeToggleOverviewBtn = document.createElement("button");
   modeToggleOverviewBtn.className = "mode-btn mode-active";
@@ -2218,20 +2221,20 @@ function initModeToggleOverlay(): void {
   modeToggleDepthBtn.textContent = "Depth";
   modeToggleDepthBtn.dataset.mode = "depth";
 
-  function handleModeClick(e: MouseEvent): void {
+  function handleToggleClick(e: MouseEvent): void {
     e.stopPropagation();
-    const target = e.currentTarget as HTMLButtonElement;
-    const mode = target.dataset.mode as "overview" | "depth";
+    // Any click anywhere on the toggle switches to the other mode
+    const isOverview = modeToggleOverviewBtn!.classList.contains("mode-active");
+    const mode = isOverview ? "depth" : "overview";
     modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
-    document.dispatchEvent(
-      new CustomEvent("oddity:modeChange", { detail: { mode } }),
-    );
+    toggleEl.dataset.active = mode;
+    document.dispatchEvent(new CustomEvent("oddity:modeChange", { detail: { mode } }));
   }
 
-  modeToggleOverviewBtn.addEventListener("click", handleModeClick);
-  modeToggleDepthBtn.addEventListener("click", handleModeClick);
+  toggleEl.addEventListener("click", handleToggleClick);
 
+  toggleEl.appendChild(sliderEl);
   toggleEl.appendChild(modeToggleOverviewBtn);
   toggleEl.appendChild(modeToggleDepthBtn);
   modeToggleShadowRoot.appendChild(toggleEl);
@@ -2242,6 +2245,7 @@ function initModeToggleOverlay(): void {
     if ((prefs?.annotation_mode as string | undefined) === "depth") {
       modeToggleOverviewBtn?.classList.remove("mode-active");
       modeToggleDepthBtn?.classList.add("mode-active");
+      toggleEl.dataset.active = "depth";
     }
   });
 
@@ -2260,43 +2264,63 @@ const TOGGLE_OVERLAY_CSS = `
   * { box-sizing: border-box; }
 
   .mode-toggle {
-    display: flex;
-    gap: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 4px;
+    background: #2a2a2a;
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+  }
+
+  .mode-slider {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    height: calc(100% - 8px);
+    background: #404040;
+    border-radius: 9px;
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .mode-toggle[data-active="depth"] .mode-slider {
+    transform: translateX(100%);
   }
 
   .mode-btn {
     all: unset;
-    flex: 1;
-    padding: 7px 13px;
+    padding: 7px 18px;
     text-align: center;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
     color: #888;
     background: transparent;
-    border: 1px solid #333;
+    border: none;
+    border-radius: 9px;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s;
+    transition: color 0.25s ease;
     white-space: nowrap;
+    position: relative;
+    z-index: 1;
   }
 
-  .mode-btn:first-child { border-radius: 6px 0 0 6px; border-right: none; }
-  .mode-btn:last-child  { border-radius: 0 6px 6px 0; }
-
   .mode-active {
-    background: #363636;
     color: #fff;
-    border-color: #363636;
   }
 
   .mode-btn:hover:not(.mode-active) {
-    background: rgba(255, 255, 255, 0.05);
-    color: #ccc;
+    color: #bbb;
   }
 
-  :host([data-theme="light"]) .mode-btn          { color: #999; border-color: #ddd; }
-  :host([data-theme="light"]) .mode-active       { background: #333; color: #fff; border-color: #333; }
-  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { background: #f5f5f5; color: #666; }
+  :host([data-theme="light"]) .mode-toggle  { background: #e8e8e8; }
+  :host([data-theme="light"]) .mode-slider  { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  :host([data-theme="light"]) .mode-btn     { color: #888; }
+  :host([data-theme="light"]) .mode-active  { color: #333; }
+  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { color: #555; }
 `;
 
 const ARGUMENTS_BOX_CSS = `
@@ -2947,60 +2971,77 @@ const ARGUMENTS_BOX_CSS = `
   /* ── Mode Toggle (Overview / Depth) ── */
 
   .args-mode-toggle {
-    display: flex;
-    gap: 0;
-    padding: 8px 14px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 4px;
+    margin: 8px 14px;
     flex-shrink: 0;
+    background: #2a2a2a;
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+  }
+
+  .args-mode-slider {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    height: calc(100% - 8px);
+    background: #404040;
+    border-radius: 9px;
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .args-mode-toggle[data-active="depth"] .args-mode-slider {
+    transform: translateX(100%);
   }
 
   .args-mode-btn {
     all: unset;
-    flex: 1;
     padding: 7px 0;
     text-align: center;
     font-size: 13px;
     font-weight: 500;
     color: #888;
     background: transparent;
-    border: 1px solid #333;
+    border: none;
+    border-radius: 9px;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .args-mode-btn:first-child {
-    border-radius: 6px 0 0 6px;
-    border-right: none;
-  }
-
-  .args-mode-btn:last-child {
-    border-radius: 0 6px 6px 0;
+    transition: color 0.25s ease;
+    position: relative;
+    z-index: 1;
   }
 
   .args-mode-active {
-    background: #363636;
     color: #fff;
-    border-color: #363636;
   }
 
   .args-mode-btn:hover:not(.args-mode-active) {
-    background: rgba(255, 255, 255, 0.05);
-    color: #ccc;
+    color: #bbb;
+  }
+
+  :host([data-theme="light"]) .args-mode-toggle {
+    background: #e8e8e8;
+  }
+
+  :host([data-theme="light"]) .args-mode-slider {
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
 
   :host([data-theme="light"]) .args-mode-btn {
-    color: #999;
-    border-color: #ddd;
+    color: #888;
   }
 
   :host([data-theme="light"]) .args-mode-active {
-    background: #333;
-    color: #fff;
-    border-color: #333;
+    color: #333;
   }
 
   :host([data-theme="light"]) .args-mode-btn:hover:not(.args-mode-active) {
-    background: #f5f5f5;
-    color: #666;
+    color: #555;
   }
 
   /* ── Footer ── */
