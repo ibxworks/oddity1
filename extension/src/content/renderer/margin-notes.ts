@@ -56,7 +56,7 @@ let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
 let userName: string | null = null;
 
-const NOTE_EXPANDED_WIDTH = 220;
+const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
 const MARGIN_PADDING = 16;
 const NOTE_MIN_WIDTH = NOTE_EXPANDED_WIDTH / 2;
@@ -981,7 +981,6 @@ function resolveOverlapsForSide(sideNotes: MarginNote[]): void {
 function applyPositions(): void {
   for (const note of notes) {
     const bounds = getContentBounds(note.region, note.range);
-    const contentLeft = bounds.left + window.scrollX;
     const contentRight = bounds.right + window.scrollX;
 
     // Always use `left` positioning — `right` depends on the containing
@@ -989,10 +988,10 @@ function applyPositions(): void {
     note.element.style.right = "auto";
 
     if (note.side === "left") {
-      const availableWidth = contentLeft - MARGIN_PADDING;
-      const noteWidth = Math.min(NOTE_EXPANDED_WIDTH, Math.max(NOTE_MIN_WIDTH, availableWidth));
-      note.element.style.width = `${noteWidth}px`;
-      note.element.style.left = `${availableWidth - noteWidth}px`;
+      const regionLeft = note.region.getBoundingClientRect().left + window.scrollX;
+      const fixedLeft = regionLeft - MARGIN_PADDING - NOTE_EXPANDED_WIDTH;
+      note.element.style.width = `${NOTE_EXPANDED_WIDTH}px`;
+      note.element.style.left = `${fixedLeft}px`;
     } else {
       note.element.style.left = `${contentRight + MARGIN_PADDING}px`;
     }
@@ -1071,7 +1070,7 @@ const MARGIN_NOTES_CSS = `
     background: rgba(255, 255, 255, 0.15);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    border-radius: 12px;
+    border-radius: 6.5px;
     box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
     opacity: 1;
     transition: opacity 0.25s ease-in, filter 0.25s ease-in, box-shadow 0.2s;
@@ -1357,16 +1356,17 @@ const MARGIN_NOTES_CSS = `
     all: unset;
     display: block;
     width: 100%;
-    font-size: 12px;
+    font-size: var(--oddity-note-size);
     padding: 6px 10px;
     border: 1.5px solid rgba(255,255,255,0.15);
     border-radius: 8px;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--oddity-note-font);
     resize: vertical;
     min-height: 48px;
     box-sizing: border-box;
     background: rgba(255,255,255,0.06);
     color: #FFFFFF;
+    margin-top: 6px;
   }
 
   .note-edit-actions {
@@ -1383,7 +1383,7 @@ const MARGIN_NOTES_CSS = `
     font-weight: 600;
     padding: 4px 10px;
     border-radius: 100px;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--oddity-note-font);
     transition: opacity 0.15s;
   }
 
@@ -1442,9 +1442,14 @@ const MARGIN_NOTES_CSS = `
   :host([data-theme="light"]) .note-text,
   :host([data-theme="light"]) .note-section p,
   :host([data-theme="light"]) .note-section ul,
-  :host([data-theme="light"]) .note-reply-bubble,
+  :host([data-theme="light"]) .note-reply-bubble {
+    color: #293038;
+  }
+
   :host([data-theme="light"]) .note-edit-textarea {
     color: #293038;
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.15);
   }
 
   :host([data-theme="light"]) .note-section-label {
@@ -1457,7 +1462,9 @@ const MARGIN_NOTES_CSS = `
   }
 
   :host([data-theme="light"]) .note-cancel-btn {
-    color: rgba(41, 48, 56, 0.6);
+    color: rgba(41, 48, 56, 0.7);
+    background: rgba(0,0,0,0.06);
+    border-color: rgba(0,0,0,0.12);
   }
 
   :host([data-theme="light"]) .note-user-badge {

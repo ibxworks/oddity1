@@ -33,6 +33,7 @@ type ArgumentItem = {
   replyHeader?: string;
   feedbackId?: string;
   annotationId?: string;
+  annotation?: Annotation; // Full annotation object for manual type
 };
 
 // ─── State ───
@@ -50,9 +51,15 @@ let expanded = false;
 let dimmed = false;
 let blocked = false;
 let expandedCardId: string | null = null;
-let pinnedCardId: string | null = null;
-let cardCollapseTimer: ReturnType<typeof setTimeout> | null = null;
-let justUnpinnedCard = false;
+
+// Drag-to-scroll state
+let listDragging = false;
+let listDragStartY = 0;
+let listScrollStart = 0;
+let listDragDelta = 0;
+let listDragMoveHandler: ((e: MouseEvent) => void) | null = null;
+let listDragUpHandler: (() => void) | null = null;
+
 let manualRunCb: (() => void) | null = null;
 let notEnabledPanelEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
@@ -113,6 +120,17 @@ export function initArgumentsBox(): void {
   const style = document.createElement("style");
   style.textContent = ARGUMENTS_BOX_CSS;
   shadowRoot.appendChild(style);
+
+  // Apply stored font/size prefs immediately on init (same as margin-notes)
+  chrome.storage.local.get("preferences", (result) => {
+    const prefs = result["preferences"] as Record<string, unknown> | undefined;
+    if (prefs) {
+      updateArgumentsBoxStyle(
+        prefs.annotation_font as AnnotationFont | undefined,
+        prefs.annotation_font_size as AnnotationFontSize | undefined,
+      );
+    }
+  });
 
   // Theme
   hostEl.dataset.theme = getThemeMode();
@@ -220,6 +238,33 @@ export function initArgumentsBox(): void {
   listEl.className = "args-list";
   panelFace.appendChild(listEl);
   renderList();
+
+  // Drag-to-scroll
+  listEl.addEventListener("mousedown", (e) => {
+    if ((e.target as HTMLElement).closest("button, input, textarea")) return;
+    listDragging = true;
+    listDragDelta = 0;
+    listDragStartY = e.clientY;
+    listScrollStart = listEl!.scrollTop;
+    listEl!.style.cursor = "grabbing";
+  });
+
+  listDragMoveHandler = (e: MouseEvent) => {
+    if (!listDragging || !listEl) return;
+    const delta = listDragStartY - e.clientY;
+    listDragDelta = delta;
+    listEl.scrollTop = listScrollStart + delta;
+  };
+
+  listDragUpHandler = () => {
+    if (!listDragging || !listEl) return;
+    listDragging = false;
+    listEl.style.cursor = "";
+    setTimeout(() => { listDragDelta = 0; }, 0);
+  };
+
+  document.addEventListener("mousemove", listDragMoveHandler);
+  document.addEventListener("mouseup", listDragUpHandler);
 
   // ── Footer ──
   const footer = document.createElement("div");
@@ -462,6 +507,14 @@ export function destroyArgumentsBox(): void {
   if (themeHandler) {
     offThemeChange(themeHandler);
     themeHandler = null;
+  }
+  if (listDragMoveHandler) {
+    document.removeEventListener("mousemove", listDragMoveHandler);
+    listDragMoveHandler = null;
+  }
+  if (listDragUpHandler) {
+    document.removeEventListener("mouseup", listDragUpHandler);
+    listDragUpHandler = null;
   }
   hostEl?.remove();
   hostEl = null;
@@ -1214,6 +1267,10 @@ async function loadDashboardPrefs(): Promise<void> {
   });
   if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
   if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
+  updateArgumentsBoxStyle(
+    prefs.annotation_font as import("@oddity/shared").AnnotationFont | undefined,
+    prefs.annotation_font_size as import("@oddity/shared").AnnotationFontSize | undefined,
+  );
   const persona = (prefs.persona as string) ?? "Terry";
   if (dashPersonaSelect) dashPersonaSelect.value = persona;
   if (dashPersonaAvatarImgEl) { dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`); dashPersonaAvatarImgEl.alt = persona; }
@@ -1272,6 +1329,7 @@ function buildItems(
           sortKey: ann.id,
           type: "manual",
           annotationId: ann.id,
+          annotation: ann,
         });
       }
     }
@@ -1352,7 +1410,6 @@ function expandCard(id: string): void {
 }
 
 function collapseAllCards(): void {
-  if (pinnedCardId) return;
   if (expandedCardId) {
     const card = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`);
     card?.classList.remove("expanded");
@@ -1376,7 +1433,6 @@ function renderList(): void {
   const allItems = [...canonicalItems, ...liveItems];
   listEl.innerHTML = "";
   expandedCardId = null;
-  pinnedCardId = null;
 
   if (allItems.length === 0) {
     const empty = document.createElement("div");
@@ -1505,10 +1561,11 @@ function renderList(): void {
     editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (!item.feedbackId) return;
+      if (!item.feedbackId && !item.annotationId) return;
       const current = body.dataset.editMode;
       if (current === "true") return;
       body.dataset.editMode = "true";
+      body.style.display = "none";
       const original = item.text;
       const ta = document.createElement("textarea");
       ta.className = "note-edit-textarea";
@@ -1524,19 +1581,39 @@ function renderList(): void {
       saveBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const newText = ta.value.trim();
-        if (newText && item.feedbackId) {
+        if (!newText) return;
+        if (item.feedbackId) {
           chrome.runtime.sendMessage({
             action: "updateFeedback",
             payload: { feedbackId: item.feedbackId, replyText: newText },
           }).catch(() => {});
           item.text = newText;
           body.textContent = newText;
-          // Sync edit to margin notes
           document.dispatchEvent(new CustomEvent("oddity:feedback-edited", {
             detail: { feedbackId: item.feedbackId, replyText: newText },
           }));
+        } else if (item.annotationId && item.annotation) {
+          const updatedAnnotation = { ...item.annotation, content: { ...item.annotation.content, note: newText } };
+          const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+          chrome.runtime.sendMessage({
+            action: "updateAnnotation",
+            payload: {
+              annotationId: item.annotationId,
+              annotation: updatedAnnotation,
+              url: window.location.href,
+              contentHash: hashEl?.dataset.oddityHash ?? "",
+              pageTitle: document.title,
+            },
+          }).catch(() => {});
+          item.text = newText;
+          item.annotation = updatedAnnotation;
+          body.textContent = newText;
+          document.dispatchEvent(new CustomEvent("oddity:annotation-edited", {
+            detail: { annotationId: item.annotationId, note: newText },
+          }));
         }
         delete body.dataset.editMode;
+        body.style.display = "";
         ta.remove();
         actions.remove();
       });
@@ -1546,6 +1623,7 @@ function renderList(): void {
       cancelBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         delete body.dataset.editMode;
+        body.style.display = "";
         ta.remove();
         actions.remove();
       });
@@ -1559,16 +1637,30 @@ function renderList(): void {
     deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (!item.feedbackId) return;
-      chrome.runtime.sendMessage({
-        action: "deleteFeedback",
-        payload: { feedbackId: item.feedbackId },
-      }).catch(() => {});
-      card.remove();
-      // Sync delete to margin notes
-      document.dispatchEvent(new CustomEvent("oddity:feedback-deleted", {
-        detail: { feedbackId: item.feedbackId },
-      }));
+      if (item.feedbackId) {
+        chrome.runtime.sendMessage({
+          action: "deleteFeedback",
+          payload: { feedbackId: item.feedbackId },
+        }).catch(() => {});
+        card.remove();
+        document.dispatchEvent(new CustomEvent("oddity:feedback-deleted", {
+          detail: { feedbackId: item.feedbackId },
+        }));
+      } else if (item.annotationId) {
+        const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+        chrome.runtime.sendMessage({
+          action: "deleteAnnotation",
+          payload: {
+            annotationId: item.annotationId,
+            url: window.location.href,
+            contentHash: hashEl?.dataset.oddityHash ?? "",
+          },
+        }).catch(() => {});
+        card.remove();
+        document.dispatchEvent(new CustomEvent("oddity:annotation-deleted", {
+          detail: { annotationId: item.annotationId },
+        }));
+      }
     });
     iconGroup.appendChild(editBtn);
     iconGroup.appendChild(deleteBtn);
@@ -1583,36 +1675,16 @@ function renderList(): void {
     card.appendChild(body);
     card.appendChild(expandedContent);
 
-    // Hover: expand + dim others (mirrors margin note mouseenter)
-    card.addEventListener("mouseenter", () => {
-      if (pinnedCardId && pinnedCardId !== cardId) return;
-      if (cardCollapseTimer) { clearTimeout(cardCollapseTimer); cardCollapseTimer = null; }
-      expandCard(cardId);
-      dimOtherCards(cardId);
-    });
-
-    // Leave: collapse after 100ms (mirrors margin note mouseleave)
-    card.addEventListener("mouseleave", () => {
-      if (pinnedCardId) return;
-      cardCollapseTimer = setTimeout(() => {
-        cardCollapseTimer = null;
-        collapseAllCards();
-        undimAllCards();
-      }, 100);
-    });
-
-    // Click: pin/unpin (mirrors margin note click)
+    // Click: toggle expand/collapse (suppressed if user was dragging)
     card.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (Math.abs(listDragDelta) > 4) return;
       if ((e.target as HTMLElement).closest("button, input, textarea")) return;
-      if (pinnedCardId) {
-        pinnedCardId = null;
-        justUnpinnedCard = true;
-        setTimeout(() => { justUnpinnedCard = false; }, 0);
-        collapseAllCards();
+      if (expandedCardId === cardId) {
+        card.classList.remove("expanded");
+        expandedCardId = null;
         undimAllCards();
-      } else if (!justUnpinnedCard) {
-        pinnedCardId = cardId;
+      } else {
         expandCard(cardId);
         dimOtherCards(cardId);
       }
@@ -1636,9 +1708,7 @@ function renderList(): void {
     }
     listEl.style.height = `${top}px`;
 
-    // Set panel width to fit widest card + padding (12px each side)
-    const panelWidth = Math.min(244, Math.max(134, maxCardWidth + 24));
-    containerEl?.style.setProperty("--panel-width", `${panelWidth}px`);
+    containerEl?.style.setProperty("--panel-width", `300px`);
   });
 }
 
@@ -1747,7 +1817,7 @@ const ARGUMENTS_BOX_CSS = `
 
   /* Expanded (panel) state — blur moves to ::after so child cards blur independently */
   .args-container.expanded {
-    width: var(--panel-width, 234px);
+    width: var(--panel-width, 300px);
     height: calc(100vh - 90px);
     border-radius: 16px;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -1955,20 +2025,29 @@ const ARGUMENTS_BOX_CSS = `
     overflow-y: auto;
     overflow-x: visible;
     min-height: 0;
+    cursor: grab;
+    scrollbar-width: none;
+  }
+
+  .args-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .args-list:active {
+    cursor: grabbing;
   }
 
   /* ── Argument cards (mirrors .oddity-note exactly) ── */
 
   .arg-card {
     position: absolute;
-    left: 12px;
-    width: fit-content;
-    min-width: 110px;
-    max-width: 220px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 260px;
     background: rgba(40, 40, 50, 0.82);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    border-radius: 12px;
+    border-radius: 6.5px;
     padding: 10px 12px;
     font-family: var(--oddity-note-font);
     font-size: var(--oddity-note-size);
@@ -2058,8 +2137,6 @@ const ARGUMENTS_BOX_CSS = `
 
   /* ── Reply thread ── */
   .arg-card .note-replies {
-    max-height: 100px;
-    overflow-y: auto;
     margin-top: 6px;
   }
 
@@ -2188,11 +2265,11 @@ const ARGUMENTS_BOX_CSS = `
     all: unset;
     display: block;
     width: 100%;
-    font-size: 11.5px;
+    font-size: var(--oddity-note-size);
     padding: 6px 10px;
     border: 1.5px solid rgba(255,255,255,0.15);
     border-radius: 8px;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--oddity-note-font);
     resize: vertical;
     min-height: 48px;
     box-sizing: border-box;
@@ -2215,7 +2292,7 @@ const ARGUMENTS_BOX_CSS = `
     font-weight: 600;
     padding: 4px 10px;
     border-radius: 100px;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--oddity-note-font);
     transition: opacity 0.15s;
   }
 
@@ -2406,6 +2483,22 @@ const ARGUMENTS_BOX_CSS = `
   :host([data-theme="light"]) .arg-card .note-icon-btn,
   :host([data-theme="light"]) .arg-card .note-icon-btn:hover {
     color: #293038;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-edit-textarea {
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.15);
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-cancel-btn {
+    background: rgba(0,0,0,0.06);
+    border-color: rgba(0,0,0,0.12);
+    color: rgba(41,48,56,0.7);
+  }
+
+  :host([data-theme="light"]) .arg-card .note-cancel-btn:hover {
+    background: rgba(0,0,0,0.1);
   }
 
   :host([data-theme="light"]) .args-empty {
@@ -2845,7 +2938,7 @@ const ARGUMENTS_BOX_CSS = `
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 3px 8px;
-    border-radius: 12px;
+    border-radius: 6.5px;
     background: #f3f4f6;
     color: #9ca3af;
   }
@@ -2969,7 +3062,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 100%;
     padding: 9px 12px;
     border: 0.5px solid #e8e8e2;
-    border-radius: 12px;
+    border-radius: 6.5px;
     font-size: 13px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     outline: none;
@@ -3067,7 +3160,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 100%;
     padding: 9px 12px;
     border: 0.5px solid #e8e8e2;
-    border-radius: 12px;
+    border-radius: 6.5px;
     font-size: 13px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     color: #111;
