@@ -252,12 +252,21 @@ async function init(): Promise<void> {
   // Keep URL in sync (used by SPA navigation watcher)
   lastKnownUrl = window.location.href;
 
-  // Block pipeline on app.oddity1.com — the webapp has its own annotation system
+  // Redirect oddity1.com landing page → app.oddity1.com dashboard (signed-in users only)
   const domain = extractDomain();
+  if (domain === 'oddity1.com') {
+    try {
+      const authResult = await chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} });
+      if (authResult?.authenticated) {
+        window.location.replace('https://app.oddity1.com');
+        return;
+      }
+    } catch {}
+  }
+
+  // Block pipeline on app.oddity1.com — the webapp has its own annotation system
   if (isBlockedDomain(domain)) {
     blocked = true;
-    initArgumentsBox();
-    setArgumentsBoxBlocked(true);
     return;
   }
 

@@ -661,7 +661,19 @@ export async function handleRemoteSignIn(user: {
     Array.isArray(enabledSites) &&
     enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
   if (!siteEnabled) {
-    showNotEnabledOverlay();
+    // Collapse to button with red stroke — don't auto-expand the "not enabled" panel
+    dimmed = true;
+    containerEl?.classList.add("oddity-not-enabled");
+    if (modeToggleHostEl) modeToggleHostEl.style.display = "none";
+    if (expanded) {
+      expanded = false;
+      containerEl?.classList.remove("expanded", "dashboard");
+      toggleBarEl?.classList.remove("visible");
+      if (containerEl) {
+        containerEl.style.height = "";
+        containerEl.style.width = "";
+      }
+    }
   }
   // Load prefs (density, font, toggle state) without re-querying auth
   loadDashboardPrefs().catch(() => {});
