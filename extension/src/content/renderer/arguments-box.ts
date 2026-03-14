@@ -415,6 +415,53 @@ export function initArgumentsBox(): void {
   });
   containerEl.appendChild(closeBtnEl);
 
+  // ── Resize handle (top-left corner, visible only when expanded) ──
+  const resizeHandle = document.createElement("div");
+  resizeHandle.className = "args-resize-handle";
+  containerEl.appendChild(resizeHandle);
+
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let resizeStartW = 0;
+  let resizeStartH = 0;
+  let resizeMinW = 0;
+  let resizeMinH = 0;
+  let resizeMaxW = 0;
+  let resizeMaxH = 0;
+
+  resizeHandle.addEventListener("mousedown", (e) => {
+    if (!expanded) return;
+    e.preventDefault();
+    e.stopPropagation();
+    resizeStartX = e.clientX;
+    resizeStartY = e.clientY;
+    resizeStartW = containerEl!.offsetWidth;
+    resizeStartH = containerEl!.offsetHeight;
+    const defaultW = parseFloat(containerEl!.style.getPropertyValue("--panel-width")) || 300;
+    const defaultH = window.innerHeight - 58;
+    resizeMinW = defaultW * 0.75;
+    resizeMinH = defaultH * 0.5;
+    resizeMaxW = defaultW;
+    resizeMaxH = defaultH;
+    containerEl!.style.transition = "none";
+    document.addEventListener("mousemove", onResizeMove);
+    document.addEventListener("mouseup", onResizeEnd);
+  });
+
+  function onResizeMove(e: MouseEvent) {
+    if (!containerEl) return;
+    const newW = Math.min(resizeMaxW, Math.max(resizeMinW, resizeStartW + (resizeStartX - e.clientX)));
+    const newH = Math.min(resizeMaxH, Math.max(resizeMinH, resizeStartH + (resizeStartY - e.clientY)));
+    containerEl.style.width = `${newW}px`;
+    containerEl.style.height = `${newH}px`;
+  }
+
+  function onResizeEnd() {
+    if (containerEl) containerEl.style.transition = "";
+    document.removeEventListener("mousemove", onResizeMove);
+    document.removeEventListener("mouseup", onResizeEnd);
+  }
+
   // ── Toggle bar (sits outside the panel, top-left of the outer wrapper) ──
   toggleBarEl = document.createElement("div");
   toggleBarEl.className = "args-toggle-bar";
@@ -2319,6 +2366,42 @@ const ARGUMENTS_BOX_CSS = `
     transform: translateY(32px);
   }
 
+  /* ── Resize handle (top-left corner) ── */
+
+  .args-resize-handle {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 18px;
+    height: 18px;
+    cursor: nw-resize;
+    z-index: 10;
+    border-radius: 16px 0 0 0;
+  }
+
+  .args-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 8px;
+    height: 8px;
+    border-top: 2px solid rgba(255, 255, 255, 0.45);
+    border-left: 2px solid rgba(255, 255, 255, 0.45);
+    border-radius: 2px 0 0 0;
+    pointer-events: none;
+  }
+
+  .args-container.expanded .args-resize-handle {
+    display: block;
+  }
+
+  :host([data-theme="light"]) .args-resize-handle::after {
+    border-top-color: rgba(0, 0, 0, 0.3);
+    border-left-color: rgba(0, 0, 0, 0.3);
+  }
+
   /* ── Transparent hover buffer (20px around panel when expanded) ── */
 
   .args-container.expanded::before {
@@ -2536,7 +2619,7 @@ const ARGUMENTS_BOX_CSS = `
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
-    width: 260px;
+    width: calc(100% - 32px);
     background: rgba(40, 40, 50, 0.82);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
