@@ -129,18 +129,6 @@ let modeToggleThemeHandler: ((mode: "light" | "dark") => void) | null = null;
 
 const TOGGLE_OVERLAY_WIDTH = 168; // px — approximate rendered width of the two buttons
 
-// ── Button drag state ──
-const BTN_DEFAULT_RIGHT = 20;
-const BTN_DEFAULT_BOTTOM = 20;
-let btnDragging = false;
-let btnDragDelta = 0;
-let btnDragStartX = 0;
-let btnDragStartY = 0;
-let btnCurrentRight = BTN_DEFAULT_RIGHT;
-let btnCurrentBottom = BTN_DEFAULT_BOTTOM;
-let btnDragMoveHandler: ((e: MouseEvent) => void) | null = null;
-let btnDragUpHandler: (() => void) | null = null;
-
 // ─── Public API ───
 
 export function initArgumentsBox(): void {
@@ -839,7 +827,11 @@ function fitDashboardHeight(): void {
   if (!dashFaceEl || !containerEl) return;
   let h = 0;
   for (const child of Array.from(dashFaceEl.children)) {
-    h += (child as HTMLElement).offsetHeight;
+    const el = child as HTMLElement;
+    // Skip absolutely-positioned overlays (e.g. sign-in view) — they don't contribute to flow height
+    const pos = getComputedStyle(el).position;
+    if (pos === "absolute" || pos === "fixed") continue;
+    h += el.offsetHeight;
   }
   if (h > 0) containerEl.style.height = `${h}px`;
 }
@@ -860,8 +852,10 @@ function showAuthView(mode: "signin" | "signup"): void {
   if (dashSignInNameEl) dashSignInNameEl.style.display = mode === "signup" ? "block" : "none";
   if (dashSignInStatusEl) { dashSignInStatusEl.style.display = "none"; dashSignInStatusEl.className = "args-dash-feedback-status"; }
   if (dashSignInViewEl) { dashSignInViewEl.style.display = "flex"; }
-  if (containerEl) containerEl.style.width = "240px";
-  requestAnimationFrame(() => fitDashboardHeight());
+  if (containerEl) {
+    containerEl.style.width = "240px";
+    containerEl.style.height = mode === "signup" ? "280px" : "240px";
+  }
 }
 
 function buildDashboardFace(): HTMLDivElement {

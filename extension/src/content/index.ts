@@ -349,6 +349,8 @@ async function startPipeline(): Promise<void> {
     // the onResponse callback updates it to the actual response element for
     // accurate left/right margin measurement.
     initMarginNotes(document.body);
+    setOverlayVisible(true);
+    setMarginNotesVisible(true);
 
     const chatObserver = createChatObserver({
       responseSelector: matchedAdapter.response_selector,
@@ -404,6 +406,9 @@ async function startPipeline(): Promise<void> {
     initMarginNotes(regions[0]!.element);
     marginNotesInitFromBody = true;
   }
+
+  setOverlayVisible(true);
+  setMarginNotesVisible(true);
 
   // ── URL prediction: render instantly from previous visit ──
   // Non-blocking: kicks off speculative render while normal pipeline runs in parallel
