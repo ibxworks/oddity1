@@ -324,121 +324,6 @@
       </div>
     </div>
 
-    <!-- Default Preferences -->
-    <div class="card">
-      <div class="card-title">Default Preferences</div>
-
-      <div class="field">
-        <span class="field-label">Depth Personality</span>
-        <div class="radio-group" id="intensity-group">
-          <button class="radio-btn active" data-intensity="terry">Terry</button>
-          <button class="radio-btn" data-intensity="jerry">Jerry</button>
-          <button class="radio-btn" data-intensity="sally">Sally</button>
-        </div>
-        <p class="field-hint">
-          Controls the personality style for Depth mode annotations.
-        </p>
-      </div>
-
-      <div class="field">
-        <span class="field-label">Enabled Annotation Types</span>
-        <div class="checkbox-grid" id="type-checkboxes">
-          <!-- Overview types -->
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="core_claim" checked />
-            <span class="type-dot" style="background: #4a90d9"></span>
-            Core Claim
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="evidence" checked />
-            <span class="type-dot" style="background: #7b61ff"></span>
-            Evidence
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="assumption" checked />
-            <span class="type-dot" style="background: #e8913a"></span>
-            Assumption
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="consequence" checked />
-            <span class="type-dot" style="background: #50b87a"></span>
-            Consequence
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="background" checked />
-            <span class="type-dot" style="background: #8e8e93"></span>
-            Background
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="transition" checked />
-            <span class="type-dot" style="background: #a1927b"></span>
-            Transition
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="caveat" checked />
-            <span class="type-dot" style="background: #f5574c"></span>
-            Caveat
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="open_question" checked />
-            <span class="type-dot" style="background: #e06b9e"></span>
-            Open Question
-          </label>
-          <!-- Depth types -->
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="counterargument" checked />
-            <span class="type-dot" style="background: #d94a4a"></span>
-            Counterargument
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="alternative" checked />
-            <span class="type-dot" style="background: #9b59b6"></span>
-            Alternative
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="fallacy" checked />
-            <span class="type-dot" style="background: #e74c3c"></span>
-            Fallacy
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="criteria" checked />
-            <span class="type-dot" style="background: #f39c12"></span>
-            Criteria
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="perspective" checked />
-            <span class="type-dot" style="background: #3498db"></span>
-            Perspective
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="insight" checked />
-            <span class="type-dot" style="background: #2ecc71"></span>
-            Insight
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="recall" checked />
-            <span class="type-dot" style="background: #243c61"></span>
-            Recall
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="study" checked />
-            <span class="type-dot" style="background: #1abc9c"></span>
-            Study
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="translation" checked />
-            <span class="type-dot" style="background: #8e44ad"></span>
-            Translation
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" data-type="vocabulary" checked />
-            <span class="type-dot" style="background: #243c61"></span>
-            Vocabulary
-          </label>
-        </div>
-      </div>
-    </div>
-
     <!-- Per-site Settings -->
     <div class="card">
       <div class="card-title">Auto-Enabled Sites</div>
@@ -470,15 +355,15 @@
       <div class="field">
         <span class="field-label">Enabled Annotation Types</span>
         <div class="checkbox-grid" id="type-checkboxes">
-          <!-- Overview types -->
+          <!-- Overview types (yellow) -->
           <label class="checkbox-item">
             <input type="checkbox" data-type="core_claim" checked />
-            <span class="type-dot" style="background:#4A90D9"></span>
+            <span class="type-dot" style="background:#F5C842"></span>
             Core Claim
           </label>
           <label class="checkbox-item">
             <input type="checkbox" data-type="evidence" checked />
-            <span class="type-dot" style="background:#7B61FF"></span>
+            <span class="type-dot" style="background:#F5C842"></span>
             Evidence
           </label>
           <label class="checkbox-item">
@@ -488,37 +373,76 @@
           </label>
           <label class="checkbox-item">
             <input type="checkbox" data-type="background" checked />
-            <span class="type-dot" style="background:#8E8E93"></span>
+            <span class="type-dot" style="background:#F5C842"></span>
             Background
           </label>
           <label class="checkbox-item">
             <input type="checkbox" data-type="transition" checked />
-            <span class="type-dot" style="background:#A1927B"></span>
+            <span class="type-dot" style="background:#F5C842"></span>
             Transition
           </label>
-          <!-- Depth types -->
+          <!-- Depth types: critical (red) -->
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="caveat" checked />
+            <span class="type-dot" style="background:#F5574C"></span>
+            Caveat
+          </label>
           <label class="checkbox-item">
             <input type="checkbox" data-type="counterargument" checked />
-            <span class="type-dot" style="background:#D94A4A"></span>
+            <span class="type-dot" style="background:#F5574C"></span>
             Counterargument
           </label>
           <label class="checkbox-item">
             <input type="checkbox" data-type="alternative" checked />
-            <span class="type-dot" style="background:#9B59B6"></span>
+            <span class="type-dot" style="background:#F5574C"></span>
             Alternative
           </label>
           <label class="checkbox-item">
             <input type="checkbox" data-type="fallacy" checked />
-            <span class="type-dot" style="background:#E74C3C"></span>
+            <span class="type-dot" style="background:#F5574C"></span>
             Fallacy
           </label>
           <label class="checkbox-item">
             <input type="checkbox" data-type="criteria" checked />
-            <span class="type-dot" style="background:#F39C12"></span>
+            <span class="type-dot" style="background:#F5574C"></span>
             Criteria
           </label>
           <label class="checkbox-item">
             <input type="checkbox" data-type="perspective" checked />
+            <span class="type-dot" style="background:#F5574C"></span>
+            Perspective
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="consequence" checked />
+            <span class="type-dot" style="background:#F5574C"></span>
+            Consequence
+          </label>
+          <!-- Depth types: enrichment (green) -->
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="insight" checked />
+            <span class="type-dot" style="background:#50B87A"></span>
+            Insight
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="recall" checked />
+            <span class="type-dot" style="background:#50B87A"></span>
+            Recall
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="study" checked />
+            <span class="type-dot" style="background:#50B87A"></span>
+            Study
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="translation" checked />
+            <span class="type-dot" style="background:#50B87A"></span>
+            Translation
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="vocabulary" checked />
+            <span class="type-dot" style="background:#50B87A"></span>
+            Vocabulary
+          </label>
             <span class="type-dot" style="background:#3498DB"></span>
             Perspective
           </label>
