@@ -505,35 +505,26 @@ export function initArgumentsBox(): void {
   initModeToggleOverlay();
 
   // On init: set auth/site state without requiring user interaction
-  chrome.runtime
-    .sendMessage({ action: "getAuthStatus", payload: {} })
-    .then(async (result: { authenticated: boolean }) => {
-      if (blocked) return; // blocked domains skip auth/whitelist UI
-      if (!result?.authenticated) {
-        toggle();
-        showDashboard();
-        const stored = await chrome.storage.local.get("hadAccount");
-        showAuthView(stored["hadAccount"] ? "signin" : "signup");
-      } else {
-        // Authenticated — mark red stroke if site not whitelisted (even if extension is off)
-        const prefsStored = await chrome.storage.local.get("preferences");
-        const enabledSites = (
-          prefsStored["preferences"] as Record<string, unknown>
-        )?.["enabled_sites"] as string[] | undefined;
-        const hostname = window.location.hostname.replace(/^www\./, "");
-        const siteEnabled =
-          sessionSiteEnabled ||
-          (Array.isArray(enabledSites) &&
-            enabledSites.some(
-              (s) => hostname === s || hostname.endsWith("." + s),
-            ));
-        if (!siteEnabled) {
-          dimmed = true;
-          containerEl?.classList.add("oddity-not-enabled");
-        }
+  chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
+    if (blocked) return; // blocked domains skip auth/whitelist UI
+    if (!result?.authenticated) {
+      toggle();
+      showDashboard();
+      const stored = await chrome.storage.local.get("hadAccount");
+      showAuthView(stored["hadAccount"] ? "signin" : "signup");
+    } else {
+      // Authenticated — mark red stroke if site not whitelisted (even if extension is off)
+      const prefsStored = await chrome.storage.local.get("preferences");
+      const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+      const hostname = window.location.hostname.replace(/^www\./, "");
+      const siteEnabled = sessionSiteEnabled || (Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s)));
+      if (!siteEnabled) {
+        dimmed = true;
+        containerEl?.classList.add("oddity-not-enabled");
+        if (modeToggleHostEl) modeToggleHostEl.style.display = "none";
       }
-    })
-    .catch(() => {});
+    }
+  }).catch(() => {});
 }
 
 export function updateArgumentsBox(
@@ -571,7 +562,7 @@ export function addLiveFeedback(
 export function setArgumentsBoxVisible(visible: boolean): void {
   if (!hostEl) return;
   hostEl.style.display = visible ? "" : "none";
-  if (modeToggleHostEl) modeToggleHostEl.style.display = visible ? "" : "none";
+  if (modeToggleHostEl) modeToggleHostEl.style.display = (visible && !dimmed) ? "" : "none";
 }
 
 export function setArgumentsBoxEnabled(enabled: boolean): void {
@@ -582,11 +573,13 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
     panelToggleLabelEl.textContent = enabled ? "On" : "Off";
   if (dashToggleInput) dashToggleInput.checked = enabled;
   if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (modeToggleHostEl) modeToggleHostEl.style.display = enabled ? "" : "none";
 }
 
 export function setArgumentsBoxDimmed(isDimmed: boolean): void {
   dimmed = isDimmed;
   containerEl?.classList.toggle("oddity-not-enabled", isDimmed);
+  if (modeToggleHostEl) modeToggleHostEl.style.display = isDimmed ? "none" : "";
 }
 
 export function setArgumentsBoxBlocked(isBlocked: boolean): void {
@@ -627,6 +620,7 @@ export function handleRemoteSignOut(): void {
     notEnabledPanelEl = null;
     dimmed = false;
     containerEl?.classList.remove("oddity-not-enabled");
+    if (modeToggleHostEl) modeToggleHostEl.style.display = "";
   }
   showDashboard();
   showAuthView("signin");
@@ -752,6 +746,7 @@ function showNotEnabledOverlay(): void {
   if (notEnabledPanelEl) return; // already showing
   dimmed = true;
   containerEl?.classList.add("oddity-not-enabled");
+  if (modeToggleHostEl) modeToggleHostEl.style.display = "none";
   containerEl?.classList.remove("dashboard");
   const contentClip = shadowRoot?.querySelector(".args-content-clip");
   if (!contentClip) return;
@@ -2187,8 +2182,7 @@ function initModeToggleOverlay(): void {
   if (modeToggleHostEl) return;
 
   modeToggleHostEl = document.createElement("div");
-  modeToggleHostEl.style.cssText =
-    "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto;";
+  modeToggleHostEl.style.cssText = "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto; display: none;";
   document.body.appendChild(modeToggleHostEl);
 
   modeToggleShadowRoot = modeToggleHostEl.attachShadow({ mode: "closed" });
@@ -2351,12 +2345,13 @@ const ARGUMENTS_BOX_CSS = `
     display: flex;
     align-items: center;
     gap: 6px;
-    pointer-events: auto;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
     align-self: flex-start;
     margin-bottom: -28px;
+    position: relative;
+    z-index: 3;
   }
 
   .args-toggle-bar.visible {
