@@ -130,10 +130,13 @@ async function init(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   if (stored["preferences"]) {
     const prefs = stored["preferences"] as UserPreferences;
+    // Migrate renamed personality: gary → sally
+    let personality = prefs.depth_personality ?? "terry";
+    if (personality === ("gary" as DepthPersonality)) personality = "sally";
     currentPrefs = {
       enabled: prefs.enabled ?? true,
       annotation_mode: prefs.annotation_mode ?? "overview",
-      depth_personality: prefs.depth_personality ?? "terry",
+      depth_personality: personality,
       visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
       enabled_sites: prefs.enabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "default",
