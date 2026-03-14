@@ -326,6 +326,17 @@ chrome.runtime.onMessage.addListener(
             reply_text: replyText,
             page_title: pageTitle,
           });
+
+          // Update session cache so the next page load includes this feedback
+          // immediately instead of waiting for the stale-while-revalidate fetch.
+          for (const intensity of ["overview:terry", "overview:jerry", "overview:gary", "depth:terry", "depth:jerry", "depth:gary"]) {
+            const cached = await getFromSessionCache(contentHash, intensity);
+            if (cached) {
+              cached.feedback.push(fb);
+              await setInSessionCache(contentHash, intensity, cached.annotations, cached.feedback);
+            }
+          }
+
           return fb;
         }
 

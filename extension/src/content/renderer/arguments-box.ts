@@ -544,6 +544,7 @@ export function updateArgumentsBox(
 
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
+    cacheAnnotationNotes(annotations);
     canonicalItems = buildItems(annotations, feedback);
     liveItems = [];
     renderList();
@@ -1725,6 +1726,42 @@ function buildItems(
   return items;
 }
 
+// In-memory cache of annotation note texts, keyed by annotation ID.
+// Survives annotation cache regeneration (which assigns new UUIDs).
+const annotationNoteCache = new Map<string, string>();
+
+/** Persist the note cache to chrome.storage.local for cross-session survival. */
+function flushNoteCache(): void {
+  const obj: Record<string, string> = {};
+  for (const [k, v] of annotationNoteCache) obj[k] = v;
+  chrome.storage.local.set({ _oddity_note_cache: obj }).catch(() => {});
+}
+
+/** Load persisted note cache on init. */
+function loadNoteCache(): void {
+  chrome.storage.local.get("_oddity_note_cache").then((result) => {
+    const cached = result["_oddity_note_cache"] as Record<string, string> | undefined;
+    if (cached) {
+      for (const [k, v] of Object.entries(cached)) annotationNoteCache.set(k, v);
+    }
+  }).catch(() => {});
+}
+loadNoteCache();
+
+/** Index all annotation notes so replies can look them up even after ID changes. */
+function cacheAnnotationNotes(annotations: Map<string, Annotation[]>): void {
+  let added = false;
+  for (const [, anns] of annotations) {
+    for (const ann of anns) {
+      if (!annotationNoteCache.has(ann.id)) {
+        annotationNoteCache.set(ann.id, ann.content.note);
+        added = true;
+      }
+    }
+  }
+  if (added) flushNoteCache();
+}
+
 function findAnnotationNote(
   annotations: Map<string, Annotation[]>,
   annotationId: string,
@@ -1733,7 +1770,8 @@ function findAnnotationNote(
     const ann = anns.find((a) => a.id === annotationId);
     if (ann) return ann.content.note;
   }
-  return "(annotation)";
+  // Fallback: check the persisted note cache (survives annotation regeneration)
+  return annotationNoteCache.get(annotationId) ?? "";
 }
 
 function findAnnotationQuote(
@@ -1810,7 +1848,9 @@ function renderList(): void {
     const header = document.createElement("div");
     header.className = "arg-card-header";
     if (item.type === "reply") {
-      header.textContent = `Reply to ${item.replyHeader ?? ""}`;
+      header.textContent = item.replyHeader
+        ? `Reply to \u201c${item.replyHeader}\u201d`
+        : "Reply";
     } else {
       const src = item.quote || item.text;
       const MAX = 38;

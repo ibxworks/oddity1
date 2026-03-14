@@ -1000,12 +1000,32 @@ onMessage((message: ExtensionMessage) => {
       // Stale-while-revalidate: the service worker sends a first
       // annotationsReady from its session cache, then a second one from
       // the fresh server fetch. If the region was already rendered (from
-      // the cache hit), silently update state without a visual nuke —
-      // the user's annotations are already on screen.
+      // the cache hit), check whether the fresh set differs — if so,
+      // re-render so newly created annotations (e.g. manual highlights)
+      // appear without requiring another reload.
       if (annotatedRegions.has(regionId) && !pendingRegions.has(regionId)) {
+        const prev = currentAnnotations().get(regionId) ?? [];
+        const prevFb = currentFeedbackMap().get(regionId) ?? [];
         currentAnnotations().set(regionId, annotations);
         currentFeedbackMap().set(regionId, feedback);
         syncArgumentsBox();
+
+        // Compare annotations AND feedback — re-render when either set changed
+        // so new replies, reactions, and manual highlights appear immediately.
+        const prevAnnIds = new Set(prev.map((a) => a.id));
+        const annsChanged = annotations.length !== prev.length ||
+          annotations.some((a) => !prevAnnIds.has(a.id));
+        const prevFbIds = new Set(prevFb.map((f) => f.id));
+        const fbChanged = feedback.length !== prevFb.length ||
+          feedback.some((f) => !prevFbIds.has(f.id));
+        if ((annsChanged || fbChanged) && enabled) {
+          clearOverlay();
+          clearAllAnchors();
+          clearMarginNotes();
+          for (const [rid, anns] of currentAnnotations()) {
+            renderAnnotations(rid, anns);
+          }
+        }
         break;
       }
 
