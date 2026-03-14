@@ -33,6 +33,7 @@ import {
   setManualRunCallback,
   setSignOutCallback,
   updateArgumentsBox,
+  updateArgumentsBoxStyle,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -940,6 +941,7 @@ onMessage((message: ExtensionMessage) => {
 
       // Apply font/size changes immediately
       updateMarginNotesStyle(annotationFont, annotationFontSize);
+      updateArgumentsBoxStyle(annotationFont, annotationFontSize);
       const wasEnabled = enabled;
       const intensityChanged = newIntensity !== currentIntensity;
       enabled = newEnabled;

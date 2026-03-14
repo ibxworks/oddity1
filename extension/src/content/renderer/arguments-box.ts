@@ -1,10 +1,26 @@
-import type { Annotation, AnnotationFeedback } from "@oddity/shared";
+import type { Annotation, AnnotationFeedback, AnnotationFont, AnnotationFontSize } from "@oddity/shared";
 
 import {
   getThemeMode,
   offThemeChange,
   onThemeChange,
 } from "./theme-detector.js";
+
+// ─── Font / Size maps (mirrors margin-notes) ───
+
+const FONT_MAP: Record<AnnotationFont, string> = {
+  default: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+  fraunces: "'Fraunces', Georgia, serif",
+  kalam: "'Kalam', cursive, system-ui, sans-serif",
+  helvetica: "Helvetica, 'Helvetica Neue', Arial, sans-serif",
+  arial: "Arial, 'Helvetica Neue', sans-serif",
+  georgia: "Georgia, 'Times New Roman', serif",
+};
+const SIZE_MAP: Record<AnnotationFontSize, string> = {
+  small: "12px",
+  default: "14px",
+  large: "16px",
+};
 
 // ─── Types ───
 
@@ -378,6 +394,17 @@ export function setArgumentsBoxBlocked(isBlocked: boolean): void {
 
 export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
+}
+
+export function updateArgumentsBoxStyle(
+  font?: AnnotationFont,
+  fontSize?: AnnotationFontSize,
+): void {
+  const host = shadowRoot?.host as HTMLElement;
+  if (!host) return;
+  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "default"]);
+  host.style.setProperty("--oddity-note-size", SIZE_MAP[fontSize ?? "default"]);
+  renderList(); // re-layout since sizes changed
 }
 
 let signOutCb: (() => void) | null = null;
@@ -1369,14 +1396,13 @@ function renderList(): void {
     const header = document.createElement("div");
     header.className = "arg-card-header";
     if (item.type === "reply") {
-      header.textContent = `Reply to \u201c${item.replyHeader ?? ""}\u201d`;
+      header.textContent = `Reply to ${item.replyHeader ?? ""}`;
     } else {
       const src = item.quote || item.text;
-      const MAX = 40;
-      const headerText = src.length > MAX
+      const MAX = 38;
+      header.textContent = src.length > MAX
         ? `\u201c${src.slice(0, MAX)}\u2026\u201d`
         : `\u201c${src}\u201d`;
-      header.textContent = headerText;
     }
 
     // Body text (note-text equivalent: clamped collapsed, full on expanded)
@@ -1391,6 +1417,11 @@ function renderList(): void {
     const expandedInner = document.createElement("div");
     expandedInner.className = "note-expanded-inner";
 
+    // Reply thread (container for reply bubbles)
+    const repliesContainer = document.createElement("div");
+    repliesContainer.className = "note-replies";
+    expandedInner.appendChild(repliesContainer);
+
     // Reply input bar ("Thoughts?")
     const replyBar = document.createElement("div");
     replyBar.className = "note-reply-bar";
@@ -1398,12 +1429,52 @@ function renderList(): void {
     replyInput.type = "text";
     replyInput.placeholder = "Thoughts?";
     replyInput.className = "note-reply-input";
-    replyInput.addEventListener("keydown", (e) => e.stopPropagation());
+
+    const submitArgReply = () => {
+      const text = replyInput.value.trim();
+      if (!text) return;
+
+      // Add bubble immediately
+      const bubble = document.createElement("div");
+      bubble.className = "note-reply-bubble";
+      bubble.textContent = text;
+      repliesContainer.appendChild(bubble);
+      repliesContainer.scrollTop = repliesContainer.scrollHeight;
+
+      // Send to background
+      if (item.annotationId) {
+        const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+        const contentHash = hashEl?.dataset.oddityHash ?? "";
+        chrome.runtime.sendMessage({
+          action: "saveFeedback",
+          payload: {
+            annotationId: item.annotationId,
+            contentHash,
+            url: window.location.href,
+            feedbackType: "reply",
+            replyText: text,
+            pageTitle: document.title,
+          },
+        }).catch(() => {});
+      }
+
+      replyInput.value = "";
+    };
+
+    replyInput.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter" && replyInput.value.trim()) {
+        submitArgReply();
+      }
+    });
     replyInput.addEventListener("click", (e) => e.stopPropagation());
     const sendBtn = document.createElement("button");
     sendBtn.className = "note-reply-send";
     sendBtn.innerHTML = "&#8593;";
-    sendBtn.addEventListener("click", (e) => e.stopPropagation());
+    sendBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      submitArgReply();
+    });
     replyBar.appendChild(replyInput);
     replyBar.appendChild(sendBtn);
     expandedInner.appendChild(replyBar);
@@ -1416,11 +1487,11 @@ function renderList(): void {
     pillGroup.className = "note-pill-group";
     const thumbUp = document.createElement("button");
     thumbUp.className = "note-feedback-pill";
-    thumbUp.textContent = "Exactly!!";
+    thumbUp.textContent = "Exactly!";
     thumbUp.addEventListener("click", (e) => e.stopPropagation());
     const thumbDown = document.createElement("button");
     thumbDown.className = "note-feedback-pill";
-    thumbDown.textContent = "Humm...";
+    thumbDown.textContent = "Hmm..?";
     thumbDown.addEventListener("click", (e) => e.stopPropagation());
     pillGroup.appendChild(thumbUp);
     pillGroup.appendChild(thumbDown);
@@ -1545,15 +1616,20 @@ function renderList(): void {
   // Cards are position:absolute so expanding one never shifts siblings.
   requestAnimationFrame(() => {
     if (!listEl) return;
-    const PADDING = 10;
     const GAP = 10;
-    let top = PADDING;
+    let top = GAP;
+    let maxCardWidth = 110; // min card width
     const cards = listEl.querySelectorAll<HTMLDivElement>(".arg-card");
     for (const card of cards) {
       card.style.top = `${top}px`;
       top += card.offsetHeight + GAP;
+      if (card.offsetWidth > maxCardWidth) maxCardWidth = card.offsetWidth;
     }
-    listEl.style.height = `${top - GAP + PADDING}px`;
+    listEl.style.height = `${top}px`;
+
+    // Set panel width to fit widest card + padding (12px each side)
+    const panelWidth = Math.min(244, Math.max(134, maxCardWidth + 24));
+    containerEl?.style.setProperty("--panel-width", `${panelWidth}px`);
   });
 }
 
@@ -1569,6 +1645,11 @@ function handleCopy(btn: HTMLButtonElement): void {
 // ─── CSS ───
 
 const ARGUMENTS_BOX_CSS = `
+  :host {
+    --oddity-note-font: 'Inter', system-ui, -apple-system, sans-serif;
+    --oddity-note-size: 11.5px;
+  }
+
   * { box-sizing: border-box; }
 
   /* ── Outer wrapper (positions toggle + container together) ── */
@@ -1609,6 +1690,7 @@ const ARGUMENTS_BOX_CSS = `
     display: block;
     pointer-events: auto;
     overflow: visible;
+    position: relative;
     background: rgba(255, 255, 255, 0.15);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -1627,6 +1709,18 @@ const ARGUMENTS_BOX_CSS = `
       box-shadow 0.3s;
   }
 
+  .args-container.expanded::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 0;
+    pointer-events: none;
+  }
+
   .args-container:not(.expanded):hover {
     transform: scale(1.08);
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -1642,13 +1736,16 @@ const ARGUMENTS_BOX_CSS = `
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #4ade80;
   }
 
-  /* Expanded (panel) state */
+  /* Expanded (panel) state — blur moves to ::after so child cards blur independently */
   .args-container.expanded {
-    width: 234px;
+    width: var(--panel-width, 234px);
     height: calc(100vh - 90px);
     border-radius: 16px;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
     cursor: default;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   /* ── Transparent hover buffer (20px around panel when expanded) ── */
@@ -1669,6 +1766,7 @@ const ARGUMENTS_BOX_CSS = `
     inset: 0;
     overflow: clip; /* clip (not hidden) preserves backdrop-filter on children */
     border-radius: inherit;
+    z-index: 1; /* above ::after panel blur layer */
   }
 
   /* ── Button face ── */
@@ -1855,29 +1953,32 @@ const ARGUMENTS_BOX_CSS = `
   .arg-card {
     position: absolute;
     left: 12px;
-    right: 12px;
-    background: rgba(255, 255, 255, 0.15);
+    width: fit-content;
+    min-width: 110px;
+    max-width: 220px;
+    background: rgba(40, 40, 50, 0.82);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 12px;
     padding: 10px 12px;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-size: 11.5px;
+    font-family: var(--oddity-note-font);
+    font-size: var(--oddity-note-size);
     line-height: 1.45;
     color: #FFFFFF;
     cursor: pointer;
-    box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
     transition: box-shadow 0.2s;
     box-sizing: border-box;
     flex-shrink: 0;
   }
 
   .arg-card:hover {
-    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.1);
   }
 
   .arg-card.expanded {
-    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+    z-index: 1;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.1);
   }
 
   .arg-card.dimmed {
@@ -1889,8 +1990,9 @@ const ARGUMENTS_BOX_CSS = `
   /* Header = note-label (max 1 line) */
   .arg-card-header {
     display: block;
+    font-family: var(--oddity-note-font);
     font-style: normal;
-    font-size: 11.5px;
+    font-size: var(--oddity-note-size);
     font-weight: 900;
     letter-spacing: normal;
     color: #59709E;
@@ -1908,8 +2010,9 @@ const ARGUMENTS_BOX_CSS = `
     overflow: hidden;
     text-overflow: ellipsis;
     word-break: break-word;
+    font-family: var(--oddity-note-font);
     font-style: normal;
-    font-size: 11.5px;
+    font-size: var(--oddity-note-size);
     font-weight: 250;
     line-height: 1.45;
     color: #FFFFFF;
@@ -1944,6 +2047,24 @@ const ARGUMENTS_BOX_CSS = `
     margin-top: 10px;
   }
 
+  /* ── Reply thread ── */
+  .arg-card .note-replies {
+    max-height: 100px;
+    overflow-y: auto;
+    margin-top: 6px;
+  }
+
+  .arg-card .note-reply-bubble {
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: var(--oddity-note-size);
+    margin-bottom: 3px;
+    word-break: break-word;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #FFFFFF;
+  }
+
   .arg-card .note-reply-bar {
     display: flex;
     align-items: center;
@@ -1959,7 +2080,7 @@ const ARGUMENTS_BOX_CSS = `
     background: #DFE7EF;
     border-radius: 100px;
     padding: 5px 12px;
-    font-size: 11.5px;
+    font-size: var(--oddity-note-size);
     font-weight: 450;
     color: #293038;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -2018,12 +2139,17 @@ const ARGUMENTS_BOX_CSS = `
     border-radius: 100px;
     background: #59709E;
     color: #fff;
+    opacity: 1;
     transition: opacity 0.15s;
     white-space: nowrap;
   }
 
   .arg-card .note-feedback-pill:hover {
     opacity: 0.8;
+  }
+
+  .arg-card .note-feedback-pill.active {
+    opacity: 1;
   }
 
   .arg-card .note-icon-btn {
@@ -2206,6 +2332,12 @@ const ARGUMENTS_BOX_CSS = `
     background: rgba(255, 255, 255, 0.4);
   }
 
+  :host([data-theme="light"]) .args-container.expanded {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   :host([data-theme="light"]) .args-main-title {
     color: #1a1a1a;
   }
@@ -2244,7 +2376,9 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .arg-card {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 
   :host([data-theme="light"]) .arg-card-header {
@@ -2252,7 +2386,17 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .arg-card-body {
-    color: #FFFFFF;
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-reply-bubble {
+    color: #293038;
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  :host([data-theme="light"]) .arg-card .note-icon-btn,
+  :host([data-theme="light"]) .arg-card .note-icon-btn:hover {
+    color: #293038;
   }
 
   :host([data-theme="light"]) .args-empty {
