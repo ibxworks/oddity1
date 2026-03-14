@@ -10,10 +10,13 @@ import {
 
 type ArgumentItem = {
   icon: string;
-  text: string;
+  text: string;       // body: user's note / reply text
+  quote?: string;     // header: highlighted text from page (for manual/reaction)
   sortKey: string;
   type: "reply" | "manual" | "reaction";
   replyHeader?: string;
+  feedbackId?: string;
+  annotationId?: string;
 };
 
 // ─── State ───
@@ -1238,8 +1241,10 @@ function buildItems(
         items.push({
           icon: "✎",
           text: ann.content.note,
+          quote: ann.anchor.exact,
           sortKey: ann.id,
           type: "manual",
+          annotationId: ann.id,
         });
       }
     }
@@ -1251,25 +1256,33 @@ function buildItems(
         items.push({
           icon: "✓",
           text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          quote: findAnnotationQuote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
           type: "reaction",
+          feedbackId: fb.id,
+          annotationId: fb.annotation_id,
         });
       } else if (fb.feedback_type === "thumbs_down") {
         items.push({
           icon: "✗",
           text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          quote: findAnnotationQuote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
           type: "reaction",
+          feedbackId: fb.id,
+          annotationId: fb.annotation_id,
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
-        const excerpt = note.length > 40 ? note.slice(0, 37) + "..." : note;
+        const excerpt = note.length > 40 ? note.slice(0, 37) + "\u2026" : note;
         items.push({
           icon: "↳",
           text: fb.reply_text ?? "",
           sortKey: fb.created_at,
           type: "reply",
           replyHeader: excerpt,
+          feedbackId: fb.id,
+          annotationId: fb.annotation_id,
         });
       }
     }
@@ -1288,6 +1301,17 @@ function findAnnotationNote(
     if (ann) return ann.content.note;
   }
   return "(annotation)";
+}
+
+function findAnnotationQuote(
+  annotations: Map<string, Annotation[]>,
+  annotationId: string,
+): string {
+  for (const [, anns] of annotations) {
+    const ann = anns.find((a) => a.id === annotationId);
+    if (ann) return ann.anchor.exact;
+  }
+  return "";
 }
 
 function expandCard(id: string): void {
@@ -1345,17 +1369,22 @@ function renderList(): void {
     const header = document.createElement("div");
     header.className = "arg-card-header";
     if (item.type === "reply") {
-      header.textContent = `Reply to \u201c${item.replyHeader ?? item.text}\u201d`;
+      header.textContent = `Reply to \u201c${item.replyHeader ?? ""}\u201d`;
     } else {
-      header.textContent = `\u201c${item.text}\u201d`;
+      const src = item.quote || item.text;
+      const MAX = 40;
+      const headerText = src.length > MAX
+        ? `\u201c${src.slice(0, MAX)}\u2026\u201d`
+        : `\u201c${src}\u201d`;
+      header.textContent = headerText;
     }
 
-    // Body text (like note-text, clamped when collapsed)
+    // Body text (note-text equivalent: clamped collapsed, full on expanded)
     const body = document.createElement("div");
     body.className = "arg-card-body";
     body.textContent = item.text;
 
-    // Expanded content (grid animation, like note-expanded-content)
+    // Expanded content — grid animation in flow, exactly like note-expanded-content
     const expandedContent = document.createElement("div");
     expandedContent.className = "note-expanded-content";
 
@@ -1402,12 +1431,65 @@ function renderList(): void {
     editBtn.className = "note-icon-btn note-edit-btn";
     editBtn.title = "Edit";
     editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
-    editBtn.addEventListener("click", (e) => e.stopPropagation());
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!item.feedbackId) return;
+      const current = body.dataset.editMode;
+      if (current === "true") return;
+      body.dataset.editMode = "true";
+      const original = item.text;
+      const ta = document.createElement("textarea");
+      ta.className = "note-edit-textarea";
+      ta.value = original;
+      ta.rows = 3;
+      ta.addEventListener("keydown", (ev) => ev.stopPropagation());
+      ta.addEventListener("click", (ev) => ev.stopPropagation());
+      const actions = document.createElement("div");
+      actions.className = "note-edit-actions";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "note-save-btn";
+      saveBtn.textContent = "Save";
+      saveBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const newText = ta.value.trim();
+        if (newText && item.feedbackId) {
+          chrome.runtime.sendMessage({
+            action: "updateFeedback",
+            payload: { feedbackId: item.feedbackId, replyText: newText },
+          });
+          item.text = newText;
+          body.textContent = newText;
+        }
+        delete body.dataset.editMode;
+        ta.remove();
+        actions.remove();
+      });
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "note-cancel-btn";
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        delete body.dataset.editMode;
+        ta.remove();
+        actions.remove();
+      });
+      actions.appendChild(saveBtn);
+      actions.appendChild(cancelBtn);
+      body.after(ta, actions);
+    });
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "note-icon-btn note-delete-btn";
     deleteBtn.title = "Delete";
     deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
-    deleteBtn.addEventListener("click", (e) => e.stopPropagation());
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!item.feedbackId) return;
+      chrome.runtime.sendMessage({
+        action: "deleteFeedback",
+        payload: { feedbackId: item.feedbackId },
+      });
+      card.remove();
+    });
     iconGroup.appendChild(editBtn);
     iconGroup.appendChild(deleteBtn);
 
@@ -1458,6 +1540,21 @@ function renderList(): void {
 
     listEl.appendChild(card);
   }
+
+  // Measure collapsed heights then fix positions — mirrors margin notes' rAF approach.
+  // Cards are position:absolute so expanding one never shifts siblings.
+  requestAnimationFrame(() => {
+    if (!listEl) return;
+    const PADDING = 10;
+    const GAP = 10;
+    let top = PADDING;
+    const cards = listEl.querySelectorAll<HTMLDivElement>(".arg-card");
+    for (const card of cards) {
+      card.style.top = `${top}px`;
+      top += card.offsetHeight + GAP;
+    }
+    listEl.style.height = `${top - GAP + PADDING}px`;
+  });
 }
 
 function handleCopy(btn: HTMLButtonElement): void {
@@ -1570,7 +1667,7 @@ const ARGUMENTS_BOX_CSS = `
   .args-content-clip {
     position: absolute;
     inset: 0;
-    overflow: hidden;
+    overflow: clip; /* clip (not hidden) preserves backdrop-filter on children */
     border-radius: inherit;
   }
 
@@ -1747,17 +1844,18 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-list {
     flex: 1;
-    padding: 10px 12px;
+    position: relative;
     overflow-y: auto;
+    overflow-x: visible;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
   }
 
   /* ── Argument cards (mirrors .oddity-note exactly) ── */
 
   .arg-card {
+    position: absolute;
+    left: 12px;
+    right: 12px;
     background: rgba(255, 255, 255, 0.15);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -1785,6 +1883,7 @@ const ARGUMENTS_BOX_CSS = `
   .arg-card.dimmed {
     opacity: 0.45;
     filter: grayscale(0.6);
+    pointer-events: none;
   }
 
   /* Header = note-label (max 1 line) */
@@ -1816,6 +1915,7 @@ const ARGUMENTS_BOX_CSS = `
     color: #FFFFFF;
   }
 
+  /* Body unclamps on expand — exactly like .oddity-note.expanded .note-text */
   .arg-card.expanded .arg-card-body {
     display: block;
     -webkit-line-clamp: unset;
@@ -1824,6 +1924,7 @@ const ARGUMENTS_BOX_CSS = `
 
   /* ── Expanded content (grid animation, mirrors margin notes exactly) ── */
 
+  /* Expanded content — in-flow grid animation, mirrors margin notes exactly */
   .arg-card .note-expanded-content {
     display: grid;
     grid-template-rows: 0fr;
@@ -1947,6 +2048,57 @@ const ARGUMENTS_BOX_CSS = `
     color: #f87171;
     background: rgba(248, 113, 113, 0.12);
   }
+
+  .arg-card .note-edit-textarea {
+    all: unset;
+    display: block;
+    width: 100%;
+    font-size: 11.5px;
+    padding: 6px 10px;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    font-family: 'Inter', system-ui, sans-serif;
+    resize: vertical;
+    min-height: 48px;
+    box-sizing: border-box;
+    background: rgba(255,255,255,0.06);
+    color: #FFFFFF;
+    margin-top: 6px;
+  }
+
+  .arg-card .note-edit-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+    justify-content: flex-end;
+  }
+
+  .arg-card .note-save-btn, .arg-card .note-cancel-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-family: 'Inter', system-ui, sans-serif;
+    transition: opacity 0.15s;
+  }
+
+  .arg-card .note-save-btn {
+    background: #59709E;
+    color: #fff;
+    opacity: 0.8;
+  }
+
+  .arg-card .note-save-btn:hover { opacity: 1; }
+
+  .arg-card .note-cancel-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.6);
+  }
+
+  .arg-card .note-cancel-btn:hover { background: rgba(255,255,255,0.12); }
 
   .args-empty {
     font-size: 12px;
