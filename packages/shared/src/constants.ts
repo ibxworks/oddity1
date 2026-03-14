@@ -1,4 +1,4 @@
-import type { AnnotationType } from "./types.js";
+import type { AnnotationType, OverviewLabel, DepthType } from "./types.js";
 
 // ─── Blocked Domains ───
 
@@ -33,7 +33,7 @@ export const EAGER_WORD_LIMIT = 6000;
 
 // ─── Rate Limits ───
 
-export const RATE_LIMIT_FREE = 50000;
+export const RATE_LIMIT_FREE = 50;
 export const RATE_LIMIT_PRO = 500;
 
 // ─── Request Limits ───
@@ -44,36 +44,93 @@ export const MAX_TEXT_LENGTH = 100_000; // ~100KB
 
 export const CACHE_TTL_DAYS = 30;
 
-// ─── Annotation Colors ───
+// ─── Overview Annotation Colors & Labels ───
+
+export const OVERVIEW_COLORS: Record<OverviewLabel, string> = {
+  core_claim: "#E8C547",
+  evidence: "#E8C547",
+  consequence: "#E8C547",
+  background: "#E8C547",
+  transition: "#E8C547",
+};
+
+export const OVERVIEW_LABELS: Record<OverviewLabel, string> = {
+  core_claim: "CORE CLAIM",
+  evidence: "EVIDENCE",
+  consequence: "CONSEQUENCE",
+  background: "BACKGROUND",
+  transition: "TRANSITION",
+};
+
+// ─── Depth Annotation Colors & Labels ───
+
+export const DEPTH_COLORS: Record<DepthType, string> = {
+  // CRITICAL
+  caveat: "#E05252",
+  counterargument: "#E05252",
+  alternative: "#E05252",
+  fallacy: "#E05252",
+  criteria: "#E05252",
+  perspective: "#E05252",
+  consequence: "#E05252",
+  // ENRICHMENT
+  insight: "#52B86E",
+  recall: "#52B86E",
+  study: "#52B86E",
+  translation: "#52B86E",
+  vocabulary: "#52B86E",
+};
+
+export const DEPTH_LABELS: Record<DepthType, string> = {
+  caveat: "CAVEAT",
+  counterargument: "COUNTERARGUMENT",
+  alternative: "ALTERNATIVE",
+  fallacy: "FALLACY",
+  criteria: "CRITERIA",
+  perspective: "PERSPECTIVE",
+  consequence: "CONSEQUENCE",
+  insight: "INSIGHT",
+  recall: "RECALL",
+  study: "STUDY",
+  translation: "TRANSLATION",
+  vocabulary: "VOCABULARY",
+};
+
+// ─── Unified Annotation Colors & Labels (used by rendering pipeline) ───
 
 export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
-  highlight: "#FFDD69",
-  recall: "#243C61",
-  provoking_question: "#F5574C",
-  insight: "#BFF3D3",
-  caveat: "#F5574C",
-  vocabulary: "#243C61",
+  ...OVERVIEW_COLORS,
+  ...DEPTH_COLORS,
   user_written: "#A1927B",
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
-  highlight: "KEY PHRASE",
-  recall: "RECALL",
-  provoking_question: "PROVOCATION",
-  insight: "INSIGHT",
-  caveat: "CAVEAT",
-  vocabulary: "VOCABULARY",
-  user_written: "USER-WRITTEN",
+  ...OVERVIEW_LABELS,
+  ...DEPTH_LABELS,
+  user_written: "MY NOTE",
 };
 
-// ─── All annotation types ───
+// ─── All annotation types by mode ───
 
-export const ALL_ANNOTATION_TYPES: AnnotationType[] = [
-  "highlight",
-  "recall",
-  "provoking_question",
-  "insight",
+export const ALL_OVERVIEW_TYPES: OverviewLabel[] = [
+  "core_claim",
+  "evidence",
+  "consequence",
+  "background",
+  "transition",
+];
+
+export const ALL_DEPTH_TYPES: DepthType[] = [
   "caveat",
+  "counterargument",
+  "alternative",
+  "fallacy",
+  "criteria",
+  "perspective",
+  "consequence",
+  "insight",
+  "recall",
+  "study",
+  "translation",
   "vocabulary",
-  "user_written",
 ];

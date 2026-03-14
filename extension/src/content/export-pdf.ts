@@ -1,6 +1,6 @@
 import { Readability } from '@mozilla/readability';
 import type { Annotation, AnnotationFont, AnnotationFontSize, AnnotationType } from '@oddity/shared';
-import { ANNOTATION_LABELS } from '@oddity/shared';
+import { ANNOTATION_LABELS, ANNOTATION_COLORS } from '@oddity/shared';
 import { getVisual } from './renderer/styles';
 
 // ─── Inline highlight styles per annotation type (derived from frontend visual map) ───
@@ -14,7 +14,10 @@ function buildMarkStyle(type: AnnotationType): string {
 }
 
 const ALL_TYPES: AnnotationType[] = [
-  'highlight', 'recall', 'provoking_question', 'insight', 'caveat', 'vocabulary', 'user_written',
+  'core_claim', 'evidence', 'consequence', 'background', 'transition',
+  'caveat', 'counterargument', 'alternative', 'fallacy', 'criteria', 'perspective',
+  'insight', 'recall', 'study', 'translation', 'vocabulary',
+  'user_written',
 ];
 
 const MARK_STYLES = Object.fromEntries(
@@ -44,16 +47,8 @@ const GFONT_MAP: Partial<Record<AnnotationFont, string>> = {
   kalam: 'family=Kalam:wght@400',
 };
 
-// Label colors — matches frontend light mode overrides (PDF is always light)
-const LABEL_COLORS: Record<AnnotationType, string> = {
-  highlight: '#EAB308',
-  recall: '#243C61',
-  provoking_question: '#F5574C',
-  insight: '#70AC87',
-  caveat: '#F5574C',
-  vocabulary: '#243C61',
-  user_written: '#A1927B',
-};
+// Label colors — derived from ANNOTATION_COLORS (PDF is always light)
+const LABEL_COLORS: Record<AnnotationType, string> = ANNOTATION_COLORS;
 
 // ─── Main Export ───
 

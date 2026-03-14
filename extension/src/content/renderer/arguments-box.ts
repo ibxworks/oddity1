@@ -5,7 +5,7 @@ import {
   offThemeChange,
   onThemeChange,
 } from "./theme-detector.js";
-import { getMarginNotesContentRight } from "./margin-notes.js";
+import { getMarginNotesContentLeft, getMarginNotesContentRight } from "./margin-notes.js";
 
 // ─── Font / Size maps (mirrors margin-notes) ───
 
@@ -117,6 +117,17 @@ let btnCurrentRight = BTN_DEFAULT_RIGHT;
 let btnCurrentBottom = BTN_DEFAULT_BOTTOM;
 let btnDragMoveHandler: ((e: MouseEvent) => void) | null = null;
 let btnDragUpHandler: (() => void) | null = null;
+
+// ─── Mode Toggle Overlay (fixed, left margin) ───
+
+let modeToggleHostEl: HTMLElement | null = null;
+let modeToggleShadowRoot: ShadowRoot | null = null;
+let modeToggleOverviewBtn: HTMLButtonElement | null = null;
+let modeToggleDepthBtn: HTMLButtonElement | null = null;
+let modeToggleResizeHandler: (() => void) | null = null;
+let modeToggleThemeHandler: ((mode: "light" | "dark") => void) | null = null;
+
+const TOGGLE_OVERLAY_WIDTH = 168; // px — approximate rendered width of the two buttons
 
 // ─── Public API ───
 
@@ -429,6 +440,8 @@ export function initArgumentsBox(): void {
 
   shadowRoot.appendChild(outerWrapperEl);
 
+  initModeToggleOverlay();
+
   // On init: set auth/site state without requiring user interaction
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
     if (blocked) return; // blocked domains skip auth/whitelist UI
@@ -474,6 +487,7 @@ export function addLiveFeedback(icon: string, text: string): void {
 export function setArgumentsBoxVisible(visible: boolean): void {
   if (!hostEl) return;
   hostEl.style.display = visible ? "" : "none";
+  if (modeToggleHostEl) modeToggleHostEl.style.display = visible ? "" : "none";
 }
 
 export function setArgumentsBoxEnabled(enabled: boolean): void {
@@ -568,6 +582,20 @@ export function destroyArgumentsBox(): void {
     offThemeChange(themeHandler);
     themeHandler = null;
   }
+  if (modeToggleResizeHandler) {
+    window.removeEventListener("resize", modeToggleResizeHandler);
+    modeToggleResizeHandler = null;
+  }
+  if (modeToggleThemeHandler) {
+    offThemeChange(modeToggleThemeHandler);
+    modeToggleThemeHandler = null;
+  }
+  document.removeEventListener("oddity:layoutUpdated", updateModeTogglePosition);
+  modeToggleHostEl?.remove();
+  modeToggleHostEl = null;
+  modeToggleShadowRoot = null;
+  modeToggleOverviewBtn = null;
+  modeToggleDepthBtn = null;
   if (listDragMoveHandler) {
     document.removeEventListener("mousemove", listDragMoveHandler);
     listDragMoveHandler = null;
@@ -799,7 +827,11 @@ function fitDashboardHeight(): void {
   if (!dashFaceEl || !containerEl) return;
   let h = 0;
   for (const child of Array.from(dashFaceEl.children)) {
-    h += (child as HTMLElement).offsetHeight;
+    const el = child as HTMLElement;
+    // Skip absolutely-positioned overlays (e.g. sign-in view) — they don't contribute to flow height
+    const pos = getComputedStyle(el).position;
+    if (pos === "absolute" || pos === "fixed") continue;
+    h += el.offsetHeight;
   }
   if (h > 0) containerEl.style.height = `${h}px`;
 }
@@ -820,8 +852,10 @@ function showAuthView(mode: "signin" | "signup"): void {
   if (dashSignInNameEl) dashSignInNameEl.style.display = mode === "signup" ? "block" : "none";
   if (dashSignInStatusEl) { dashSignInStatusEl.style.display = "none"; dashSignInStatusEl.className = "args-dash-feedback-status"; }
   if (dashSignInViewEl) { dashSignInViewEl.style.display = "flex"; }
-  if (containerEl) containerEl.style.width = "240px";
-  requestAnimationFrame(() => fitDashboardHeight());
+  if (containerEl) {
+    containerEl.style.width = "240px";
+    containerEl.style.height = mode === "signup" ? "280px" : "240px";
+  }
 }
 
 function buildDashboardFace(): HTMLDivElement {
@@ -946,18 +980,18 @@ function buildDashboardFace(): HTMLDivElement {
   sectionTitle.textContent = "Annotation";
   section.appendChild(sectionTitle);
 
-  // Density row
-  const densityRow = document.createElement("div");
-  densityRow.className = "args-dash-row";
-  const densityLabel = document.createElement("span");
-  densityLabel.className = "args-dash-label";
-  densityLabel.textContent = "Density";
-  const densityGroup = document.createElement("div");
-  densityGroup.className = "args-dash-density-group";
+  // Personality row (replaces density — only relevant for Depth mode)
+  const personalityRow = document.createElement("div");
+  personalityRow.className = "args-dash-row";
+  const personalityLabel = document.createElement("span");
+  personalityLabel.className = "args-dash-label";
+  personalityLabel.textContent = "Personality";
+  const personalityGroup = document.createElement("div");
+  personalityGroup.className = "args-dash-density-group";
   dashDensityBtns = [];
-  for (const [value, label] of [["light", "Light"], ["default", "Default"], ["heavy", "Heavy"]] as [string, string][]) {
+  for (const [value, label] of [["terry", "Terry"], ["jerry", "Jerry"], ["gary", "Gary"]] as [string, string][]) {
     const btn = document.createElement("button");
-    btn.className = "args-dash-density-btn" + (value === "default" ? " args-dash-density-active" : "");
+    btn.className = "args-dash-density-btn" + (value === "terry" ? " args-dash-density-active" : "");
     btn.dataset.intensity = value;
     btn.textContent = label;
     btn.addEventListener("click", () => {
@@ -965,15 +999,15 @@ function buildDashboardFace(): HTMLDivElement {
       btn.classList.add("args-dash-density-active");
       chrome.storage.local.get("preferences").then((stored) => {
         const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-        chrome.storage.local.set({ preferences: { ...prefs, intensity: value } });
+        chrome.storage.local.set({ preferences: { ...prefs, depth_personality: value } });
       });
     });
     dashDensityBtns.push(btn);
-    densityGroup.appendChild(btn);
+    personalityGroup.appendChild(btn);
   }
-  densityRow.appendChild(densityLabel);
-  densityRow.appendChild(densityGroup);
-  section.appendChild(densityRow);
+  personalityRow.appendChild(personalityLabel);
+  personalityRow.appendChild(personalityGroup);
+  section.appendChild(personalityRow);
 
   // Font row
   const fontRow = document.createElement("div");
@@ -1332,9 +1366,9 @@ function buildDashboardFace(): HTMLDivElement {
 async function loadDashboardPrefs(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-  const intensity = (prefs.intensity as string) ?? "default";
+  const personality = (prefs.depth_personality as string) ?? "terry";
   dashDensityBtns.forEach(btn => {
-    btn.classList.toggle("args-dash-density-active", btn.dataset.intensity === intensity);
+    btn.classList.toggle("args-dash-density-active", btn.dataset.intensity === personality);
   });
   if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
   if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
@@ -1798,7 +1832,135 @@ function handleCopy(btn: HTMLButtonElement): void {
   });
 }
 
+// ─── Mode Toggle Overlay ───
+
+function updateModeTogglePosition(): void {
+  if (!modeToggleHostEl) return;
+  const contentLeft = getMarginNotesContentLeft() || (() => {
+    const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+    return hashEl ? hashEl.getBoundingClientRect().left : window.innerWidth * 0.3;
+  })();
+  const availableWidth = contentLeft - 16 - 8;
+  if (availableWidth < 80) {
+    modeToggleHostEl.style.visibility = "hidden";
+    return;
+  }
+  modeToggleHostEl.style.visibility = "";
+  const left = Math.max(8, contentLeft - 16 - TOGGLE_OVERLAY_WIDTH);
+  modeToggleHostEl.style.left = `${left}px`;
+}
+
+function initModeToggleOverlay(): void {
+  if (modeToggleHostEl) return;
+
+  modeToggleHostEl = document.createElement("div");
+  modeToggleHostEl.style.cssText = "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto;";
+  document.body.appendChild(modeToggleHostEl);
+
+  modeToggleShadowRoot = modeToggleHostEl.attachShadow({ mode: "closed" });
+
+  const style = document.createElement("style");
+  style.textContent = TOGGLE_OVERLAY_CSS;
+  modeToggleShadowRoot.appendChild(style);
+
+  // Theme
+  modeToggleHostEl.dataset.theme = getThemeMode();
+  modeToggleThemeHandler = (mode) => {
+    if (modeToggleHostEl) modeToggleHostEl.dataset.theme = mode;
+  };
+  onThemeChange(modeToggleThemeHandler);
+
+  const toggleEl = document.createElement("div");
+  toggleEl.className = "mode-toggle";
+
+  modeToggleOverviewBtn = document.createElement("button");
+  modeToggleOverviewBtn.className = "mode-btn mode-active";
+  modeToggleOverviewBtn.textContent = "Overview";
+  modeToggleOverviewBtn.dataset.mode = "overview";
+
+  modeToggleDepthBtn = document.createElement("button");
+  modeToggleDepthBtn.className = "mode-btn";
+  modeToggleDepthBtn.textContent = "Depth";
+  modeToggleDepthBtn.dataset.mode = "depth";
+
+  function handleModeClick(e: MouseEvent): void {
+    e.stopPropagation();
+    const target = e.currentTarget as HTMLButtonElement;
+    const mode = target.dataset.mode as "overview" | "depth";
+    modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
+    modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
+    document.dispatchEvent(new CustomEvent("oddity:modeChange", { detail: { mode } }));
+  }
+
+  modeToggleOverviewBtn.addEventListener("click", handleModeClick);
+  modeToggleDepthBtn.addEventListener("click", handleModeClick);
+
+  toggleEl.appendChild(modeToggleOverviewBtn);
+  toggleEl.appendChild(modeToggleDepthBtn);
+  modeToggleShadowRoot.appendChild(toggleEl);
+
+  // Restore stored mode
+  chrome.storage.local.get("preferences", (result) => {
+    const prefs = result["preferences"] as Record<string, unknown> | undefined;
+    if ((prefs?.annotation_mode as string | undefined) === "depth") {
+      modeToggleOverviewBtn?.classList.remove("mode-active");
+      modeToggleDepthBtn?.classList.add("mode-active");
+    }
+  });
+
+  // Position — update immediately, on layout changes, and on resize
+  updateModeTogglePosition();
+  document.addEventListener("oddity:layoutUpdated", updateModeTogglePosition);
+
+  modeToggleResizeHandler = () => updateModeTogglePosition();
+  window.addEventListener("resize", modeToggleResizeHandler, { passive: true });
+}
+
 // ─── CSS ───
+
+const TOGGLE_OVERLAY_CSS = `
+  :host { display: block; }
+  * { box-sizing: border-box; }
+
+  .mode-toggle {
+    display: flex;
+    gap: 0;
+  }
+
+  .mode-btn {
+    all: unset;
+    flex: 1;
+    padding: 7px 13px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+    color: #888;
+    background: transparent;
+    border: 1px solid #333;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+
+  .mode-btn:first-child { border-radius: 6px 0 0 6px; border-right: none; }
+  .mode-btn:last-child  { border-radius: 0 6px 6px 0; }
+
+  .mode-active {
+    background: #363636;
+    color: #fff;
+    border-color: #363636;
+  }
+
+  .mode-btn:hover:not(.mode-active) {
+    background: rgba(255, 255, 255, 0.05);
+    color: #ccc;
+  }
+
+  :host([data-theme="light"]) .mode-btn          { color: #999; border-color: #ddd; }
+  :host([data-theme="light"]) .mode-active       { background: #333; color: #fff; border-color: #333; }
+  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { background: #f5f5f5; color: #666; }
+`;
 
 const ARGUMENTS_BOX_CSS = `
   :host {
@@ -2407,6 +2569,65 @@ const ARGUMENTS_BOX_CSS = `
     line-height: 1.5;
     padding: 8px 16px 4px;
     font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  /* ── Mode Toggle (Overview / Depth) ── */
+
+  .args-mode-toggle {
+    display: flex;
+    gap: 0;
+    padding: 8px 14px;
+    flex-shrink: 0;
+  }
+
+  .args-mode-btn {
+    all: unset;
+    flex: 1;
+    padding: 7px 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: #888;
+    background: transparent;
+    border: 1px solid #333;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .args-mode-btn:first-child {
+    border-radius: 6px 0 0 6px;
+    border-right: none;
+  }
+
+  .args-mode-btn:last-child {
+    border-radius: 0 6px 6px 0;
+  }
+
+  .args-mode-active {
+    background: #363636;
+    color: #fff;
+    border-color: #363636;
+  }
+
+  .args-mode-btn:hover:not(.args-mode-active) {
+    background: rgba(255, 255, 255, 0.05);
+    color: #ccc;
+  }
+
+  :host([data-theme="light"]) .args-mode-btn {
+    color: #999;
+    border-color: #ddd;
+  }
+
+  :host([data-theme="light"]) .args-mode-active {
+    background: #333;
+    color: #fff;
+    border-color: #333;
+  }
+
+  :host([data-theme="light"]) .args-mode-btn:hover:not(.args-mode-active) {
+    background: #f5f5f5;
+    color: #666;
   }
 
   /* ── Footer ── */

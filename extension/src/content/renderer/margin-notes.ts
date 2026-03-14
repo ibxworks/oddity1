@@ -56,6 +56,7 @@ let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
 let userName: string | null = null;
 let sharedContentRight = 0;
+let sharedContentLeftViewport = 0;
 
 const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
@@ -371,6 +372,10 @@ export function destroyMarginNotes(): void {
 
 export function getMarginNotesContentRight(): number {
   return sharedContentRight;
+}
+
+export function getMarginNotesContentLeft(): number {
+  return sharedContentLeftViewport;
 }
 
 export function updateMarginNotesStyle(
@@ -995,6 +1000,7 @@ function applyPositions(): void {
     if (cl < sharedContentLeft) sharedContentLeft = cl;
   }
   if (!isFinite(sharedContentLeft)) sharedContentLeft = 0;
+  sharedContentLeftViewport = sharedContentLeft - window.scrollX;
 
   for (const note of notes) {
     const bounds = getContentBounds(note.region, note.range);
@@ -1014,6 +1020,7 @@ function applyPositions(): void {
     note.element.style.top = `${note.topPx}px`;
   }
   sharedContentRight = maxContentRight;
+  document.dispatchEvent(new CustomEvent("oddity:layoutUpdated"));
 }
 
 // ─── Scroll / Resize Tracking ───
@@ -1319,14 +1326,14 @@ const MARGIN_NOTES_CSS = `
   }
 
   /* Dark text for light accent colors */
-  [data-annotation-type="highlight"] .note-feedback-pill,
+  [data-annotation-type="core_claim"] .note-feedback-pill,
   [data-annotation-type="insight"] .note-feedback-pill {
     color: #293038;
   }
 
   /* Dark arrow for light-colored send buttons */
   [data-annotation-type="insight"] .note-reply-send,
-  [data-annotation-type="highlight"] .note-reply-send {
+  [data-annotation-type="core_claim"] .note-reply-send {
     color: #293038;
   }
 
@@ -1488,8 +1495,8 @@ const MARGIN_NOTES_CSS = `
     color: rgba(41, 48, 56, 0.6);
   }
 
-  :host([data-theme="light"]) [data-annotation-type="highlight"] .note-label {
-    color: #EAB308 !important;
+  :host([data-theme="light"]) [data-annotation-type="core_claim"] .note-label {
+    color: #4A90D9 !important;
   }
 
   :host([data-theme="light"]) [data-annotation-type="recall"] .note-label,

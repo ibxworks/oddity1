@@ -11,7 +11,6 @@ import {
   deleteAnnotation as apiDeleteAnnotation,
   deleteFeedback as apiDeleteFeedback,
   updateFeedback as apiUpdateFeedback,
-  requestAnnotations,
   requestAnnotationsStreaming,
   saveAnnotation,
   saveFeedback as apiSaveFeedback,
@@ -63,8 +62,10 @@ chrome.runtime.onMessage.addListener(
     const handleAsync = async (): Promise<unknown> => {
       switch (message.action) {
         case "requestAnnotations": {
-          const { url, regionId, contentHash, text, intensity, wordCount } =
+          const { url, regionId, contentHash, text, mode: rawMode, personality, wordCount } =
             message.payload;
+          // Guard against stale content scripts (pre-mode-refactor) sending undefined mode
+          const mode = (rawMode === "overview" || rawMode === "depth") ? rawMode : "overview";
 
           // Proactive auth check — fail fast with badge if not signed in
           const session = await getSession();
@@ -77,10 +78,11 @@ chrome.runtime.onMessage.addListener(
           // Session exists — clear any stale badge
           chrome.action.setBadgeText({ text: "" });
 
+          // Build session cache key that includes mode + personality
+          const sessionCacheKey = `${mode}:${personality ?? "terry"}`;
+
           // ── Session cache: stale-while-revalidate for revisits ──
-          // Send cached data immediately for instant render, but don't return —
-          // fall through to fetch fresh merged data (with user annotations + feedback)
-          const cached = await getFromSessionCache(contentHash, intensity);
+          const cached = await getFromSessionCache(contentHash, sessionCacheKey);
           if (cached) {
             console.log(`[Oddity 1] Session cache hit for ${contentHash.slice(0, 12)}… (stale-while-revalidate)`);
             if (sender.tab?.id) {
@@ -122,7 +124,8 @@ chrome.runtime.onMessage.addListener(
               url,
               content_hash: contentHash,
               text: validatedText,
-              intensity,
+              mode,
+              personality,
               word_count: validatedWordCount,
             };
 
@@ -151,8 +154,8 @@ chrome.runtime.onMessage.addListener(
             const feedback = result.feedback ?? [];
 
             // Populate caches for future revisits
-            await setInSessionCache(contentHash, intensity, annotations, feedback);
-            await setUrlCache(url, contentHash, intensity, annotations, feedback);
+            await setInSessionCache(contentHash, sessionCacheKey, annotations, feedback);
+            await setUrlCache(url, contentHash, sessionCacheKey, annotations, feedback);
 
             // Send final annotationsReady with complete set + feedback
             if (sender.tab?.id) {
@@ -168,9 +171,6 @@ chrome.runtime.onMessage.addListener(
 
             return result;
           } finally {
-            // Only remove if this controller is still the active one for this key.
-            // A newer request may have already replaced it — deleting would orphan
-            // the newer controller and make it unabortable.
             if (inflight.get(key) === controller) {
               inflight.delete(key);
             }
@@ -492,16 +492,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
               action: "settingsUpdated",
               payload: {
                 enabled: prefs.enabled ?? true,
-                intensity: prefs.intensity ?? "default",
-                visibleTypes: prefs.visible_types ?? [
-                  "highlight",
-                  "recall",
-                  "provoking_question",
-                  "insight",
-                  "caveat",
-                  "vocabulary",
-                  "user_written",
-                ],
+                annotationMode: prefs.annotation_mode ?? "overview",
+                depthPersonality: prefs.depth_personality ?? "terry",
+                visibleTypes: prefs.visible_types ?? [],
                 annotationFont: prefs.annotation_font,
                 annotationFontSize: prefs.annotation_font_size,
               },

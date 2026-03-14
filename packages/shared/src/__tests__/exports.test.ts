@@ -28,28 +28,39 @@ describe("@oddity/shared exports", () => {
     expect(shared.CACHE_TTL_DAYS).toBe(30);
   });
 
-  it("exports annotation colors for all 6 types", () => {
-    expect(Object.keys(shared.ANNOTATION_COLORS)).toHaveLength(6);
-    expect(shared.ANNOTATION_COLORS.highlight).toBe("#F59E0B");
-    expect(shared.ANNOTATION_COLORS.recall).toBe("#0D9488");
-    expect(shared.ANNOTATION_COLORS.provoking_question).toBe("#7C3AED");
-    expect(shared.ANNOTATION_COLORS.caveat).toBe("#7C3AED");
-    expect(shared.ANNOTATION_COLORS.vocabulary).toBe("#0D9488");
-    expect(shared.ANNOTATION_COLORS.insight).toBe("#2563EB");
+  it("exports annotation colors for all types (overview + depth + user_written)", () => {
+    // 5 overview + 12 depth + 1 user_written = 18, but consequence overlaps so unique keys = 17
+    const keys = Object.keys(shared.ANNOTATION_COLORS);
+    expect(keys.length).toBeGreaterThanOrEqual(17);
+    expect(shared.ANNOTATION_COLORS.core_claim).toBe("#E8C547");
+    expect(shared.ANNOTATION_COLORS.evidence).toBe("#E8C547");
+    expect(shared.ANNOTATION_COLORS.insight).toBe("#52B86E");
+    expect(shared.ANNOTATION_COLORS.vocabulary).toBe("#52B86E");
+    expect(shared.ANNOTATION_COLORS.user_written).toBe("#A1927B");
   });
 
-  it("exports annotation labels for all 6 types", () => {
-    expect(Object.keys(shared.ANNOTATION_LABELS)).toHaveLength(6);
-    expect(shared.ANNOTATION_LABELS.highlight).toBe("KEY PHRASE");
-    expect(shared.ANNOTATION_LABELS.recall).toBe("RECALL");
-    expect(shared.ANNOTATION_LABELS.provoking_question).toBe("PROVOCATION");
+  it("exports annotation labels for all types", () => {
+    const keys = Object.keys(shared.ANNOTATION_LABELS);
+    expect(keys.length).toBeGreaterThanOrEqual(17);
+    expect(shared.ANNOTATION_LABELS.core_claim).toBe("CORE CLAIM");
+    expect(shared.ANNOTATION_LABELS.counterargument).toBe("COUNTERARGUMENT");
+    expect(shared.ANNOTATION_LABELS.user_written).toBe("MY NOTE");
   });
 
-  it("exports ALL_ANNOTATION_TYPES with 6 entries", () => {
-    expect(shared.ALL_ANNOTATION_TYPES).toHaveLength(6);
-    expect(shared.ALL_ANNOTATION_TYPES).toContain("highlight");
-    expect(shared.ALL_ANNOTATION_TYPES).toContain("recall");
-    expect(shared.ALL_ANNOTATION_TYPES).toContain("provoking_question");
-    expect(shared.ALL_ANNOTATION_TYPES).toContain("vocabulary");
+  it("exports ALL_OVERVIEW_TYPES with 5 entries", () => {
+    expect(shared.ALL_OVERVIEW_TYPES).toHaveLength(5);
+    expect(shared.ALL_OVERVIEW_TYPES).toContain("core_claim");
+    expect(shared.ALL_OVERVIEW_TYPES).toContain("evidence");
+    expect(shared.ALL_OVERVIEW_TYPES).toContain("consequence");
+    expect(shared.ALL_OVERVIEW_TYPES).toContain("background");
+    expect(shared.ALL_OVERVIEW_TYPES).toContain("transition");
+  });
+
+  it("exports ALL_DEPTH_TYPES with 12 entries", () => {
+    expect(shared.ALL_DEPTH_TYPES).toHaveLength(12);
+    expect(shared.ALL_DEPTH_TYPES).toContain("counterargument");
+    expect(shared.ALL_DEPTH_TYPES).toContain("insight");
+    expect(shared.ALL_DEPTH_TYPES).toContain("vocabulary");
+    expect(shared.ALL_DEPTH_TYPES).toContain("recall");
   });
 });

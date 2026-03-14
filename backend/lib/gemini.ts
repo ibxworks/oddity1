@@ -1,4 +1,4 @@
-import type { Annotation, Intensity } from "@oddity/shared";
+import type { Annotation, AnnotationMode, DepthPersonality } from "@oddity/shared";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -11,82 +11,91 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 const modelName = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
 
-// Load shared prompt fragments once at startup
+// Load prompt config once at startup
 const promptsConfig = JSON.parse(
   readFileSync(resolve(__dirname, "../config/prompts.json"), "utf-8"),
 );
-const sharedRules: string = promptsConfig.shared_rules ?? "";
-const schemaExample: string = promptsConfig.schema_example ?? "";
+const overviewPromptTemplate: string = promptsConfig.overview_prompt_template ?? promptsConfig.overview_prompt ?? "";
+const depthPromptTemplate: string = promptsConfig.depth_prompt_template ?? "";
+const overviewPersonalities: Record<string, string> = promptsConfig.overview_personalities ?? {};
+const personalities: Record<string, string> = promptsConfig.personalities ?? {};
 
-interface PromptProfile {
-  system_prompt: string;
-  annotation_density: string;
+/**
+ * Build the system prompt for a given mode and personality.
+ */
+function buildSystemPrompt(mode: AnnotationMode, personality?: DepthPersonality): string {
+  if (mode === "overview") {
+    const personalityText = overviewPersonalities[personality ?? "terry"] ?? overviewPersonalities.terry ?? "";
+    return overviewPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
+  }
+  // Depth mode: substitute personality into template
+  const personalityText = personalities[personality ?? "terry"] ?? personalities.terry ?? "";
+  return depthPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
 }
 
 /**
- * Expand template placeholders in a system prompt.
- * {{shared_rules}} → the shared anchor rules
- * {{schema_example}} → the compact JSON schema reference
+ * Map raw LLM output (overview format) into Annotation objects.
+ * Overview LLM returns: { anchor, prefix?, suffix?, label, summary }
  */
-function expandPrompt(template: string): string {
-  return template
-    .replace(/\{\{shared_rules\}\}/g, sharedRules)
-    .replace(/\{\{schema_example\}\}/g, schemaExample);
-}
-
-/**
- * Expand compressed field names from LLM output to standard annotation format.
- * Supports both compressed (t, a, c, e, p, s, n, w, q) and full field names.
- */
-function expandCompressedAnnotations(data: unknown[]): unknown[] {
-  return data.map((item: any) => {
+function mapOverviewOutput(raw: unknown[]): unknown[] {
+  return raw.map((item: any) => {
     if (!item || typeof item !== "object") return item;
+    // Already in Annotation format (has mode, type, anchor, content)
+    if (item.mode && item.type && item.anchor && item.content) return item;
 
-    // If already using full field names, pass through
-    if (item.type && item.anchor && item.content) return item;
-
-    const expanded: any = {
-      id: item.id,
-      type: item.t ?? item.type,
-      anchor: undefined,
-      content: undefined,
-    };
-
-    // Expand anchor: a → anchor, hardcode type: TextQuoteSelector
-    const anchor = item.a ?? item.anchor;
-    if (anchor && typeof anchor === "object") {
-      expanded.anchor = {
+    return {
+      id: item.id ?? randomUUID(),
+      mode: "overview",
+      type: (item.label ?? item.type ?? "").replace(/\s+/g, "_").toLowerCase(),
+      anchor: {
         type: "TextQuoteSelector",
-        exact: anchor.e ?? anchor.exact,
-        prefix: anchor.p ?? anchor.prefix,
-        suffix: anchor.s ?? anchor.suffix,
-      };
-    }
-
-    // Expand content: c → content
-    const content = item.c ?? item.content;
-    if (content && typeof content === "object") {
-      expanded.content = {
-        note: content.n ?? content.note,
-        ...((content.w ?? content.why_it_matters)
-          ? { why_it_matters: content.w ?? content.why_it_matters }
-          : {}),
-        ...((content.q ?? content.question)
-          ? { question: content.q ?? content.question }
-          : {}),
-      };
-    }
-
-    return expanded;
+        exact: item.anchor ?? item.exact ?? "",
+        prefix: item.prefix,
+        suffix: item.suffix,
+      },
+      content: {
+        note: item.summary ?? item.note ?? "",
+      },
+    };
   });
 }
 
 /**
+ * Map raw LLM output (depth format) into Annotation objects.
+ * Depth LLM returns: { anchor, prefix?, suffix?, type, provocation }
+ */
+function mapDepthOutput(raw: unknown[]): unknown[] {
+  return raw.map((item: any) => {
+    if (!item || typeof item !== "object") return item;
+    // Already in Annotation format
+    if (item.mode && item.anchor?.type === "TextQuoteSelector" && item.content) return item;
+
+    return {
+      id: item.id ?? randomUUID(),
+      mode: "depth",
+      type: (item.type ?? "").replace(/\s+/g, "_").toLowerCase(),
+      anchor: {
+        type: "TextQuoteSelector",
+        exact: item.anchor ?? item.exact ?? "",
+        prefix: item.prefix,
+        suffix: item.suffix,
+      },
+      content: {
+        note: item.provocation ?? item.note ?? "",
+      },
+    };
+  });
+}
+
+/**
+ * Map raw LLM output to Annotation format based on mode.
+ */
+function mapLlmOutput(raw: unknown[], mode: AnnotationMode): unknown[] {
+  return mode === "overview" ? mapOverviewOutput(raw) : mapDepthOutput(raw);
+}
+
+/**
  * Assign globally unique IDs to annotations.
- * LLM-generated IDs (e.g. "ann_1") are sequential per-call and collide
- * across separate API calls for different content regions.  Replacing them
- * with UUIDs ensures margin-note dedup in the client never incorrectly
- * drops annotations from a different region.
  */
 function assignUniqueIds(annotations: Annotation[]): Annotation[] {
   for (const ann of annotations) {
@@ -105,10 +114,11 @@ function getGenerationConfig() {
 
 async function callGemini(
   text: string,
-  config: PromptProfile,
+  mode: AnnotationMode,
+  personality?: DepthPersonality,
   correctionNote?: string,
 ): Promise<unknown> {
-  const systemPrompt = expandPrompt(config.system_prompt);
+  const systemPrompt = buildSystemPrompt(mode, personality);
   const generationConfig = getGenerationConfig();
 
   const model = genAI.getGenerativeModel({
@@ -135,26 +145,25 @@ async function callGemini(
 
 export async function generateAnnotations(
   text: string,
-  intensity: Intensity,
-  promptConfig: PromptProfile,
+  mode: AnnotationMode,
+  personality?: DepthPersonality,
 ): Promise<Annotation[]> {
-  const firstAttempt = await callGemini(text, promptConfig);
-  const expanded = Array.isArray(firstAttempt)
-    ? expandCompressedAnnotations(firstAttempt)
+  const firstAttempt = await callGemini(text, mode, personality);
+  const mapped = Array.isArray(firstAttempt)
+    ? mapLlmOutput(firstAttempt, mode)
     : firstAttempt;
-  const { valid, errors } = validateAnnotations(expanded);
+  const { valid, errors } = validateAnnotations(mapped);
 
   if (errors.length === 0) return assignUniqueIds(valid);
 
   // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callGemini(text, promptConfig, correctionPrompt);
-  const retryExpanded = Array.isArray(retryAttempt)
-    ? expandCompressedAnnotations(retryAttempt)
+  const retryAttempt = await callGemini(text, mode, personality, correctionPrompt);
+  const retryMapped = Array.isArray(retryAttempt)
+    ? mapLlmOutput(retryAttempt, mode)
     : retryAttempt;
-  const retryResult = validateAnnotations(retryExpanded);
+  const retryResult = validateAnnotations(retryMapped);
 
-  // Return whatever valid annotations we got (partial results OK)
   return assignUniqueIds(
     retryResult.valid.length > 0 ? retryResult.valid : valid,
   );
@@ -166,10 +175,10 @@ export async function generateAnnotations(
  */
 export async function* generateAnnotationsStream(
   text: string,
-  intensity: Intensity,
-  promptConfig: PromptProfile,
+  mode: AnnotationMode,
+  personality?: DepthPersonality,
 ): AsyncGenerator<Annotation, Annotation[], unknown> {
-  const systemPrompt = expandPrompt(promptConfig.system_prompt);
+  const systemPrompt = buildSystemPrompt(mode, personality);
   const generationConfig = getGenerationConfig();
   const allAnnotations: Annotation[] = [];
 
@@ -190,15 +199,12 @@ export async function* generateAnnotationsStream(
     if (!delta) continue;
     buffer += delta;
 
-    // Try to extract complete annotation objects from the buffer.
-    // The LLM outputs: {"annotations": [{...}, {...}, ...]}
-    // We look for complete objects within the array by tracking brace depth.
     const extracted = extractCompleteObjects(buffer);
     for (const objStr of extracted.objects) {
       try {
         const raw = JSON.parse(objStr);
-        const expanded = expandCompressedAnnotations([raw]);
-        const { valid } = validateAnnotations(expanded);
+        const mapped = mapLlmOutput([raw], mode);
+        const { valid } = validateAnnotations(mapped);
         if (valid.length > 0) {
           valid[0]!.id = randomUUID();
           allAnnotations.push(valid[0]!);
@@ -228,7 +234,6 @@ function extractCompleteObjects(buffer: string): {
   let escape = false;
   let objectStart = -1;
 
-  // Find the start of the array content (after "annotations": [)
   const arrayStart = buffer.indexOf("[");
   if (arrayStart === -1) return { objects: [], remaining: buffer };
 
@@ -267,7 +272,6 @@ function extractCompleteObjects(buffer: string): {
     }
   }
 
-  // Keep from the last successfully extracted position
   return {
     objects,
     remaining: buffer.slice(0, arrayStart + 1) + buffer.slice(searchFrom),

@@ -376,8 +376,17 @@ async function handleSubmit(note: string): Promise<void> {
     suffix = fullText.slice(idx + exact.length, idx + exact.length + 32).trim();
   }
 
+  // Determine current mode from stored preferences
+  const storedPrefs = await new Promise<Record<string, unknown>>((resolve) => {
+    chrome.storage.local.get("preferences", (result) => {
+      resolve((result["preferences"] ?? {}) as Record<string, unknown>);
+    });
+  });
+  const annotationMode = (storedPrefs.annotation_mode as "overview" | "depth") ?? "overview";
+
   const annotation: Annotation = {
     id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    mode: annotationMode,
     type,
     anchor: {
       type: 'TextQuoteSelector',

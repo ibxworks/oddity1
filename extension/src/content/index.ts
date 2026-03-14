@@ -1,12 +1,13 @@
 import type {
   Annotation,
   AnnotationFeedback,
+  AnnotationMode,
   AnnotationType,
+  DepthPersonality,
   ExtensionMessage,
-  Intensity,
   SiteAdapter,
 } from "@oddity/shared";
-import { DEFAULT_ENABLED_SITES, isBlockedDomain, MAX_TEXT_LENGTH } from "@oddity/shared";
+import { ALL_DEPTH_TYPES, ALL_OVERVIEW_TYPES, DEFAULT_ENABLED_SITES, isBlockedDomain, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
@@ -73,34 +74,43 @@ import { createStabilityWatcher } from "./stability.js";
 
 const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
-/** Regions that received at least one streaming `annotationReady` message.
- *  Used to distinguish progressive rendering from cache-first rendering
- *  so the final `annotationsReady` only triggers a global re-render when
- *  progressive annotations actually need replacing. */
+/** Regions that received at least one streaming `annotationReady` message. */
 const streamedRegions = new Set<string>();
-const currentAnnotations = new Map<string, Annotation[]>();
-const currentFeedback = new Map<string, AnnotationFeedback[]>();
+
+// ─── Dual-mode annotation stores ───
+const overviewAnnotations = new Map<string, Annotation[]>();
+const overviewFeedback = new Map<string, AnnotationFeedback[]>();
+const depthAnnotations = new Map<string, Annotation[]>();
+const depthFeedback = new Map<string, AnnotationFeedback[]>();
+const overviewGenerated = new Set<string>();
+const depthGenerated = new Set<string>();
+
+/** Returns the active mode's annotation map */
+function currentAnnotations(): Map<string, Annotation[]> {
+  return currentMode === "overview" ? overviewAnnotations : depthAnnotations;
+}
+/** Returns the active mode's feedback map */
+function currentFeedbackMap(): Map<string, AnnotationFeedback[]> {
+  return currentMode === "overview" ? overviewFeedback : depthFeedback;
+}
+/** Returns the active mode's generated set */
+function currentGenerated(): Set<string> {
+  return currentMode === "overview" ? overviewGenerated : depthGenerated;
+}
+
 const regionByHash = new Map<string, DetectedRegion>();
 /** Tracks current content hash per region element — used for stale response guards */
 const activeHashes = new Map<Element, string>();
-/** Elements currently tracked by the chat observer (including in-progress streaming).
- *  Shared with body-level detection so it skips elements the chat observer owns. */
+/** Elements currently tracked by the chat observer (including in-progress streaming). */
 const chatTrackedElements = new WeakSet<Element>();
 let siteWhitelisted = false;
 let manualRunTriggered = false;
 let blocked = false;
 
 let enabled = true;
-let visibleTypes: AnnotationType[] = [
-  "highlight",
-  "recall",
-  "provoking_question",
-  "insight",
-  "caveat",
-  "vocabulary",
-  "user_written",
-];
-let currentIntensity: Intensity = "default";
+let currentMode: AnnotationMode = "overview";
+let currentPersonality: DepthPersonality = "terry";
+let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
 const longWaitManager = new LongWaitManager(
@@ -124,7 +134,7 @@ let urlPollInterval: ReturnType<typeof setInterval> | null = null;
 // ─── Arguments Box Sync ───
 
 function syncArgumentsBox(): void {
-  updateArgumentsBox(currentAnnotations, currentFeedback);
+  updateArgumentsBox(currentAnnotations(), currentFeedbackMap());
 }
 
 // ─── SPA Navigation: State Reset ───
@@ -155,8 +165,12 @@ function resetAnnotationState(): void {
   annotatedRegions.clear();
   pendingRegions.clear();
   streamedRegions.clear();
-  currentAnnotations.clear();
-  currentFeedback.clear();
+  overviewAnnotations.clear();
+  overviewFeedback.clear();
+  depthAnnotations.clear();
+  depthFeedback.clear();
+  overviewGenerated.clear();
+  depthGenerated.clear();
   regionByHash.clear();
   activeHashes.clear();
   regions = [];
@@ -247,9 +261,18 @@ async function init(): Promise<void> {
     return;
   }
 
-  // Load stored enabled state before doing any work
+  // Load stored preferences before doing any work
   const stored = await chrome.storage.local.get("preferences");
   const prefs = stored?.preferences;
+
+  // Restore mode and personality from stored preferences
+  if (prefs?.annotation_mode) currentMode = prefs.annotation_mode;
+  if (prefs?.depth_personality) currentPersonality = prefs.depth_personality;
+  visibleTypes = [
+    ...(currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
+    "user_written",
+  ];
+
   if (prefs?.enabled === false) {
     enabled = false;
     console.log("[Oddity 1] Extension is disabled — skipping initialization");
@@ -326,6 +349,8 @@ async function startPipeline(): Promise<void> {
     // the onResponse callback updates it to the actual response element for
     // accurate left/right margin measurement.
     initMarginNotes(document.body);
+    setOverlayVisible(true);
+    setMarginNotesVisible(true);
 
     const chatObserver = createChatObserver({
       responseSelector: matchedAdapter.response_selector,
@@ -381,6 +406,9 @@ async function startPipeline(): Promise<void> {
     initMarginNotes(regions[0]!.element);
     marginNotesInitFromBody = true;
   }
+
+  setOverlayVisible(true);
+  setMarginNotesVisible(true);
 
   // ── URL prediction: render instantly from previous visit ──
   // Non-blocking: kicks off speculative render while normal pipeline runs in parallel
@@ -515,14 +543,12 @@ async function handleStableRegion(
   const contentHash = await sha256(extracted.text);
 
   // Stale guard: if this region already had a different hash, the content changed.
-  // Mark the old hash as stale so its in-flight response gets ignored.
   const previousHash = activeHashes.get(region.element);
   if (previousHash && previousHash !== contentHash) {
     pendingRegions.delete(previousHash);
     annotatedRegions.delete(previousHash);
-    currentAnnotations.delete(previousHash);
+    currentAnnotations().delete(previousHash);
     regionByHash.delete(previousHash);
-    // Content changed — clean up stale DOM annotations and re-render remaining
     rerenderAll();
     syncArgumentsBox();
   }
@@ -555,7 +581,8 @@ async function handleStableRegion(
         regionId: region.id,
         contentHash,
         text: extracted.text,
-        intensity: currentIntensity,
+        mode: currentMode,
+        personality: currentPersonality,
         wordCount: extracted.wordCount,
       },
     });
@@ -598,7 +625,7 @@ async function handleStableRegion(
 async function tryUrlPrediction(): Promise<void> {
   const prediction = await sendMessage<{
     contentHash: string;
-    intensity: string;
+    mode: string;
     annotations: Annotation[];
     feedback: AnnotationFeedback[];
   } | null>({
@@ -607,7 +634,7 @@ async function tryUrlPrediction(): Promise<void> {
   });
 
   if (!prediction || !prediction.annotations?.length) return;
-  if (prediction.intensity !== currentIntensity) return;
+  if (prediction.mode !== currentMode) return;
 
   // Use first region as the prediction target
   const region = regions[0];
@@ -627,9 +654,8 @@ async function tryUrlPrediction(): Promise<void> {
   (region.element as HTMLElement).dataset.oddityHash = regionId;
   activeHashes.set(region.element, regionId);
   // Render speculatively — do NOT add to pendingRegions/annotatedRegions
-  // so handleStableRegion() can still fire and fetch fresh merged data from server
-  currentAnnotations.set(regionId, prediction.annotations);
-  currentFeedback.set(regionId, prediction.feedback ?? []);
+  currentAnnotations().set(regionId, prediction.annotations);
+  currentFeedbackMap().set(regionId, prediction.feedback ?? []);
   renderAnnotations(regionId, prediction.annotations);
   syncArgumentsBox();
 }
@@ -638,10 +664,10 @@ async function tryUrlPrediction(): Promise<void> {
 
 function handleAnnotationDeleted(annotationId: string): void {
   // Remove from state
-  for (const [regionId, annotations] of currentAnnotations) {
+  for (const [regionId, annotations] of currentAnnotations()) {
     const filtered = annotations.filter((a) => a.id !== annotationId);
     if (filtered.length !== annotations.length) {
-      currentAnnotations.set(regionId, filtered);
+      currentAnnotations().set(regionId, filtered);
     }
   }
   // Remove from DOM
@@ -665,23 +691,57 @@ function attachAnchorHoverListeners(
   }
 }
 
+/**
+ * Remove annotations whose anchors overlap with an earlier annotation in the
+ * same render batch. Uses the root element's text content to find positions.
+ * Annotations whose exact string cannot be located are passed through unchanged.
+ */
+function deduplicateOverlappingAnchors(annotations: Annotation[], root: Element): Annotation[] {
+  const text = root.textContent ?? '';
+  type Positioned = { ann: Annotation; start: number; end: number };
+  const locatable: Positioned[] = [];
+  const unlocatable: Annotation[] = [];
+
+  for (const ann of annotations) {
+    const start = text.indexOf(ann.anchor.exact);
+    if (start === -1) {
+      unlocatable.push(ann);
+    } else {
+      locatable.push({ ann, start, end: start + ann.anchor.exact.length });
+    }
+  }
+
+  locatable.sort((a, b) => a.start - b.start);
+
+  const kept: Positioned[] = [];
+  for (const item of locatable) {
+    const overlaps = kept.some((k) => item.start < k.end && item.end > k.start);
+    if (!overlaps) kept.push(item);
+  }
+
+  return [...kept.map((k) => k.ann), ...unlocatable];
+}
+
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   const region =
     regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
-  const feedback = currentFeedback.get(regionId) ?? [];
+  const feedback = currentFeedbackMap().get(regionId) ?? [];
 
   // Filter visible types first
   const visible = annotations.filter((a) => visibleTypes.includes(a.type));
 
-  // Sort: background-type annotations first (highlight, insight), line-type last
+  // Sort: background-type annotations first (core_claim, insight), line-type last
   // This ensures underlines render on top in the DOM stacking order
-  const backgroundTypes = new Set<AnnotationType>(["highlight", "insight"]);
+  const backgroundTypes = new Set<AnnotationType>(["core_claim", "insight"]);
   visible.sort((a, b) => {
     const aIsBg = backgroundTypes.has(a.type) ? 0 : 1;
     const bIsBg = backgroundTypes.has(b.type) ? 0 : 1;
     return aIsBg - bIsBg;
   });
+
+  // Remove annotations whose anchors overlap with an earlier annotation
+  const nonOverlapping = deduplicateOverlappingAnchors(visible, root);
 
   // Invalidate text-node index once before the batch — ensures a clean index.
   // The index is reused across all annotations in this region (5–10× fewer TreeWalker traversals).
@@ -691,7 +751,7 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
 
   // Single-pass: resolve + render one annotation at a time
   // This avoids stale ranges from prior DOM mutations (injectAnchors splits text nodes)
-  for (const annotation of visible) {
+  for (const annotation of nonOverlapping) {
     const range = resolveSelector(root, annotation.anchor);
     if (!range) {
       console.warn(
@@ -746,8 +806,52 @@ function rerenderAll(): void {
   clearAllAnchors();
   clearMarginNotes();
 
-  for (const [regionId, annotations] of currentAnnotations) {
+  for (const [regionId, annotations] of currentAnnotations()) {
     renderAnnotations(regionId, annotations);
+  }
+}
+
+// ─── Mode Switching ───
+
+function switchMode(newMode: AnnotationMode, newPersonality?: DepthPersonality): void {
+  // Clear current rendering
+  clearOverlay();
+  clearAllAnchors();
+  clearMarginNotes();
+
+  // Update state
+  currentMode = newMode;
+  if (newPersonality) currentPersonality = newPersonality;
+
+  // Update visible types for new mode
+  visibleTypes = [
+    ...(currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
+    "user_written",
+  ];
+
+  // Clear pending/annotated tracking (these are per-request, not per-mode)
+  annotatedRegions.clear();
+  pendingRegions.clear();
+  streamedRegions.clear();
+  longWaitManager.reset();
+
+  // Check if the new mode already has generated data
+  const modeStore = currentAnnotations();
+  if (modeStore.size > 0) {
+    // Instant switch — re-render from cache
+    setOverlayVisible(true);
+    setMarginNotesVisible(true);
+    rerenderAll();
+    syncArgumentsBox();
+  } else {
+    // Lazy generation — request annotations for all regions
+    syncArgumentsBox();
+    setOverlayVisible(true);
+    setMarginNotesVisible(true);
+    setArgumentsBoxVisible(true);
+    for (const region of regions) {
+      handleStableRegion(region, region.element);
+    }
   }
 }
 
@@ -807,9 +911,8 @@ onMessage((message: ExtensionMessage) => {
   switch (message.action) {
     case "exportPdf": {
       const { title, subtitle } = message.payload;
-      // Flatten all annotations from currentAnnotations map
       const allAnnotations: Annotation[] = [];
-      for (const annotations of currentAnnotations.values()) {
+      for (const annotations of currentAnnotations().values()) {
         allAnnotations.push(...annotations);
       }
       // Collect page content from detected regions (live DOM).
@@ -835,9 +938,9 @@ onMessage((message: ExtensionMessage) => {
       const streamRoot = streamRegion?.element ?? document.body;
 
       // Track the annotation in state
-      const existing = currentAnnotations.get(streamRegionId) ?? [];
+      const existing = currentAnnotations().get(streamRegionId) ?? [];
       existing.push(annotation);
-      currentAnnotations.set(streamRegionId, existing);
+      currentAnnotations().set(streamRegionId, existing);
       syncArgumentsBox();
 
       // Render the single annotation immediately
@@ -866,9 +969,9 @@ onMessage((message: ExtensionMessage) => {
         }
 
         renderAnnotation(annotation, stableRange);
-        const fb = currentFeedback.get(streamRegionId) ?? [];
+        const fb = currentFeedbackMap().get(streamRegionId) ?? [];
         const noteFeedback = fb.filter(
-          (f) => f.annotation_id === annotation.id,
+          (f: AnnotationFeedback) => f.annotation_id === annotation.id,
         );
         addMarginNote(
           annotation,
@@ -898,30 +1001,30 @@ onMessage((message: ExtensionMessage) => {
       // the cache hit), silently update state without a visual nuke —
       // the user's annotations are already on screen.
       if (annotatedRegions.has(regionId) && !pendingRegions.has(regionId)) {
-        currentAnnotations.set(regionId, annotations);
-        currentFeedback.set(regionId, feedback);
+        currentAnnotations().set(regionId, annotations);
+        currentFeedbackMap().set(regionId, feedback);
         syncArgumentsBox();
         break;
       }
 
       annotatedRegions.add(regionId);
       pendingRegions.delete(regionId);
-      currentFeedback.set(regionId, feedback);
+      currentGenerated().add(regionId);
+      currentFeedbackMap().set(regionId, feedback);
 
       // Did this region actually receive progressive streaming annotations?
       // Only then do we need to clear + re-render to replace the partial set
       // with the final complete set.
       const hadStreaming = streamedRegions.has(regionId);
       streamedRegions.delete(regionId);
-      currentAnnotations.set(regionId, annotations);
+      currentAnnotations().set(regionId, annotations);
       syncArgumentsBox();
 
       if (enabled && hadStreaming) {
-        // Clear only this region's overlays and re-render
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
-        for (const [rid, anns] of currentAnnotations) {
+        for (const [rid, anns] of currentAnnotations()) {
           renderAnnotations(rid, anns);
         }
       } else if (enabled) {
@@ -933,7 +1036,8 @@ onMessage((message: ExtensionMessage) => {
     case "settingsUpdated": {
       const {
         enabled: newEnabled,
-        intensity: newIntensity,
+        annotationMode: newMode,
+        depthPersonality: newPersonality,
         visibleTypes: newVisibleTypes,
         annotationFont,
         annotationFontSize,
@@ -943,33 +1047,46 @@ onMessage((message: ExtensionMessage) => {
       updateMarginNotesStyle(annotationFont, annotationFontSize);
       updateArgumentsBoxStyle(annotationFont, annotationFontSize);
       const wasEnabled = enabled;
-      const intensityChanged = newIntensity !== currentIntensity;
+      const modeChanged = newMode !== currentMode;
+      const personalityChanged = newPersonality !== currentPersonality;
       enabled = newEnabled;
-      currentIntensity = newIntensity;
-      visibleTypes = newVisibleTypes;
+      visibleTypes = newVisibleTypes.length > 0 ? newVisibleTypes : [
+        ...(newMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
+        "user_written",
+      ];
 
       console.log(
-        `[Oddity 1] Settings updated — enabled: ${enabled}, intensity: ${currentIntensity}, types: ${visibleTypes.join(", ")}`,
+        `[Oddity 1] Settings updated — enabled: ${enabled}, mode: ${newMode}, personality: ${newPersonality}`,
       );
 
       setArgumentsBoxEnabled(enabled);
 
       if (!enabled) {
-        // Hide annotations but keep the button visible
         setOverlayVisible(false);
         setMarginNotesVisible(false);
         clearAllAnchors();
         longWaitManager.reset();
-      } else if (intensityChanged) {
-        // Intensity changed: clear cache and re-request all regions
+      } else if (modeChanged) {
+        // Mode changed: switch annotation display
+        switchMode(newMode, newPersonality);
+      } else if (personalityChanged) {
+        // Personality changed: clear current mode's cache and re-generate
+        currentPersonality = newPersonality;
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
-        currentAnnotations.clear();
+        if (currentMode === "depth") {
+          depthAnnotations.clear();
+          depthFeedback.clear();
+          depthGenerated.clear();
+        } else {
+          overviewAnnotations.clear();
+          overviewFeedback.clear();
+          overviewGenerated.clear();
+        }
         annotatedRegions.clear();
         pendingRegions.clear();
         streamedRegions.clear();
-        regionByHash.clear();
         longWaitManager.reset();
         syncArgumentsBox();
         setOverlayVisible(true);
@@ -979,18 +1096,14 @@ onMessage((message: ExtensionMessage) => {
           handleStableRegion(region, region.element);
         }
       } else if (!wasEnabled && enabled) {
-        // Re-enable
         if (!pipelineInitialized) {
-          // First time enabling — run the full pipeline (was disabled on page load)
           startPipeline().catch(console.error);
         } else {
-          // Pipeline exists — just show everything and re-render
           setOverlayVisible(true);
           setMarginNotesVisible(true);
           rerenderAll();
         }
       } else {
-        // Just filter by types
         filterByTypes(visibleTypes);
         filterMarginNotesByTypes(visibleTypes);
       }
@@ -1135,11 +1248,28 @@ function matchHostname(hostname: string, pattern: string): boolean {
 document.addEventListener("oddity:exportPdf", (e) => {
   const { title, subtitle } = (e as CustomEvent<{ title: string; subtitle: string }>).detail;
   const allAnnotations: Annotation[] = [];
-  for (const annotations of currentAnnotations.values()) {
+  for (const annotations of currentAnnotations().values()) {
     allAnnotations.push(...annotations);
   }
   const regionHtml = collectRegionHtml();
   handleExportPdf(title, subtitle, allAnnotations, regionHtml).catch(() => {});
+});
+
+// ─── Mode Change Handler (from arguments-box toggle) ───
+
+document.addEventListener("oddity:modeChange", (e) => {
+  const { mode } = (e as CustomEvent<{ mode: AnnotationMode }>).detail;
+  if (mode === currentMode) return;
+
+  // Persist to storage so the service worker broadcasts settingsUpdated
+  chrome.storage.local.get("preferences", (result) => {
+    const prefs = (result["preferences"] ?? {}) as Record<string, unknown>;
+    chrome.storage.local.set({
+      preferences: { ...prefs, annotation_mode: mode },
+    });
+  });
+
+  switchMode(mode);
 });
 
 // ─── Ctrl+O Manual Run Handler ───
@@ -1163,13 +1293,15 @@ window.addEventListener("pagehide", () => {
 
 // Clear all annotations and reset pipeline state when the user signs out
 setSignOutCallback(() => {
-  // Tear down DOM containers so startPipeline() reinitializes them cleanly
   destroyOverlay();
   destroyMarginNotes();
   clearAllAnchors();
-  // Reset all annotation state
-  currentAnnotations.clear();
-  currentFeedback.clear();
+  overviewAnnotations.clear();
+  overviewFeedback.clear();
+  depthAnnotations.clear();
+  depthFeedback.clear();
+  overviewGenerated.clear();
+  depthGenerated.clear();
   annotatedRegions.clear();
   pendingRegions.clear();
   streamedRegions.clear();
