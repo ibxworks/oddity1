@@ -1029,7 +1029,19 @@ onMessage((message: ExtensionMessage) => {
         // signOutCb (via handleRemoteSignOut) handles state reset + DOM teardown
         handleRemoteSignOut();
       } else {
-        handleRemoteSignIn().catch(() => {});
+        handleRemoteSignIn(message.payload.user).catch(() => {});
+        // init() returned early (unauthenticated), so re-check whitelist and start pipeline
+        if (!pipelineInitialized) {
+          (async () => {
+            const stored = await chrome.storage.local.get("preferences");
+            const enabledSites: string[] = stored?.preferences?.enabled_sites ?? DEFAULT_ENABLED_SITES;
+            const domain = extractDomain();
+            if (isDomainWhitelisted(domain, enabledSites)) {
+              siteWhitelisted = true;
+              await startPipeline();
+            }
+          })().catch(console.error);
+        }
       }
       break;
     }

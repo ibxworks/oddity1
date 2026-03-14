@@ -65,6 +65,7 @@ let dashSignInMode: "signin" | "signup" = "signup";
 let dashFaceEl: HTMLDivElement | null = null;
 let footerTextEl: HTMLSpanElement | null = null;
 let sessionSiteEnabled = false; // set to true when user runs once or always-enables this session
+let localAuthState: boolean | null = null; // cached auth state — avoids re-querying background on every toggle
 
 // ─── Public API ───
 
@@ -333,6 +334,7 @@ export function setSignOutCallback(cb: () => void): void {
 }
 
 export function handleRemoteSignOut(): void {
+  localAuthState = false;
   signOutCb?.();
   // Remove not-enabled overlay if present
   if (notEnabledPanelEl) {
@@ -345,20 +347,33 @@ export function handleRemoteSignOut(): void {
   showAuthView("signin");
 }
 
-export async function handleRemoteSignIn(): Promise<void> {
-  // Hide auth overlay
+export async function handleRemoteSignIn(user: { email: string; display_name: string | null; tier: string; annotation_count: number }): Promise<void> {
+  localAuthState = true;
+  // Hide auth overlay and update UI directly — no re-query needed (avoids service worker race)
   if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
   if (dashFaceEl) dashFaceEl.style.overflow = "";
   if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
+  const name = user.display_name || user.email || "?";
+  dashUserEmail = user.email;
+  dashUserTier = user.tier;
+  if (dashCountEl) dashCountEl.textContent = String(user.annotation_count ?? 0);
+  if (dashProfileNameEl) dashProfileNameEl.textContent = name;
+  if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
+  if (dashTierBadgeEl) dashTierBadgeEl.textContent = user.tier.toUpperCase();
+  if (dashSignOutPopoverNameEl) dashSignOutPopoverNameEl.textContent = name;
+  if (dashSignOutPopoverEmailEl) dashSignOutPopoverEmailEl.textContent = user.email;
+  if (dashSignOutPopoverPlanEl) dashSignOutPopoverPlanEl.textContent = user.tier === "pro" ? "Pro Plan" : "Free Plan";
+  await chrome.storage.local.set({ hadAccount: true });
+  // Check site whitelist to show dashboard or not-enabled overlay
   const prefsStored = await chrome.storage.local.get("preferences");
   const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
   const hostname = window.location.hostname.replace(/^www\./, "");
   const siteEnabled = Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s));
   if (!siteEnabled) {
     showNotEnabledOverlay();
-  } else {
-    await loadDashboardData();
   }
+  // Load prefs (density, font, toggle state) without re-querying auth
+  loadDashboardPrefs().catch(() => {});
 }
 
 export function destroyArgumentsBox(): void {
@@ -545,8 +560,8 @@ function toggle(): void {
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
   } else {
-    chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
-      if (!result?.authenticated) {
+    const checkAuth = async (authenticated: boolean) => {
+      if (!authenticated) {
         showDashboard();
         const stored = await chrome.storage.local.get("hadAccount");
         showAuthView(stored["hadAccount"] ? "signin" : "signup");
@@ -559,7 +574,15 @@ function toggle(): void {
           showNotEnabledOverlay();
         }
       }
-    }).catch(() => {});
+    };
+    if (localAuthState !== null) {
+      checkAuth(localAuthState).catch(() => {});
+    } else {
+      chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
+        localAuthState = result?.authenticated ?? false;
+        await checkAuth(localAuthState);
+      }).catch(() => {});
+    }
   }
 }
 
@@ -850,20 +873,22 @@ function buildDashboardFace(): HTMLDivElement {
   signOutBtn.textContent = "Sign out";
   signOutBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    chrome.runtime.sendMessage({ action: "signOut", payload: {} }).then(() => {
-      if (dashSignOutPopoverEl) dashSignOutPopoverEl.style.display = "none";
-      if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
-      if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
-      if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
-      if (dashCountEl) dashCountEl.textContent = "0";
-      dashUserEmail = "";
-      dashUserTier = "free";
-      if (dashSignInEmailEl) dashSignInEmailEl.value = "";
-      if (dashSignInPasswordEl) dashSignInPasswordEl.value = "";
-      if (dashSignInNameEl) dashSignInNameEl.value = "";
-      showAuthView("signin");
-      signOutCb?.();
-    });
+    // Clean up UI immediately — don't wait for background response
+    if (dashSignOutPopoverEl) dashSignOutPopoverEl.style.display = "none";
+    if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
+    if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
+    if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
+    if (dashCountEl) dashCountEl.textContent = "0";
+    dashUserEmail = "";
+    dashUserTier = "free";
+    if (dashSignInEmailEl) dashSignInEmailEl.value = "";
+    if (dashSignInPasswordEl) dashSignInPasswordEl.value = "";
+    if (dashSignInNameEl) dashSignInNameEl.value = "";
+    localAuthState = false;
+    showAuthView("signin");
+    signOutCb?.();
+    // Best-effort backend sign-out
+    chrome.runtime.sendMessage({ action: "signOut", payload: {} }).catch(() => {});
   });
 
   dashSignOutPopoverEl.appendChild(dashSignOutPopoverNameEl);
@@ -1048,6 +1073,7 @@ function buildDashboardFace(): HTMLDivElement {
         const result = await chrome.runtime.sendMessage({ action: "signIn", payload: { email, password } }) as { success?: boolean; error?: string };
         if (result?.error) throw new Error(result.error);
       }
+      localAuthState = true;
       await chrome.storage.local.set({ hadAccount: true });
       if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
       if (dashFaceEl) dashFaceEl.style.overflow = "";
@@ -1098,23 +1124,27 @@ function buildDashboardFace(): HTMLDivElement {
   return face;
 }
 
+async function loadDashboardPrefs(): Promise<void> {
+  const stored = await chrome.storage.local.get("preferences");
+  const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+  const intensity = (prefs.intensity as string) ?? "default";
+  dashDensityBtns.forEach(btn => {
+    btn.classList.toggle("args-dash-density-active", btn.dataset.intensity === intensity);
+  });
+  if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
+  if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
+  const persona = (prefs.persona as string) ?? "Terry";
+  if (dashPersonaSelect) dashPersonaSelect.value = persona;
+  if (dashPersonaAvatarImgEl) { dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`); dashPersonaAvatarImgEl.alt = persona; }
+  if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = persona === "Jerry" ? "#FDCB24" : "#fff";
+  const enabled = prefs.enabled !== false;
+  if (dashToggleInput) dashToggleInput.checked = enabled;
+  if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
+}
+
 async function loadDashboardData(): Promise<void> {
   try {
-    const stored = await chrome.storage.local.get("preferences");
-    const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-    const intensity = (prefs.intensity as string) ?? "default";
-    dashDensityBtns.forEach(btn => {
-      btn.classList.toggle("args-dash-density-active", btn.dataset.intensity === intensity);
-    });
-    if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
-    if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
-    const persona = (prefs.persona as string) ?? "Terry";
-    if (dashPersonaSelect) dashPersonaSelect.value = persona;
-    if (dashPersonaAvatarImgEl) { dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`); dashPersonaAvatarImgEl.alt = persona; }
-    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = persona === "Jerry" ? "#FDCB24" : "#fff";
-    const enabled = prefs.enabled !== false;
-    if (dashToggleInput) dashToggleInput.checked = enabled;
-    if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
+    await loadDashboardPrefs();
   } catch { /* ignore */ }
 
   try {
@@ -1122,6 +1152,7 @@ async function loadDashboardData(): Promise<void> {
       authenticated: boolean;
       user: { email: string; display_name: string | null; tier: string; annotation_count: number } | null;
     };
+    localAuthState = auth?.authenticated ?? false;
     if (auth?.authenticated && auth.user) {
       if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
       if (dashCountEl) dashCountEl.textContent = String(auth.user.annotation_count ?? 0);

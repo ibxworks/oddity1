@@ -218,4 +218,4 @@ export type ExtensionMessage =
   | { action: 'setBadge'; payload: { text: string; color?: string } }
   | { action: 'openPopup'; payload: Record<string, never> }
   | { action: 'openOptions'; payload: Record<string, never> }
-  | { action: 'authStateChanged'; payload: { authenticated: boolean } };
+  | { action: 'authStateChanged'; payload: { authenticated: false } | { authenticated: true; user: { email: string; display_name: string | null; tier: string; annotation_count: number } } };
