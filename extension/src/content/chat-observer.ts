@@ -163,7 +163,7 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   function finalizeResponse(state: ResponseState): void {
     // Fire the whole response element as a single region.
     // Full context lets the LLM produce diverse annotation types
-    // (provoking questions, insights, caveats, recall) — not just highlights.
+    // (counterarguments, insights, caveats, recall) — not just core claims.
     const text = state.element.textContent?.trim() ?? '';
     if (text.length > 0) {
       onResponse(`chat-${state.responseIndex}`, state.element);
