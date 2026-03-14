@@ -10,6 +10,7 @@ import {
   AuthError,
   deleteAnnotation as apiDeleteAnnotation,
   deleteFeedback as apiDeleteFeedback,
+  updateFeedback as apiUpdateFeedback,
   requestAnnotations,
   requestAnnotationsStreaming,
   saveAnnotation,
@@ -326,6 +327,12 @@ chrome.runtime.onMessage.addListener(
             page_title: pageTitle,
           });
           return fb;
+        }
+
+        case "updateFeedback": {
+          const { feedbackId: ufId, replyText: ufText } = message.payload;
+          const updatedFb = await apiUpdateFeedback(ufId, ufText);
+          return updatedFb;
         }
 
         case "deleteFeedback": {

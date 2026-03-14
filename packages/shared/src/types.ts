@@ -205,6 +205,7 @@ export type ExtensionMessage =
   | { action: 'getUserTier'; payload: Record<string, never> }
   | { action: 'getUserTierResult'; payload: { tier: UserTier } }
   | { action: 'saveFeedback'; payload: { annotationId: string; contentHash: string; url: string; feedbackType: FeedbackType; replyText?: string; pageTitle?: string } }
+  | { action: 'updateFeedback'; payload: { feedbackId: string; replyText: string } }
   | { action: 'deleteFeedback'; payload: { feedbackId: string } }
   | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation; url: string; contentHash: string; pageTitle?: string } }
   | { action: 'sendUserFeedback'; payload: { message: string } }

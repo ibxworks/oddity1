@@ -1391,6 +1391,7 @@ function renderList(): void {
     const card = document.createElement("div");
     card.className = "arg-card";
     card.dataset.cardId = cardId;
+    if (item.feedbackId) card.dataset.feedbackId = item.feedbackId;
 
     // Label (1 line max, like note-label)
     const header = document.createElement("div");
@@ -1527,9 +1528,13 @@ function renderList(): void {
           chrome.runtime.sendMessage({
             action: "updateFeedback",
             payload: { feedbackId: item.feedbackId, replyText: newText },
-          });
+          }).catch(() => {});
           item.text = newText;
           body.textContent = newText;
+          // Sync edit to margin notes
+          document.dispatchEvent(new CustomEvent("oddity:feedback-edited", {
+            detail: { feedbackId: item.feedbackId, replyText: newText },
+          }));
         }
         delete body.dataset.editMode;
         ta.remove();
@@ -1558,8 +1563,12 @@ function renderList(): void {
       chrome.runtime.sendMessage({
         action: "deleteFeedback",
         payload: { feedbackId: item.feedbackId },
-      });
+      }).catch(() => {});
       card.remove();
+      // Sync delete to margin notes
+      document.dispatchEvent(new CustomEvent("oddity:feedback-deleted", {
+        detail: { feedbackId: item.feedbackId },
+      }));
     });
     iconGroup.appendChild(editBtn);
     iconGroup.appendChild(deleteBtn);

@@ -125,6 +125,21 @@ export function initMarginNotes(region: Element): void {
 
   startTracking();
 
+  // Sync edits/deletes from argument box to margin note reply bubbles
+  document.addEventListener("oddity:feedback-edited", ((e: CustomEvent) => {
+    const { feedbackId, replyText } = e.detail;
+    if (!shadowRoot) return;
+    const bubble = shadowRoot.querySelector(`.note-reply-bubble[data-feedback-id="${feedbackId}"]`);
+    if (bubble) bubble.textContent = replyText;
+  }) as EventListener);
+
+  document.addEventListener("oddity:feedback-deleted", ((e: CustomEvent) => {
+    const { feedbackId } = e.detail;
+    if (!shadowRoot) return;
+    const bubble = shadowRoot.querySelector(`.note-reply-bubble[data-feedback-id="${feedbackId}"]`);
+    if (bubble) bubble.remove();
+  }) as EventListener);
+
   // Fetch user profile for name badge on manual annotations
   sendMessage({ action: "getProfile" } as any).then((p: any) => {
     userName = p?.display_name?.split(" ")[0] ?? null;
@@ -514,6 +529,7 @@ function createNoteElement(
     for (const reply of replies) {
       const bubble = document.createElement("div");
       bubble.className = "note-reply-bubble";
+      bubble.dataset.feedbackId = reply.id;
       bubble.textContent = reply.reply_text ?? "";
       repliesContainer.appendChild(bubble);
     }
@@ -742,7 +758,9 @@ function submitReply(
       replyText: text,
       pageTitle: document.title,
     },
-  });
+  }).then((fb: any) => {
+    if (fb?.id) bubble.dataset.feedbackId = fb.id;
+  }).catch(() => {});
 
   const excerpt = annotation.content.note.length > 60
     ? annotation.content.note.slice(0, 57) + "..."
