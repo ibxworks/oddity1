@@ -5,6 +5,7 @@ import {
   offThemeChange,
   onThemeChange,
 } from "./theme-detector.js";
+import { getMarginNotesContentRight } from "./margin-notes.js";
 
 // ─── Font / Size maps (mirrors margin-notes) ───
 
@@ -211,6 +212,7 @@ export function initArgumentsBox(): void {
   headerIcons.appendChild(addBtn);
   headerIcons.appendChild(copyIconBtn);
   headerIcons.appendChild(exportIconBtn);
+
   panelHeader.appendChild(mainTitle);
   panelHeader.appendChild(headerIcons);
   panelFace.appendChild(panelHeader);
@@ -328,7 +330,7 @@ export function initArgumentsBox(): void {
   });
   containerEl.appendChild(closeBtnEl);
 
-  // ── Toggle bar (sits above the panel, outside the box) ──
+  // ── Toggle bar (sits outside the panel, top-left of the outer wrapper) ──
   toggleBarEl = document.createElement("div");
   toggleBarEl.className = "args-toggle-bar";
 
@@ -1708,7 +1710,13 @@ function renderList(): void {
     }
     listEl.style.height = `${top}px`;
 
-    containerEl?.style.setProperty("--panel-width", `300px`);
+    const contentRight = getMarginNotesContentRight() || (() => {
+      const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+      return hashEl ? hashEl.getBoundingClientRect().right : window.innerWidth * 0.7;
+    })();
+    const availableWidth = window.innerWidth - contentRight - 16 - 20;
+    const panelWidth = Math.min(300, Math.max(134, availableWidth));
+    containerEl?.style.setProperty("--panel-width", `${panelWidth}px`);
   });
 }
 
@@ -1741,11 +1749,11 @@ const ARGUMENTS_BOX_CSS = `
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 10px;
+    gap: 0;
     pointer-events: none;
   }
 
-  /* ── Toggle bar (above the panel) ── */
+  /* ── Toggle bar (top-left, outside the panel) ── */
 
   .args-toggle-bar {
     display: flex;
@@ -1755,11 +1763,18 @@ const ARGUMENTS_BOX_CSS = `
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
+    align-self: flex-start;
+    margin-bottom: -28px;
   }
 
   .args-toggle-bar.visible {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .args-outer-wrapper:has(.args-container.dashboard) .args-toggle-bar {
+    opacity: 0;
+    pointer-events: none;
   }
 
   /* ── Morphing container ── */
@@ -1785,6 +1800,7 @@ const ARGUMENTS_BOX_CSS = `
       width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       box-shadow 0.3s;
   }
 
@@ -1818,14 +1834,15 @@ const ARGUMENTS_BOX_CSS = `
   /* Expanded (panel) state — blur moves to ::after so child cards blur independently */
   .args-container.expanded {
     width: var(--panel-width, 300px);
-    height: calc(100vh - 90px);
+    height: calc(100vh - 90px + 32px);
     border-radius: 16px;
     box-shadow: none;
-    border: 2px solid #E7E7E7;
+    border: 2px solid rgba(231, 231, 231, 0.5);
     cursor: default;
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    transform: translateY(32px);
   }
 
   /* ── Transparent hover buffer (20px around panel when expanded) ── */

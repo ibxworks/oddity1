@@ -55,6 +55,7 @@ let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
 let userName: string | null = null;
+let sharedContentRight = 0;
 
 const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
@@ -366,6 +367,10 @@ export function destroyMarginNotes(): void {
   pinnedId = null;
   fontLink?.remove();
   fontLink = null;
+}
+
+export function getMarginNotesContentRight(): number {
+  return sharedContentRight;
 }
 
 export function updateMarginNotesStyle(
@@ -983,6 +988,7 @@ function applyPositions(): void {
   // all align on the same leading edge with no stagger.
   const leftNotes = notes.filter((n) => n.side === "left");
   let sharedContentLeft = Infinity;
+  let maxContentRight = 0;
   for (const note of leftNotes) {
     const bounds = getContentBounds(note.region, note.range);
     const cl = bounds.left + window.scrollX;
@@ -993,6 +999,7 @@ function applyPositions(): void {
   for (const note of notes) {
     const bounds = getContentBounds(note.region, note.range);
     const contentRight = bounds.right + window.scrollX;
+    if (contentRight > maxContentRight) maxContentRight = contentRight;
 
     note.element.style.right = "auto";
 
@@ -1006,6 +1013,7 @@ function applyPositions(): void {
     }
     note.element.style.top = `${note.topPx}px`;
   }
+  sharedContentRight = maxContentRight;
 }
 
 // ─── Scroll / Resize Tracking ───
