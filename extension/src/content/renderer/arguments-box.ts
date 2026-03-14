@@ -1848,7 +1848,7 @@ function initModeToggleOverlay(): void {
   if (modeToggleHostEl) return;
 
   modeToggleHostEl = document.createElement("div");
-  modeToggleHostEl.style.cssText = "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto; display: none;";
+  modeToggleHostEl.style.cssText = "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto;";
   document.body.appendChild(modeToggleHostEl);
 
   modeToggleShadowRoot = modeToggleHostEl.attachShadow({ mode: "closed" });

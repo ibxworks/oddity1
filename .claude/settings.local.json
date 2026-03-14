@@ -82,7 +82,8 @@
       "Bash(python3 -c \"import markitdown; print\\(dir\\(markitdown\\)\\)\" 2>&1)",
       "Bash(pip install:*)",
       "Bash(python3 -c \"from markitdown import MarkItDown; print\\('OK'\\)\" 2>&1)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''backend/config/prompts.json'',''utf8''\\)\\); console.log\\(''valid JSON''\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,
