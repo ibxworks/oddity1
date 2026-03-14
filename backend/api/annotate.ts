@@ -1,4 +1,8 @@
-import type { Annotation, AnnotationMode, DepthPersonality } from "@oddity/shared";
+import type {
+  Annotation,
+  AnnotationMode,
+  DepthPersonality,
+} from "@oddity/shared";
 import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { Router } from "express";
 import { readFileSync } from "node:fs";
@@ -9,12 +13,12 @@ import {
   filterAndFixAnnotations,
   fixSingleAnnotation,
 } from "../lib/annotation-filter.js";
-import { createInflightDedup } from "../lib/inflight-dedup.js";
-import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
 import {
   generateAnnotations,
   generateAnnotationsStream,
 } from "../lib/gemini.js";
+import { createInflightDedup } from "../lib/inflight-dedup.js";
+import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
 import { serviceClient } from "../lib/supabase.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -24,7 +28,11 @@ const prompts = JSON.parse(readFileSync(promptsPath, "utf-8"));
 // ─── Optimization: in-flight request dedup ───
 const dedup = createInflightDedup();
 
-function cacheKey(contentHash: string, mode: string, personality?: string): string {
+function cacheKey(
+  contentHash: string,
+  mode: string,
+  personality?: string,
+): string {
   return `${contentHash}:${mode}:${personality ?? "none"}`;
 }
 
@@ -33,7 +41,7 @@ const AnnotateRequestSchema = z.object({
   content_hash: z.string().min(1),
   text: z.string().min(1).max(MAX_TEXT_LENGTH),
   mode: z.enum(["overview", "depth"]),
-  personality: z.enum(["terry", "jerry", "gary"]).optional(),
+  personality: z.enum(["terry", "jerry", "sally"]).optional(),
   word_count: z.number().int().positive(),
 });
 
@@ -103,18 +111,23 @@ router.post("/", async (req, res) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + CACHE_TTL_DAYS);
 
-    await serviceClient.from("annotation_cache").upsert(
-      {
-        content_hash,
-        url,
-        intensity: cacheIntensity,
-        annotations: aiAnnotations,
-        model_version: process.env.GEMINI_MODEL ?? "gemini-3-flash-preview",
-        prompt_version: prompts.version,
-        expires_at: expiresAt.toISOString(),
-      },
-      { onConflict: "content_hash,intensity" },
-    );
+    const { error: cacheWriteError } = await serviceClient
+      .from("annotation_cache")
+      .upsert(
+        {
+          content_hash,
+          url,
+          intensity: cacheIntensity,
+          annotations: aiAnnotations,
+          model_version: process.env.GEMINI_MODEL ?? "gemini-3-flash-preview",
+          prompt_version: prompts.version,
+          expires_at: expiresAt.toISOString(),
+        },
+        { onConflict: "content_hash,intensity" },
+      );
+    if (cacheWriteError) {
+      console.error("[annotate] Cache write failed:", cacheWriteError.message);
+    }
 
     // Increment user's annotation count (fresh generation only)
     if (req.user?.id) {
@@ -211,18 +224,26 @@ async function handleStreamingAnnotation(
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + CACHE_TTL_DAYS);
 
-    await serviceClient.from("annotation_cache").upsert(
-      {
-        content_hash,
-        url,
-        intensity: cacheIntensity,
-        annotations: allAnnotations,
-        model_version: currentModel,
-        prompt_version: currentPromptVersion,
-        expires_at: expiresAt.toISOString(),
-      },
-      { onConflict: "content_hash,intensity" },
-    );
+    const { error: cacheWriteError } = await serviceClient
+      .from("annotation_cache")
+      .upsert(
+        {
+          content_hash,
+          url,
+          intensity: cacheIntensity,
+          annotations: allAnnotations,
+          model_version: currentModel,
+          prompt_version: currentPromptVersion,
+          expires_at: expiresAt.toISOString(),
+        },
+        { onConflict: "content_hash,intensity" },
+      );
+    if (cacheWriteError) {
+      console.error(
+        "[annotate/stream] Cache write failed:",
+        cacheWriteError.message,
+      );
+    }
 
     if (req.user?.id) {
       await serviceClient.rpc("increment_annotation_count", {

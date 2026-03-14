@@ -1,447 +1,474 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Oddity — Settings</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
-    rel="stylesheet"
-  />
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oddity — Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-    body {
-      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-      background: #fafaf7;
-      color: #111;
-      font-size: 15px;
-      line-height: 1.5;
-      padding: 40px 24px;
-      max-width: 640px;
-      margin: 0 auto;
-    }
+      body {
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+        background: #fafaf7;
+        color: #111;
+        font-size: 15px;
+        line-height: 1.5;
+        padding: 40px 24px;
+        max-width: 640px;
+        margin: 0 auto;
+      }
 
-    h1 {
-      font-family: "Fraunces", Georgia, serif;
-      font-size: 28px;
-      font-weight: 600;
-      margin-bottom: 8px;
-      letter-spacing: -0.3px;
-    }
-    .subtitle {
-      color: #6b6b63;
-      font-size: 14px;
-      margin-bottom: 32px;
-    }
+      h1 {
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 28px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        letter-spacing: -0.3px;
+      }
+      .subtitle {
+        color: #6b6b63;
+        font-size: 14px;
+        margin-bottom: 32px;
+      }
 
-    /* ── Cards ── */
-    .card {
-      background: #fff;
-      border: 1px solid #e8e8e2;
-      border-radius: 16px;
-      padding: 28px;
-      margin-bottom: 20px;
-    }
-    .card-title {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid #f0efe9;
-    }
+      /* ── Cards ── */
+      .card {
+        background: #fff;
+        border: 1px solid #e8e8e2;
+        border-radius: 16px;
+        padding: 28px;
+        margin-bottom: 20px;
+      }
+      .card-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #f0efe9;
+      }
 
-    /* ── Form elements ── */
-    .field {
-      margin-bottom: 16px;
-    }
-    .field:last-child {
-      margin-bottom: 0;
-    }
-    .field-label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: #5a5a52;
-      margin-bottom: 6px;
-    }
-    .field-hint {
-      font-size: 12px;
-      color: #8a8a80;
-      margin-top: 4px;
-    }
+      /* ── Form elements ── */
+      .field {
+        margin-bottom: 16px;
+      }
+      .field:last-child {
+        margin-bottom: 0;
+      }
+      .field-label {
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        color: #5a5a52;
+        margin-bottom: 6px;
+      }
+      .field-hint {
+        font-size: 12px;
+        color: #8a8a80;
+        margin-top: 4px;
+      }
 
-    /* ── Intensity radio ── */
-    .radio-group {
-      display: flex;
-      gap: 8px;
-    }
-    .radio-btn {
-      flex: 1;
-      padding: 8px 0;
-      text-align: center;
-      border: 1px solid #e8e8e2;
-      border-radius: 100px;
-      background: #fff;
-      font-size: 13px;
-      cursor: pointer;
-      color: #5a5a52;
-      transition: all 0.15s;
-    }
-    .radio-btn:hover {
-      border-color: #c8c8be;
-    }
-    .radio-btn.active {
-      background: #111;
-      color: #fff;
-      border-color: #111;
-    }
+      /* ── Intensity radio ── */
+      .radio-group {
+        display: flex;
+        gap: 8px;
+      }
+      .radio-btn {
+        flex: 1;
+        padding: 8px 0;
+        text-align: center;
+        border: 1px solid #e8e8e2;
+        border-radius: 100px;
+        background: #fff;
+        font-size: 13px;
+        cursor: pointer;
+        color: #5a5a52;
+        transition: all 0.15s;
+      }
+      .radio-btn:hover {
+        border-color: #c8c8be;
+      }
+      .radio-btn.active {
+        background: #111;
+        color: #fff;
+        border-color: #111;
+      }
 
-    /* ── Checkboxes ── */
-    .checkbox-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-    }
-    .checkbox-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 8px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    .checkbox-item:hover {
-      background: #fafaf7;
-    }
-    .checkbox-item input {
-      accent-color: #f2c94c;
-    }
-    .type-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 2px;
-      flex-shrink: 0;
-    }
+      /* ── Checkboxes ── */
+      .checkbox-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .checkbox-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .checkbox-item:hover {
+        background: #fafaf7;
+      }
+      .checkbox-item input {
+        accent-color: #f2c94c;
+      }
+      .type-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
 
-    /* ── Site list ── */
-    .site-list {
-      list-style: none;
-      margin-bottom: 12px;
-    }
-    .site-list li {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 12px;
-      border: 1px solid #f0efe9;
-      border-radius: 8px;
-      margin-bottom: 6px;
-      font-size: 13px;
-      background: #fafaf7;
-    }
-    .site-remove {
-      background: none;
-      border: none;
-      color: #ef4444;
-      cursor: pointer;
-      font-size: 12px;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-    .site-remove:hover {
-      background: #fef2f2;
-    }
-    .site-input-row {
-      display: flex;
-      gap: 8px;
-    }
-    .site-input-row input {
-      flex: 1;
-      padding: 8px 12px;
-      border: 1px solid #e8e8e2;
-      border-radius: 12px;
-      font-size: 13px;
-      outline: none;
-      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-    }
-    .site-input-row input:focus {
-      border-color: #111;
-    }
-    .empty-state {
-      color: #8a8a80;
-      font-size: 13px;
-      font-style: italic;
-      padding: 8px 0;
-    }
+      /* ── Site list ── */
+      .site-list {
+        list-style: none;
+        margin-bottom: 12px;
+      }
+      .site-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        border: 1px solid #f0efe9;
+        border-radius: 8px;
+        margin-bottom: 6px;
+        font-size: 13px;
+        background: #fafaf7;
+      }
+      .site-remove {
+        background: none;
+        border: none;
+        color: #ef4444;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .site-remove:hover {
+        background: #fef2f2;
+      }
+      .site-input-row {
+        display: flex;
+        gap: 8px;
+      }
+      .site-input-row input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #e8e8e2;
+        border-radius: 12px;
+        font-size: 13px;
+        outline: none;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      }
+      .site-input-row input:focus {
+        border-color: #111;
+      }
+      .empty-state {
+        color: #8a8a80;
+        font-size: 13px;
+        font-style: italic;
+        padding: 8px 0;
+      }
 
-    /* ── Buttons ── */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 8px 16px;
-      border: 1px solid #e8e8e2;
-      border-radius: 100px;
-      background: #fff;
-      font-size: 13px;
-      cursor: pointer;
-      color: #3a3a36;
-      transition: all 0.15s;
-      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-    }
-    .btn:hover {
-      background: #fafaf7;
-      border-color: #c8c8be;
-    }
-    .btn-sm {
-      padding: 6px 12px;
-      font-size: 12px;
-    }
-    .btn-primary {
-      background: #111;
-      color: #fff;
-      border-color: #111;
-    }
-    .btn-primary:hover {
-      background: #333;
-    }
-    .btn-danger {
-      color: #ef4444;
-      border-color: #fecaca;
-    }
-    .btn-danger:hover {
-      background: #fef2f2;
-    }
+      /* ── Buttons ── */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 16px;
+        border: 1px solid #e8e8e2;
+        border-radius: 100px;
+        background: #fff;
+        font-size: 13px;
+        cursor: pointer;
+        color: #3a3a36;
+        transition: all 0.15s;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      }
+      .btn:hover {
+        background: #fafaf7;
+        border-color: #c8c8be;
+      }
+      .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+      .btn-primary {
+        background: #111;
+        color: #fff;
+        border-color: #111;
+      }
+      .btn-primary:hover {
+        background: #333;
+      }
+      .btn-danger {
+        color: #ef4444;
+        border-color: #fecaca;
+      }
+      .btn-danger:hover {
+        background: #fef2f2;
+      }
 
-    .btn-row {
-      display: flex;
-      gap: 10px;
-    }
+      .btn-row {
+        display: flex;
+        gap: 10px;
+      }
 
-    /* ── Auth info ── */
-    .auth-info {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .auth-detail {
-      font-size: 14px;
-    }
-    .auth-email {
-      font-weight: 600;
-    }
-    .auth-tier {
-      font-size: 12px;
-      color: #6b6b63;
-      margin-top: 2px;
-    }
+      /* ── Auth info ── */
+      .auth-info {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .auth-detail {
+        font-size: 14px;
+      }
+      .auth-email {
+        font-weight: 600;
+      }
+      .auth-tier {
+        font-size: 12px;
+        color: #6b6b63;
+        margin-top: 2px;
+      }
 
-    /* ── Toast ── */
-    .toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      padding: 10px 20px;
-      background: #111;
-      color: #fff;
-      border-radius: 12px;
-      font-size: 13px;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: all 0.3s;
-      pointer-events: none;
-    }
-    .toast.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  </style>
-</head>
-<body>
-  <h1>Oddity Settings</h1>
-  <p class="subtitle">Configure your annotation preferences</p>
+      /* ── Toast ── */
+      .toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        padding: 10px 20px;
+        background: #111;
+        color: #fff;
+        border-radius: 12px;
+        font-size: 13px;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.3s;
+        pointer-events: none;
+      }
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Oddity Settings</h1>
+    <p class="subtitle">Configure your annotation preferences</p>
 
-  <!-- Account -->
-  <div class="card" id="account-card">
-    <div class="card-title">Account</div>
-    <div id="auth-section">
-      <div id="auth-not-signed-in" style="display:none">
-        <div class="auth-detail">Not signed in</div>
-      </div>
-      <div id="auth-signed-in" style="display:none">
-        <div class="field">
-          <span class="field-label">Name</span>
-          <div class="auth-info">
-            <span class="auth-email" id="auth-display-name"></span>
-            <button class="btn btn-sm" id="change-name-btn">Change Name</button>
+    <!-- Account -->
+    <div class="card" id="account-card">
+      <div class="card-title">Account</div>
+      <div id="auth-section">
+        <div id="auth-not-signed-in" style="display: none">
+          <div class="auth-detail">Not signed in</div>
+        </div>
+        <div id="auth-signed-in" style="display: none">
+          <div class="field">
+            <span class="field-label">Name</span>
+            <div class="auth-info">
+              <span class="auth-email" id="auth-display-name"></span>
+              <button class="btn btn-sm" id="change-name-btn">
+                Change Name
+              </button>
+            </div>
+            <div
+              id="name-edit-row"
+              class="site-input-row"
+              style="display: none; margin-top: 8px"
+            >
+              <input
+                type="text"
+                id="name-edit-input"
+                placeholder="New display name"
+              />
+              <button class="btn btn-sm btn-primary" id="name-save-btn">
+                Save
+              </button>
+              <button class="btn btn-sm" id="name-cancel-btn">Cancel</button>
+            </div>
           </div>
-          <div id="name-edit-row" class="site-input-row" style="display:none; margin-top:8px">
-            <input type="text" id="name-edit-input" placeholder="New display name" />
-            <button class="btn btn-sm btn-primary" id="name-save-btn">Save</button>
-            <button class="btn btn-sm" id="name-cancel-btn">Cancel</button>
+          <div class="field">
+            <span class="field-label">Email</span>
+            <div class="auth-detail" id="auth-email-display"></div>
+          </div>
+          <div class="field">
+            <span class="field-label">Tier</span>
+            <div class="auth-detail" id="auth-tier-display"></div>
+          </div>
+          <div class="field">
+            <span class="field-label">Annotations</span>
+            <div class="auth-detail" id="auth-annotation-count">0</div>
+          </div>
+          <div class="btn-row" style="margin-top: 16px">
+            <button class="btn btn-sm" id="upgrade-btn" style="display: none">
+              Upgrade to Pro
+            </button>
+            <button class="btn btn-sm btn-danger" id="logout-btn">
+              Log out
+            </button>
           </div>
         </div>
-        <div class="field">
-          <span class="field-label">Email</span>
-          <div class="auth-detail" id="auth-email-display"></div>
+      </div>
+    </div>
+
+    <!-- Default Preferences -->
+    <div class="card">
+      <div class="card-title">Default Preferences</div>
+
+      <div class="field">
+        <span class="field-label">Depth Personality</span>
+        <div class="radio-group" id="intensity-group">
+          <button class="radio-btn active" data-intensity="terry">Terry</button>
+          <button class="radio-btn" data-intensity="jerry">Jerry</button>
+          <button class="radio-btn" data-intensity="sally">Sally</button>
         </div>
-        <div class="field">
-          <span class="field-label">Tier</span>
-          <div class="auth-detail" id="auth-tier-display"></div>
-        </div>
-        <div class="field">
-          <span class="field-label">Annotations</span>
-          <div class="auth-detail" id="auth-annotation-count">0</div>
-        </div>
-        <div class="btn-row" style="margin-top:16px">
-          <button class="btn btn-sm" id="upgrade-btn" style="display:none">Upgrade to Pro</button>
-          <button class="btn btn-sm btn-danger" id="logout-btn">Log out</button>
+        <p class="field-hint">
+          Controls the personality style for Depth mode annotations.
+        </p>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Enabled Annotation Types</span>
+        <div class="checkbox-grid" id="type-checkboxes">
+          <!-- Overview types -->
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="core_claim" checked />
+            <span class="type-dot" style="background: #4a90d9"></span>
+            Core Claim
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="evidence" checked />
+            <span class="type-dot" style="background: #7b61ff"></span>
+            Evidence
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="assumption" checked />
+            <span class="type-dot" style="background: #e8913a"></span>
+            Assumption
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="consequence" checked />
+            <span class="type-dot" style="background: #50b87a"></span>
+            Consequence
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="background" checked />
+            <span class="type-dot" style="background: #8e8e93"></span>
+            Background
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="transition" checked />
+            <span class="type-dot" style="background: #a1927b"></span>
+            Transition
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="caveat" checked />
+            <span class="type-dot" style="background: #f5574c"></span>
+            Caveat
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="open_question" checked />
+            <span class="type-dot" style="background: #e06b9e"></span>
+            Open Question
+          </label>
+          <!-- Depth types -->
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="counterargument" checked />
+            <span class="type-dot" style="background: #d94a4a"></span>
+            Counterargument
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="alternative" checked />
+            <span class="type-dot" style="background: #9b59b6"></span>
+            Alternative
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="fallacy" checked />
+            <span class="type-dot" style="background: #e74c3c"></span>
+            Fallacy
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="criteria" checked />
+            <span class="type-dot" style="background: #f39c12"></span>
+            Criteria
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="perspective" checked />
+            <span class="type-dot" style="background: #3498db"></span>
+            Perspective
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="insight" checked />
+            <span class="type-dot" style="background: #2ecc71"></span>
+            Insight
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="recall" checked />
+            <span class="type-dot" style="background: #243c61"></span>
+            Recall
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="study" checked />
+            <span class="type-dot" style="background: #1abc9c"></span>
+            Study
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="translation" checked />
+            <span class="type-dot" style="background: #8e44ad"></span>
+            Translation
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" data-type="vocabulary" checked />
+            <span class="type-dot" style="background: #243c61"></span>
+            Vocabulary
+          </label>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Default Preferences -->
-  <div class="card">
-    <div class="card-title">Default Preferences</div>
-
-    <div class="field">
-      <span class="field-label">Depth Personality</span>
-      <div class="radio-group" id="intensity-group">
-        <button class="radio-btn active" data-intensity="terry">Terry</button>
-        <button class="radio-btn" data-intensity="jerry">Jerry</button>
-        <button class="radio-btn" data-intensity="gary">Gary</button>
-      </div>
-      <p class="field-hint">Controls the personality style for Depth mode annotations.</p>
-    </div>
-
-    <div class="field">
-      <span class="field-label">Enabled Annotation Types</span>
-      <div class="checkbox-grid" id="type-checkboxes">
-        <!-- Overview types -->
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="core_claim" checked />
-          <span class="type-dot" style="background:#4A90D9"></span>
-          Core Claim
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="evidence" checked />
-          <span class="type-dot" style="background:#7B61FF"></span>
-          Evidence
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="assumption" checked />
-          <span class="type-dot" style="background:#E8913A"></span>
-          Assumption
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="consequence" checked />
-          <span class="type-dot" style="background:#50B87A"></span>
-          Consequence
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="background" checked />
-          <span class="type-dot" style="background:#8E8E93"></span>
-          Background
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="transition" checked />
-          <span class="type-dot" style="background:#A1927B"></span>
-          Transition
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="caveat" checked />
-          <span class="type-dot" style="background:#F5574C"></span>
-          Caveat
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="open_question" checked />
-          <span class="type-dot" style="background:#E06B9E"></span>
-          Open Question
-        </label>
-        <!-- Depth types -->
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="counterargument" checked />
-          <span class="type-dot" style="background:#D94A4A"></span>
-          Counterargument
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="alternative" checked />
-          <span class="type-dot" style="background:#9B59B6"></span>
-          Alternative
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="fallacy" checked />
-          <span class="type-dot" style="background:#E74C3C"></span>
-          Fallacy
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="criteria" checked />
-          <span class="type-dot" style="background:#F39C12"></span>
-          Criteria
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="perspective" checked />
-          <span class="type-dot" style="background:#3498DB"></span>
-          Perspective
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="insight" checked />
-          <span class="type-dot" style="background:#2ECC71"></span>
-          Insight
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="recall" checked />
-          <span class="type-dot" style="background:#243C61"></span>
-          Recall
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="study" checked />
-          <span class="type-dot" style="background:#1ABC9C"></span>
-          Study
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="translation" checked />
-          <span class="type-dot" style="background:#8E44AD"></span>
-          Translation
-        </label>
-        <label class="checkbox-item">
-          <input type="checkbox" data-type="vocabulary" checked />
-          <span class="type-dot" style="background:#243C61"></span>
-          Vocabulary
-        </label>
+    <!-- Per-site Settings -->
+    <div class="card">
+      <div class="card-title">Auto-Enabled Sites</div>
+      <p class="field-hint" style="margin-bottom: 12px">
+        Oddity 1 will automatically run on these domains.
+      </p>
+      <ul class="site-list" id="site-list"></ul>
+      <div id="site-empty" class="empty-state">No sites enabled.</div>
+      <div class="site-input-row">
+        <input type="text" id="site-input" placeholder="example.com" />
+        <button class="btn btn-sm btn-primary" id="add-site-btn">Add</button>
       </div>
     </div>
-  </div>
 
-  <!-- Per-site Settings -->
-  <div class="card">
-    <div class="card-title">Auto-Enabled Sites</div>
-    <p class="field-hint" style="margin-bottom:12px">Oddity 1 will automatically run on these domains.</p>
-    <ul class="site-list" id="site-list"></ul>
-    <div id="site-empty" class="empty-state">No sites enabled.</div>
-    <div class="site-input-row">
-      <input type="text" id="site-input" placeholder="example.com" />
-      <button class="btn btn-sm btn-primary" id="add-site-btn">Add</button>
+    <!-- Data Management -->
+    <div class="card">
+      <div class="card-title">Data Management</div>
+      <div class="btn-row">
+        <button class="btn" id="clear-cache-btn">Clear Cache</button>
+        <button class="btn" id="export-all-btn">Export All Data</button>
+      </div>
+      <p class="field-hint" style="margin-top: 10px">
+        Clearing the cache will remove all locally stored annotations. They will
+        be re-fetched when you visit pages again.
+      </p>
     </div>
-  </div>
 
-  <!-- Data Management -->
-  <div class="card">
-    <div class="card-title">Data Management</div>
-    <div class="btn-row">
-      <button class="btn" id="clear-cache-btn">Clear Cache</button>
-      <button class="btn" id="export-all-btn">Export All Data</button>
-    </div>
-    <p class="field-hint" style="margin-top:10px">Clearing the cache will remove all locally stored annotations. They will be re-fetched when you visit pages again.</p>
-  </div>
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
 
-  <!-- Toast -->
-  <div class="toast" id="toast"></div>
-
-  <script type="module" src="index.ts"></script>
-</body>
+    <script type="module" src="index.ts"></script>
+  </body>
 </html>

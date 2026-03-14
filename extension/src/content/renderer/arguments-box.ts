@@ -1,11 +1,19 @@
-import type { Annotation, AnnotationFeedback, AnnotationFont, AnnotationFontSize } from "@oddity/shared";
+import type {
+  Annotation,
+  AnnotationFeedback,
+  AnnotationFont,
+  AnnotationFontSize,
+} from "@oddity/shared";
 
+import {
+  getMarginNotesContentLeft,
+  getMarginNotesContentRight,
+} from "./margin-notes.js";
 import {
   getThemeMode,
   offThemeChange,
   onThemeChange,
 } from "./theme-detector.js";
-import { getMarginNotesContentLeft, getMarginNotesContentRight } from "./margin-notes.js";
 
 // ─── Font / Size maps (mirrors margin-notes) ───
 
@@ -27,8 +35,8 @@ const SIZE_MAP: Record<AnnotationFontSize, string> = {
 
 type ArgumentItem = {
   icon: string;
-  text: string;       // body: user's note / reply text
-  quote?: string;     // header: highlighted text from page (for manual/reaction)
+  text: string; // body: user's note / reply text
+  quote?: string; // header: highlighted text from page (for manual/reaction)
   sortKey: string;
   type: "reply" | "manual" | "reaction";
   replyHeader?: string;
@@ -274,9 +282,11 @@ export function initArgumentsBox(): void {
   exportIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 2v8M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11.5v1A1.5 1.5 0 0 0 4 14h7a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
   exportIconBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    document.dispatchEvent(new CustomEvent("oddity:exportPdf", {
-      detail: { title: document.title, subtitle: "Created with Oddity 1" },
-    }));
+    document.dispatchEvent(
+      new CustomEvent("oddity:exportPdf", {
+        detail: { title: document.title, subtitle: "Created with Oddity 1" },
+      }),
+    );
   });
 
   headerIcons.appendChild(addBtn);
@@ -332,7 +342,9 @@ export function initArgumentsBox(): void {
     if (!listDragging || !listEl) return;
     listDragging = false;
     listEl.style.cursor = "";
-    setTimeout(() => { listDragDelta = 0; }, 0);
+    setTimeout(() => {
+      listDragDelta = 0;
+    }, 0);
   };
 
   document.addEventListener("mousemove", listDragMoveHandler);
@@ -351,11 +363,14 @@ export function initArgumentsBox(): void {
   footerTextEl = document.createElement("span");
   footerTextEl.className = "args-footer-text";
   footerTextEl.textContent = "Go to Dashboard";
-  chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }, (result) => {
-    if (!result?.authenticated) {
-      footerTextEl!.textContent = "Sign in";
-    }
-  });
+  chrome.runtime.sendMessage(
+    { action: "getAuthStatus", payload: {} },
+    (result) => {
+      if (!result?.authenticated) {
+        footerTextEl!.textContent = "Sign in";
+      }
+    },
+  );
   footerTextEl.addEventListener("click", (e) => {
     e.stopPropagation();
     showDashboard();
@@ -443,25 +458,35 @@ export function initArgumentsBox(): void {
   initModeToggleOverlay();
 
   // On init: set auth/site state without requiring user interaction
-  chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
-    if (blocked) return; // blocked domains skip auth/whitelist UI
-    if (!result?.authenticated) {
-      toggle();
-      showDashboard();
-      const stored = await chrome.storage.local.get("hadAccount");
-      showAuthView(stored["hadAccount"] ? "signin" : "signup");
-    } else {
-      // Authenticated — mark red stroke if site not whitelisted (even if extension is off)
-      const prefsStored = await chrome.storage.local.get("preferences");
-      const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
-      const hostname = window.location.hostname.replace(/^www\./, "");
-      const siteEnabled = sessionSiteEnabled || (Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s)));
-      if (!siteEnabled) {
-        dimmed = true;
-        containerEl?.classList.add("oddity-not-enabled");
+  chrome.runtime
+    .sendMessage({ action: "getAuthStatus", payload: {} })
+    .then(async (result: { authenticated: boolean }) => {
+      if (blocked) return; // blocked domains skip auth/whitelist UI
+      if (!result?.authenticated) {
+        toggle();
+        showDashboard();
+        const stored = await chrome.storage.local.get("hadAccount");
+        showAuthView(stored["hadAccount"] ? "signin" : "signup");
+      } else {
+        // Authenticated — mark red stroke if site not whitelisted (even if extension is off)
+        const prefsStored = await chrome.storage.local.get("preferences");
+        const enabledSites = (
+          prefsStored["preferences"] as Record<string, unknown>
+        )?.["enabled_sites"] as string[] | undefined;
+        const hostname = window.location.hostname.replace(/^www\./, "");
+        const siteEnabled =
+          sessionSiteEnabled ||
+          (Array.isArray(enabledSites) &&
+            enabledSites.some(
+              (s) => hostname === s || hostname.endsWith("." + s),
+            ));
+        if (!siteEnabled) {
+          dimmed = true;
+          containerEl?.classList.add("oddity-not-enabled");
+        }
       }
-    }
-  }).catch(() => {});
+    })
+    .catch(() => {});
 }
 
 export function updateArgumentsBox(
@@ -480,7 +505,12 @@ export function updateArgumentsBox(
 
 export function addLiveFeedback(icon: string, text: string): void {
   if (!hostEl) return;
-  liveItems.push({ icon, text, sortKey: `live-${Date.now()}`, type: "reaction" });
+  liveItems.push({
+    icon,
+    text,
+    sortKey: `live-${Date.now()}`,
+    type: "reaction",
+  });
   renderList();
 }
 
@@ -494,7 +524,8 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
   if (!containerEl) return;
   containerEl.classList.toggle("oddity-enabled", enabled);
   if (panelToggleInput) panelToggleInput.checked = enabled;
-  if (panelToggleLabelEl) panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (panelToggleLabelEl)
+    panelToggleLabelEl.textContent = enabled ? "On" : "Off";
   if (dashToggleInput) dashToggleInput.checked = enabled;
   if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
 }
@@ -547,7 +578,12 @@ export function handleRemoteSignOut(): void {
   showAuthView("signin");
 }
 
-export async function handleRemoteSignIn(user: { email: string; display_name: string | null; tier: string; annotation_count: number }): Promise<void> {
+export async function handleRemoteSignIn(user: {
+  email: string;
+  display_name: string | null;
+  tier: string;
+  annotation_count: number;
+}): Promise<void> {
   localAuthState = true;
   // Hide auth overlay and update UI directly — no re-query needed (avoids service worker race)
   if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
@@ -557,17 +593,25 @@ export async function handleRemoteSignIn(user: { email: string; display_name: st
   dashUserTier = user.tier;
   if (dashCountEl) dashCountEl.textContent = String(user.annotation_count ?? 0);
   if (dashProfileNameEl) dashProfileNameEl.textContent = name;
-  if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
+  if (dashProfileAvatarEl)
+    dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
   if (dashTierBadgeEl) dashTierBadgeEl.textContent = user.tier.toUpperCase();
   if (dashSignOutPopoverNameEl) dashSignOutPopoverNameEl.textContent = name;
-  if (dashSignOutPopoverEmailEl) dashSignOutPopoverEmailEl.textContent = user.email;
-  if (dashSignOutPopoverPlanEl) dashSignOutPopoverPlanEl.textContent = user.tier === "pro" ? "Pro Plan" : "Free Plan";
+  if (dashSignOutPopoverEmailEl)
+    dashSignOutPopoverEmailEl.textContent = user.email;
+  if (dashSignOutPopoverPlanEl)
+    dashSignOutPopoverPlanEl.textContent =
+      user.tier === "pro" ? "Pro Plan" : "Free Plan";
   await chrome.storage.local.set({ hadAccount: true });
   // Check site whitelist to show dashboard or not-enabled overlay
   const prefsStored = await chrome.storage.local.get("preferences");
-  const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+  const enabledSites = (
+    prefsStored["preferences"] as Record<string, unknown>
+  )?.["enabled_sites"] as string[] | undefined;
   const hostname = window.location.hostname.replace(/^www\./, "");
-  const siteEnabled = Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s));
+  const siteEnabled =
+    Array.isArray(enabledSites) &&
+    enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
   if (!siteEnabled) {
     showNotEnabledOverlay();
   }
@@ -590,7 +634,10 @@ export function destroyArgumentsBox(): void {
     offThemeChange(modeToggleThemeHandler);
     modeToggleThemeHandler = null;
   }
-  document.removeEventListener("oddity:layoutUpdated", updateModeTogglePosition);
+  document.removeEventListener(
+    "oddity:layoutUpdated",
+    updateModeTogglePosition,
+  );
   modeToggleHostEl?.remove();
   modeToggleHostEl = null;
   modeToggleShadowRoot = null;
@@ -662,7 +709,9 @@ function showNotEnabledOverlay(): void {
   msg.className = "args-not-enabled-msg";
   msg.textContent = "Oddity 1 is not enabled for this site";
 
-  const isMac = /mac/i.test(navigator.userAgent) && !/iphone|ipad/i.test(navigator.userAgent);
+  const isMac =
+    /mac/i.test(navigator.userAgent) &&
+    !/iphone|ipad/i.test(navigator.userAgent);
   const shortcutHint = document.createElement("div");
   shortcutHint.className = "args-not-enabled-hint";
   shortcutHint.textContent = `${isMac ? "\u2318" : "Ctrl+"}O`;
@@ -676,10 +725,13 @@ function showNotEnabledOverlay(): void {
   };
 
   const enableExtension = () => {
-    chrome.storage.local.get("preferences").then((stored) => {
-      const prefs = ((stored["preferences"] ?? {}) as Record<string, unknown>);
-      chrome.storage.local.set({ preferences: { ...prefs, enabled: true } });
-    }).catch(() => {});
+    chrome.storage.local
+      .get("preferences")
+      .then((stored) => {
+        const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+        chrome.storage.local.set({ preferences: { ...prefs, enabled: true } });
+      })
+      .catch(() => {});
   };
 
   const runOnceBtn = document.createElement("button");
@@ -699,7 +751,9 @@ function showNotEnabledOverlay(): void {
   alwaysEnableBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     const domain = window.location.hostname.replace(/^www\./, "");
-    chrome.runtime.sendMessage({ action: "addEnabledSite", payload: { domain } }).catch(() => {});
+    chrome.runtime
+      .sendMessage({ action: "addEnabledSite", payload: { domain } })
+      .catch(() => {});
     enableExtension();
     sessionSiteEnabled = true;
     removeOverlay();
@@ -775,7 +829,10 @@ function toggle(): void {
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
     if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
-    if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
+    if (containerEl) {
+      containerEl.style.height = "";
+      containerEl.style.width = "";
+    }
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
@@ -788,9 +845,16 @@ function toggle(): void {
         showAuthView(stored["hadAccount"] ? "signin" : "signup");
       } else {
         const prefsStored = await chrome.storage.local.get("preferences");
-        const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+        const enabledSites = (
+          prefsStored["preferences"] as Record<string, unknown>
+        )?.["enabled_sites"] as string[] | undefined;
         const hostname = window.location.hostname.replace(/^www\./, "");
-        const siteEnabled = sessionSiteEnabled || (Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s)));
+        const siteEnabled =
+          sessionSiteEnabled ||
+          (Array.isArray(enabledSites) &&
+            enabledSites.some(
+              (s) => hostname === s || hostname.endsWith("." + s),
+            ));
         if (!siteEnabled) {
           showNotEnabledOverlay();
         }
@@ -799,10 +863,13 @@ function toggle(): void {
     if (localAuthState !== null) {
       checkAuth(localAuthState).catch(() => {});
     } else {
-      chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
-        localAuthState = result?.authenticated ?? false;
-        await checkAuth(localAuthState);
-      }).catch(() => {});
+      chrome.runtime
+        .sendMessage({ action: "getAuthStatus", payload: {} })
+        .then(async (result: { authenticated: boolean }) => {
+          localAuthState = result?.authenticated ?? false;
+          await checkAuth(localAuthState);
+        })
+        .catch(() => {});
     }
   }
 }
@@ -838,7 +905,10 @@ function fitDashboardHeight(): void {
 
 function showDashboard(): void {
   containerEl?.classList.add("dashboard");
-  if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
+  if (containerEl) {
+    containerEl.style.height = "";
+    containerEl.style.width = "";
+  }
   loadDashboardData()
     .catch(() => {})
     .finally(() => requestAnimationFrame(() => fitDashboardHeight()));
@@ -846,12 +916,26 @@ function showDashboard(): void {
 
 function showAuthView(mode: "signin" | "signup"): void {
   dashSignInMode = mode;
-  if (dashAuthTitleEl) dashAuthTitleEl.textContent = mode === "signup" ? "Create Account" : "Sign In";
-  if (dashAuthSubmitBtnEl) dashAuthSubmitBtnEl.textContent = mode === "signup" ? "Create Account" : "Sign In";
-  if (dashAuthToggleLinkEl) dashAuthToggleLinkEl.textContent = mode === "signup" ? "Already have an account? Sign in" : "New user? Create account";
-  if (dashSignInNameEl) dashSignInNameEl.style.display = mode === "signup" ? "block" : "none";
-  if (dashSignInStatusEl) { dashSignInStatusEl.style.display = "none"; dashSignInStatusEl.className = "args-dash-feedback-status"; }
-  if (dashSignInViewEl) { dashSignInViewEl.style.display = "flex"; }
+  if (dashAuthTitleEl)
+    dashAuthTitleEl.textContent =
+      mode === "signup" ? "Create Account" : "Sign In";
+  if (dashAuthSubmitBtnEl)
+    dashAuthSubmitBtnEl.textContent =
+      mode === "signup" ? "Create Account" : "Sign In";
+  if (dashAuthToggleLinkEl)
+    dashAuthToggleLinkEl.textContent =
+      mode === "signup"
+        ? "Already have an account? Sign in"
+        : "New user? Create account";
+  if (dashSignInNameEl)
+    dashSignInNameEl.style.display = mode === "signup" ? "block" : "none";
+  if (dashSignInStatusEl) {
+    dashSignInStatusEl.style.display = "none";
+    dashSignInStatusEl.className = "args-dash-feedback-status";
+  }
+  if (dashSignInViewEl) {
+    dashSignInViewEl.style.display = "flex";
+  }
   if (containerEl) {
     containerEl.style.width = "240px";
     containerEl.style.height = mode === "signup" ? "280px" : "240px";
@@ -875,7 +959,10 @@ function buildDashboardFace(): HTMLDivElement {
     e.stopPropagation();
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
-    if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
+    if (containerEl) {
+      containerEl.style.height = "";
+      containerEl.style.width = "";
+    }
   });
 
   const logo = document.createElement("span");
@@ -930,7 +1017,8 @@ function buildDashboardFace(): HTMLDivElement {
   dashPersonaAvatarImgEl = document.createElement("img");
   dashPersonaAvatarImgEl.src = chrome.runtime.getURL("Terry.png");
   dashPersonaAvatarImgEl.alt = "Terry";
-  dashPersonaAvatarImgEl.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:50%;";
+  dashPersonaAvatarImgEl.style.cssText =
+    "width:100%;height:100%;object-fit:contain;border-radius:50%;";
   dashPersonaCircleEl.appendChild(dashPersonaAvatarImgEl);
 
   dashPersonaSelect = document.createElement("select");
@@ -947,7 +1035,9 @@ function buildDashboardFace(): HTMLDivElement {
       dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${name}.png`);
       dashPersonaAvatarImgEl.alt = name;
     }
-    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = name === "Jerry" ? "#FDCB24" : "#fff";
+    if (dashPersonaCircleEl)
+      dashPersonaCircleEl.style.background =
+        name === "Jerry" ? "#FDCB24" : "#fff";
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
       chrome.storage.local.set({ preferences: { ...prefs, persona: name } });
@@ -989,17 +1079,27 @@ function buildDashboardFace(): HTMLDivElement {
   const personalityGroup = document.createElement("div");
   personalityGroup.className = "args-dash-density-group";
   dashDensityBtns = [];
-  for (const [value, label] of [["terry", "Terry"], ["jerry", "Jerry"], ["gary", "Gary"]] as [string, string][]) {
+  for (const [value, label] of [
+    ["terry", "Terry"],
+    ["jerry", "Jerry"],
+    ["sally", "Sally"],
+  ] as [string, string][]) {
     const btn = document.createElement("button");
-    btn.className = "args-dash-density-btn" + (value === "terry" ? " args-dash-density-active" : "");
+    btn.className =
+      "args-dash-density-btn" +
+      (value === "terry" ? " args-dash-density-active" : "");
     btn.dataset.intensity = value;
     btn.textContent = label;
     btn.addEventListener("click", () => {
-      dashDensityBtns.forEach(b => b.classList.remove("args-dash-density-active"));
+      dashDensityBtns.forEach((b) =>
+        b.classList.remove("args-dash-density-active"),
+      );
       btn.classList.add("args-dash-density-active");
       chrome.storage.local.get("preferences").then((stored) => {
         const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-        chrome.storage.local.set({ preferences: { ...prefs, depth_personality: value } });
+        chrome.storage.local.set({
+          preferences: { ...prefs, depth_personality: value },
+        });
       });
     });
     dashDensityBtns.push(btn);
@@ -1017,16 +1117,26 @@ function buildDashboardFace(): HTMLDivElement {
   fontLabel.textContent = "Font";
   dashFontSelect = document.createElement("select");
   dashFontSelect.className = "args-dash-select";
-  for (const [value, text] of [["default", "System"], ["fraunces", "Fraunces"], ["kalam", "Kalam"], ["helvetica", "Helvetica Neue"], ["arial", "Arial"], ["georgia", "Georgia"]] as [string, string][]) {
+  for (const [value, text] of [
+    ["default", "System"],
+    ["fraunces", "Fraunces"],
+    ["kalam", "Kalam"],
+    ["helvetica", "Helvetica Neue"],
+    ["arial", "Arial"],
+    ["georgia", "Georgia"],
+  ] as [string, string][]) {
     const opt = document.createElement("option");
-    opt.value = value; opt.textContent = text;
+    opt.value = value;
+    opt.textContent = text;
     dashFontSelect.appendChild(opt);
   }
   dashFontSelect.addEventListener("change", () => {
     const val = dashFontSelect!.value;
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-      chrome.storage.local.set({ preferences: { ...prefs, annotation_font: val } });
+      chrome.storage.local.set({
+        preferences: { ...prefs, annotation_font: val },
+      });
     });
   });
   fontRow.appendChild(fontLabel);
@@ -1041,16 +1151,23 @@ function buildDashboardFace(): HTMLDivElement {
   sizeLabel.textContent = "Size";
   dashFontSizeSelect = document.createElement("select");
   dashFontSizeSelect.className = "args-dash-select";
-  for (const [value, text] of [["small", "Small"], ["default", "Medium"], ["large", "Large"]] as [string, string][]) {
+  for (const [value, text] of [
+    ["small", "Small"],
+    ["default", "Medium"],
+    ["large", "Large"],
+  ] as [string, string][]) {
     const opt = document.createElement("option");
-    opt.value = value; opt.textContent = text;
+    opt.value = value;
+    opt.textContent = text;
     dashFontSizeSelect.appendChild(opt);
   }
   dashFontSizeSelect.addEventListener("change", () => {
     const val = dashFontSizeSelect!.value;
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-      chrome.storage.local.set({ preferences: { ...prefs, annotation_font_size: val } });
+      chrome.storage.local.set({
+        preferences: { ...prefs, annotation_font_size: val },
+      });
     });
   });
   sizeRow.appendChild(sizeLabel);
@@ -1065,9 +1182,11 @@ function buildDashboardFace(): HTMLDivElement {
   exportBtn.className = "args-dash-export-btn";
   exportBtn.textContent = "Export PDF";
   exportBtn.addEventListener("click", () => {
-    document.dispatchEvent(new CustomEvent("oddity:exportPdf", {
-      detail: { title: document.title, subtitle: "Created with Oddity 1" },
-    }));
+    document.dispatchEvent(
+      new CustomEvent("oddity:exportPdf", {
+        detail: { title: document.title, subtitle: "Created with Oddity 1" },
+      }),
+    );
   });
   exportSection.appendChild(exportBtn);
   face.appendChild(exportSection);
@@ -1127,7 +1246,9 @@ function buildDashboardFace(): HTMLDivElement {
     showAuthView("signin");
     signOutCb?.();
     // Best-effort backend sign-out
-    chrome.runtime.sendMessage({ action: "signOut", payload: {} }).catch(() => {});
+    chrome.runtime
+      .sendMessage({ action: "signOut", payload: {} })
+      .catch(() => {});
   });
 
   dashSignOutPopoverEl.appendChild(dashSignOutPopoverNameEl);
@@ -1166,7 +1287,13 @@ function buildDashboardFace(): HTMLDivElement {
   feedbackLink.className = "args-dash-footer-link";
   feedbackLink.textContent = "Send Feedback";
   feedbackLink.addEventListener("click", () => {
-    if (!dashFeedbackViewEl || !dashFeedbackEmailEl || !dashFeedbackTextareaEl || !dashFeedbackStatusEl) return;
+    if (
+      !dashFeedbackViewEl ||
+      !dashFeedbackEmailEl ||
+      !dashFeedbackTextareaEl ||
+      !dashFeedbackStatusEl
+    )
+      return;
     dashFeedbackEmailEl.textContent = dashUserEmail;
     dashFeedbackTextareaEl.value = "";
     dashFeedbackStatusEl.style.display = "none";
@@ -1227,7 +1354,10 @@ function buildDashboardFace(): HTMLDivElement {
     dashFeedbackSendBtnEl!.setAttribute("disabled", "");
     dashFeedbackStatusEl!.style.display = "none";
     try {
-      const result = await chrome.runtime.sendMessage({ action: "sendUserFeedback", payload: { message } }) as { success?: boolean; error?: string };
+      const result = (await chrome.runtime.sendMessage({
+        action: "sendUserFeedback",
+        payload: { message },
+      })) as { success?: boolean; error?: string };
       if (result?.error) throw new Error(result.error);
       dashFeedbackStatusEl!.textContent = "Feedback sent! Thank you.";
       dashFeedbackStatusEl!.className = "args-dash-feedback-status success";
@@ -1237,7 +1367,9 @@ function buildDashboardFace(): HTMLDivElement {
         if (containerEl) containerEl.style.height = "";
       }, 1500);
     } catch (err) {
-      dashFeedbackStatusEl!.textContent = String(err instanceof Error ? err.message : "Failed to send feedback");
+      dashFeedbackStatusEl!.textContent = String(
+        err instanceof Error ? err.message : "Failed to send feedback",
+      );
       dashFeedbackStatusEl!.className = "args-dash-feedback-status error";
       dashFeedbackStatusEl!.style.display = "block";
     } finally {
@@ -1296,46 +1428,69 @@ function buildDashboardFace(): HTMLDivElement {
     if (!email || !password) return;
     if (dashSignInMode === "signup" && !name) return;
     const isSignUp = dashSignInMode === "signup";
-    dashAuthSubmitBtnEl!.textContent = isSignUp ? "Creating..." : "Signing in...";
+    dashAuthSubmitBtnEl!.textContent = isSignUp
+      ? "Creating..."
+      : "Signing in...";
     dashAuthSubmitBtnEl!.setAttribute("disabled", "");
     dashSignInStatusEl!.style.display = "none";
     try {
       if (isSignUp) {
-        const result = await chrome.runtime.sendMessage({ action: "signUp", payload: { email, password, displayName: name } }) as { success?: boolean; needsConfirmation?: boolean; error?: string };
+        const result = (await chrome.runtime.sendMessage({
+          action: "signUp",
+          payload: { email, password, displayName: name },
+        })) as {
+          success?: boolean;
+          needsConfirmation?: boolean;
+          error?: string;
+        };
         if (result?.error) throw new Error(result.error);
         if (result?.needsConfirmation) {
-          dashSignInStatusEl!.textContent = "Check your email to confirm your account.";
+          dashSignInStatusEl!.textContent =
+            "Check your email to confirm your account.";
           dashSignInStatusEl!.className = "args-dash-feedback-status success";
           dashSignInStatusEl!.style.display = "block";
           return;
         }
       } else {
-        const result = await chrome.runtime.sendMessage({ action: "signIn", payload: { email, password } }) as { success?: boolean; error?: string };
+        const result = (await chrome.runtime.sendMessage({
+          action: "signIn",
+          payload: { email, password },
+        })) as { success?: boolean; error?: string };
         if (result?.error) throw new Error(result.error);
       }
       localAuthState = true;
       await chrome.storage.local.set({ hadAccount: true });
       if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
-      if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
+      if (containerEl) {
+        containerEl.style.height = "";
+        containerEl.style.width = "";
+      }
       dashSignInEmailEl!.value = "";
       dashSignInPasswordEl!.value = "";
       dashSignInNameEl!.value = "";
       if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
       const prefsStored = await chrome.storage.local.get("preferences");
-      const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+      const enabledSites = (
+        prefsStored["preferences"] as Record<string, unknown>
+      )?.["enabled_sites"] as string[] | undefined;
       const hostname = window.location.hostname.replace(/^www\./, "");
-      const siteEnabled = Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s));
+      const siteEnabled =
+        Array.isArray(enabledSites) &&
+        enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
       if (!siteEnabled) {
         showNotEnabledOverlay();
       } else {
         await loadDashboardData();
       }
     } catch (err) {
-      dashSignInStatusEl!.textContent = String(err instanceof Error ? err.message : "Something went wrong");
+      dashSignInStatusEl!.textContent = String(
+        err instanceof Error ? err.message : "Something went wrong",
+      );
       dashSignInStatusEl!.className = "args-dash-feedback-status error";
       dashSignInStatusEl!.style.display = "block";
     } finally {
-      dashAuthSubmitBtnEl!.textContent = dashSignInMode === "signup" ? "Create Account" : "Sign In";
+      dashAuthSubmitBtnEl!.textContent =
+        dashSignInMode === "signup" ? "Create Account" : "Sign In";
       dashAuthSubmitBtnEl!.removeAttribute("disabled");
     }
   });
@@ -1367,19 +1522,34 @@ async function loadDashboardPrefs(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
   const personality = (prefs.depth_personality as string) ?? "terry";
-  dashDensityBtns.forEach(btn => {
-    btn.classList.toggle("args-dash-density-active", btn.dataset.intensity === personality);
+  dashDensityBtns.forEach((btn) => {
+    btn.classList.toggle(
+      "args-dash-density-active",
+      btn.dataset.intensity === personality,
+    );
   });
-  if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
-  if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
+  if (dashFontSelect)
+    dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
+  if (dashFontSizeSelect)
+    dashFontSizeSelect.value =
+      (prefs.annotation_font_size as string) ?? "default";
   updateArgumentsBoxStyle(
-    prefs.annotation_font as import("@oddity/shared").AnnotationFont | undefined,
-    prefs.annotation_font_size as import("@oddity/shared").AnnotationFontSize | undefined,
+    prefs.annotation_font as
+      | import("@oddity/shared").AnnotationFont
+      | undefined,
+    prefs.annotation_font_size as
+      | import("@oddity/shared").AnnotationFontSize
+      | undefined,
   );
   const persona = (prefs.persona as string) ?? "Terry";
   if (dashPersonaSelect) dashPersonaSelect.value = persona;
-  if (dashPersonaAvatarImgEl) { dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`); dashPersonaAvatarImgEl.alt = persona; }
-  if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = persona === "Jerry" ? "#FDCB24" : "#fff";
+  if (dashPersonaAvatarImgEl) {
+    dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
+    dashPersonaAvatarImgEl.alt = persona;
+  }
+  if (dashPersonaCircleEl)
+    dashPersonaCircleEl.style.background =
+      persona === "Jerry" ? "#FDCB24" : "#fff";
   const enabled = prefs.enabled !== false;
   if (dashToggleInput) dashToggleInput.checked = enabled;
   if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
@@ -1388,26 +1558,44 @@ async function loadDashboardPrefs(): Promise<void> {
 async function loadDashboardData(): Promise<void> {
   try {
     await loadDashboardPrefs();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   try {
-    const auth = await chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }) as {
+    const auth = (await chrome.runtime.sendMessage({
+      action: "getAuthStatus",
+      payload: {},
+    })) as {
       authenticated: boolean;
-      user: { email: string; display_name: string | null; tier: string; annotation_count: number } | null;
+      user: {
+        email: string;
+        display_name: string | null;
+        tier: string;
+        annotation_count: number;
+      } | null;
     };
     localAuthState = auth?.authenticated ?? false;
     if (auth?.authenticated && auth.user) {
       if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
-      if (dashCountEl) dashCountEl.textContent = String(auth.user.annotation_count ?? 0);
+      if (dashCountEl)
+        dashCountEl.textContent = String(auth.user.annotation_count ?? 0);
       const name = auth.user.display_name || auth.user.email || "?";
       dashUserEmail = auth.user.email || "";
       dashUserTier = auth.user.tier || "free";
-      if (dashProfileNameEl) dashProfileNameEl.textContent = auth.user.display_name || auth.user.email || "?";
-      if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
-      if (dashTierBadgeEl) dashTierBadgeEl.textContent = dashUserTier.toUpperCase();
+      if (dashProfileNameEl)
+        dashProfileNameEl.textContent =
+          auth.user.display_name || auth.user.email || "?";
+      if (dashProfileAvatarEl)
+        dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
+      if (dashTierBadgeEl)
+        dashTierBadgeEl.textContent = dashUserTier.toUpperCase();
       if (dashSignOutPopoverNameEl) dashSignOutPopoverNameEl.textContent = name;
-      if (dashSignOutPopoverEmailEl) dashSignOutPopoverEmailEl.textContent = dashUserEmail;
-      if (dashSignOutPopoverPlanEl) dashSignOutPopoverPlanEl.textContent = dashUserTier === "pro" ? "Pro Plan" : "Free Plan";
+      if (dashSignOutPopoverEmailEl)
+        dashSignOutPopoverEmailEl.textContent = dashUserEmail;
+      if (dashSignOutPopoverPlanEl)
+        dashSignOutPopoverPlanEl.textContent =
+          dashUserTier === "pro" ? "Pro Plan" : "Free Plan";
     } else {
       if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
       if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
@@ -1415,7 +1603,9 @@ async function loadDashboardData(): Promise<void> {
       const stored = await chrome.storage.local.get("hadAccount");
       showAuthView(stored["hadAccount"] ? "signin" : "signup");
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 function buildItems(
@@ -1445,7 +1635,8 @@ function buildItems(
       if (fb.feedback_type === "thumbs_up") {
         items.push({
           icon: "✓",
-          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text:
+            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
           quote: findAnnotationQuote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
           type: "reaction",
@@ -1455,7 +1646,8 @@ function buildItems(
       } else if (fb.feedback_type === "thumbs_down") {
         items.push({
           icon: "✗",
-          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text:
+            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
           quote: findAnnotationQuote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
           type: "reaction",
@@ -1506,17 +1698,23 @@ function findAnnotationQuote(
 
 function expandCard(id: string): void {
   if (expandedCardId && expandedCardId !== id) {
-    const prev = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`);
+    const prev = listEl?.querySelector<HTMLDivElement>(
+      `.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`,
+    );
     prev?.classList.remove("expanded");
   }
   expandedCardId = id;
-  const card = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(id)}"]`);
+  const card = listEl?.querySelector<HTMLDivElement>(
+    `.arg-card[data-card-id="${CSS.escape(id)}"]`,
+  );
   card?.classList.add("expanded");
 }
 
 function collapseAllCards(): void {
   if (expandedCardId) {
-    const card = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`);
+    const card = listEl?.querySelector<HTMLDivElement>(
+      `.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`,
+    );
     card?.classList.remove("expanded");
     expandedCardId = null;
   }
@@ -1529,7 +1727,9 @@ function dimOtherCards(id: string): void {
 }
 
 function undimAllCards(): void {
-  listEl?.querySelectorAll<HTMLDivElement>(".arg-card").forEach((c) => c.classList.remove("dimmed"));
+  listEl
+    ?.querySelectorAll<HTMLDivElement>(".arg-card")
+    .forEach((c) => c.classList.remove("dimmed"));
 }
 
 function renderList(): void {
@@ -1542,7 +1742,8 @@ function renderList(): void {
   if (allItems.length === 0) {
     const empty = document.createElement("div");
     empty.className = "args-empty";
-    empty.textContent = "No arguments yet. React to annotations or create your own!";
+    empty.textContent =
+      "No arguments yet. React to annotations or create your own!";
     listEl.appendChild(empty);
     return;
   }
@@ -1562,9 +1763,10 @@ function renderList(): void {
     } else {
       const src = item.quote || item.text;
       const MAX = 38;
-      header.textContent = src.length > MAX
-        ? `\u201c${src.slice(0, MAX)}\u2026\u201d`
-        : `\u201c${src}\u201d`;
+      header.textContent =
+        src.length > MAX
+          ? `\u201c${src.slice(0, MAX)}\u2026\u201d`
+          : `\u201c${src}\u201d`;
     }
 
     // Body text (note-text equivalent: clamped collapsed, full on expanded)
@@ -1605,19 +1807,23 @@ function renderList(): void {
 
       // Send to background
       if (item.annotationId) {
-        const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+        const hashEl = document.querySelector(
+          "[data-oddity-hash]",
+        ) as HTMLElement | null;
         const contentHash = hashEl?.dataset.oddityHash ?? "";
-        chrome.runtime.sendMessage({
-          action: "saveFeedback",
-          payload: {
-            annotationId: item.annotationId,
-            contentHash,
-            url: window.location.href,
-            feedbackType: "reply",
-            replyText: text,
-            pageTitle: document.title,
-          },
-        }).catch(() => {});
+        chrome.runtime
+          .sendMessage({
+            action: "saveFeedback",
+            payload: {
+              annotationId: item.annotationId,
+              contentHash,
+              url: window.location.href,
+              feedbackType: "reply",
+              replyText: text,
+              pageTitle: document.title,
+            },
+          })
+          .catch(() => {});
       }
 
       replyInput.value = "";
@@ -1688,34 +1894,47 @@ function renderList(): void {
         const newText = ta.value.trim();
         if (!newText) return;
         if (item.feedbackId) {
-          chrome.runtime.sendMessage({
-            action: "updateFeedback",
-            payload: { feedbackId: item.feedbackId, replyText: newText },
-          }).catch(() => {});
+          chrome.runtime
+            .sendMessage({
+              action: "updateFeedback",
+              payload: { feedbackId: item.feedbackId, replyText: newText },
+            })
+            .catch(() => {});
           item.text = newText;
           body.textContent = newText;
-          document.dispatchEvent(new CustomEvent("oddity:feedback-edited", {
-            detail: { feedbackId: item.feedbackId, replyText: newText },
-          }));
+          document.dispatchEvent(
+            new CustomEvent("oddity:feedback-edited", {
+              detail: { feedbackId: item.feedbackId, replyText: newText },
+            }),
+          );
         } else if (item.annotationId && item.annotation) {
-          const updatedAnnotation = { ...item.annotation, content: { ...item.annotation.content, note: newText } };
-          const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
-          chrome.runtime.sendMessage({
-            action: "updateAnnotation",
-            payload: {
-              annotationId: item.annotationId,
-              annotation: updatedAnnotation,
-              url: window.location.href,
-              contentHash: hashEl?.dataset.oddityHash ?? "",
-              pageTitle: document.title,
-            },
-          }).catch(() => {});
+          const updatedAnnotation = {
+            ...item.annotation,
+            content: { ...item.annotation.content, note: newText },
+          };
+          const hashEl = document.querySelector(
+            "[data-oddity-hash]",
+          ) as HTMLElement | null;
+          chrome.runtime
+            .sendMessage({
+              action: "updateAnnotation",
+              payload: {
+                annotationId: item.annotationId,
+                annotation: updatedAnnotation,
+                url: window.location.href,
+                contentHash: hashEl?.dataset.oddityHash ?? "",
+                pageTitle: document.title,
+              },
+            })
+            .catch(() => {});
           item.text = newText;
           item.annotation = updatedAnnotation;
           body.textContent = newText;
-          document.dispatchEvent(new CustomEvent("oddity:annotation-edited", {
-            detail: { annotationId: item.annotationId, note: newText },
-          }));
+          document.dispatchEvent(
+            new CustomEvent("oddity:annotation-edited", {
+              detail: { annotationId: item.annotationId, note: newText },
+            }),
+          );
         }
         delete body.dataset.editMode;
         body.style.display = "";
@@ -1743,28 +1962,38 @@ function renderList(): void {
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (item.feedbackId) {
-        chrome.runtime.sendMessage({
-          action: "deleteFeedback",
-          payload: { feedbackId: item.feedbackId },
-        }).catch(() => {});
+        chrome.runtime
+          .sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: item.feedbackId },
+          })
+          .catch(() => {});
         card.remove();
-        document.dispatchEvent(new CustomEvent("oddity:feedback-deleted", {
-          detail: { feedbackId: item.feedbackId },
-        }));
+        document.dispatchEvent(
+          new CustomEvent("oddity:feedback-deleted", {
+            detail: { feedbackId: item.feedbackId },
+          }),
+        );
       } else if (item.annotationId) {
-        const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
-        chrome.runtime.sendMessage({
-          action: "deleteAnnotation",
-          payload: {
-            annotationId: item.annotationId,
-            url: window.location.href,
-            contentHash: hashEl?.dataset.oddityHash ?? "",
-          },
-        }).catch(() => {});
+        const hashEl = document.querySelector(
+          "[data-oddity-hash]",
+        ) as HTMLElement | null;
+        chrome.runtime
+          .sendMessage({
+            action: "deleteAnnotation",
+            payload: {
+              annotationId: item.annotationId,
+              url: window.location.href,
+              contentHash: hashEl?.dataset.oddityHash ?? "",
+            },
+          })
+          .catch(() => {});
         card.remove();
-        document.dispatchEvent(new CustomEvent("oddity:annotation-deleted", {
-          detail: { annotationId: item.annotationId },
-        }));
+        document.dispatchEvent(
+          new CustomEvent("oddity:annotation-deleted", {
+            detail: { annotationId: item.annotationId },
+          }),
+        );
       }
     });
     iconGroup.appendChild(editBtn);
@@ -1813,10 +2042,16 @@ function renderList(): void {
     }
     listEl.style.height = `${top}px`;
 
-    const contentRight = getMarginNotesContentRight() || (() => {
-      const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
-      return hashEl ? hashEl.getBoundingClientRect().right : window.innerWidth * 0.7;
-    })();
+    const contentRight =
+      getMarginNotesContentRight() ||
+      (() => {
+        const hashEl = document.querySelector(
+          "[data-oddity-hash]",
+        ) as HTMLElement | null;
+        return hashEl
+          ? hashEl.getBoundingClientRect().right
+          : window.innerWidth * 0.7;
+      })();
     const availableWidth = window.innerWidth - contentRight - 16 - 20;
     const panelWidth = Math.min(300, Math.max(134, availableWidth));
     containerEl?.style.setProperty("--panel-width", `${panelWidth}px`);
@@ -1836,10 +2071,16 @@ function handleCopy(btn: HTMLButtonElement): void {
 
 function updateModeTogglePosition(): void {
   if (!modeToggleHostEl) return;
-  const contentLeft = getMarginNotesContentLeft() || (() => {
-    const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
-    return hashEl ? hashEl.getBoundingClientRect().left : window.innerWidth * 0.3;
-  })();
+  const contentLeft =
+    getMarginNotesContentLeft() ||
+    (() => {
+      const hashEl = document.querySelector(
+        "[data-oddity-hash]",
+      ) as HTMLElement | null;
+      return hashEl
+        ? hashEl.getBoundingClientRect().left
+        : window.innerWidth * 0.3;
+    })();
   const availableWidth = contentLeft - 16 - 8;
   if (availableWidth < 80) {
     modeToggleHostEl.style.visibility = "hidden";
@@ -1854,7 +2095,8 @@ function initModeToggleOverlay(): void {
   if (modeToggleHostEl) return;
 
   modeToggleHostEl = document.createElement("div");
-  modeToggleHostEl.style.cssText = "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto;";
+  modeToggleHostEl.style.cssText =
+    "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto;";
   document.body.appendChild(modeToggleHostEl);
 
   modeToggleShadowRoot = modeToggleHostEl.attachShadow({ mode: "closed" });
@@ -1889,7 +2131,9 @@ function initModeToggleOverlay(): void {
     const mode = target.dataset.mode as "overview" | "depth";
     modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
-    document.dispatchEvent(new CustomEvent("oddity:modeChange", { detail: { mode } }));
+    document.dispatchEvent(
+      new CustomEvent("oddity:modeChange", { detail: { mode } }),
+    );
   }
 
   modeToggleOverviewBtn.addEventListener("click", handleModeClick);

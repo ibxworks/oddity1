@@ -83,7 +83,10 @@
       "Bash(pip install:*)",
       "Bash(python3 -c \"from markitdown import MarkItDown; print\\('OK'\\)\" 2>&1)",
       "Bash(npm run:*)",
-      "Bash(node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''backend/config/prompts.json'',''utf8''\\)\\); console.log\\(''valid JSON''\\)\")"
+      "Bash(node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''backend/config/prompts.json'',''utf8''\\)\\); console.log\\(''valid JSON''\\)\")",
+      "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1/backend --include=\"*.ts\" --include=\"*.sql\" 2>/dev/null | head -20)",
+      "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1 --include=\"*.ts\" --include=\"*.js\" --include=\"*.md\" 2>/dev/null | head -30)",
+      "Bash(git -C /Users/realtonypark/Developer/oddity1 diff HEAD backend/api/annotate.ts 2>/dev/null | head -100)"
     ]
   },
   "enableAllProjectMcpServers": true,

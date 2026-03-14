@@ -1,39 +1,39 @@
 // ─── Annotation Modes ───
 
-export type AnnotationMode = 'overview' | 'depth';
-export type DepthPersonality = 'terry' | 'jerry' | 'gary';
+export type AnnotationMode = "overview" | "depth";
+export type DepthPersonality = "terry" | "jerry" | "sally";
 
 // ─── Overview Labels ───
 
 export type OverviewLabel =
-  | 'core_claim'
-  | 'evidence'
-  | 'consequence'
-  | 'background'
-  | 'transition';
+  | "core_claim"
+  | "evidence"
+  | "consequence"
+  | "background"
+  | "transition";
 
 // ─── Depth Types ───
 
 export type DepthType =
-  | 'caveat'
-  | 'counterargument'
-  | 'alternative'
-  | 'fallacy'
-  | 'criteria'
-  | 'perspective'
-  | 'consequence'
-  | 'insight'
-  | 'recall'
-  | 'study'
-  | 'translation'
-  | 'vocabulary';
+  | "caveat"
+  | "counterargument"
+  | "alternative"
+  | "fallacy"
+  | "criteria"
+  | "perspective"
+  | "consequence"
+  | "insight"
+  | "recall"
+  | "study"
+  | "translation"
+  | "vocabulary";
 
 // ─── Unified Annotation Type ───
 
-export type AnnotationType = OverviewLabel | DepthType | 'user_written';
+export type AnnotationType = OverviewLabel | DepthType | "user_written";
 
 export type TextQuoteSelector = {
-  type: 'TextQuoteSelector';
+  type: "TextQuoteSelector";
   exact: string;
   prefix?: string;
   suffix?: string;
@@ -64,7 +64,7 @@ export type AnnotationResponse = {
 
 // ─── Feedback ───
 
-export type FeedbackType = 'thumbs_up' | 'thumbs_down' | 'reply';
+export type FeedbackType = "thumbs_up" | "thumbs_down" | "reply";
 
 export type AnnotationFeedback = {
   id: string;
@@ -76,13 +76,19 @@ export type AnnotationFeedback = {
 
 // ─── Annotation Style ───
 
-export type AnnotationFont = 'default' | 'fraunces' | 'kalam' | 'helvetica' | 'arial' | 'georgia';
-export type AnnotationFontSize = 'small' | 'default' | 'large';
+export type AnnotationFont =
+  | "default"
+  | "fraunces"
+  | "kalam"
+  | "helvetica"
+  | "arial"
+  | "georgia";
+export type AnnotationFontSize = "small" | "default" | "large";
 
 // ─── Site Adapter Registry ───
 
 export type StabilitySignal = {
-  type: 'selector_appears' | 'selector_disappears' | 'attribute_change';
+  type: "selector_appears" | "selector_disappears" | "attribute_change";
   target_selector: string;
   attribute?: string;
   value?: string;
@@ -95,14 +101,14 @@ export type SiteAdapter = {
   response_selector: string | null;
   stability_signal: StabilitySignal | null;
   excluded_selectors: string[];
-  extraction_mode: 'adapter' | 'readability' | 'custom_heuristic';
+  extraction_mode: "adapter" | "readability" | "custom_heuristic";
   enabled: boolean;
   updated_at: string;
 };
 
 // ─── User ───
 
-export type UserTier = 'free' | 'pro';
+export type UserTier = "free" | "pro";
 
 export type UserProfile = {
   id: string;
@@ -145,7 +151,7 @@ export type ReadingRegion = {
 
 export type ExtensionMessage =
   | {
-      action: 'requestAnnotations';
+      action: "requestAnnotations";
       payload: {
         url: string;
         regionId: string;
@@ -157,7 +163,7 @@ export type ExtensionMessage =
       };
     }
   | {
-      action: 'annotationsReady';
+      action: "annotationsReady";
       payload: {
         regionId: string;
         annotations: Annotation[];
@@ -165,7 +171,7 @@ export type ExtensionMessage =
       };
     }
   | {
-      action: 'saveManualAnnotation';
+      action: "saveManualAnnotation";
       payload: {
         url: string;
         contentHash: string;
@@ -174,7 +180,7 @@ export type ExtensionMessage =
       };
     }
   | {
-      action: 'deleteAnnotation';
+      action: "deleteAnnotation";
       payload: {
         annotationId: string;
         url: string;
@@ -182,7 +188,7 @@ export type ExtensionMessage =
       };
     }
   | {
-      action: 'settingsUpdated';
+      action: "settingsUpdated";
       payload: {
         enabled: boolean;
         annotationMode: AnnotationMode;
@@ -193,54 +199,95 @@ export type ExtensionMessage =
       };
     }
   | {
-      action: 'getAdapters';
+      action: "getAdapters";
       payload: Record<string, never>;
     }
   | {
-      action: 'adaptersResponse';
+      action: "adaptersResponse";
       payload: {
         adapters: SiteAdapter[];
       };
     }
   | {
-      action: 'exportAnnotations';
+      action: "exportAnnotations";
       payload: {
         url: string;
       };
     }
   | {
-      action: 'getAuthStatus';
+      action: "getAuthStatus";
       payload: Record<string, never>;
     }
   | {
-      action: 'authStatusResponse';
+      action: "authStatusResponse";
       payload: {
         authenticated: boolean;
         user: { id: string; email: string } | null;
       };
     }
-  | { action: 'signIn'; payload: { email: string; password: string } }
-  | { action: 'signUp'; payload: { email: string; password: string; displayName: string } }
-  | { action: 'signOut'; payload: Record<string, never> }
-  | { action: 'getProfile'; payload: Record<string, never> }
-  | { action: 'updateProfile'; payload: { display_name: string } }
-  | { action: 'exportPdf'; payload: { title: string; subtitle: string } }
-  | { action: 'exportPdfResult'; payload: { success: boolean; error?: string } }
-  | { action: 'getUserTier'; payload: Record<string, never> }
-  | { action: 'getUserTierResult'; payload: { tier: UserTier } }
-  | { action: 'saveFeedback'; payload: { annotationId: string; contentHash: string; url: string; feedbackType: FeedbackType; replyText?: string; pageTitle?: string } }
-  | { action: 'updateFeedback'; payload: { feedbackId: string; replyText: string } }
-  | { action: 'deleteFeedback'; payload: { feedbackId: string } }
-  | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation; url: string; contentHash: string; pageTitle?: string } }
-  | { action: 'sendUserFeedback'; payload: { message: string } }
-  | { action: 'annotationReady'; payload: { regionId: string; annotation: Annotation } }
-  | { action: 'getUrlPrediction'; payload: { url: string } }
-  | { action: 'getEnabledSites'; payload: Record<string, never> }
-  | { action: 'addEnabledSite'; payload: { domain: string } }
-  | { action: 'removeEnabledSite'; payload: { domain: string } }
-  | { action: 'enabledSitesUpdated'; payload: { sites: string[] } }
-  | { action: 'triggerManualRun'; payload: Record<string, never> }
-  | { action: 'setBadge'; payload: { text: string; color?: string } }
-  | { action: 'openPopup'; payload: Record<string, never> }
-  | { action: 'openOptions'; payload: Record<string, never> }
-  | { action: 'authStateChanged'; payload: { authenticated: false } | { authenticated: true; user: { email: string; display_name: string | null; tier: string; annotation_count: number } } };
+  | { action: "signIn"; payload: { email: string; password: string } }
+  | {
+      action: "signUp";
+      payload: { email: string; password: string; displayName: string };
+    }
+  | { action: "signOut"; payload: Record<string, never> }
+  | { action: "getProfile"; payload: Record<string, never> }
+  | { action: "updateProfile"; payload: { display_name: string } }
+  | { action: "exportPdf"; payload: { title: string; subtitle: string } }
+  | { action: "exportPdfResult"; payload: { success: boolean; error?: string } }
+  | { action: "getUserTier"; payload: Record<string, never> }
+  | { action: "getUserTierResult"; payload: { tier: UserTier } }
+  | {
+      action: "saveFeedback";
+      payload: {
+        annotationId: string;
+        contentHash: string;
+        url: string;
+        feedbackType: FeedbackType;
+        replyText?: string;
+        pageTitle?: string;
+      };
+    }
+  | {
+      action: "updateFeedback";
+      payload: { feedbackId: string; replyText: string };
+    }
+  | { action: "deleteFeedback"; payload: { feedbackId: string } }
+  | {
+      action: "updateAnnotation";
+      payload: {
+        annotationId: string;
+        annotation: Annotation;
+        url: string;
+        contentHash: string;
+        pageTitle?: string;
+      };
+    }
+  | { action: "sendUserFeedback"; payload: { message: string } }
+  | {
+      action: "annotationReady";
+      payload: { regionId: string; annotation: Annotation };
+    }
+  | { action: "getUrlPrediction"; payload: { url: string } }
+  | { action: "getEnabledSites"; payload: Record<string, never> }
+  | { action: "addEnabledSite"; payload: { domain: string } }
+  | { action: "removeEnabledSite"; payload: { domain: string } }
+  | { action: "enabledSitesUpdated"; payload: { sites: string[] } }
+  | { action: "triggerManualRun"; payload: Record<string, never> }
+  | { action: "setBadge"; payload: { text: string; color?: string } }
+  | { action: "openPopup"; payload: Record<string, never> }
+  | { action: "openOptions"; payload: Record<string, never> }
+  | {
+      action: "authStateChanged";
+      payload:
+        | { authenticated: false }
+        | {
+            authenticated: true;
+            user: {
+              email: string;
+              display_name: string | null;
+              tier: string;
+              annotation_count: number;
+            };
+          };
+    };
