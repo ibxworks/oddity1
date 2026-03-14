@@ -830,10 +830,13 @@ function showNotEnabledOverlay(): void {
   alwaysEnableBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     const domain = window.location.hostname.replace(/^www\./, "");
+    // Await addEnabledSite BEFORE enableExtension to avoid a race condition
+    // where enableExtension's read-modify-write on preferences overwrites
+    // the enabled_sites update from the background script.
     chrome.runtime
       .sendMessage({ action: "addEnabledSite", payload: { domain } })
-      .catch(() => {});
-    enableExtension();
+      .then(() => enableExtension())
+      .catch(() => enableExtension());
     sessionSiteEnabled = true;
     removeOverlay();
     manualRunCb?.();
