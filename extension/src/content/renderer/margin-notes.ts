@@ -153,6 +153,7 @@ export function addMarginNote(
   range: Range,
   feedback: AnnotationFeedback[] = [],
   onDelete?: (annotationId: string) => void,
+  contentHash?: string,
 ): void {
   if (!shadowRoot || !regionEl) return;
   // Deduplicate: skip if a note for this annotation already exists
@@ -181,7 +182,13 @@ export function addMarginNote(
 
   noteIndex++;
 
-  const el = createNoteElement(annotation, side, feedback, onDelete);
+  // Resolve content hash: prefer explicit param, then region's hash, then first hash on page
+  const resolvedHash = contentHash
+    ?? (noteRegion as HTMLElement).dataset?.oddityHash
+    ?? document.querySelector("[data-oddity-hash]")?.getAttribute("data-oddity-hash")
+    ?? "";
+
+  const el = createNoteElement(annotation, side, feedback, onDelete, resolvedHash);
   shadowRoot.appendChild(el);
 
   const note: MarginNote = {
@@ -395,6 +402,7 @@ function createNoteElement(
   side: "left" | "right",
   feedback: AnnotationFeedback[] = [],
   onDelete?: (annotationId: string) => void,
+  contentHash = "",
 ): HTMLDivElement {
   const color = ANNOTATION_COLORS[annotation.type];
   const label = ANNOTATION_LABELS[annotation.type];
@@ -495,7 +503,7 @@ function createNoteElement(
     editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      enterEditMode(el, annotation, textEl);
+      enterEditMode(el, annotation, textEl, contentHash);
     });
 
     const deleteBtn = document.createElement("button");
@@ -510,7 +518,7 @@ function createNoteElement(
         payload: {
           annotationId: annotation.id,
           url: window.location.href,
-          contentHash: getAnnotationContentHash(annotation),
+          contentHash: contentHash,
         },
       });
     });
@@ -555,7 +563,7 @@ function createNoteElement(
     replyInput.addEventListener("keydown", (e) => {
       e.stopPropagation();
       if (e.key === "Enter" && replyInput.value.trim()) {
-        submitReply(annotation, replyInput, repliesContainer);
+        submitReply(annotation, replyInput, repliesContainer, contentHash);
       }
     });
     const sendBtn = document.createElement("button");
@@ -564,7 +572,7 @@ function createNoteElement(
     sendBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (replyInput.value.trim()) {
-        submitReply(annotation, replyInput, repliesContainer);
+        submitReply(annotation, replyInput, repliesContainer, contentHash);
       }
     });
     replyBar.appendChild(replyInput);
@@ -604,7 +612,7 @@ function createNoteElement(
             action: "saveFeedback",
             payload: {
               annotationId: annotation.id,
-              contentHash: getAnnotationContentHash(annotation),
+              contentHash: contentHash,
               url: window.location.href,
               feedbackType: "thumbs_up",
               pageTitle: document.title,
@@ -648,7 +656,7 @@ function createNoteElement(
             action: "saveFeedback",
             payload: {
               annotationId: annotation.id,
-              contentHash: getAnnotationContentHash(annotation),
+              contentHash: contentHash,
               url: window.location.href,
               feedbackType: "thumbs_down",
               pageTitle: document.title,
@@ -738,18 +746,11 @@ function createNoteElement(
 
 // ─── Interaction Helpers ───
 
-function getAnnotationContentHash(_annotation: Annotation): string {
-  // Get the content hash from the closest region element
-  const hashEl = document.querySelector(
-    "[data-oddity-hash]",
-  ) as HTMLElement | null;
-  return hashEl?.dataset.oddityHash ?? "";
-}
-
 function submitReply(
   annotation: Annotation,
   input: HTMLInputElement,
   container: HTMLDivElement,
+  hash: string,
 ): void {
   const text = input.value.trim();
   if (!text) return;
@@ -766,7 +767,7 @@ function submitReply(
     action: "saveFeedback",
     payload: {
       annotationId: annotation.id,
-      contentHash: getAnnotationContentHash(annotation),
+      contentHash: hash,
       url: window.location.href,
       feedbackType: "reply",
       replyText: text,
@@ -791,6 +792,7 @@ function enterEditMode(
   noteEl: HTMLDivElement,
   annotation: Annotation,
   textEl: HTMLDivElement,
+  contentHash = "",
 ): void {
   if (noteEl.querySelector(".note-edit-textarea")) return;
 
@@ -822,7 +824,7 @@ function enterEditMode(
         annotationId: annotation.id,
         annotation: updatedAnnotation,
         url: window.location.href,
-        contentHash: getAnnotationContentHash(annotation),
+        contentHash: contentHash,
         pageTitle: document.title,
       },
     }).then(() => {

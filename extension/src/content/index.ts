@@ -274,8 +274,7 @@ async function init(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = stored?.preferences;
 
-  // Restore mode and personality from stored preferences
-  if (prefs?.annotation_mode) currentMode = prefs.annotation_mode;
+  // Restore personality from stored preferences (mode always resets to overview on page load)
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
@@ -737,6 +736,13 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   const region =
     regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
+
+  // Guard: skip if the root element has been detached from the DOM (common on SPAs like ChatGPT)
+  if (root !== document.body && !root.isConnected) {
+    console.warn(`[Oddity 1] Skipping render for ${regionId.slice(0, 12)}… — element detached`);
+    return;
+  }
+
   const feedback = currentFeedbackMap().get(regionId) ?? [];
 
   // Filter visible types first
@@ -763,52 +769,57 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   // Single-pass: resolve + render one annotation at a time
   // This avoids stale ranges from prior DOM mutations (injectAnchors splits text nodes)
   for (const annotation of nonOverlapping) {
-    const range = resolveSelector(root, annotation.anchor);
-    if (!range) {
-      console.warn(
-        `[Oddity 1] Could not resolve selector for annotation ${annotation.id}`,
-      );
-      continue;
-    }
-
-    let anchors = injectAnchors(annotation, range);
-
-    // Retry once: prior injectAnchors calls mutate the DOM (split/wrap text nodes),
-    // which can invalidate the cached text-node index and produce stale Ranges.
-    if (anchors.length === 0) {
-      invalidateTextNodeIndex(root);
-      const retryRange = resolveSelector(root, annotation.anchor);
-      if (retryRange) {
-        anchors = injectAnchors(annotation, retryRange);
+    try {
+      const range = resolveSelector(root, annotation.anchor);
+      if (!range) {
+        console.warn(
+          `[Oddity 1] Could not resolve selector for annotation ${annotation.id}`,
+        );
+        continue;
       }
-    }
 
-    const stableRange = document.createRange();
-    if (anchors.length > 0) {
-      stableRange.setStartBefore(anchors[0]!);
-      stableRange.setEndAfter(anchors[anchors.length - 1]!);
-    } else {
-      console.warn(
-        `[Oddity 1] Failed to anchor: ${annotation.id} (${annotation.type}): "${annotation.anchor.exact.substring(0, 50)}..."`,
+      let anchors = injectAnchors(annotation, range);
+
+      // Retry once: prior injectAnchors calls mutate the DOM (split/wrap text nodes),
+      // which can invalidate the cached text-node index and produce stale Ranges.
+      if (anchors.length === 0) {
+        invalidateTextNodeIndex(root);
+        const retryRange = resolveSelector(root, annotation.anchor);
+        if (retryRange) {
+          anchors = injectAnchors(annotation, retryRange);
+        }
+      }
+
+      const stableRange = document.createRange();
+      if (anchors.length > 0) {
+        stableRange.setStartBefore(anchors[0]!);
+        stableRange.setEndAfter(anchors[anchors.length - 1]!);
+      } else {
+        console.warn(
+          `[Oddity 1] Failed to anchor: ${annotation.id} (${annotation.type}): "${annotation.anchor.exact.substring(0, 50)}..."`,
+        );
+        stableRange.setStart(range.startContainer, range.startOffset);
+        stableRange.setEnd(range.endContainer, range.endOffset);
+      }
+
+      if (anchors.length > 0) {
+        attachAnchorHoverListeners(anchors, annotation.id);
+      }
+
+      renderAnnotation(annotation, stableRange);
+      const noteFeedback = feedback.filter(
+        (f) => f.annotation_id === annotation.id,
       );
-      stableRange.setStart(range.startContainer, range.startOffset);
-      stableRange.setEnd(range.endContainer, range.endOffset);
+      addMarginNote(
+        annotation,
+        stableRange,
+        noteFeedback,
+        handleAnnotationDeleted,
+        regionId,
+      );
+    } catch (err) {
+      console.warn(`[Oddity 1] Render failed for annotation ${annotation.id}:`, err);
     }
-
-    if (anchors.length > 0) {
-      attachAnchorHoverListeners(anchors, annotation.id);
-    }
-
-    renderAnnotation(annotation, stableRange);
-    const noteFeedback = feedback.filter(
-      (f) => f.annotation_id === annotation.id,
-    );
-    addMarginNote(
-      annotation,
-      stableRange,
-      noteFeedback,
-      handleAnnotationDeleted,
-    );
   }
 }
 
@@ -948,6 +959,9 @@ onMessage((message: ExtensionMessage) => {
         regions.find((r) => r.id === streamRegionId);
       const streamRoot = streamRegion?.element ?? document.body;
 
+      // Skip if the element has been detached (common on SPAs like ChatGPT)
+      if (streamRoot !== document.body && !streamRoot.isConnected) break;
+
       // Track the annotation in state
       const existing = currentAnnotations().get(streamRegionId) ?? [];
       existing.push(annotation);
@@ -955,41 +969,46 @@ onMessage((message: ExtensionMessage) => {
       syncArgumentsBox();
 
       // Render the single annotation immediately
-      const range = resolveSelector(streamRoot, annotation.anchor);
-      if (range) {
-        let anchors = injectAnchors(annotation, range);
-        if (anchors.length === 0) {
-          invalidateTextNodeIndex(streamRoot);
-          const retryRange = resolveSelector(streamRoot, annotation.anchor);
-          if (retryRange) {
-            anchors = injectAnchors(annotation, retryRange);
+      try {
+        const range = resolveSelector(streamRoot, annotation.anchor);
+        if (range) {
+          let anchors = injectAnchors(annotation, range);
+          if (anchors.length === 0) {
+            invalidateTextNodeIndex(streamRoot);
+            const retryRange = resolveSelector(streamRoot, annotation.anchor);
+            if (retryRange) {
+              anchors = injectAnchors(annotation, retryRange);
+            }
           }
-        }
 
-        const stableRange = document.createRange();
-        if (anchors.length > 0) {
-          stableRange.setStartBefore(anchors[0]!);
-          stableRange.setEndAfter(anchors[anchors.length - 1]!);
-        } else {
-          stableRange.setStart(range.startContainer, range.startOffset);
-          stableRange.setEnd(range.endContainer, range.endOffset);
-        }
+          const stableRange = document.createRange();
+          if (anchors.length > 0) {
+            stableRange.setStartBefore(anchors[0]!);
+            stableRange.setEndAfter(anchors[anchors.length - 1]!);
+          } else {
+            stableRange.setStart(range.startContainer, range.startOffset);
+            stableRange.setEnd(range.endContainer, range.endOffset);
+          }
 
-        if (anchors.length > 0) {
-          attachAnchorHoverListeners(anchors, annotation.id);
-        }
+          if (anchors.length > 0) {
+            attachAnchorHoverListeners(anchors, annotation.id);
+          }
 
-        renderAnnotation(annotation, stableRange);
-        const fb = currentFeedbackMap().get(streamRegionId) ?? [];
-        const noteFeedback = fb.filter(
-          (f: AnnotationFeedback) => f.annotation_id === annotation.id,
-        );
-        addMarginNote(
-          annotation,
-          stableRange,
-          noteFeedback,
-          handleAnnotationDeleted,
-        );
+          renderAnnotation(annotation, stableRange);
+          const fb = currentFeedbackMap().get(streamRegionId) ?? [];
+          const noteFeedback = fb.filter(
+            (f: AnnotationFeedback) => f.annotation_id === annotation.id,
+          );
+          addMarginNote(
+            annotation,
+            stableRange,
+            noteFeedback,
+            handleAnnotationDeleted,
+            streamRegionId,
+          );
+        }
+      } catch (err) {
+        console.warn(`[Oddity 1] Stream render failed for annotation ${annotation.id}:`, err);
       }
       break;
     }

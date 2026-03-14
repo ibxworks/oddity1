@@ -43,6 +43,7 @@ type ArgumentItem = {
   feedbackId?: string;
   annotationId?: string;
   annotation?: Annotation; // Full annotation object for manual type
+  contentHash?: string; // region content hash for feedback API calls
 };
 
 // ─── State ───
@@ -59,6 +60,8 @@ let panelToggleLabelEl: HTMLSpanElement | null = null;
 let expanded = false;
 let dimmed = false;
 let blocked = false;
+let extensionEnabled = true;
+let boxVisible = true;
 let expandedCardId: string | null = null;
 
 // Drag-to-scroll state
@@ -525,7 +528,9 @@ export function initArgumentsBox(): void {
   // On init: set auth/site state without requiring user interaction
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
     if (blocked) return; // blocked domains skip auth/whitelist UI
+    localAuthState = result?.authenticated ?? false;
     if (!result?.authenticated) {
+      updateModeToggleVisibility();
       toggle();
       showDashboard();
       const stored = await chrome.storage.local.get("hadAccount");
@@ -539,7 +544,7 @@ export function initArgumentsBox(): void {
       if (!siteEnabled) {
         dimmed = true;
         containerEl?.classList.add("oddity-not-enabled");
-        if (modeToggleHostEl) modeToggleHostEl.style.display = "none";
+        updateModeToggleVisibility();
       }
     }
   }).catch(() => {});
@@ -577,27 +582,36 @@ export function addLiveFeedback(
   renderList();
 }
 
+/** Mode toggle should only show when the user is signed in, the extension is enabled, and the site is not dimmed. */
+function updateModeToggleVisibility(): void {
+  if (!modeToggleHostEl) return;
+  const show = boxVisible && extensionEnabled && !dimmed && localAuthState === true;
+  modeToggleHostEl.style.display = show ? "" : "none";
+}
+
 export function setArgumentsBoxVisible(visible: boolean): void {
   if (!hostEl) return;
+  boxVisible = visible;
   hostEl.style.display = visible ? "" : "none";
-  if (modeToggleHostEl) modeToggleHostEl.style.display = (visible && !dimmed) ? "" : "none";
+  updateModeToggleVisibility();
 }
 
 export function setArgumentsBoxEnabled(enabled: boolean): void {
   if (!containerEl) return;
+  extensionEnabled = enabled;
   containerEl.classList.toggle("oddity-enabled", enabled);
   if (panelToggleInput) panelToggleInput.checked = enabled;
   if (panelToggleLabelEl)
     panelToggleLabelEl.textContent = enabled ? "On" : "Off";
   if (dashToggleInput) dashToggleInput.checked = enabled;
   if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
-  if (modeToggleHostEl) modeToggleHostEl.style.display = enabled ? "" : "none";
+  updateModeToggleVisibility();
 }
 
 export function setArgumentsBoxDimmed(isDimmed: boolean): void {
   dimmed = isDimmed;
   containerEl?.classList.toggle("oddity-not-enabled", isDimmed);
-  if (modeToggleHostEl) modeToggleHostEl.style.display = isDimmed ? "none" : "";
+  updateModeToggleVisibility();
 }
 
 export function setArgumentsBoxBlocked(isBlocked: boolean): void {
@@ -638,8 +652,8 @@ export function handleRemoteSignOut(): void {
     notEnabledPanelEl = null;
     dimmed = false;
     containerEl?.classList.remove("oddity-not-enabled");
-    if (modeToggleHostEl) modeToggleHostEl.style.display = "";
   }
+  updateModeToggleVisibility();
   showDashboard();
   showAuthView("signin");
 }
@@ -682,7 +696,7 @@ export async function handleRemoteSignIn(user: {
     // Collapse to button with red stroke — don't auto-expand the "not enabled" panel
     dimmed = true;
     containerEl?.classList.add("oddity-not-enabled");
-    if (modeToggleHostEl) modeToggleHostEl.style.display = "none";
+    updateModeToggleVisibility();
     if (expanded) {
       expanded = false;
       containerEl?.classList.remove("expanded", "dashboard");
@@ -692,6 +706,8 @@ export async function handleRemoteSignIn(user: {
         containerEl.style.width = "";
       }
     }
+  } else {
+    updateModeToggleVisibility();
   }
   // Load prefs (density, font, toggle state) without re-querying auth
   loadDashboardPrefs().catch(() => {});
@@ -1325,6 +1341,7 @@ function buildDashboardFace(): HTMLDivElement {
     if (dashSignInPasswordEl) dashSignInPasswordEl.value = "";
     if (dashSignInNameEl) dashSignInNameEl.value = "";
     localAuthState = false;
+    updateModeToggleVisibility();
     showAuthView("signin");
     signOutCb?.();
     // Best-effort backend sign-out
@@ -1564,6 +1581,7 @@ function buildDashboardFace(): HTMLDivElement {
       } else {
         await loadDashboardData();
       }
+      updateModeToggleVisibility();
       // Notify index.ts so it can start the annotation pipeline on this tab
       document.dispatchEvent(new CustomEvent("oddity:localSignIn"));
     } catch (err) {
@@ -1698,7 +1716,15 @@ function buildItems(
 ): ArgumentItem[] {
   const items: ArgumentItem[] = [];
 
-  for (const [, anns] of annotations) {
+  // Build annotation ID → content hash lookup
+  const annHashMap = new Map<string, string>();
+  for (const [hash, anns] of annotations) {
+    for (const ann of anns) {
+      annHashMap.set(ann.id, hash);
+    }
+  }
+
+  for (const [hash, anns] of annotations) {
     for (const ann of anns) {
       if (ann.id.startsWith("manual-")) {
         items.push({
@@ -1709,13 +1735,15 @@ function buildItems(
           type: "manual",
           annotationId: ann.id,
           annotation: ann,
+          contentHash: hash,
         });
       }
     }
   }
 
-  for (const [, fbs] of feedback) {
+  for (const [hash, fbs] of feedback) {
     for (const fb of fbs) {
+      const fbHash = annHashMap.get(fb.annotation_id) ?? hash;
       if (fb.feedback_type === "thumbs_up") {
         items.push({
           icon: "✓",
@@ -1726,6 +1754,7 @@ function buildItems(
           type: "reaction",
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
+          contentHash: fbHash,
         });
       } else if (fb.feedback_type === "thumbs_down") {
         items.push({
@@ -1737,6 +1766,7 @@ function buildItems(
           type: "reaction",
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
+          contentHash: fbHash,
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
@@ -1749,6 +1779,7 @@ function buildItems(
           replyHeader: excerpt,
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
+          contentHash: fbHash,
         });
       }
     }
@@ -1930,16 +1961,12 @@ function renderList(): void {
 
       // Send to background
       if (item.annotationId) {
-        const hashEl = document.querySelector(
-          "[data-oddity-hash]",
-        ) as HTMLElement | null;
-        const contentHash = hashEl?.dataset.oddityHash ?? "";
         chrome.runtime
           .sendMessage({
             action: "saveFeedback",
             payload: {
               annotationId: item.annotationId,
-              contentHash,
+              contentHash: item.contentHash ?? "",
               url: window.location.href,
               feedbackType: "reply",
               replyText: text,
@@ -2035,9 +2062,6 @@ function renderList(): void {
             ...item.annotation,
             content: { ...item.annotation.content, note: newText },
           };
-          const hashEl = document.querySelector(
-            "[data-oddity-hash]",
-          ) as HTMLElement | null;
           chrome.runtime
             .sendMessage({
               action: "updateAnnotation",
@@ -2045,7 +2069,7 @@ function renderList(): void {
                 annotationId: item.annotationId,
                 annotation: updatedAnnotation,
                 url: window.location.href,
-                contentHash: hashEl?.dataset.oddityHash ?? "",
+                contentHash: item.contentHash ?? "",
                 pageTitle: document.title,
               },
             })
@@ -2098,16 +2122,13 @@ function renderList(): void {
           }),
         );
       } else if (item.annotationId) {
-        const hashEl = document.querySelector(
-          "[data-oddity-hash]",
-        ) as HTMLElement | null;
         chrome.runtime
           .sendMessage({
             action: "deleteAnnotation",
             payload: {
               annotationId: item.annotationId,
               url: window.location.href,
-              contentHash: hashEl?.dataset.oddityHash ?? "",
+              contentHash: item.contentHash ?? "",
             },
           })
           .catch(() => {});
@@ -2288,16 +2309,6 @@ function initModeToggleOverlay(): void {
   toggleEl.appendChild(modeToggleOverviewBtn);
   toggleEl.appendChild(modeToggleDepthBtn);
   modeToggleShadowRoot.appendChild(toggleEl);
-
-  // Restore stored mode
-  chrome.storage.local.get("preferences", (result) => {
-    const prefs = result["preferences"] as Record<string, unknown> | undefined;
-    if ((prefs?.annotation_mode as string | undefined) === "depth") {
-      modeToggleOverviewBtn?.classList.remove("mode-active");
-      modeToggleDepthBtn?.classList.add("mode-active");
-      toggleEl.dataset.active = "depth";
-    }
-  });
 
   // Position — update immediately, on layout changes, and on resize
   updateModeTogglePosition();
