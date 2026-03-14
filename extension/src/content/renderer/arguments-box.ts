@@ -8,12 +8,20 @@ import {
 
 // ─── Types ───
 
-type ArgumentItem = { icon: string; text: string; sortKey: string };
+type ArgumentItem = {
+  icon: string;
+  text: string;
+  sortKey: string;
+  type: "reply" | "manual" | "reaction";
+  replyHeader?: string;
+};
 
 // ─── State ───
 
 let hostEl: HTMLElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
+let outerWrapperEl: HTMLDivElement | null = null;
+let toggleBarEl: HTMLDivElement | null = null;
 let containerEl: HTMLDivElement | null = null;
 let closeBtnEl: HTMLButtonElement | null = null;
 let listEl: HTMLDivElement | null = null;
@@ -22,6 +30,10 @@ let panelToggleLabelEl: HTMLSpanElement | null = null;
 let expanded = false;
 let dimmed = false;
 let blocked = false;
+let expandedCardId: string | null = null;
+let pinnedCardId: string | null = null;
+let cardCollapseTimer: ReturnType<typeof setTimeout> | null = null;
+let justUnpinnedCard = false;
 let manualRunCb: (() => void) | null = null;
 let notEnabledPanelEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
@@ -122,53 +134,67 @@ export function initArgumentsBox(): void {
   panelFace.className = "args-panel-face";
   panelFace.addEventListener("click", (e) => e.stopPropagation());
 
-  // ── Panel header: "Oddity 1" + toggle ──
+  // ── Panel header: "Argument Box" + icon buttons ──
   const panelHeader = document.createElement("div");
   panelHeader.className = "args-panel-header";
 
   const mainTitle = document.createElement("span");
   mainTitle.className = "args-main-title";
-  mainTitle.textContent = "Oddity 1";
+  mainTitle.textContent = "Argument Box";
 
-  const toggleRow = document.createElement("div");
-  toggleRow.className = "args-toggle-row";
+  const headerIcons = document.createElement("div");
+  headerIcons.className = "args-header-icons";
 
-  panelToggleLabelEl = document.createElement("span");
-  panelToggleLabelEl.className = "args-enabled-label";
-  panelToggleLabelEl.textContent = "On";
+  const addBtn = document.createElement("button");
+  addBtn.className = "args-header-icon-btn";
+  addBtn.title = "Add";
+  addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><line x1="7.5" y1="2" x2="7.5" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="2" y1="7.5" x2="13" y2="7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+  addBtn.addEventListener("click", (e) => e.stopPropagation());
 
-  panelToggleInput = document.createElement("input");
-  panelToggleInput.type = "checkbox";
-  panelToggleInput.className = "args-panel-toggle-input";
-  panelToggleInput.id = "args-panel-toggle-chk";
-  panelToggleInput.checked = true;
-
-  const panelToggleSlider = document.createElement("label");
-  panelToggleSlider.className = "args-panel-toggle-slider";
-  panelToggleSlider.htmlFor = "args-panel-toggle-chk";
-
-  panelToggleInput.addEventListener("change", (e) => {
+  const copyIconBtn = document.createElement("button");
+  copyIconBtn.className = "args-header-icon-btn";
+  copyIconBtn.title = "Copy";
+  copyIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 5V3.5A1.5 1.5 0 0 0 8.5 2H3.5A1.5 1.5 0 0 0 2 3.5v5A1.5 1.5 0 0 0 3.5 10H5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  copyIconBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    const en = panelToggleInput!.checked;
-    panelToggleLabelEl!.textContent = en ? "On" : "Off";
-    chrome.storage.local.get("preferences").then((stored) => {
-      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-      chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
-    });
+    handleCopy(copyIconBtn);
   });
 
-  toggleRow.appendChild(panelToggleLabelEl);
-  toggleRow.appendChild(panelToggleInput);
-  toggleRow.appendChild(panelToggleSlider);
+  const exportIconBtn = document.createElement("button");
+  exportIconBtn.className = "args-header-icon-btn";
+  exportIconBtn.title = "Export PDF";
+  exportIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 2v8M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11.5v1A1.5 1.5 0 0 0 4 14h7a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  exportIconBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.dispatchEvent(new CustomEvent("oddity:exportPdf", {
+      detail: { title: document.title, subtitle: "Created with Oddity 1" },
+    }));
+  });
+
+  headerIcons.appendChild(addBtn);
+  headerIcons.appendChild(copyIconBtn);
+  headerIcons.appendChild(exportIconBtn);
   panelHeader.appendChild(mainTitle);
-  panelHeader.appendChild(toggleRow);
+  panelHeader.appendChild(headerIcons);
   panelFace.appendChild(panelHeader);
 
-  // ── Section title ──
-  const sectionTitle = document.createElement("div");
-  sectionTitle.className = "args-section-title";
-  sectionTitle.textContent = "Argument Box";
-  panelFace.appendChild(sectionTitle);
+  // ── Purpose section ──
+  const purposeSection = document.createElement("div");
+  purposeSection.className = "args-purpose-section";
+
+  const purposeLabel = document.createElement("span");
+  purposeLabel.className = "args-purpose-label";
+  purposeLabel.textContent = "Purpose:";
+
+  const purposeInput = document.createElement("textarea");
+  purposeInput.className = "args-purpose-input";
+  purposeInput.placeholder = "Why are you reading this?";
+  purposeInput.rows = 2;
+  purposeInput.addEventListener("click", (e) => e.stopPropagation());
+
+  purposeSection.appendChild(purposeLabel);
+  purposeSection.appendChild(purposeInput);
+  panelFace.appendChild(purposeSection);
 
   // ── List ──
   listEl = document.createElement("div");
@@ -176,19 +202,15 @@ export function initArgumentsBox(): void {
   panelFace.appendChild(listEl);
   renderList();
 
-  // ── Copy button ──
-  const copyBtnFull = document.createElement("button");
-  copyBtnFull.className = "args-copy-btn-full";
-  copyBtnFull.textContent = "Copy";
-  copyBtnFull.addEventListener("click", (e) => {
-    e.stopPropagation();
-    handleCopy(copyBtnFull);
-  });
-  panelFace.appendChild(copyBtnFull);
-
   // ── Footer ──
   const footer = document.createElement("div");
   footer.className = "args-footer";
+
+  const sketchBtn = document.createElement("button");
+  sketchBtn.className = "args-sketch-btn";
+  sketchBtn.textContent = "Sketch my Argument";
+  sketchBtn.addEventListener("click", (e) => e.stopPropagation());
+  footer.appendChild(sketchBtn);
 
   footerTextEl = document.createElement("span");
   footerTextEl.className = "args-footer-text";
@@ -198,22 +220,12 @@ export function initArgumentsBox(): void {
       footerTextEl!.textContent = "Sign in";
     }
   });
-  const footerText = footerTextEl;
-  footerText.addEventListener("click", (e) => {
+  footerTextEl.addEventListener("click", (e) => {
     e.stopPropagation();
     showDashboard();
   });
+  footer.appendChild(footerTextEl);
 
-  const footerAvatar = document.createElement("div");
-  footerAvatar.className = "args-footer-avatar";
-  const footerAvatarImg = document.createElement("img");
-  footerAvatarImg.src = chrome.runtime.getURL("Terry.png");
-  footerAvatarImg.alt = "Terry";
-  footerAvatarImg.className = "args-footer-avatar-img";
-  footerAvatar.appendChild(footerAvatarImg);
-
-  footer.appendChild(footerText);
-  footer.appendChild(footerAvatar);
   panelFace.appendChild(footer);
 
   contentClip.appendChild(panelFace);
@@ -252,7 +264,45 @@ export function initArgumentsBox(): void {
   });
   containerEl.appendChild(closeBtnEl);
 
-  shadowRoot.appendChild(containerEl);
+  // ── Toggle bar (sits above the panel, outside the box) ──
+  toggleBarEl = document.createElement("div");
+  toggleBarEl.className = "args-toggle-bar";
+
+  panelToggleLabelEl = document.createElement("span");
+  panelToggleLabelEl.className = "args-enabled-label";
+  panelToggleLabelEl.textContent = "On";
+
+  panelToggleInput = document.createElement("input");
+  panelToggleInput.type = "checkbox";
+  panelToggleInput.className = "args-panel-toggle-input";
+  panelToggleInput.id = "args-panel-toggle-chk";
+  panelToggleInput.checked = true;
+
+  const panelToggleSlider = document.createElement("label");
+  panelToggleSlider.className = "args-panel-toggle-slider";
+  panelToggleSlider.htmlFor = "args-panel-toggle-chk";
+
+  panelToggleInput.addEventListener("change", (e) => {
+    e.stopPropagation();
+    const en = panelToggleInput!.checked;
+    panelToggleLabelEl!.textContent = en ? "On" : "Off";
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
+    });
+  });
+
+  toggleBarEl.appendChild(panelToggleLabelEl);
+  toggleBarEl.appendChild(panelToggleInput);
+  toggleBarEl.appendChild(panelToggleSlider);
+
+  // ── Outer wrapper (toggle bar + container) ──
+  outerWrapperEl = document.createElement("div");
+  outerWrapperEl.className = "args-outer-wrapper";
+  outerWrapperEl.appendChild(toggleBarEl);
+  outerWrapperEl.appendChild(containerEl);
+
+  shadowRoot.appendChild(outerWrapperEl);
 
   // On init: set auth/site state without requiring user interaction
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
@@ -292,7 +342,7 @@ export function updateArgumentsBox(
 
 export function addLiveFeedback(icon: string, text: string): void {
   if (!hostEl) return;
-  liveItems.push({ icon, text, sortKey: `live-${Date.now()}` });
+  liveItems.push({ icon, text, sortKey: `live-${Date.now()}`, type: "reaction" });
   renderList();
 }
 
@@ -549,6 +599,7 @@ function toggleDimmedPanel(): void {
 function toggle(): void {
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
+  toggleBarEl?.classList.toggle("visible", expanded);
   if (!expanded) {
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
@@ -1188,6 +1239,7 @@ function buildItems(
           icon: "✎",
           text: ann.content.note,
           sortKey: ann.id,
+          type: "manual",
         });
       }
     }
@@ -1198,24 +1250,26 @@ function buildItems(
       if (fb.feedback_type === "thumbs_up") {
         items.push({
           icon: "✓",
-          text:
-            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
+          type: "reaction",
         });
       } else if (fb.feedback_type === "thumbs_down") {
         items.push({
           icon: "✗",
-          text:
-            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
+          type: "reaction",
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
-        const excerpt = note.length > 60 ? note.slice(0, 57) + "..." : note;
+        const excerpt = note.length > 40 ? note.slice(0, 37) + "..." : note;
         items.push({
           icon: "↳",
-          text: `Re "${excerpt}": ${fb.reply_text ?? ""}`,
+          text: fb.reply_text ?? "",
           sortKey: fb.created_at,
+          type: "reply",
+          replyHeader: excerpt,
         });
       }
     }
@@ -1236,36 +1290,173 @@ function findAnnotationNote(
   return "(annotation)";
 }
 
+function expandCard(id: string): void {
+  if (expandedCardId && expandedCardId !== id) {
+    const prev = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`);
+    prev?.classList.remove("expanded");
+  }
+  expandedCardId = id;
+  const card = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(id)}"]`);
+  card?.classList.add("expanded");
+}
+
+function collapseAllCards(): void {
+  if (pinnedCardId) return;
+  if (expandedCardId) {
+    const card = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`);
+    card?.classList.remove("expanded");
+    expandedCardId = null;
+  }
+}
+
+function dimOtherCards(id: string): void {
+  listEl?.querySelectorAll<HTMLDivElement>(".arg-card").forEach((c) => {
+    c.classList.toggle("dimmed", c.dataset.cardId !== id);
+  });
+}
+
+function undimAllCards(): void {
+  listEl?.querySelectorAll<HTMLDivElement>(".arg-card").forEach((c) => c.classList.remove("dimmed"));
+}
+
 function renderList(): void {
   if (!listEl) return;
 
   const allItems = [...canonicalItems, ...liveItems];
   listEl.innerHTML = "";
+  expandedCardId = null;
+  pinnedCardId = null;
 
   if (allItems.length === 0) {
     const empty = document.createElement("div");
     empty.className = "args-empty";
-    empty.textContent =
-      "No arguments yet. React to annotations or create your own!";
+    empty.textContent = "No arguments yet. React to annotations or create your own!";
     listEl.appendChild(empty);
     return;
   }
 
   for (const item of allItems) {
-    const row = document.createElement("div");
-    row.className = "args-item";
+    const cardId = item.sortKey;
+    const card = document.createElement("div");
+    card.className = "arg-card";
+    card.dataset.cardId = cardId;
 
-    const bullet = document.createElement("span");
-    bullet.className = "args-bullet";
-    bullet.textContent = "·";
+    // Label (1 line max, like note-label)
+    const header = document.createElement("div");
+    header.className = "arg-card-header";
+    if (item.type === "reply") {
+      header.textContent = `Reply to \u201c${item.replyHeader ?? item.text}\u201d`;
+    } else {
+      header.textContent = `\u201c${item.text}\u201d`;
+    }
 
-    const text = document.createElement("span");
-    text.className = "args-text";
-    text.textContent = item.text;
+    // Body text (like note-text, clamped when collapsed)
+    const body = document.createElement("div");
+    body.className = "arg-card-body";
+    body.textContent = item.text;
 
-    row.appendChild(bullet);
-    row.appendChild(text);
-    listEl.appendChild(row);
+    // Expanded content (grid animation, like note-expanded-content)
+    const expandedContent = document.createElement("div");
+    expandedContent.className = "note-expanded-content";
+
+    const expandedInner = document.createElement("div");
+    expandedInner.className = "note-expanded-inner";
+
+    // Reply input bar ("Thoughts?")
+    const replyBar = document.createElement("div");
+    replyBar.className = "note-reply-bar";
+    const replyInput = document.createElement("input");
+    replyInput.type = "text";
+    replyInput.placeholder = "Thoughts?";
+    replyInput.className = "note-reply-input";
+    replyInput.addEventListener("keydown", (e) => e.stopPropagation());
+    replyInput.addEventListener("click", (e) => e.stopPropagation());
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "note-reply-send";
+    sendBtn.innerHTML = "&#8593;";
+    sendBtn.addEventListener("click", (e) => e.stopPropagation());
+    replyBar.appendChild(replyInput);
+    replyBar.appendChild(sendBtn);
+    expandedInner.appendChild(replyBar);
+
+    // Feedback row (pills + icons)
+    const feedbackRow = document.createElement("div");
+    feedbackRow.className = "note-feedback-row";
+
+    const pillGroup = document.createElement("div");
+    pillGroup.className = "note-pill-group";
+    const thumbUp = document.createElement("button");
+    thumbUp.className = "note-feedback-pill";
+    thumbUp.textContent = "Exactly!!";
+    thumbUp.addEventListener("click", (e) => e.stopPropagation());
+    const thumbDown = document.createElement("button");
+    thumbDown.className = "note-feedback-pill";
+    thumbDown.textContent = "Humm...";
+    thumbDown.addEventListener("click", (e) => e.stopPropagation());
+    pillGroup.appendChild(thumbUp);
+    pillGroup.appendChild(thumbDown);
+
+    const iconGroup = document.createElement("div");
+    iconGroup.className = "note-icon-group";
+    const editBtn = document.createElement("button");
+    editBtn.className = "note-icon-btn note-edit-btn";
+    editBtn.title = "Edit";
+    editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
+    editBtn.addEventListener("click", (e) => e.stopPropagation());
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "note-icon-btn note-delete-btn";
+    deleteBtn.title = "Delete";
+    deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
+    deleteBtn.addEventListener("click", (e) => e.stopPropagation());
+    iconGroup.appendChild(editBtn);
+    iconGroup.appendChild(deleteBtn);
+
+    feedbackRow.appendChild(pillGroup);
+    feedbackRow.appendChild(iconGroup);
+    expandedInner.appendChild(feedbackRow);
+
+    expandedContent.appendChild(expandedInner);
+
+    card.appendChild(header);
+    card.appendChild(body);
+    card.appendChild(expandedContent);
+
+    // Hover: expand + dim others (mirrors margin note mouseenter)
+    card.addEventListener("mouseenter", () => {
+      if (pinnedCardId && pinnedCardId !== cardId) return;
+      if (cardCollapseTimer) { clearTimeout(cardCollapseTimer); cardCollapseTimer = null; }
+      expandCard(cardId);
+      dimOtherCards(cardId);
+    });
+
+    // Leave: collapse after 100ms (mirrors margin note mouseleave)
+    card.addEventListener("mouseleave", () => {
+      if (pinnedCardId) return;
+      cardCollapseTimer = setTimeout(() => {
+        cardCollapseTimer = null;
+        collapseAllCards();
+        undimAllCards();
+      }, 100);
+    });
+
+    // Click: pin/unpin (mirrors margin note click)
+    card.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if ((e.target as HTMLElement).closest("button, input, textarea")) return;
+      if (pinnedCardId) {
+        pinnedCardId = null;
+        justUnpinnedCard = true;
+        setTimeout(() => { justUnpinnedCard = false; }, 0);
+        collapseAllCards();
+        undimAllCards();
+      } else if (!justUnpinnedCard) {
+        pinnedCardId = cardId;
+        expandCard(cardId);
+        dimOtherCards(cardId);
+      }
+    });
+
+    listEl.appendChild(card);
   }
 }
 
@@ -1273,11 +1464,8 @@ function handleCopy(btn: HTMLButtonElement): void {
   const allItems = [...canonicalItems, ...liveItems];
   const text = allItems.map((i) => `${i.icon} ${i.text}`).join("\n");
   navigator.clipboard.writeText(text).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = "Copied!";
-    setTimeout(() => {
-      btn.textContent = orig;
-    }, 1500);
+    btn.classList.add("copied");
+    setTimeout(() => btn.classList.remove("copied"), 1500);
   });
 }
 
@@ -1286,14 +1474,42 @@ function handleCopy(btn: HTMLButtonElement): void {
 const ARGUMENTS_BOX_CSS = `
   * { box-sizing: border-box; }
 
-  /* ── Morphing container ── */
+  /* ── Outer wrapper (positions toggle + container together) ── */
 
-  .args-container {
-    all: unset;
+  .args-outer-wrapper {
     position: fixed;
     bottom: 20px;
     right: 20px;
     z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    pointer-events: none;
+  }
+
+  /* ── Toggle bar (above the panel) ── */
+
+  .args-toggle-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .args-toggle-bar.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── Morphing container ── */
+
+  .args-container {
+    all: unset;
+    display: block;
     pointer-events: auto;
     overflow: visible;
     background: rgba(255, 255, 255, 0.15);
@@ -1332,7 +1548,7 @@ const ARGUMENTS_BOX_CSS = `
   /* Expanded (panel) state */
   .args-container.expanded {
     width: 234px;
-    height: 320px;
+    height: calc(100vh - 90px);
     border-radius: 16px;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
     cursor: default;
@@ -1408,23 +1624,47 @@ const ARGUMENTS_BOX_CSS = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 18px 0;
+    padding: 16px 16px 0;
     flex-shrink: 0;
   }
 
   .args-main-title {
     font-weight: 600;
-    font-size: 17px;
+    font-size: 16px;
     color: #fff;
     letter-spacing: 0.3px;
     font-family: "Fraunces", Georgia, serif;
   }
 
-  .args-toggle-row {
+  .args-header-icons {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 2px;
   }
+
+  .args-header-icon-btn {
+    all: unset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.7);
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .args-header-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+
+  .args-header-icon-btn.copied {
+    color: #4ade80;
+  }
+
+  /* ── Toggle bar ── */
 
   .args-enabled-label {
     font-size: 13px;
@@ -1469,47 +1709,243 @@ const ARGUMENTS_BOX_CSS = `
     transform: translateX(15px);
   }
 
-  /* ── Section title ── */
+  /* ── Purpose section ── */
 
-  .args-section-title {
-    font-weight: 500;
-    font-size: 14px;
-    color: #fff;
-    padding: 12px 18px 6px;
+  .args-purpose-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 16px 0;
     flex-shrink: 0;
-    font-family: "Fraunces", Georgia, serif;
+  }
+
+  .args-purpose-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: system-ui, -apple-system, sans-serif;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .args-purpose-input {
+    all: unset;
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.85);
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.5;
+    resize: none;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .args-purpose-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
   }
 
   /* ── List ── */
 
   .args-list {
     flex: 1;
-    padding: 0 18px;
+    padding: 10px 12px;
     overflow-y: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* ── Argument cards (mirrors .oddity-note exactly) ── */
+
+  .arg-card {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #FFFFFF;
+    cursor: pointer;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
+    transition: box-shadow 0.2s;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+
+  .arg-card:hover {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+  }
+
+  .arg-card.expanded {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+  }
+
+  .arg-card.dimmed {
+    opacity: 0.45;
+    filter: grayscale(0.6);
+  }
+
+  /* Header = note-label (max 1 line) */
+  .arg-card-header {
+    display: block;
+    font-style: normal;
+    font-size: 11.5px;
+    font-weight: 900;
+    letter-spacing: normal;
+    color: #59709E;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Body = note-text */
+  .arg-card-body {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    font-style: normal;
+    font-size: 11.5px;
+    font-weight: 250;
+    line-height: 1.45;
+    color: #FFFFFF;
+  }
+
+  .arg-card.expanded .arg-card-body {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+  }
+
+  /* ── Expanded content (grid animation, mirrors margin notes exactly) ── */
+
+  .arg-card .note-expanded-content {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-top: 0;
+    transition: grid-template-rows 0.25s ease, opacity 0.2s ease, margin-top 0.2s ease;
+  }
+
+  .arg-card .note-expanded-inner {
+    overflow: hidden;
     min-height: 0;
   }
 
-  .args-item {
+  .arg-card.expanded .note-expanded-content {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-top: 10px;
+  }
+
+  .arg-card .note-reply-bar {
     display: flex;
-    align-items: flex-start;
-    gap: 5px;
-    padding: 4px 0;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    margin-bottom: 7px;
   }
 
-  .args-bullet {
+  .arg-card .note-reply-input {
+    all: unset;
+    flex: 1;
+    min-width: 0;
+    background: #DFE7EF;
+    border-radius: 100px;
+    padding: 5px 12px;
+    font-size: 11.5px;
+    font-weight: 450;
+    color: #293038;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    line-height: 1;
+  }
+
+  .arg-card .note-reply-input::placeholder {
+    color: #6D6D6D;
+  }
+
+  .arg-card .note-reply-send {
+    all: unset;
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #59709E;
+    color: #fff;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.5);
-    line-height: 1.5;
+    transition: opacity 0.15s;
   }
 
-  .args-text {
-    font-family: Georgia, 'Times New Roman', serif;
-    font-style: italic;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.85);
-    line-height: 1.5;
-    word-break: break-word;
+  .arg-card .note-reply-send:hover {
+    opacity: 0.85;
+  }
+
+  .arg-card .note-feedback-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+  }
+
+  .arg-card .note-pill-group {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+
+  .arg-card .note-icon-group {
+    display: flex;
+    gap: 2px;
+  }
+
+  .arg-card .note-feedback-pill {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11.5px;
+    font-weight: 450;
+    padding: 4px 10px;
+    border-radius: 100px;
+    background: #59709E;
+    color: #fff;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+
+  .arg-card .note-feedback-pill:hover {
+    opacity: 0.8;
+  }
+
+  .arg-card .note-icon-btn {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    color: #FFFFFF;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .arg-card .note-icon-btn:hover {
+    color: #FFFFFF;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .arg-card .note-icon-btn.note-delete-btn:hover {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.12);
   }
 
   .args-empty {
@@ -1520,67 +1956,49 @@ const ARGUMENTS_BOX_CSS = `
     font-family: system-ui, -apple-system, sans-serif;
   }
 
-  /* ── Copy button ── */
-
-  .args-copy-btn-full {
-    all: unset;
-    display: block;
-    margin: 12px 18px 0;
-    padding: 11px 16px;
-    background: #000;
-    border: 1px solid #000;
-    color: #fff;
-    font-size: 14px;
-    font-weight: 400;
-    font-family: system-ui, -apple-system, sans-serif;
-    text-align: center;
-    border-radius: 100px;
-    cursor: pointer;
-    transition: background 0.15s;
-    flex-shrink: 0;
-  }
-
-  .args-copy-btn-full:hover {
-    background: #222;
-  }
-
   /* ── Footer ── */
 
   .args-footer {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 10px 18px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 14px 16px;
     flex-shrink: 0;
+  }
+
+  .args-sketch-btn {
+    all: unset;
+    display: block;
+    padding: 13px 16px;
+    background: #363636;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    text-align: center;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: background 0.15s;
+    box-sizing: border-box;
+  }
+
+  .args-sketch-btn:hover {
+    background: #484848;
   }
 
   .args-footer-text {
     font-size: 13px;
     color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
-    font-family: "Fraunces", Georgia, serif;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-weight: 400;
+    text-align: center;
+    text-decoration: underline;
   }
 
   .args-footer-text:hover {
     color: rgba(255, 255, 255, 0.9);
-  }
-
-  .args-footer-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: #fff;
-    flex-shrink: 0;
-  }
-
-  .args-footer-avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
   }
 
   /* ── Close button (top-center, slides in from above) ── */
@@ -1640,6 +2058,15 @@ const ARGUMENTS_BOX_CSS = `
     color: #1a1a1a;
   }
 
+  :host([data-theme="light"]) .args-header-icon-btn {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  :host([data-theme="light"]) .args-header-icon-btn:hover {
+    background: rgba(0, 0, 0, 0.07);
+    color: #1a1a1a;
+  }
+
   :host([data-theme="light"]) .args-enabled-label {
     color: rgba(0, 0, 0, 0.55);
   }
@@ -1652,30 +2079,32 @@ const ARGUMENTS_BOX_CSS = `
     background: #22c55e;
   }
 
-  :host([data-theme="light"]) .args-section-title {
-    color: #606060;
+  :host([data-theme="light"]) .args-purpose-label {
+    color: rgba(0, 0, 0, 0.4);
   }
 
-  :host([data-theme="light"]) .args-bullet {
-    color: rgba(0, 0, 0, 0.35);
+  :host([data-theme="light"]) .args-purpose-input {
+    color: #1a1a1a;
   }
 
-  :host([data-theme="light"]) .args-text {
-    color: #606060;
+  :host([data-theme="light"]) .args-purpose-input::placeholder {
+    color: rgba(0, 0, 0, 0.25);
+  }
+
+  :host([data-theme="light"]) .arg-card {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  :host([data-theme="light"]) .arg-card-header {
+    color: #59709e;
+  }
+
+  :host([data-theme="light"]) .arg-card-body {
+    color: #FFFFFF;
   }
 
   :host([data-theme="light"]) .args-empty {
     color: rgba(0, 0, 0, 0.4);
-  }
-
-  :host([data-theme="light"]) .args-copy-btn-full {
-    background: #1a1f27;
-    border-color: #1a1f27;
-    color: #fff;
-  }
-
-  :host([data-theme="light"]) .args-copy-btn-full:hover {
-    background: #2e3440;
   }
 
   :host([data-theme="light"]) .args-footer-text {
@@ -1684,10 +2113,6 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .args-footer-text:hover {
     color: rgba(0, 0, 0, 0.8);
-  }
-
-  :host([data-theme="light"]) .args-footer-avatar {
-    border-color: rgba(0, 0, 0, 0.12);
   }
 
   /* ── Not-enabled state (red button) ── */
