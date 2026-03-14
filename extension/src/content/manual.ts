@@ -417,8 +417,10 @@ async function handleSubmit(note: string): Promise<void> {
   // Render immediately
   renderManualAnnotation(annotation, root);
 
-  const label = ANNOTATION_LABELS[type];
-  addLiveFeedback("✎", `(${label}) ${annotation.content.note}`);
+  addLiveFeedback("✎", annotation.content.note, {
+    quote: annotation.anchor.exact,
+    type: "manual",
+  });
 
   dismissEditor();
   window.getSelection()?.removeAllRanges();

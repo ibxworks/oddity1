@@ -596,7 +596,9 @@ function createNoteElement(
         thumbUp.classList.add("active");
         thumbDown.classList.remove("active");
         reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
-        addLiveFeedback("✓", annotation.content.note);
+        addLiveFeedback("✓", annotation.content.note, {
+          quote: annotation.anchor.exact,
+        });
         const doSave = () =>
           sendMessage({
             action: "saveFeedback",
@@ -638,7 +640,9 @@ function createNoteElement(
         thumbDown.classList.add("active");
         thumbUp.classList.remove("active");
         reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
-        addLiveFeedback("✗", annotation.content.note);
+        addLiveFeedback("✗", annotation.content.note, {
+          quote: annotation.anchor.exact,
+        });
         const doSave = () =>
           sendMessage({
             action: "saveFeedback",
@@ -772,10 +776,13 @@ function submitReply(
     if (fb?.id) bubble.dataset.feedbackId = fb.id;
   }).catch(() => {});
 
-  const excerpt = annotation.content.note.length > 60
-    ? annotation.content.note.slice(0, 57) + "..."
+  const excerpt = annotation.content.note.length > 40
+    ? annotation.content.note.slice(0, 37) + "\u2026"
     : annotation.content.note;
-  addLiveFeedback("↳", `Re "${excerpt}": ${text}`);
+  addLiveFeedback("↳", text, {
+    type: "reply",
+    replyHeader: excerpt,
+  });
 
   input.value = "";
 }
