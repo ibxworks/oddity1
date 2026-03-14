@@ -304,8 +304,9 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
   if (!containerEl) return;
   containerEl.classList.toggle("oddity-enabled", enabled);
   if (panelToggleInput) panelToggleInput.checked = enabled;
-  if (panelToggleLabelEl)
-    panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (panelToggleLabelEl) panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (dashToggleInput) dashToggleInput.checked = enabled;
+  if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
 }
 
 export function setArgumentsBoxDimmed(isDimmed: boolean): void {
@@ -329,6 +330,35 @@ let signOutCb: (() => void) | null = null;
 
 export function setSignOutCallback(cb: () => void): void {
   signOutCb = cb;
+}
+
+export function handleRemoteSignOut(): void {
+  signOutCb?.();
+  // Remove not-enabled overlay if present
+  if (notEnabledPanelEl) {
+    notEnabledPanelEl.remove();
+    notEnabledPanelEl = null;
+    dimmed = false;
+    containerEl?.classList.remove("oddity-not-enabled");
+  }
+  showDashboard();
+  showAuthView("signin");
+}
+
+export async function handleRemoteSignIn(): Promise<void> {
+  // Hide auth overlay
+  if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
+  if (dashFaceEl) dashFaceEl.style.overflow = "";
+  if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
+  const prefsStored = await chrome.storage.local.get("preferences");
+  const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+  const hostname = window.location.hostname.replace(/^www\./, "");
+  const siteEnabled = Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s));
+  if (!siteEnabled) {
+    showNotEnabledOverlay();
+  } else {
+    await loadDashboardData();
+  }
 }
 
 export function destroyArgumentsBox(): void {

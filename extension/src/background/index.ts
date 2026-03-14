@@ -225,6 +225,16 @@ chrome.runtime.onMessage.addListener(
           const signInPrefs = (signInStored["preferences"] ?? {}) as Record<string, unknown>;
           await chrome.storage.local.set({ preferences: { ...signInPrefs, enabled_sites: signInSites } });
 
+          // Broadcast auth change to all other tabs
+          const signInTabId = sender.tab?.id;
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id && tab.id !== signInTabId) {
+                sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: true } }).catch(() => {});
+              }
+            }
+          });
+
           return {
             success: true,
             user: {
@@ -259,6 +269,15 @@ chrome.runtime.onMessage.addListener(
 
         case "signOut": {
           await signOut();
+          // Broadcast auth change to all other tabs
+          const signOutTabId = sender.tab?.id;
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id && tab.id !== signOutTabId) {
+                sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: false } }).catch(() => {});
+              }
+            }
+          });
           return { success: true };
         }
 

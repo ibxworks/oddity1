@@ -23,6 +23,8 @@ import {
 } from "./manual.js";
 import {
   destroyArgumentsBox,
+  handleRemoteSignIn,
+  handleRemoteSignOut,
   initArgumentsBox,
   setArgumentsBoxVisible,
   setArgumentsBoxEnabled,
@@ -1017,6 +1019,17 @@ onMessage((message: ExtensionMessage) => {
         if (!pipelineInitialized) {
           startPipeline().catch(console.error);
         }
+      }
+      break;
+    }
+
+    case "authStateChanged": {
+      const { authenticated } = message.payload;
+      if (!authenticated) {
+        // signOutCb (via handleRemoteSignOut) handles state reset + DOM teardown
+        handleRemoteSignOut();
+      } else {
+        handleRemoteSignIn().catch(() => {});
       }
       break;
     }
