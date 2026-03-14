@@ -23,6 +23,8 @@ import {
 } from "./manual.js";
 import {
   destroyArgumentsBox,
+  handleRemoteSignIn,
+  handleRemoteSignOut,
   initArgumentsBox,
   setArgumentsBoxVisible,
   setArgumentsBoxEnabled,
@@ -31,6 +33,7 @@ import {
   setManualRunCallback,
   setSignOutCallback,
   updateArgumentsBox,
+  updateArgumentsBoxStyle,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -938,6 +941,7 @@ onMessage((message: ExtensionMessage) => {
 
       // Apply font/size changes immediately
       updateMarginNotesStyle(annotationFont, annotationFontSize);
+      updateArgumentsBoxStyle(annotationFont, annotationFontSize);
       const wasEnabled = enabled;
       const intensityChanged = newIntensity !== currentIntensity;
       enabled = newEnabled;
@@ -1016,6 +1020,29 @@ onMessage((message: ExtensionMessage) => {
         sendMessage({ action: "setBadge", payload: { text: "" } }).catch(() => {});
         if (!pipelineInitialized) {
           startPipeline().catch(console.error);
+        }
+      }
+      break;
+    }
+
+    case "authStateChanged": {
+      const { authenticated } = message.payload;
+      if (!authenticated) {
+        // signOutCb (via handleRemoteSignOut) handles state reset + DOM teardown
+        handleRemoteSignOut();
+      } else {
+        handleRemoteSignIn(message.payload.user).catch(() => {});
+        // init() returned early (unauthenticated), so re-check whitelist and start pipeline
+        if (!pipelineInitialized) {
+          (async () => {
+            const stored = await chrome.storage.local.get("preferences");
+            const enabledSites: string[] = stored?.preferences?.enabled_sites ?? DEFAULT_ENABLED_SITES;
+            const domain = extractDomain();
+            if (isDomainWhitelisted(domain, enabledSites)) {
+              siteWhitelisted = true;
+              await startPipeline();
+            }
+          })().catch(console.error);
         }
       }
       break;

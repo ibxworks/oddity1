@@ -205,6 +205,7 @@ export type ExtensionMessage =
   | { action: 'getUserTier'; payload: Record<string, never> }
   | { action: 'getUserTierResult'; payload: { tier: UserTier } }
   | { action: 'saveFeedback'; payload: { annotationId: string; contentHash: string; url: string; feedbackType: FeedbackType; replyText?: string; pageTitle?: string } }
+  | { action: 'updateFeedback'; payload: { feedbackId: string; replyText: string } }
   | { action: 'deleteFeedback'; payload: { feedbackId: string } }
   | { action: 'updateAnnotation'; payload: { annotationId: string; annotation: Annotation; url: string; contentHash: string; pageTitle?: string } }
   | { action: 'sendUserFeedback'; payload: { message: string } }
@@ -217,4 +218,5 @@ export type ExtensionMessage =
   | { action: 'triggerManualRun'; payload: Record<string, never> }
   | { action: 'setBadge'; payload: { text: string; color?: string } }
   | { action: 'openPopup'; payload: Record<string, never> }
-  | { action: 'openOptions'; payload: Record<string, never> };
+  | { action: 'openOptions'; payload: Record<string, never> }
+  | { action: 'authStateChanged'; payload: { authenticated: false } | { authenticated: true; user: { email: string; display_name: string | null; tier: string; annotation_count: number } } };

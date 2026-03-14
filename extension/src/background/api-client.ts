@@ -254,6 +254,15 @@ export async function saveFeedback(data: {
   return res.json() as Promise<AnnotationFeedback>;
 }
 
+export async function updateFeedback(id: string, replyText: string): Promise<AnnotationFeedback> {
+  const res = await authFetch(`/api/annotations/feedback/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ reply_text: replyText }),
+  });
+  if (!res.ok) throw new Error(`updateFeedback failed: ${res.status}`);
+  return res.json() as Promise<AnnotationFeedback>;
+}
+
 export async function deleteFeedback(id: string): Promise<void> {
   const res = await authFetch(`/api/annotations/feedback/${encodeURIComponent(id)}`, {
     method: 'DELETE',

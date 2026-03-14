@@ -10,6 +10,7 @@ import {
   AuthError,
   deleteAnnotation as apiDeleteAnnotation,
   deleteFeedback as apiDeleteFeedback,
+  updateFeedback as apiUpdateFeedback,
   requestAnnotations,
   requestAnnotationsStreaming,
   saveAnnotation,
@@ -225,6 +226,22 @@ chrome.runtime.onMessage.addListener(
           const signInPrefs = (signInStored["preferences"] ?? {}) as Record<string, unknown>;
           await chrome.storage.local.set({ preferences: { ...signInPrefs, enabled_sites: signInSites } });
 
+          // Broadcast auth change to all other tabs (include user data to avoid re-querying auth)
+          const signInTabId = sender.tab?.id;
+          const signInUser = {
+            email: data.user?.email ?? "",
+            display_name: signInProfile?.display_name ?? null,
+            tier: signInProfile?.tier ?? "free",
+            annotation_count: 0,
+          };
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id && tab.id !== signInTabId) {
+                sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: true, user: signInUser } }).catch(() => {});
+              }
+            }
+          });
+
           return {
             success: true,
             user: {
@@ -259,6 +276,15 @@ chrome.runtime.onMessage.addListener(
 
         case "signOut": {
           await signOut();
+          // Broadcast auth change to all other tabs
+          const signOutTabId = sender.tab?.id;
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id && tab.id !== signOutTabId) {
+                sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: false } }).catch(() => {});
+              }
+            }
+          });
           return { success: true };
         }
 
@@ -301,6 +327,12 @@ chrome.runtime.onMessage.addListener(
             page_title: pageTitle,
           });
           return fb;
+        }
+
+        case "updateFeedback": {
+          const { feedbackId: ufId, replyText: ufText } = message.payload;
+          const updatedFb = await apiUpdateFeedback(ufId, ufText);
+          return updatedFb;
         }
 
         case "deleteFeedback": {

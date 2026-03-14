@@ -1,19 +1,48 @@
-import type { Annotation, AnnotationFeedback } from "@oddity/shared";
+import type { Annotation, AnnotationFeedback, AnnotationFont, AnnotationFontSize } from "@oddity/shared";
 
 import {
   getThemeMode,
   offThemeChange,
   onThemeChange,
 } from "./theme-detector.js";
+import { getMarginNotesContentRight } from "./margin-notes.js";
+
+// ─── Font / Size maps (mirrors margin-notes) ───
+
+const FONT_MAP: Record<AnnotationFont, string> = {
+  default: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+  fraunces: "'Fraunces', Georgia, serif",
+  kalam: "'Kalam', cursive, system-ui, sans-serif",
+  helvetica: "Helvetica, 'Helvetica Neue', Arial, sans-serif",
+  arial: "Arial, 'Helvetica Neue', sans-serif",
+  georgia: "Georgia, 'Times New Roman', serif",
+};
+const SIZE_MAP: Record<AnnotationFontSize, string> = {
+  small: "12px",
+  default: "14px",
+  large: "16px",
+};
 
 // ─── Types ───
 
-type ArgumentItem = { icon: string; text: string; sortKey: string };
+type ArgumentItem = {
+  icon: string;
+  text: string;       // body: user's note / reply text
+  quote?: string;     // header: highlighted text from page (for manual/reaction)
+  sortKey: string;
+  type: "reply" | "manual" | "reaction";
+  replyHeader?: string;
+  feedbackId?: string;
+  annotationId?: string;
+  annotation?: Annotation; // Full annotation object for manual type
+};
 
 // ─── State ───
 
 let hostEl: HTMLElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
+let outerWrapperEl: HTMLDivElement | null = null;
+let toggleBarEl: HTMLDivElement | null = null;
 let containerEl: HTMLDivElement | null = null;
 let closeBtnEl: HTMLButtonElement | null = null;
 let listEl: HTMLDivElement | null = null;
@@ -22,6 +51,16 @@ let panelToggleLabelEl: HTMLSpanElement | null = null;
 let expanded = false;
 let dimmed = false;
 let blocked = false;
+let expandedCardId: string | null = null;
+
+// Drag-to-scroll state
+let listDragging = false;
+let listDragStartY = 0;
+let listScrollStart = 0;
+let listDragDelta = 0;
+let listDragMoveHandler: ((e: MouseEvent) => void) | null = null;
+let listDragUpHandler: (() => void) | null = null;
+
 let manualRunCb: (() => void) | null = null;
 let notEnabledPanelEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
@@ -65,6 +104,19 @@ let dashSignInMode: "signin" | "signup" = "signup";
 let dashFaceEl: HTMLDivElement | null = null;
 let footerTextEl: HTMLSpanElement | null = null;
 let sessionSiteEnabled = false; // set to true when user runs once or always-enables this session
+let localAuthState: boolean | null = null; // cached auth state — avoids re-querying background on every toggle
+
+// ── Button drag state ──
+const BTN_DEFAULT_RIGHT = 20;
+const BTN_DEFAULT_BOTTOM = 20;
+let btnDragging = false;
+let btnDragDelta = 0;
+let btnDragStartX = 0;
+let btnDragStartY = 0;
+let btnCurrentRight = BTN_DEFAULT_RIGHT;
+let btnCurrentBottom = BTN_DEFAULT_BOTTOM;
+let btnDragMoveHandler: ((e: MouseEvent) => void) | null = null;
+let btnDragUpHandler: (() => void) | null = null;
 
 // ─── Public API ───
 
@@ -82,6 +134,17 @@ export function initArgumentsBox(): void {
   style.textContent = ARGUMENTS_BOX_CSS;
   shadowRoot.appendChild(style);
 
+  // Apply stored font/size prefs immediately on init (same as margin-notes)
+  chrome.storage.local.get("preferences", (result) => {
+    const prefs = result["preferences"] as Record<string, unknown> | undefined;
+    if (prefs) {
+      updateArgumentsBoxStyle(
+        prefs.annotation_font as AnnotationFont | undefined,
+        prefs.annotation_font_size as AnnotationFontSize | undefined,
+      );
+    }
+  });
+
   // Theme
   hostEl.dataset.theme = getThemeMode();
   themeHandler = (mode) => {
@@ -93,14 +156,61 @@ export function initArgumentsBox(): void {
   containerEl = document.createElement("div");
   containerEl.className = "args-container";
   containerEl.addEventListener("click", () => {
-    if (blocked) return; // blocked overlay is always expanded
+    if (blocked) return;
     if (!expanded) {
+      if (Math.abs(btnDragDelta) > 4) return; // suppress click after drag
+      // Reset to default position before opening
+      btnCurrentRight = BTN_DEFAULT_RIGHT;
+      btnCurrentBottom = BTN_DEFAULT_BOTTOM;
+      if (outerWrapperEl) {
+        outerWrapperEl.style.right = `${BTN_DEFAULT_RIGHT}px`;
+        outerWrapperEl.style.bottom = `${BTN_DEFAULT_BOTTOM}px`;
+      }
       if (dimmed) {
         toggleDimmedPanel();
       } else {
         toggle();
       }
     }
+  });
+
+  // ── Button drag-to-reposition (collapsed only) ──
+  containerEl.addEventListener("mousedown", (e) => {
+    if (expanded) return;
+    btnDragging = true;
+    btnDragDelta = 0;
+    // Origin: fixed for total-distance check (never updated during drag)
+    const originX = e.clientX;
+    const originY = e.clientY;
+    // Prev: updated each frame for incremental position movement
+    btnDragStartX = e.clientX;
+    btnDragStartY = e.clientY;
+
+    btnDragMoveHandler = (ev: MouseEvent) => {
+      if (!btnDragging || !outerWrapperEl) return;
+      // Total distance from mousedown origin — used to distinguish click vs drag
+      const totalDx = ev.clientX - originX;
+      const totalDy = ev.clientY - originY;
+      btnDragDelta = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
+      // Incremental movement for smooth repositioning
+      const dx = ev.clientX - btnDragStartX;
+      const dy = ev.clientY - btnDragStartY;
+      btnCurrentRight -= dx;
+      btnCurrentBottom -= dy;
+      outerWrapperEl.style.right = `${btnCurrentRight}px`;
+      outerWrapperEl.style.bottom = `${btnCurrentBottom}px`;
+      btnDragStartX = ev.clientX;
+      btnDragStartY = ev.clientY;
+    };
+
+    btnDragUpHandler = () => {
+      btnDragging = false;
+      document.removeEventListener("mousemove", btnDragMoveHandler!);
+      document.removeEventListener("mouseup", btnDragUpHandler!);
+    };
+
+    document.addEventListener("mousemove", btnDragMoveHandler);
+    document.addEventListener("mouseup", btnDragUpHandler);
   });
 
   // Button face (Terry.png, visible when collapsed)
@@ -121,53 +231,68 @@ export function initArgumentsBox(): void {
   panelFace.className = "args-panel-face";
   panelFace.addEventListener("click", (e) => e.stopPropagation());
 
-  // ── Panel header: "Oddity 1" + toggle ──
+  // ── Panel header: "Argument Box" + icon buttons ──
   const panelHeader = document.createElement("div");
   panelHeader.className = "args-panel-header";
 
   const mainTitle = document.createElement("span");
   mainTitle.className = "args-main-title";
-  mainTitle.textContent = "Oddity 1";
+  mainTitle.textContent = "Argument Box";
 
-  const toggleRow = document.createElement("div");
-  toggleRow.className = "args-toggle-row";
+  const headerIcons = document.createElement("div");
+  headerIcons.className = "args-header-icons";
 
-  panelToggleLabelEl = document.createElement("span");
-  panelToggleLabelEl.className = "args-enabled-label";
-  panelToggleLabelEl.textContent = "On";
+  const addBtn = document.createElement("button");
+  addBtn.className = "args-header-icon-btn";
+  addBtn.title = "Add";
+  addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><line x1="7.5" y1="2" x2="7.5" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="2" y1="7.5" x2="13" y2="7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+  addBtn.addEventListener("click", (e) => e.stopPropagation());
 
-  panelToggleInput = document.createElement("input");
-  panelToggleInput.type = "checkbox";
-  panelToggleInput.className = "args-panel-toggle-input";
-  panelToggleInput.id = "args-panel-toggle-chk";
-  panelToggleInput.checked = true;
-
-  const panelToggleSlider = document.createElement("label");
-  panelToggleSlider.className = "args-panel-toggle-slider";
-  panelToggleSlider.htmlFor = "args-panel-toggle-chk";
-
-  panelToggleInput.addEventListener("change", (e) => {
+  const copyIconBtn = document.createElement("button");
+  copyIconBtn.className = "args-header-icon-btn";
+  copyIconBtn.title = "Copy";
+  copyIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 5V3.5A1.5 1.5 0 0 0 8.5 2H3.5A1.5 1.5 0 0 0 2 3.5v5A1.5 1.5 0 0 0 3.5 10H5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  copyIconBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    const en = panelToggleInput!.checked;
-    panelToggleLabelEl!.textContent = en ? "On" : "Off";
-    chrome.storage.local.get("preferences").then((stored) => {
-      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-      chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
-    });
+    handleCopy(copyIconBtn);
   });
 
-  toggleRow.appendChild(panelToggleLabelEl);
-  toggleRow.appendChild(panelToggleInput);
-  toggleRow.appendChild(panelToggleSlider);
+  const exportIconBtn = document.createElement("button");
+  exportIconBtn.className = "args-header-icon-btn";
+  exportIconBtn.title = "Export PDF";
+  exportIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 2v8M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11.5v1A1.5 1.5 0 0 0 4 14h7a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  exportIconBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.dispatchEvent(new CustomEvent("oddity:exportPdf", {
+      detail: { title: document.title, subtitle: "Created with Oddity 1" },
+    }));
+  });
+
+  headerIcons.appendChild(addBtn);
+  headerIcons.appendChild(copyIconBtn);
+  headerIcons.appendChild(exportIconBtn);
+
   panelHeader.appendChild(mainTitle);
-  panelHeader.appendChild(toggleRow);
+  panelHeader.appendChild(headerIcons);
   panelFace.appendChild(panelHeader);
 
-  // ── Section title ──
-  const sectionTitle = document.createElement("div");
-  sectionTitle.className = "args-section-title";
-  sectionTitle.textContent = "Argument Box";
-  panelFace.appendChild(sectionTitle);
+  // ── Purpose section ──
+  const purposeSection = document.createElement("div");
+  purposeSection.className = "args-purpose-section";
+
+  const purposeLabel = document.createElement("span");
+  purposeLabel.className = "args-purpose-label";
+  purposeLabel.textContent = "Purpose:";
+
+  const purposeInput = document.createElement("textarea");
+  purposeInput.className = "args-purpose-input";
+  purposeInput.placeholder = "Why are you reading this?";
+  purposeInput.rows = 2;
+  purposeInput.addEventListener("click", (e) => e.stopPropagation());
+
+  purposeSection.appendChild(purposeLabel);
+  purposeSection.appendChild(purposeInput);
+  panelFace.appendChild(purposeSection);
 
   // ── List ──
   listEl = document.createElement("div");
@@ -175,19 +300,42 @@ export function initArgumentsBox(): void {
   panelFace.appendChild(listEl);
   renderList();
 
-  // ── Copy button ──
-  const copyBtnFull = document.createElement("button");
-  copyBtnFull.className = "args-copy-btn-full";
-  copyBtnFull.textContent = "Copy";
-  copyBtnFull.addEventListener("click", (e) => {
-    e.stopPropagation();
-    handleCopy(copyBtnFull);
+  // Drag-to-scroll
+  listEl.addEventListener("mousedown", (e) => {
+    if ((e.target as HTMLElement).closest("button, input, textarea")) return;
+    listDragging = true;
+    listDragDelta = 0;
+    listDragStartY = e.clientY;
+    listScrollStart = listEl!.scrollTop;
+    listEl!.style.cursor = "grabbing";
   });
-  panelFace.appendChild(copyBtnFull);
+
+  listDragMoveHandler = (e: MouseEvent) => {
+    if (!listDragging || !listEl) return;
+    const delta = listDragStartY - e.clientY;
+    listDragDelta = delta;
+    listEl.scrollTop = listScrollStart + delta;
+  };
+
+  listDragUpHandler = () => {
+    if (!listDragging || !listEl) return;
+    listDragging = false;
+    listEl.style.cursor = "";
+    setTimeout(() => { listDragDelta = 0; }, 0);
+  };
+
+  document.addEventListener("mousemove", listDragMoveHandler);
+  document.addEventListener("mouseup", listDragUpHandler);
 
   // ── Footer ──
   const footer = document.createElement("div");
   footer.className = "args-footer";
+
+  const sketchBtn = document.createElement("button");
+  sketchBtn.className = "args-sketch-btn";
+  sketchBtn.textContent = "Sketch my Argument";
+  sketchBtn.addEventListener("click", (e) => e.stopPropagation());
+  footer.appendChild(sketchBtn);
 
   footerTextEl = document.createElement("span");
   footerTextEl.className = "args-footer-text";
@@ -197,22 +345,12 @@ export function initArgumentsBox(): void {
       footerTextEl!.textContent = "Sign in";
     }
   });
-  const footerText = footerTextEl;
-  footerText.addEventListener("click", (e) => {
+  footerTextEl.addEventListener("click", (e) => {
     e.stopPropagation();
     showDashboard();
   });
+  footer.appendChild(footerTextEl);
 
-  const footerAvatar = document.createElement("div");
-  footerAvatar.className = "args-footer-avatar";
-  const footerAvatarImg = document.createElement("img");
-  footerAvatarImg.src = chrome.runtime.getURL("Terry.png");
-  footerAvatarImg.alt = "Terry";
-  footerAvatarImg.className = "args-footer-avatar-img";
-  footerAvatar.appendChild(footerAvatarImg);
-
-  footer.appendChild(footerText);
-  footer.appendChild(footerAvatar);
   panelFace.appendChild(footer);
 
   contentClip.appendChild(panelFace);
@@ -251,7 +389,45 @@ export function initArgumentsBox(): void {
   });
   containerEl.appendChild(closeBtnEl);
 
-  shadowRoot.appendChild(containerEl);
+  // ── Toggle bar (sits outside the panel, top-left of the outer wrapper) ──
+  toggleBarEl = document.createElement("div");
+  toggleBarEl.className = "args-toggle-bar";
+
+  panelToggleLabelEl = document.createElement("span");
+  panelToggleLabelEl.className = "args-enabled-label";
+  panelToggleLabelEl.textContent = "On";
+
+  panelToggleInput = document.createElement("input");
+  panelToggleInput.type = "checkbox";
+  panelToggleInput.className = "args-panel-toggle-input";
+  panelToggleInput.id = "args-panel-toggle-chk";
+  panelToggleInput.checked = true;
+
+  const panelToggleSlider = document.createElement("label");
+  panelToggleSlider.className = "args-panel-toggle-slider";
+  panelToggleSlider.htmlFor = "args-panel-toggle-chk";
+
+  panelToggleInput.addEventListener("change", (e) => {
+    e.stopPropagation();
+    const en = panelToggleInput!.checked;
+    panelToggleLabelEl!.textContent = en ? "On" : "Off";
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
+    });
+  });
+
+  toggleBarEl.appendChild(panelToggleLabelEl);
+  toggleBarEl.appendChild(panelToggleInput);
+  toggleBarEl.appendChild(panelToggleSlider);
+
+  // ── Outer wrapper (toggle bar + container) ──
+  outerWrapperEl = document.createElement("div");
+  outerWrapperEl.className = "args-outer-wrapper";
+  outerWrapperEl.appendChild(toggleBarEl);
+  outerWrapperEl.appendChild(containerEl);
+
+  shadowRoot.appendChild(outerWrapperEl);
 
   // On init: set auth/site state without requiring user interaction
   chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
@@ -291,7 +467,7 @@ export function updateArgumentsBox(
 
 export function addLiveFeedback(icon: string, text: string): void {
   if (!hostEl) return;
-  liveItems.push({ icon, text, sortKey: `live-${Date.now()}` });
+  liveItems.push({ icon, text, sortKey: `live-${Date.now()}`, type: "reaction" });
   renderList();
 }
 
@@ -304,8 +480,9 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
   if (!containerEl) return;
   containerEl.classList.toggle("oddity-enabled", enabled);
   if (panelToggleInput) panelToggleInput.checked = enabled;
-  if (panelToggleLabelEl)
-    panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (panelToggleLabelEl) panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (dashToggleInput) dashToggleInput.checked = enabled;
+  if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
 }
 
 export function setArgumentsBoxDimmed(isDimmed: boolean): void {
@@ -325,10 +502,63 @@ export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
 }
 
+export function updateArgumentsBoxStyle(
+  font?: AnnotationFont,
+  fontSize?: AnnotationFontSize,
+): void {
+  const host = shadowRoot?.host as HTMLElement;
+  if (!host) return;
+  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "default"]);
+  host.style.setProperty("--oddity-note-size", SIZE_MAP[fontSize ?? "default"]);
+  renderList(); // re-layout since sizes changed
+}
+
 let signOutCb: (() => void) | null = null;
 
 export function setSignOutCallback(cb: () => void): void {
   signOutCb = cb;
+}
+
+export function handleRemoteSignOut(): void {
+  localAuthState = false;
+  signOutCb?.();
+  // Remove not-enabled overlay if present
+  if (notEnabledPanelEl) {
+    notEnabledPanelEl.remove();
+    notEnabledPanelEl = null;
+    dimmed = false;
+    containerEl?.classList.remove("oddity-not-enabled");
+  }
+  showDashboard();
+  showAuthView("signin");
+}
+
+export async function handleRemoteSignIn(user: { email: string; display_name: string | null; tier: string; annotation_count: number }): Promise<void> {
+  localAuthState = true;
+  // Hide auth overlay and update UI directly — no re-query needed (avoids service worker race)
+  if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
+  if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
+  const name = user.display_name || user.email || "?";
+  dashUserEmail = user.email;
+  dashUserTier = user.tier;
+  if (dashCountEl) dashCountEl.textContent = String(user.annotation_count ?? 0);
+  if (dashProfileNameEl) dashProfileNameEl.textContent = name;
+  if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
+  if (dashTierBadgeEl) dashTierBadgeEl.textContent = user.tier.toUpperCase();
+  if (dashSignOutPopoverNameEl) dashSignOutPopoverNameEl.textContent = name;
+  if (dashSignOutPopoverEmailEl) dashSignOutPopoverEmailEl.textContent = user.email;
+  if (dashSignOutPopoverPlanEl) dashSignOutPopoverPlanEl.textContent = user.tier === "pro" ? "Pro Plan" : "Free Plan";
+  await chrome.storage.local.set({ hadAccount: true });
+  // Check site whitelist to show dashboard or not-enabled overlay
+  const prefsStored = await chrome.storage.local.get("preferences");
+  const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
+  const hostname = window.location.hostname.replace(/^www\./, "");
+  const siteEnabled = Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s));
+  if (!siteEnabled) {
+    showNotEnabledOverlay();
+  }
+  // Load prefs (density, font, toggle state) without re-querying auth
+  loadDashboardPrefs().catch(() => {});
 }
 
 export function destroyArgumentsBox(): void {
@@ -337,6 +567,14 @@ export function destroyArgumentsBox(): void {
   if (themeHandler) {
     offThemeChange(themeHandler);
     themeHandler = null;
+  }
+  if (listDragMoveHandler) {
+    document.removeEventListener("mousemove", listDragMoveHandler);
+    listDragMoveHandler = null;
+  }
+  if (listDragUpHandler) {
+    document.removeEventListener("mouseup", listDragUpHandler);
+    listDragUpHandler = null;
   }
   hostEl?.remove();
   hostEl = null;
@@ -504,19 +742,19 @@ function toggleDimmedPanel(): void {
 function toggle(): void {
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
+  toggleBarEl?.classList.toggle("visible", expanded);
   if (!expanded) {
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
     if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
-    if (dashFaceEl) dashFaceEl.style.overflow = "";
-    if (containerEl) containerEl.style.height = "";
+    if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
   } else {
-    chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
-      if (!result?.authenticated) {
+    const checkAuth = async (authenticated: boolean) => {
+      if (!authenticated) {
         showDashboard();
         const stored = await chrome.storage.local.get("hadAccount");
         showAuthView(stored["hadAccount"] ? "signin" : "signup");
@@ -529,7 +767,15 @@ function toggle(): void {
           showNotEnabledOverlay();
         }
       }
-    }).catch(() => {});
+    };
+    if (localAuthState !== null) {
+      checkAuth(localAuthState).catch(() => {});
+    } else {
+      chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
+        localAuthState = result?.authenticated ?? false;
+        await checkAuth(localAuthState);
+      }).catch(() => {});
+    }
   }
 }
 
@@ -549,9 +795,21 @@ function hideCloseBtn(): void {
   }, 80);
 }
 
+function fitDashboardHeight(): void {
+  if (!dashFaceEl || !containerEl) return;
+  let h = 0;
+  for (const child of Array.from(dashFaceEl.children)) {
+    h += (child as HTMLElement).offsetHeight;
+  }
+  if (h > 0) containerEl.style.height = `${h}px`;
+}
+
 function showDashboard(): void {
   containerEl?.classList.add("dashboard");
-  loadDashboardData().catch(() => {});
+  if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
+  loadDashboardData()
+    .catch(() => {})
+    .finally(() => requestAnimationFrame(() => fitDashboardHeight()));
 }
 
 function showAuthView(mode: "signin" | "signup"): void {
@@ -562,8 +820,8 @@ function showAuthView(mode: "signin" | "signup"): void {
   if (dashSignInNameEl) dashSignInNameEl.style.display = mode === "signup" ? "block" : "none";
   if (dashSignInStatusEl) { dashSignInStatusEl.style.display = "none"; dashSignInStatusEl.className = "args-dash-feedback-status"; }
   if (dashSignInViewEl) { dashSignInViewEl.style.display = "flex"; }
-  if (dashFaceEl) dashFaceEl.style.overflow = "hidden";
-  if (containerEl) containerEl.style.height = mode === "signup" ? "310px" : "270px";
+  if (containerEl) containerEl.style.width = "240px";
+  requestAnimationFrame(() => fitDashboardHeight());
 }
 
 function buildDashboardFace(): HTMLDivElement {
@@ -583,7 +841,7 @@ function buildDashboardFace(): HTMLDivElement {
     e.stopPropagation();
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
-    if (containerEl) containerEl.style.height = "";
+    if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
   });
 
   const logo = document.createElement("span");
@@ -820,20 +1078,22 @@ function buildDashboardFace(): HTMLDivElement {
   signOutBtn.textContent = "Sign out";
   signOutBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    chrome.runtime.sendMessage({ action: "signOut", payload: {} }).then(() => {
-      if (dashSignOutPopoverEl) dashSignOutPopoverEl.style.display = "none";
-      if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
-      if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
-      if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
-      if (dashCountEl) dashCountEl.textContent = "0";
-      dashUserEmail = "";
-      dashUserTier = "free";
-      if (dashSignInEmailEl) dashSignInEmailEl.value = "";
-      if (dashSignInPasswordEl) dashSignInPasswordEl.value = "";
-      if (dashSignInNameEl) dashSignInNameEl.value = "";
-      showAuthView("signin");
-      signOutCb?.();
-    });
+    // Clean up UI immediately — don't wait for background response
+    if (dashSignOutPopoverEl) dashSignOutPopoverEl.style.display = "none";
+    if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
+    if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
+    if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
+    if (dashCountEl) dashCountEl.textContent = "0";
+    dashUserEmail = "";
+    dashUserTier = "free";
+    if (dashSignInEmailEl) dashSignInEmailEl.value = "";
+    if (dashSignInPasswordEl) dashSignInPasswordEl.value = "";
+    if (dashSignInNameEl) dashSignInNameEl.value = "";
+    localAuthState = false;
+    showAuthView("signin");
+    signOutCb?.();
+    // Best-effort backend sign-out
+    chrome.runtime.sendMessage({ action: "signOut", payload: {} }).catch(() => {});
   });
 
   dashSignOutPopoverEl.appendChild(dashSignOutPopoverNameEl);
@@ -993,6 +1253,7 @@ function buildDashboardFace(): HTMLDivElement {
   dashAuthSubmitBtnEl = document.createElement("button");
   dashAuthSubmitBtnEl.className = "args-dash-feedback-send-btn";
   dashAuthSubmitBtnEl.style.width = "100%";
+  dashAuthSubmitBtnEl.style.flex = "none";
   dashAuthSubmitBtnEl.textContent = "Create Account";
   dashAuthSubmitBtnEl.addEventListener("click", async () => {
     const email = dashSignInEmailEl!.value.trim();
@@ -1018,10 +1279,10 @@ function buildDashboardFace(): HTMLDivElement {
         const result = await chrome.runtime.sendMessage({ action: "signIn", payload: { email, password } }) as { success?: boolean; error?: string };
         if (result?.error) throw new Error(result.error);
       }
+      localAuthState = true;
       await chrome.storage.local.set({ hadAccount: true });
       if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
-      if (dashFaceEl) dashFaceEl.style.overflow = "";
-      if (containerEl) containerEl.style.height = "";
+      if (containerEl) { containerEl.style.height = ""; containerEl.style.width = ""; }
       dashSignInEmailEl!.value = "";
       dashSignInPasswordEl!.value = "";
       dashSignInNameEl!.value = "";
@@ -1068,23 +1329,31 @@ function buildDashboardFace(): HTMLDivElement {
   return face;
 }
 
+async function loadDashboardPrefs(): Promise<void> {
+  const stored = await chrome.storage.local.get("preferences");
+  const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+  const intensity = (prefs.intensity as string) ?? "default";
+  dashDensityBtns.forEach(btn => {
+    btn.classList.toggle("args-dash-density-active", btn.dataset.intensity === intensity);
+  });
+  if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
+  if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
+  updateArgumentsBoxStyle(
+    prefs.annotation_font as import("@oddity/shared").AnnotationFont | undefined,
+    prefs.annotation_font_size as import("@oddity/shared").AnnotationFontSize | undefined,
+  );
+  const persona = (prefs.persona as string) ?? "Terry";
+  if (dashPersonaSelect) dashPersonaSelect.value = persona;
+  if (dashPersonaAvatarImgEl) { dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`); dashPersonaAvatarImgEl.alt = persona; }
+  if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = persona === "Jerry" ? "#FDCB24" : "#fff";
+  const enabled = prefs.enabled !== false;
+  if (dashToggleInput) dashToggleInput.checked = enabled;
+  if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
+}
+
 async function loadDashboardData(): Promise<void> {
   try {
-    const stored = await chrome.storage.local.get("preferences");
-    const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-    const intensity = (prefs.intensity as string) ?? "default";
-    dashDensityBtns.forEach(btn => {
-      btn.classList.toggle("args-dash-density-active", btn.dataset.intensity === intensity);
-    });
-    if (dashFontSelect) dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
-    if (dashFontSizeSelect) dashFontSizeSelect.value = (prefs.annotation_font_size as string) ?? "default";
-    const persona = (prefs.persona as string) ?? "Terry";
-    if (dashPersonaSelect) dashPersonaSelect.value = persona;
-    if (dashPersonaAvatarImgEl) { dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`); dashPersonaAvatarImgEl.alt = persona; }
-    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = persona === "Jerry" ? "#FDCB24" : "#fff";
-    const enabled = prefs.enabled !== false;
-    if (dashToggleInput) dashToggleInput.checked = enabled;
-    if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
+    await loadDashboardPrefs();
   } catch { /* ignore */ }
 
   try {
@@ -1092,6 +1361,7 @@ async function loadDashboardData(): Promise<void> {
       authenticated: boolean;
       user: { email: string; display_name: string | null; tier: string; annotation_count: number } | null;
     };
+    localAuthState = auth?.authenticated ?? false;
     if (auth?.authenticated && auth.user) {
       if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
       if (dashCountEl) dashCountEl.textContent = String(auth.user.annotation_count ?? 0);
@@ -1126,7 +1396,11 @@ function buildItems(
         items.push({
           icon: "✎",
           text: ann.content.note,
+          quote: ann.anchor.exact,
           sortKey: ann.id,
+          type: "manual",
+          annotationId: ann.id,
+          annotation: ann,
         });
       }
     }
@@ -1137,24 +1411,34 @@ function buildItems(
       if (fb.feedback_type === "thumbs_up") {
         items.push({
           icon: "✓",
-          text:
-            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          quote: findAnnotationQuote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
+          type: "reaction",
+          feedbackId: fb.id,
+          annotationId: fb.annotation_id,
         });
       } else if (fb.feedback_type === "thumbs_down") {
         items.push({
           icon: "✗",
-          text:
-            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          text: fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
+          quote: findAnnotationQuote(annotations, fb.annotation_id),
           sortKey: fb.created_at,
+          type: "reaction",
+          feedbackId: fb.id,
+          annotationId: fb.annotation_id,
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
-        const excerpt = note.length > 60 ? note.slice(0, 57) + "..." : note;
+        const excerpt = note.length > 40 ? note.slice(0, 37) + "\u2026" : note;
         items.push({
           icon: "↳",
-          text: `Re "${excerpt}": ${fb.reply_text ?? ""}`,
+          text: fb.reply_text ?? "",
           sortKey: fb.created_at,
+          type: "reply",
+          replyHeader: excerpt,
+          feedbackId: fb.id,
+          annotationId: fb.annotation_id,
         });
       }
     }
@@ -1175,66 +1459,401 @@ function findAnnotationNote(
   return "(annotation)";
 }
 
+function findAnnotationQuote(
+  annotations: Map<string, Annotation[]>,
+  annotationId: string,
+): string {
+  for (const [, anns] of annotations) {
+    const ann = anns.find((a) => a.id === annotationId);
+    if (ann) return ann.anchor.exact;
+  }
+  return "";
+}
+
+function expandCard(id: string): void {
+  if (expandedCardId && expandedCardId !== id) {
+    const prev = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`);
+    prev?.classList.remove("expanded");
+  }
+  expandedCardId = id;
+  const card = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(id)}"]`);
+  card?.classList.add("expanded");
+}
+
+function collapseAllCards(): void {
+  if (expandedCardId) {
+    const card = listEl?.querySelector<HTMLDivElement>(`.arg-card[data-card-id="${CSS.escape(expandedCardId)}"]`);
+    card?.classList.remove("expanded");
+    expandedCardId = null;
+  }
+}
+
+function dimOtherCards(id: string): void {
+  listEl?.querySelectorAll<HTMLDivElement>(".arg-card").forEach((c) => {
+    c.classList.toggle("dimmed", c.dataset.cardId !== id);
+  });
+}
+
+function undimAllCards(): void {
+  listEl?.querySelectorAll<HTMLDivElement>(".arg-card").forEach((c) => c.classList.remove("dimmed"));
+}
+
 function renderList(): void {
   if (!listEl) return;
 
   const allItems = [...canonicalItems, ...liveItems];
   listEl.innerHTML = "";
+  expandedCardId = null;
 
   if (allItems.length === 0) {
     const empty = document.createElement("div");
     empty.className = "args-empty";
-    empty.textContent =
-      "No arguments yet. React to annotations or create your own!";
+    empty.textContent = "No arguments yet. React to annotations or create your own!";
     listEl.appendChild(empty);
     return;
   }
 
   for (const item of allItems) {
-    const row = document.createElement("div");
-    row.className = "args-item";
+    const cardId = item.sortKey;
+    const card = document.createElement("div");
+    card.className = "arg-card";
+    card.dataset.cardId = cardId;
+    if (item.feedbackId) card.dataset.feedbackId = item.feedbackId;
 
-    const bullet = document.createElement("span");
-    bullet.className = "args-bullet";
-    bullet.textContent = "·";
+    // Label (1 line max, like note-label)
+    const header = document.createElement("div");
+    header.className = "arg-card-header";
+    if (item.type === "reply") {
+      header.textContent = `Reply to ${item.replyHeader ?? ""}`;
+    } else {
+      const src = item.quote || item.text;
+      const MAX = 38;
+      header.textContent = src.length > MAX
+        ? `\u201c${src.slice(0, MAX)}\u2026\u201d`
+        : `\u201c${src}\u201d`;
+    }
 
-    const text = document.createElement("span");
-    text.className = "args-text";
-    text.textContent = item.text;
+    // Body text (note-text equivalent: clamped collapsed, full on expanded)
+    const body = document.createElement("div");
+    body.className = "arg-card-body";
+    body.textContent = item.text;
 
-    row.appendChild(bullet);
-    row.appendChild(text);
-    listEl.appendChild(row);
+    // Expanded content — grid animation in flow, exactly like note-expanded-content
+    const expandedContent = document.createElement("div");
+    expandedContent.className = "note-expanded-content";
+
+    const expandedInner = document.createElement("div");
+    expandedInner.className = "note-expanded-inner";
+
+    // Reply thread (container for reply bubbles)
+    const repliesContainer = document.createElement("div");
+    repliesContainer.className = "note-replies";
+    expandedInner.appendChild(repliesContainer);
+
+    // Reply input bar ("Thoughts?")
+    const replyBar = document.createElement("div");
+    replyBar.className = "note-reply-bar";
+    const replyInput = document.createElement("input");
+    replyInput.type = "text";
+    replyInput.placeholder = "Thoughts?";
+    replyInput.className = "note-reply-input";
+
+    const submitArgReply = () => {
+      const text = replyInput.value.trim();
+      if (!text) return;
+
+      // Add bubble immediately
+      const bubble = document.createElement("div");
+      bubble.className = "note-reply-bubble";
+      bubble.textContent = text;
+      repliesContainer.appendChild(bubble);
+      repliesContainer.scrollTop = repliesContainer.scrollHeight;
+
+      // Send to background
+      if (item.annotationId) {
+        const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+        const contentHash = hashEl?.dataset.oddityHash ?? "";
+        chrome.runtime.sendMessage({
+          action: "saveFeedback",
+          payload: {
+            annotationId: item.annotationId,
+            contentHash,
+            url: window.location.href,
+            feedbackType: "reply",
+            replyText: text,
+            pageTitle: document.title,
+          },
+        }).catch(() => {});
+      }
+
+      replyInput.value = "";
+    };
+
+    replyInput.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter" && replyInput.value.trim()) {
+        submitArgReply();
+      }
+    });
+    replyInput.addEventListener("click", (e) => e.stopPropagation());
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "note-reply-send";
+    sendBtn.innerHTML = "&#8593;";
+    sendBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      submitArgReply();
+    });
+    replyBar.appendChild(replyInput);
+    replyBar.appendChild(sendBtn);
+    expandedInner.appendChild(replyBar);
+
+    // Feedback row (pills + icons)
+    const feedbackRow = document.createElement("div");
+    feedbackRow.className = "note-feedback-row";
+
+    const pillGroup = document.createElement("div");
+    pillGroup.className = "note-pill-group";
+    const thumbUp = document.createElement("button");
+    thumbUp.className = "note-feedback-pill";
+    thumbUp.textContent = "Exactly!";
+    thumbUp.addEventListener("click", (e) => e.stopPropagation());
+    const thumbDown = document.createElement("button");
+    thumbDown.className = "note-feedback-pill";
+    thumbDown.textContent = "Hmm..?";
+    thumbDown.addEventListener("click", (e) => e.stopPropagation());
+    pillGroup.appendChild(thumbUp);
+    pillGroup.appendChild(thumbDown);
+
+    const iconGroup = document.createElement("div");
+    iconGroup.className = "note-icon-group";
+    const editBtn = document.createElement("button");
+    editBtn.className = "note-icon-btn note-edit-btn";
+    editBtn.title = "Edit";
+    editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!item.feedbackId && !item.annotationId) return;
+      const current = body.dataset.editMode;
+      if (current === "true") return;
+      body.dataset.editMode = "true";
+      body.style.display = "none";
+      const original = item.text;
+      const ta = document.createElement("textarea");
+      ta.className = "note-edit-textarea";
+      ta.value = original;
+      ta.rows = 3;
+      ta.addEventListener("keydown", (ev) => ev.stopPropagation());
+      ta.addEventListener("click", (ev) => ev.stopPropagation());
+      const actions = document.createElement("div");
+      actions.className = "note-edit-actions";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "note-save-btn";
+      saveBtn.textContent = "Save";
+      saveBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const newText = ta.value.trim();
+        if (!newText) return;
+        if (item.feedbackId) {
+          chrome.runtime.sendMessage({
+            action: "updateFeedback",
+            payload: { feedbackId: item.feedbackId, replyText: newText },
+          }).catch(() => {});
+          item.text = newText;
+          body.textContent = newText;
+          document.dispatchEvent(new CustomEvent("oddity:feedback-edited", {
+            detail: { feedbackId: item.feedbackId, replyText: newText },
+          }));
+        } else if (item.annotationId && item.annotation) {
+          const updatedAnnotation = { ...item.annotation, content: { ...item.annotation.content, note: newText } };
+          const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+          chrome.runtime.sendMessage({
+            action: "updateAnnotation",
+            payload: {
+              annotationId: item.annotationId,
+              annotation: updatedAnnotation,
+              url: window.location.href,
+              contentHash: hashEl?.dataset.oddityHash ?? "",
+              pageTitle: document.title,
+            },
+          }).catch(() => {});
+          item.text = newText;
+          item.annotation = updatedAnnotation;
+          body.textContent = newText;
+          document.dispatchEvent(new CustomEvent("oddity:annotation-edited", {
+            detail: { annotationId: item.annotationId, note: newText },
+          }));
+        }
+        delete body.dataset.editMode;
+        body.style.display = "";
+        ta.remove();
+        actions.remove();
+      });
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "note-cancel-btn";
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        delete body.dataset.editMode;
+        body.style.display = "";
+        ta.remove();
+        actions.remove();
+      });
+      actions.appendChild(saveBtn);
+      actions.appendChild(cancelBtn);
+      body.after(ta, actions);
+    });
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "note-icon-btn note-delete-btn";
+    deleteBtn.title = "Delete";
+    deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (item.feedbackId) {
+        chrome.runtime.sendMessage({
+          action: "deleteFeedback",
+          payload: { feedbackId: item.feedbackId },
+        }).catch(() => {});
+        card.remove();
+        document.dispatchEvent(new CustomEvent("oddity:feedback-deleted", {
+          detail: { feedbackId: item.feedbackId },
+        }));
+      } else if (item.annotationId) {
+        const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+        chrome.runtime.sendMessage({
+          action: "deleteAnnotation",
+          payload: {
+            annotationId: item.annotationId,
+            url: window.location.href,
+            contentHash: hashEl?.dataset.oddityHash ?? "",
+          },
+        }).catch(() => {});
+        card.remove();
+        document.dispatchEvent(new CustomEvent("oddity:annotation-deleted", {
+          detail: { annotationId: item.annotationId },
+        }));
+      }
+    });
+    iconGroup.appendChild(editBtn);
+    iconGroup.appendChild(deleteBtn);
+
+    feedbackRow.appendChild(pillGroup);
+    feedbackRow.appendChild(iconGroup);
+    expandedInner.appendChild(feedbackRow);
+
+    expandedContent.appendChild(expandedInner);
+
+    card.appendChild(header);
+    card.appendChild(body);
+    card.appendChild(expandedContent);
+
+    // Click: toggle expand/collapse (suppressed if user was dragging)
+    card.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (Math.abs(listDragDelta) > 4) return;
+      if ((e.target as HTMLElement).closest("button, input, textarea")) return;
+      if (expandedCardId === cardId) {
+        card.classList.remove("expanded");
+        expandedCardId = null;
+        undimAllCards();
+      } else {
+        expandCard(cardId);
+        dimOtherCards(cardId);
+      }
+    });
+
+    listEl.appendChild(card);
   }
+
+  // Measure collapsed heights then fix positions — mirrors margin notes' rAF approach.
+  // Cards are position:absolute so expanding one never shifts siblings.
+  requestAnimationFrame(() => {
+    if (!listEl) return;
+    const GAP = 10;
+    let top = GAP;
+    let maxCardWidth = 110; // min card width
+    const cards = listEl.querySelectorAll<HTMLDivElement>(".arg-card");
+    for (const card of cards) {
+      card.style.top = `${top}px`;
+      top += card.offsetHeight + GAP;
+      if (card.offsetWidth > maxCardWidth) maxCardWidth = card.offsetWidth;
+    }
+    listEl.style.height = `${top}px`;
+
+    const contentRight = getMarginNotesContentRight() || (() => {
+      const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
+      return hashEl ? hashEl.getBoundingClientRect().right : window.innerWidth * 0.7;
+    })();
+    const availableWidth = window.innerWidth - contentRight - 16 - 20;
+    const panelWidth = Math.min(300, Math.max(134, availableWidth));
+    containerEl?.style.setProperty("--panel-width", `${panelWidth}px`);
+  });
 }
 
 function handleCopy(btn: HTMLButtonElement): void {
   const allItems = [...canonicalItems, ...liveItems];
   const text = allItems.map((i) => `${i.icon} ${i.text}`).join("\n");
   navigator.clipboard.writeText(text).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = "Copied!";
-    setTimeout(() => {
-      btn.textContent = orig;
-    }, 1500);
+    btn.classList.add("copied");
+    setTimeout(() => btn.classList.remove("copied"), 1500);
   });
 }
 
 // ─── CSS ───
 
 const ARGUMENTS_BOX_CSS = `
+  :host {
+    --oddity-note-font: 'Inter', system-ui, -apple-system, sans-serif;
+    --oddity-note-size: 11.5px;
+  }
+
   * { box-sizing: border-box; }
+
+  /* ── Outer wrapper (positions toggle + container together) ── */
+
+  .args-outer-wrapper {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+    pointer-events: none;
+  }
+
+  /* ── Toggle bar (top-left, outside the panel) ── */
+
+  .args-toggle-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    align-self: flex-start;
+    margin-bottom: -28px;
+  }
+
+  .args-toggle-bar.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .args-outer-wrapper:has(.args-container.dashboard) .args-toggle-bar {
+    opacity: 0;
+    pointer-events: none;
+  }
 
   /* ── Morphing container ── */
 
   .args-container {
     all: unset;
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 2;
+    display: block;
     pointer-events: auto;
     overflow: visible;
+    position: relative;
     background: rgba(255, 255, 255, 0.15);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -1250,7 +1869,20 @@ const ARGUMENTS_BOX_CSS = `
       width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
       box-shadow 0.3s;
+  }
+
+  .args-container.expanded::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 0;
+    pointer-events: none;
   }
 
   .args-container:not(.expanded):hover {
@@ -1268,13 +1900,19 @@ const ARGUMENTS_BOX_CSS = `
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #4ade80;
   }
 
-  /* Expanded (panel) state */
+
+  /* Expanded (panel) state — blur moves to ::after so child cards blur independently */
   .args-container.expanded {
-    width: 234px;
-    height: 320px;
+    width: var(--panel-width, 300px);
+    height: calc(100vh - 90px + 32px);
     border-radius: 16px;
-    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
+    box-shadow: none;
+    border: 2px solid rgba(231, 231, 231, 0.5);
     cursor: default;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    transform: translateY(32px);
   }
 
   /* ── Transparent hover buffer (20px around panel when expanded) ── */
@@ -1293,8 +1931,9 @@ const ARGUMENTS_BOX_CSS = `
   .args-content-clip {
     position: absolute;
     inset: 0;
-    overflow: hidden;
+    overflow: clip; /* clip (not hidden) preserves backdrop-filter on children */
     border-radius: inherit;
+    z-index: 1; /* above ::after panel blur layer */
   }
 
   /* ── Button face ── */
@@ -1310,6 +1949,7 @@ const ARGUMENTS_BOX_CSS = `
     pointer-events: none;
     background: #fff;
     border-radius: inherit;
+    cursor: grab;
   }
 
   .args-container.expanded .args-button-face {
@@ -1347,23 +1987,47 @@ const ARGUMENTS_BOX_CSS = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 18px 0;
+    padding: 16px 16px 0;
     flex-shrink: 0;
   }
 
   .args-main-title {
     font-weight: 600;
-    font-size: 17px;
+    font-size: 16px;
     color: #fff;
     letter-spacing: 0.3px;
     font-family: "Fraunces", Georgia, serif;
   }
 
-  .args-toggle-row {
+  .args-header-icons {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 2px;
   }
+
+  .args-header-icon-btn {
+    all: unset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.7);
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .args-header-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+
+  .args-header-icon-btn.copied {
+    color: #4ade80;
+  }
+
+  /* ── Toggle bar ── */
 
   .args-enabled-label {
     font-size: 13px;
@@ -1408,118 +2072,386 @@ const ARGUMENTS_BOX_CSS = `
     transform: translateX(15px);
   }
 
-  /* ── Section title ── */
+  /* ── Purpose section ── */
 
-  .args-section-title {
-    font-weight: 500;
-    font-size: 14px;
-    color: #fff;
-    padding: 12px 18px 6px;
+  .args-purpose-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 16px 0;
     flex-shrink: 0;
-    font-family: "Fraunces", Georgia, serif;
+  }
+
+  .args-purpose-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: system-ui, -apple-system, sans-serif;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .args-purpose-input {
+    all: unset;
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.85);
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.5;
+    resize: none;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .args-purpose-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
   }
 
   /* ── List ── */
 
   .args-list {
     flex: 1;
-    padding: 0 18px;
+    position: relative;
     overflow-y: auto;
+    overflow-x: visible;
+    min-height: 0;
+    cursor: grab;
+    scrollbar-width: none;
+  }
+
+  .args-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .args-list:active {
+    cursor: grabbing;
+  }
+
+  /* ── Argument cards (mirrors .oddity-note exactly) ── */
+
+  .arg-card {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 260px;
+    background: rgba(40, 40, 50, 0.82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 6.5px;
+    padding: 10px 12px;
+    font-family: var(--oddity-note-font);
+    font-size: var(--oddity-note-size);
+    line-height: 1.45;
+    color: #FFFFFF;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+    transition: box-shadow 0.2s;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+
+  .arg-card:hover {
+    box-shadow: 0 3px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .arg-card.expanded {
+    z-index: 1;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .arg-card.dimmed {
+    opacity: 0.45;
+    filter: grayscale(0.6);
+    pointer-events: none;
+  }
+
+  /* Header = note-label (max 1 line) */
+  .arg-card-header {
+    display: block;
+    font-family: var(--oddity-note-font);
+    font-style: normal;
+    font-size: var(--oddity-note-size);
+    font-weight: 900;
+    letter-spacing: normal;
+    color: #59709E;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Body = note-text */
+  .arg-card-body {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    font-family: var(--oddity-note-font);
+    font-style: normal;
+    font-size: var(--oddity-note-size);
+    font-weight: 250;
+    line-height: 1.45;
+    color: #FFFFFF;
+  }
+
+  /* Body unclamps on expand — exactly like .oddity-note.expanded .note-text */
+  .arg-card.expanded .arg-card-body {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+  }
+
+  /* ── Expanded content (grid animation, mirrors margin notes exactly) ── */
+
+  /* Expanded content — in-flow grid animation, mirrors margin notes exactly */
+  .arg-card .note-expanded-content {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-top: 0;
+    transition: grid-template-rows 0.25s ease, opacity 0.2s ease, margin-top 0.2s ease;
+  }
+
+  .arg-card .note-expanded-inner {
+    overflow: hidden;
     min-height: 0;
   }
 
-  .args-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 5px;
-    padding: 4px 0;
+  .arg-card.expanded .note-expanded-content {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-top: 10px;
   }
 
-  .args-bullet {
-    flex-shrink: 0;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.5);
-    line-height: 1.5;
+  /* ── Reply thread ── */
+  .arg-card .note-replies {
+    margin-top: 6px;
   }
 
-  .args-text {
-    font-family: Georgia, 'Times New Roman', serif;
-    font-style: italic;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.85);
-    line-height: 1.5;
+  .arg-card .note-reply-bubble {
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: var(--oddity-note-size);
+    margin-bottom: 3px;
     word-break: break-word;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #FFFFFF;
   }
+
+  .arg-card .note-reply-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    margin-bottom: 7px;
+  }
+
+  .arg-card .note-reply-input {
+    all: unset;
+    flex: 1;
+    min-width: 0;
+    background: #DFE7EF;
+    border-radius: 100px;
+    padding: 5px 12px;
+    font-size: var(--oddity-note-size);
+    font-weight: 450;
+    color: #293038;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    line-height: 1;
+  }
+
+  .arg-card .note-reply-input::placeholder {
+    color: #6D6D6D;
+  }
+
+  .arg-card .note-reply-send {
+    all: unset;
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #59709E;
+    color: #fff;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+
+  .arg-card .note-reply-send:hover {
+    opacity: 0.85;
+  }
+
+  .arg-card .note-feedback-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+  }
+
+  .arg-card .note-pill-group {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+
+  .arg-card .note-icon-group {
+    display: flex;
+    gap: 2px;
+  }
+
+  .arg-card .note-feedback-pill {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11.5px;
+    font-weight: 450;
+    padding: 4px 10px;
+    border-radius: 100px;
+    background: #59709E;
+    color: #fff;
+    opacity: 1;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+
+  .arg-card .note-feedback-pill:hover {
+    opacity: 0.8;
+  }
+
+  .arg-card .note-feedback-pill.active {
+    opacity: 1;
+  }
+
+  .arg-card .note-icon-btn {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    color: #FFFFFF;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .arg-card .note-icon-btn:hover {
+    color: #FFFFFF;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .arg-card .note-icon-btn.note-delete-btn:hover {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.12);
+  }
+
+  .arg-card .note-edit-textarea {
+    all: unset;
+    display: block;
+    width: 100%;
+    font-size: var(--oddity-note-size);
+    padding: 6px 10px;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    font-family: var(--oddity-note-font);
+    resize: vertical;
+    min-height: 48px;
+    box-sizing: border-box;
+    background: rgba(255,255,255,0.06);
+    color: #FFFFFF;
+    margin-top: 6px;
+  }
+
+  .arg-card .note-edit-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+    justify-content: flex-end;
+  }
+
+  .arg-card .note-save-btn, .arg-card .note-cancel-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-family: var(--oddity-note-font);
+    transition: opacity 0.15s;
+  }
+
+  .arg-card .note-save-btn {
+    background: #59709E;
+    color: #fff;
+    opacity: 0.8;
+  }
+
+  .arg-card .note-save-btn:hover { opacity: 1; }
+
+  .arg-card .note-cancel-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.6);
+  }
+
+  .arg-card .note-cancel-btn:hover { background: rgba(255,255,255,0.12); }
 
   .args-empty {
     font-size: 12px;
     color: rgba(255, 255, 255, 0.4);
     line-height: 1.5;
-    padding: 8px 0 4px;
+    padding: 8px 16px 4px;
     font-family: system-ui, -apple-system, sans-serif;
-  }
-
-  /* ── Copy button ── */
-
-  .args-copy-btn-full {
-    all: unset;
-    display: block;
-    margin: 12px 18px 0;
-    padding: 11px 16px;
-    background: #000;
-    border: 1px solid #000;
-    color: #fff;
-    font-size: 14px;
-    font-weight: 400;
-    font-family: system-ui, -apple-system, sans-serif;
-    text-align: center;
-    border-radius: 100px;
-    cursor: pointer;
-    transition: background 0.15s;
-    flex-shrink: 0;
-  }
-
-  .args-copy-btn-full:hover {
-    background: #222;
   }
 
   /* ── Footer ── */
 
   .args-footer {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 10px 18px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 16px 14px 24px;
     flex-shrink: 0;
+  }
+
+  .args-sketch-btn {
+    all: unset;
+    display: block;
+    padding: 13px 16px;
+    background: #363636;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    text-align: center;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: background 0.15s;
+    box-sizing: border-box;
+  }
+
+  .args-sketch-btn:hover {
+    background: #484848;
   }
 
   .args-footer-text {
     font-size: 13px;
     color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
-    font-family: "Fraunces", Georgia, serif;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-weight: 400;
+    text-align: center;
+    text-decoration: underline;
   }
 
   .args-footer-text:hover {
     color: rgba(255, 255, 255, 0.9);
-  }
-
-  .args-footer-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: #fff;
-    flex-shrink: 0;
-  }
-
-  .args-footer-avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
   }
 
   /* ── Close button (top-center, slides in from above) ── */
@@ -1575,7 +2507,22 @@ const ARGUMENTS_BOX_CSS = `
     background: rgba(255, 255, 255, 0.4);
   }
 
+  :host([data-theme="light"]) .args-container.expanded {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   :host([data-theme="light"]) .args-main-title {
+    color: #1a1a1a;
+  }
+
+  :host([data-theme="light"]) .args-header-icon-btn {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  :host([data-theme="light"]) .args-header-icon-btn:hover {
+    background: rgba(0, 0, 0, 0.07);
     color: #1a1a1a;
   }
 
@@ -1591,30 +2538,60 @@ const ARGUMENTS_BOX_CSS = `
     background: #22c55e;
   }
 
-  :host([data-theme="light"]) .args-section-title {
-    color: #606060;
+  :host([data-theme="light"]) .args-purpose-label {
+    color: rgba(0, 0, 0, 0.4);
   }
 
-  :host([data-theme="light"]) .args-bullet {
-    color: rgba(0, 0, 0, 0.35);
+  :host([data-theme="light"]) .args-purpose-input {
+    color: #1a1a1a;
   }
 
-  :host([data-theme="light"]) .args-text {
-    color: #606060;
+  :host([data-theme="light"]) .args-purpose-input::placeholder {
+    color: rgba(0, 0, 0, 0.25);
+  }
+
+  :host([data-theme="light"]) .arg-card {
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  :host([data-theme="light"]) .arg-card-header {
+    color: #59709e;
+  }
+
+  :host([data-theme="light"]) .arg-card-body {
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-reply-bubble {
+    color: #293038;
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  :host([data-theme="light"]) .arg-card .note-icon-btn,
+  :host([data-theme="light"]) .arg-card .note-icon-btn:hover {
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-edit-textarea {
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.15);
+    color: #293038;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-cancel-btn {
+    background: rgba(0,0,0,0.06);
+    border-color: rgba(0,0,0,0.12);
+    color: rgba(41,48,56,0.7);
+  }
+
+  :host([data-theme="light"]) .arg-card .note-cancel-btn:hover {
+    background: rgba(0,0,0,0.1);
   }
 
   :host([data-theme="light"]) .args-empty {
     color: rgba(0, 0, 0, 0.4);
-  }
-
-  :host([data-theme="light"]) .args-copy-btn-full {
-    background: #1a1f27;
-    border-color: #1a1f27;
-    color: #fff;
-  }
-
-  :host([data-theme="light"]) .args-copy-btn-full:hover {
-    background: #2e3440;
   }
 
   :host([data-theme="light"]) .args-footer-text {
@@ -1623,10 +2600,6 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .args-footer-text:hover {
     color: rgba(0, 0, 0, 0.8);
-  }
-
-  :host([data-theme="light"]) .args-footer-avatar {
-    border-color: rgba(0, 0, 0, 0.12);
   }
 
   /* ── Not-enabled state (red button) ── */
@@ -1767,7 +2740,7 @@ const ARGUMENTS_BOX_CSS = `
     transition: opacity 0.15s ease;
     background: #fff;
     border-radius: inherit;
-    overflow-y: auto;
+    overflow: hidden;
     color: #1a1a1a;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 13px;
@@ -2054,13 +3027,13 @@ const ARGUMENTS_BOX_CSS = `
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 3px 8px;
-    border-radius: 12px;
+    border-radius: 6.5px;
     background: #f3f4f6;
     color: #9ca3af;
   }
 
   .args-dash-footer {
-    padding: 8px 16px 12px;
+    padding: 14px 16px 22px;
     border-top: 0.5px solid #f0f0f0;
     text-align: center;
     flex-shrink: 0;
@@ -2178,7 +3151,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 100%;
     padding: 9px 12px;
     border: 0.5px solid #e8e8e2;
-    border-radius: 12px;
+    border-radius: 6.5px;
     font-size: 13px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     outline: none;
@@ -2259,8 +3232,8 @@ const ARGUMENTS_BOX_CSS = `
     z-index: 2;
     display: none;
     flex-direction: column;
-    padding: 18px 16px;
-    gap: 10px;
+    padding: 14px 12px;
+    gap: 7px;
   }
 
   .args-dash-signin-subtitle {
@@ -2274,10 +3247,10 @@ const ARGUMENTS_BOX_CSS = `
     all: unset;
     display: block;
     width: 100%;
-    padding: 9px 12px;
+    padding: 7px 10px;
     border: 0.5px solid #e8e8e2;
-    border-radius: 12px;
-    font-size: 13px;
+    border-radius: 6.5px;
+    font-size: 12px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     color: #111;
     background: #fff;

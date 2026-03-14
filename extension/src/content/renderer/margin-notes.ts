@@ -55,11 +55,13 @@ let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
 let userName: string | null = null;
+let sharedContentRight = 0;
 
-const NOTE_EXPANDED_WIDTH = 220;
+const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
 const MARGIN_PADDING = 16;
-const MIN_MARGIN_WIDTH = 120;
+const NOTE_MIN_WIDTH = NOTE_EXPANDED_WIDTH / 2;
+const MIN_MARGIN_WIDTH = NOTE_MIN_WIDTH;
 
 const FONT_MAP: Record<AnnotationFont, string> = {
   default: "system-ui, -apple-system, 'Segoe UI', sans-serif",
@@ -124,6 +126,21 @@ export function initMarginNotes(region: Element): void {
 
   startTracking();
 
+  // Sync edits/deletes from argument box to margin note reply bubbles
+  document.addEventListener("oddity:feedback-edited", ((e: CustomEvent) => {
+    const { feedbackId, replyText } = e.detail;
+    if (!shadowRoot) return;
+    const bubble = shadowRoot.querySelector(`.note-reply-bubble[data-feedback-id="${feedbackId}"]`);
+    if (bubble) bubble.textContent = replyText;
+  }) as EventListener);
+
+  document.addEventListener("oddity:feedback-deleted", ((e: CustomEvent) => {
+    const { feedbackId } = e.detail;
+    if (!shadowRoot) return;
+    const bubble = shadowRoot.querySelector(`.note-reply-bubble[data-feedback-id="${feedbackId}"]`);
+    if (bubble) bubble.remove();
+  }) as EventListener);
+
   // Fetch user profile for name badge on manual annotations
   sendMessage({ action: "getProfile" } as any).then((p: any) => {
     userName = p?.display_name?.split(" ")[0] ?? null;
@@ -149,28 +166,17 @@ export function addMarginNote(
   // so multi-response chat pages position correctly per response.
   const noteRegion = regionEl;
 
-  // Determine side using the content column bounds
+  // Always place notes on the left margin
   const bounds = getContentBounds(noteRegion, range);
   const leftMarginWidth = bounds.left - MARGIN_PADDING;
-  const rightMarginWidth =
-    window.innerWidth - bounds.right - MARGIN_PADDING;
 
-  let side: "left" | "right";
-  const preferLeft = noteIndex % 2 === 0;
-
-  if (preferLeft && leftMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = "left";
-  } else if (!preferLeft && rightMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = "right";
-  } else if (leftMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = "left";
-  } else if (rightMarginWidth >= MIN_MARGIN_WIDTH) {
-    side = "right";
-  } else {
-    // Both margins too narrow — skip this note
+  if (leftMarginWidth < MIN_MARGIN_WIDTH) {
+    // Left margin too narrow — skip this note
     noteIndex++;
     return;
   }
+
+  const side: "left" | "right" = "left";
 
   noteIndex++;
 
@@ -363,6 +369,10 @@ export function destroyMarginNotes(): void {
   fontLink = null;
 }
 
+export function getMarginNotesContentRight(): number {
+  return sharedContentRight;
+}
+
 export function updateMarginNotesStyle(
   font?: AnnotationFont,
   fontSize?: AnnotationFontSize,
@@ -524,6 +534,7 @@ function createNoteElement(
     for (const reply of replies) {
       const bubble = document.createElement("div");
       bubble.className = "note-reply-bubble";
+      bubble.dataset.feedbackId = reply.id;
       bubble.textContent = reply.reply_text ?? "";
       repliesContainer.appendChild(bubble);
     }
@@ -752,7 +763,9 @@ function submitReply(
       replyText: text,
       pageTitle: document.title,
     },
-  });
+  }).then((fb: any) => {
+    if (fb?.id) bubble.dataset.feedbackId = fb.id;
+  }).catch(() => {});
 
   const excerpt = annotation.content.note.length > 60
     ? annotation.content.note.slice(0, 57) + "..."
@@ -946,15 +959,10 @@ function getContentBounds(
 }
 
 function resolveOverlaps(): void {
-  const leftNotes = notes.filter(
-    (n) => n.side === "left" && n.element.style.display !== "none",
+  const visibleNotes = notes.filter(
+    (n) => n.element.style.display !== "none",
   );
-  const rightNotes = notes.filter(
-    (n) => n.side === "right" && n.element.style.display !== "none",
-  );
-
-  resolveOverlapsForSide(leftNotes);
-  resolveOverlapsForSide(rightNotes);
+  resolveOverlapsForSide(visibleNotes);
 }
 
 function resolveOverlapsForSide(sideNotes: MarginNote[]): void {
@@ -976,24 +984,36 @@ function resolveOverlapsForSide(sideNotes: MarginNote[]): void {
 }
 
 function applyPositions(): void {
+  // Compute a single shared contentLeft for all left-side notes so they
+  // all align on the same leading edge with no stagger.
+  const leftNotes = notes.filter((n) => n.side === "left");
+  let sharedContentLeft = Infinity;
+  let maxContentRight = 0;
+  for (const note of leftNotes) {
+    const bounds = getContentBounds(note.region, note.range);
+    const cl = bounds.left + window.scrollX;
+    if (cl < sharedContentLeft) sharedContentLeft = cl;
+  }
+  if (!isFinite(sharedContentLeft)) sharedContentLeft = 0;
+
   for (const note of notes) {
     const bounds = getContentBounds(note.region, note.range);
-    const contentLeft = bounds.left + window.scrollX;
     const contentRight = bounds.right + window.scrollX;
+    if (contentRight > maxContentRight) maxContentRight = contentRight;
 
-    // Always use `left` positioning — `right` depends on the containing
-    // block width which varies across pages and changes on scroll/resize.
     note.element.style.right = "auto";
 
     if (note.side === "left") {
-      const noteWidth = note.element.offsetWidth || NOTE_EXPANDED_WIDTH;
-      const rightEdge = contentLeft - MARGIN_PADDING;
-      note.element.style.left = `${rightEdge - noteWidth}px`;
+      const availableWidth = sharedContentLeft - MARGIN_PADDING - 8;
+      const noteWidth = Math.min(NOTE_EXPANDED_WIDTH, Math.max(100, availableWidth));
+      note.element.style.width = `${noteWidth}px`;
+      note.element.style.left = `${Math.max(8, sharedContentLeft - MARGIN_PADDING - noteWidth)}px`;
     } else {
       note.element.style.left = `${contentRight + MARGIN_PADDING}px`;
     }
     note.element.style.top = `${note.topPx}px`;
   }
+  sharedContentRight = maxContentRight;
 }
 
 // ─── Scroll / Resize Tracking ───
@@ -1067,7 +1087,7 @@ const MARGIN_NOTES_CSS = `
     background: rgba(255, 255, 255, 0.15);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    border-radius: 12px;
+    border-radius: 6.5px;
     box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
     opacity: 1;
     transition: opacity 0.25s ease-in, filter 0.25s ease-in, box-shadow 0.2s;
@@ -1353,16 +1373,17 @@ const MARGIN_NOTES_CSS = `
     all: unset;
     display: block;
     width: 100%;
-    font-size: 12px;
+    font-size: var(--oddity-note-size);
     padding: 6px 10px;
     border: 1.5px solid rgba(255,255,255,0.15);
     border-radius: 8px;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--oddity-note-font);
     resize: vertical;
     min-height: 48px;
     box-sizing: border-box;
     background: rgba(255,255,255,0.06);
     color: #FFFFFF;
+    margin-top: 6px;
   }
 
   .note-edit-actions {
@@ -1379,7 +1400,7 @@ const MARGIN_NOTES_CSS = `
     font-weight: 600;
     padding: 4px 10px;
     border-radius: 100px;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--oddity-note-font);
     transition: opacity 0.15s;
   }
 
@@ -1438,9 +1459,14 @@ const MARGIN_NOTES_CSS = `
   :host([data-theme="light"]) .note-text,
   :host([data-theme="light"]) .note-section p,
   :host([data-theme="light"]) .note-section ul,
-  :host([data-theme="light"]) .note-reply-bubble,
+  :host([data-theme="light"]) .note-reply-bubble {
+    color: #293038;
+  }
+
   :host([data-theme="light"]) .note-edit-textarea {
     color: #293038;
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.15);
   }
 
   :host([data-theme="light"]) .note-section-label {
@@ -1453,7 +1479,9 @@ const MARGIN_NOTES_CSS = `
   }
 
   :host([data-theme="light"]) .note-cancel-btn {
-    color: rgba(41, 48, 56, 0.6);
+    color: rgba(41, 48, 56, 0.7);
+    background: rgba(0,0,0,0.06);
+    border-color: rgba(0,0,0,0.12);
   }
 
   :host([data-theme="light"]) .note-user-badge {
