@@ -858,11 +858,13 @@ function showBlockedOverlay(): void {
   // Auto-expand so the blocked overlay is visible
   expanded = true;
   containerEl?.classList.add("expanded");
+  toggleBarEl?.classList.add("visible");
 }
 
 function toggleDimmedPanel(): void {
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
+  toggleBarEl?.classList.toggle("visible", expanded);
   if (!expanded) {
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
