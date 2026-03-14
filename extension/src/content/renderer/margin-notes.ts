@@ -1319,14 +1319,14 @@ const MARGIN_NOTES_CSS = `
   }
 
   /* Dark text for light accent colors */
-  [data-annotation-type="highlight"] .note-feedback-pill,
+  [data-annotation-type="core_claim"] .note-feedback-pill,
   [data-annotation-type="insight"] .note-feedback-pill {
     color: #293038;
   }
 
   /* Dark arrow for light-colored send buttons */
   [data-annotation-type="insight"] .note-reply-send,
-  [data-annotation-type="highlight"] .note-reply-send {
+  [data-annotation-type="core_claim"] .note-reply-send {
     color: #293038;
   }
 
@@ -1488,8 +1488,8 @@ const MARGIN_NOTES_CSS = `
     color: rgba(41, 48, 56, 0.6);
   }
 
-  :host([data-theme="light"]) [data-annotation-type="highlight"] .note-label {
-    color: #EAB308 !important;
+  :host([data-theme="light"]) [data-annotation-type="core_claim"] .note-label {
+    color: #4A90D9 !important;
   }
 
   :host([data-theme="light"]) [data-annotation-type="recall"] .note-label,

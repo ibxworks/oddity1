@@ -4,14 +4,16 @@ import { validateAnnotations } from '../schema-validator.js';
 describe('validateAnnotations', () => {
   const validAnnotation = {
     id: 'ann_1',
-    type: 'highlight',
+    mode: 'overview',
+    type: 'core_claim',
     anchor: { type: 'TextQuoteSelector', exact: 'test text' },
     content: { note: 'This is a note' },
   };
 
   const validWithOptionals = {
     id: 'ann_2',
-    type: 'provoking_question',
+    mode: 'depth',
+    type: 'counterargument',
     anchor: {
       type: 'TextQuoteSelector',
       exact: 'neural networks',
@@ -53,7 +55,7 @@ describe('validateAnnotations', () => {
   });
 
   it('rejects annotation without anchor', () => {
-    const noAnchor = { id: 'x', type: 'highlight', content: { note: 'hi' } };
+    const noAnchor = { id: 'x', mode: 'overview', type: 'core_claim', content: { note: 'hi' } };
     const result = validateAnnotations([noAnchor]);
     expect(result.valid).toHaveLength(0);
     expect(result.errors).toHaveLength(1);
@@ -62,7 +64,8 @@ describe('validateAnnotations', () => {
   it('rejects annotation without content', () => {
     const noContent = {
       id: 'x',
-      type: 'highlight',
+      mode: 'overview',
+      type: 'core_claim',
       anchor: { type: 'TextQuoteSelector', exact: 'text' },
     };
     const result = validateAnnotations([noContent]);
@@ -83,28 +86,35 @@ describe('validateAnnotations', () => {
   });
 
   it('accepts all valid annotation types', () => {
-    const types = ['highlight', 'recall', 'provoking_question', 'insight', 'caveat', 'vocabulary'];
+    const types = [
+      'core_claim', 'evidence', 'assumption', 'consequence', 'background', 'transition', 'caveat', 'open_question',
+      'counterargument', 'alternative', 'fallacy', 'criteria', 'perspective',
+      'insight', 'recall', 'study', 'translation', 'vocabulary',
+      'user_written',
+    ];
     const annotations = types.map((type, i) => ({
       id: `ann_${i}`,
+      mode: i < 8 ? 'overview' : 'depth',
       type,
       anchor: { type: 'TextQuoteSelector', exact: `text ${i}` },
       content: { note: `Note ${i}` },
     }));
     const result = validateAnnotations(annotations);
-    expect(result.valid).toHaveLength(6);
+    expect(result.valid).toHaveLength(types.length);
     expect(result.errors).toHaveLength(0);
   });
 
-  it('normalizes "provoking question" (with space) to "provoking_question"', () => {
+  it('normalizes "core claim" (with space) to "core_claim"', () => {
     const annotation = {
       id: 'ann_space',
-      type: 'provoking question',
+      mode: 'overview',
+      type: 'core claim',
       anchor: { type: 'TextQuoteSelector', exact: 'some claim' },
-      content: { note: 'Why?' },
+      content: { note: 'Important' },
     };
     const result = validateAnnotations([annotation]);
     expect(result.valid).toHaveLength(1);
-    expect(result.valid[0]!.type).toBe('provoking_question');
+    expect(result.valid[0]!.type).toBe('core_claim');
     expect(result.errors).toHaveLength(0);
   });
 });

@@ -1,11 +1,12 @@
 import type {
   AnnotationFont,
   AnnotationFontSize,
-  Intensity,
+  AnnotationMode,
+  DepthPersonality,
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
-import { ALL_ANNOTATION_TYPES, DEFAULT_ENABLED_SITES, isBlockedDomain } from "@oddity/shared";
+import { ALL_OVERVIEW_TYPES, ALL_DEPTH_TYPES, DEFAULT_ENABLED_SITES, isBlockedDomain } from "@oddity/shared";
 import { sendMessage } from "../shared/messaging.js";
 
 // ─── DOM refs ───
@@ -88,8 +89,9 @@ let isSignUpMode = true;
 
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
-  intensity: "default",
-  visible_types: [...ALL_ANNOTATION_TYPES],
+  annotation_mode: "overview",
+  depth_personality: "terry",
+  visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
   enabled_sites: [],
   annotation_font: "default",
   annotation_font_size: "default",
@@ -130,8 +132,9 @@ async function init(): Promise<void> {
     const prefs = stored["preferences"] as UserPreferences;
     currentPrefs = {
       enabled: prefs.enabled ?? true,
-      intensity: prefs.intensity ?? "default",
-      visible_types: [...ALL_ANNOTATION_TYPES], // always show all types
+      annotation_mode: prefs.annotation_mode ?? "overview",
+      depth_personality: prefs.depth_personality ?? "terry",
+      visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
       enabled_sites: prefs.enabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "default",
       annotation_font_size: prefs.annotation_font_size ?? "default",
@@ -153,13 +156,13 @@ function applyPrefsToUI(): void {
   enabledToggle.checked = currentPrefs.enabled;
   toggleLabel.textContent = currentPrefs.enabled ? "On" : "Off";
 
-  // Density buttons
+  // Personality buttons (depth mode)
   for (const btn of intensityGroup.querySelectorAll<HTMLButtonElement>(
     ".density-btn",
   )) {
     btn.classList.toggle(
       "active",
-      btn.dataset["intensity"] === currentPrefs.intensity,
+      btn.dataset["intensity"] === currentPrefs.depth_personality,
     );
   }
 
@@ -346,17 +349,17 @@ enabledToggle.addEventListener("change", () => {
   savePrefs();
 });
 
-// Density selection
+// Personality selection (depth mode)
 intensityGroup.addEventListener("click", (e) => {
   const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
     ".density-btn",
   );
   if (!btn) return;
 
-  const intensity = btn.dataset["intensity"] as Intensity | undefined;
-  if (!intensity) return;
+  const personality = btn.dataset["intensity"] as DepthPersonality | undefined;
+  if (!personality) return;
 
-  currentPrefs.intensity = intensity;
+  currentPrefs.depth_personality = personality;
 
   for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(
     ".density-btn",

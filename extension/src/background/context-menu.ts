@@ -24,7 +24,8 @@ export function setupContextMenu(): void {
         contentHash: '',
         annotation: {
           id: crypto.randomUUID(),
-          type: 'highlight',
+          mode: 'overview',
+          type: 'user_written',
           anchor: {
             type: 'TextQuoteSelector',
             exact: info.selectionText,

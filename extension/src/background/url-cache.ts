@@ -1,15 +1,15 @@
-import type { Annotation, AnnotationFeedback, Intensity } from '@oddity/shared';
+import type { Annotation, AnnotationFeedback } from '@oddity/shared';
 
 /**
  * URL-hash prediction cache using chrome.storage.local.
- * Maps URL → {content_hash, intensity, annotations, feedback} so that on
+ * Maps URL → {content_hash, mode, annotations, feedback} so that on
  * revisits, we can render instantly before even extracting text.
  * Falls back to normal pipeline if content has changed (hash mismatch).
  */
 
 interface UrlCacheEntry {
   contentHash: string;
-  intensity: Intensity;
+  mode: string;
   annotations: Annotation[];
   feedback: AnnotationFeedback[];
   timestamp: number;
@@ -33,14 +33,14 @@ export async function getUrlCache(url: string): Promise<UrlCacheEntry | null> {
 export async function setUrlCache(
   url: string,
   contentHash: string,
-  intensity: Intensity,
+  mode: string,
   annotations: Annotation[],
   feedback: AnnotationFeedback[],
 ): Promise<void> {
   const key = cacheKey(url);
   const entry: UrlCacheEntry = {
     contentHash,
-    intensity,
+    mode,
     annotations,
     feedback,
     timestamp: Date.now(),

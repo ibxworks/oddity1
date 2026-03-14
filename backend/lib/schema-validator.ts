@@ -14,17 +14,37 @@ const AnnotationContentSchema = z.object({
   question: z.string().optional(),
 });
 
+const AnnotationModeSchema = z.enum(['overview', 'depth']);
+
+const AllAnnotationTypes = z.enum([
+  // Overview labels
+  'core_claim',
+  'evidence',
+  'assumption',
+  'consequence',
+  'background',
+  'transition',
+  'caveat',
+  'open_question',
+  // Depth types
+  'counterargument',
+  'alternative',
+  'fallacy',
+  'criteria',
+  'perspective',
+  'insight',
+  'recall',
+  'study',
+  'translation',
+  'vocabulary',
+  // User-written
+  'user_written',
+]);
+
 const AnnotationSchema = z.object({
   id: z.string().min(1),
-  type: z.enum([
-    'highlight',
-    'recall',
-    'provoking_question',
-    'insight',
-    'caveat',
-    'vocabulary',
-    'user_written',
-  ]),
+  mode: AnnotationModeSchema,
+  type: AllAnnotationTypes,
   anchor: TextQuoteSelectorSchema,
   content: AnnotationContentSchema,
 });
@@ -45,10 +65,13 @@ export function validateAnnotations(data: unknown): {
   const errors: string[] = [];
 
   for (let i = 0; i < data.length; i++) {
-    // Normalize LLM output: "provoking question" (space) → "provoking_question" (underscore)
+    // Normalize LLM output: spaces → underscores, lowercase
     const item = data[i] as Record<string, unknown> | undefined;
     if (item && typeof item.type === 'string') {
-      item.type = item.type.replace(/\s+/g, '_');
+      item.type = item.type.replace(/\s+/g, '_').toLowerCase();
+    }
+    if (item && typeof item.mode === 'string') {
+      item.mode = item.mode.toLowerCase();
     }
 
     const result = AnnotationSchema.safeParse(data[i]);

@@ -81,7 +81,8 @@
       "Bash(pip show:*)",
       "Bash(python3 -c \"import markitdown; print\\(dir\\(markitdown\\)\\)\" 2>&1)",
       "Bash(pip install:*)",
-      "Bash(python3 -c \"from markitdown import MarkItDown; print\\('OK'\\)\" 2>&1)"
+      "Bash(python3 -c \"from markitdown import MarkItDown; print\\('OK'\\)\" 2>&1)",
+      "Bash(npm run:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
