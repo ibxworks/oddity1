@@ -63,9 +63,9 @@ export async function handleExportPdf(
     (resolve) => chrome.storage.local.get('preferences', (r) => resolve((r['preferences'] as any) ?? {})),
   );
 
-  const fontFamily = FONT_MAP[prefs.annotation_font ?? 'default'];
+  const fontFamily = FONT_MAP[prefs.annotation_font ?? 'fraunces'];
   const noteSize = SIZE_MAP[prefs.annotation_font_size ?? 'default'];
-  const gfontQuery = GFONT_MAP[prefs.annotation_font ?? 'default'];
+  const gfontQuery = GFONT_MAP[prefs.annotation_font ?? 'fraunces'];
 
   const rawHtml = regionHtml || extractArticleHtmlFallback();
   if (!rawHtml) throw new Error('Could not extract page content for export');

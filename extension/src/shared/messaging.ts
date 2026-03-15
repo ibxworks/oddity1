@@ -1,13 +1,30 @@
 import type { ExtensionMessage } from "@oddity/shared";
 
 /**
+ * Check whether the extension context is still valid.
+ * Returns false after extension reload/update.
+ */
+function isContextValid(): boolean {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Type-safe wrapper around chrome.runtime.sendMessage.
- * Returns a typed response.
+ * Returns a typed response. Silently fails if extension context is invalidated.
  */
 export function sendMessage<T = unknown>(
   message: ExtensionMessage,
 ): Promise<T> {
-  return chrome.runtime.sendMessage(message);
+  if (!isContextValid()) return Promise.resolve(undefined as T);
+  try {
+    return chrome.runtime.sendMessage(message);
+  } catch {
+    return Promise.resolve(undefined as T);
+  }
 }
 
 /**
@@ -22,18 +39,24 @@ export function onMessage(
     sender: chrome.runtime.MessageSender,
   ) => void | Promise<unknown>,
 ): void {
-  chrome.runtime.onMessage.addListener(
-    (message: ExtensionMessage, sender, sendResponse) => {
-      const result = handler(message, sender);
-      if (result instanceof Promise) {
-        result.then(sendResponse).catch((err) => {
-          console.error("[Oddity 1] Message handler error:", err);
-          sendResponse({ error: String(err) });
-        });
-        return true; // keep channel open for async response
-      }
-    },
-  );
+  if (!isContextValid()) return;
+  try {
+    chrome.runtime.onMessage.addListener(
+      (message: ExtensionMessage, sender, sendResponse) => {
+        if (!isContextValid()) return;
+        const result = handler(message, sender);
+        if (result instanceof Promise) {
+          result.then(sendResponse).catch((err) => {
+            console.error("[Oddity 1] Message handler error:", err);
+            sendResponse({ error: String(err) });
+          });
+          return true; // keep channel open for async response
+        }
+      },
+    );
+  } catch {
+    // Extension context invalidated
+  }
 }
 
 /**
@@ -43,5 +66,10 @@ export function sendToTab<T = unknown>(
   tabId: number,
   message: ExtensionMessage,
 ): Promise<T> {
-  return chrome.tabs.sendMessage(tabId, message);
+  if (!isContextValid()) return Promise.resolve(undefined as T);
+  try {
+    return chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    return Promise.resolve(undefined as T);
+  }
 }

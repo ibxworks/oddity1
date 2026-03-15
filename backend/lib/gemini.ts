@@ -25,11 +25,11 @@ const personalities: Record<string, string> = promptsConfig.personalities ?? {};
  */
 function buildSystemPrompt(mode: AnnotationMode, personality?: DepthPersonality): string {
   if (mode === "overview") {
-    const personalityText = overviewPersonalities[personality ?? "terry"] ?? overviewPersonalities.terry ?? "";
+    const personalityText = overviewPersonalities[personality ?? "jerry"] ?? overviewPersonalities.jerry ?? "";
     return overviewPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
   }
   // Depth mode: substitute personality into template
-  const personalityText = personalities[personality ?? "terry"] ?? personalities.terry ?? "";
+  const personalityText = personalities[personality ?? "jerry"] ?? personalities.jerry ?? "";
   return depthPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
 }
 

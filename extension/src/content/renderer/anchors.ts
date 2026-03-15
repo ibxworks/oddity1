@@ -1,5 +1,4 @@
 import type { Annotation } from '@oddity/shared';
-import { ANNOTATION_COLORS } from '@oddity/shared';
 import { getVisual } from './styles.js';
 import { getThemeMode } from './theme-detector.js';
 
@@ -92,18 +91,9 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     const span = document.createElement('span');
     span.setAttribute(ATTR, annotation.id);
     span.setAttribute('data-oddity-type', annotation.type);
-    const visual = getVisual(annotation.type);
+    const visual = getVisual(annotation.type, getThemeMode());
     let bgColor = visual.backgroundColor;
     let underlineStyle = visual.underlineStyle;
-    if (getThemeMode() === 'light') {
-      if (annotation.type === 'insight') {
-        bgColor = ANNOTATION_COLORS.insight + '52'; // ~32% opacity — more visible on light pages
-        underlineStyle = `1.5px solid #70AC87`; // darker green underline for light mode
-      } else if (annotation.type === 'recall' || annotation.type === 'vocabulary') {
-        bgColor = '#7BA8D4' + '26'; // lighter blue for light mode
-        underlineStyle = `1.5px solid #7BA8D4`;
-      }
-    }
     const bgCss = bgColor ? `background-color: ${bgColor};` : '';
     const borderCss = underlineStyle ? `border-bottom: ${underlineStyle};` : '';
     span.style.cssText =

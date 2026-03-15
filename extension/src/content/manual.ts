@@ -1,5 +1,5 @@
 import type { Annotation } from '@oddity/shared';
-import { ANNOTATION_LABELS } from '@oddity/shared';
+import { ANNOTATION_LABELS, getAnnotationColor } from '@oddity/shared';
 import { sendMessage, onMessage } from '../shared/messaging.js';
 import { sha256 } from '../shared/hash.js';
 import { resolveSelector } from './selector.js';
@@ -11,7 +11,9 @@ import { getThemeMode } from './renderer/theme-detector.js';
 
 // ─── Theme Color Maps ───
 
-const ACCENT = '#A1927B';
+function getAccent(): string {
+  return getAnnotationColor('user_written', getThemeMode());
+}
 
 const LIGHT_COLORS = {
   cardBg: 'rgba(255,255,255,0.35)',
@@ -49,8 +51,12 @@ let editorHost: HTMLElement | null = null;
 let editorShadow: ShadowRoot | null = null;
 let currentRange: Range | null = null;
 let selectionChangeListener: (() => void) | null = null;
+let mouseDownListener: ((e: MouseEvent) => void) | null = null;
+let mouseUpListener: ((e: MouseEvent) => void) | null = null;
 let escapeListener: ((e: KeyboardEvent) => void) | null = null;
 let outsideClickListener: ((e: MouseEvent) => void) | null = null;
+let tempHighlightContainer: HTMLDivElement | null = null;
+let isMouseDragging = false;
 
 /**
  * Initialize manual annotation creation UI.
@@ -60,6 +66,22 @@ let outsideClickListener: ((e: MouseEvent) => void) | null = null;
 export function initManualAnnotations(): void {
   selectionChangeListener = handleSelectionChange;
   document.addEventListener('selectionchange', selectionChangeListener);
+
+  // Track mouse state to avoid interfering with drag-to-select
+  mouseDownListener = (e: MouseEvent) => {
+    const target = e.target as Node;
+    // Don't track clicks on our own UI (FAB / editor) as drags
+    if (fabHost?.contains(target) || editorHost?.contains(target)) return;
+    isMouseDragging = true;
+  };
+  mouseUpListener = () => {
+    if (!isMouseDragging) return;
+    isMouseDragging = false;
+    // Check selection after drag completes
+    handleSelectionChange();
+  };
+  document.addEventListener('mousedown', mouseDownListener);
+  document.addEventListener('mouseup', mouseUpListener);
 
   // Listen for context menu action from background
   onMessage((message) => {
@@ -80,6 +102,14 @@ export function destroyManualAnnotations(): void {
     document.removeEventListener('selectionchange', selectionChangeListener);
     selectionChangeListener = null;
   }
+  if (mouseDownListener) {
+    document.removeEventListener('mousedown', mouseDownListener);
+    mouseDownListener = null;
+  }
+  if (mouseUpListener) {
+    document.removeEventListener('mouseup', mouseUpListener);
+    mouseUpListener = null;
+  }
   dismissFab();
   dismissEditor();
 }
@@ -87,6 +117,12 @@ export function destroyManualAnnotations(): void {
 // ─── Selection Handling ───
 
 function handleSelectionChange(): void {
+  // Don't show FAB while user is still dragging — wait for mouseup
+  if (isMouseDragging) return;
+
+  // Don't interfere if the editor is open
+  if (editorHost) return;
+
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) {
     // Delay dismiss slightly so click on FAB can register
@@ -105,7 +141,7 @@ function handleSelectionChange(): void {
     return;
   }
 
-  currentRange = sel.getRangeAt(0).cloneContents() ? sel.getRangeAt(0).cloneRange() : null;
+  currentRange = sel.getRangeAt(0).cloneRange();
   if (!currentRange) return;
 
   showFab(sel.getRangeAt(0));
@@ -129,26 +165,21 @@ function showFab(range: Range): void {
   fabHost.style.left = `${rect.right + scrollX + 4}px`;
   fabHost.style.top = `${rect.top + scrollY - 4}px`;
 
-  const isDark = getThemeMode() === 'dark';
-  const fabBg = isDark ? 'white' : 'black';
-  const fabStroke = isDark ? 'black' : 'white';
-  const fabBorder = isDark ? '#CBD5E1' : '#374151';
-
   const button = document.createElement('button');
-  button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="7" y1="1" x2="7" y2="13" stroke="${fabStroke}" stroke-width="2.5" stroke-linecap="round"/><line x1="1" y1="7" x2="13" y2="7" stroke="${fabStroke}" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+  button.innerHTML = `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="20" fill="#748DBF"/><path d="M25.1904 9.96387C26.5284 8.62594 28.6981 8.62607 30.0361 9.96387C31.3741 11.3019 31.3741 13.4716 30.0361 14.8096L16.792 28.0537C16.238 28.6077 15.5433 29.0014 14.7832 29.1914L10.6758 30.2178C10.1365 30.3526 9.64773 29.8645 9.78223 29.3252L10.8096 25.2168C10.9996 24.4569 11.3924 23.7629 11.9463 23.209L25.1904 9.96387ZM23.6963 13.541L12.9883 24.25C12.6231 24.6152 12.3635 25.0732 12.2383 25.5742L11.5742 28.2324L11.5088 28.4912L11.7676 28.4268L14.4258 27.7617C14.9267 27.6365 15.3848 27.3778 15.75 27.0127L21.1045 21.6582L26.458 16.3027L26.5713 16.1904L26.458 16.0771L23.9229 13.541L23.8096 13.4287L23.6963 13.541ZM28.9941 11.0059C28.2314 10.2433 26.9951 10.2432 26.2324 11.0059L24.9639 12.2734L24.8516 12.3867L24.9639 12.5L27.5 15.0352L27.6123 15.1484L27.7256 15.0352L28.9941 13.7676C29.7569 13.0049 29.7569 11.7686 28.9941 11.0059Z" fill="white" stroke="#748DBF" stroke-width="0.32"/></svg>`;
   button.setAttribute('aria-label', 'Annotate selection');
   button.style.cssText = `
     all: initial;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
-    background: ${fabBg};
+    background: transparent;
     cursor: pointer;
-    border: 2px solid ${fabBorder};
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    border: none;
+    padding: 0;
     transition: transform 0.1s;
     box-sizing: border-box;
   `;
@@ -162,6 +193,9 @@ function showFab(range: Range): void {
   button.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
+    // Convert OS selection to Oddity's highlight immediately
+    applyTempHighlight();
+    window.getSelection()?.removeAllRanges();
     showEditor();
   });
 
@@ -203,11 +237,68 @@ function dismissFab(): void {
   }
 }
 
+// ─── Temporary Highlight (replaces OS selection visually) ───
+
+function applyTempHighlight(): void {
+  removeTempHighlight();
+  if (!currentRange) return;
+
+  tempHighlightContainer = document.createElement('div');
+  tempHighlightContainer.style.cssText =
+    'position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2147483645;';
+  document.body.appendChild(tempHighlightContainer);
+
+  drawTempRects();
+
+  const onScrollResize = () => requestAnimationFrame(drawTempRects);
+  window.addEventListener('scroll', onScrollResize, { passive: true, capture: true });
+  window.addEventListener('resize', onScrollResize, { passive: true });
+
+  (tempHighlightContainer as HTMLDivElement & { _cleanup?: () => void })._cleanup = () => {
+    window.removeEventListener('scroll', onScrollResize, { capture: true });
+    window.removeEventListener('resize', onScrollResize);
+  };
+}
+
+function drawTempRects(): void {
+  if (!tempHighlightContainer || !currentRange) return;
+  tempHighlightContainer.innerHTML = '';
+
+  const bgColor = getAccent() + '26'; // 15% opacity, same as annotation highlights
+  const rects = currentRange.getClientRects();
+
+  for (let i = 0; i < rects.length; i++) {
+    const rect = rects[i]!;
+    if (rect.width === 0 || rect.height === 0) continue;
+
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position: fixed;
+      left: ${rect.left}px;
+      top: ${rect.top}px;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      background-color: ${bgColor};
+      border-bottom: 1.5px solid ${getAccent()};
+      pointer-events: none;
+    `;
+    tempHighlightContainer.appendChild(el);
+  }
+}
+
+function removeTempHighlight(): void {
+  if (tempHighlightContainer) {
+    (tempHighlightContainer as HTMLDivElement & { _cleanup?: () => void })._cleanup?.();
+    tempHighlightContainer.remove();
+    tempHighlightContainer = null;
+  }
+}
+
 // ─── Annotation Editor ───
 
 function showEditor(): void {
   dismissFab();
-  dismissEditor();
+  dismissEditor(true);
 
   if (!currentRange) return;
 
@@ -223,6 +314,11 @@ function showEditor(): void {
     left: ${rangeRect.left + scrollX}px;
     top: ${rangeRect.bottom + scrollY + 8}px;
   `;
+  // Stop all keyboard events from leaking to the host page (e.g. Claude's chat input)
+  for (const evt of ['keydown', 'keyup', 'keypress', 'input', 'beforeinput'] as const) {
+    editorHost.addEventListener(evt, (e) => e.stopPropagation());
+  }
+
   document.body.appendChild(editorHost);
 
   editorShadow = editorHost.attachShadow({ mode: 'closed' });
@@ -248,27 +344,10 @@ function showEditor(): void {
     width: 320px;
   `;
 
-  // Selected text preview
-  const preview = document.createElement('div');
-  const selectedText = currentRange.toString().trim();
-  preview.textContent = selectedText.length > 80 ? selectedText.slice(0, 80) + '...' : selectedText;
-  preview.style.cssText = `
-    padding: 6px 8px;
-    background: ${colors.previewBg};
-    border-radius: 4px;
-    font-style: italic;
-    color: ${colors.previewText};
-    font-size: 12px;
-    line-height: 1.4;
-    border-left: 3px solid ${ACCENT};
-    border-radius: 8px;
-  `;
-  container.appendChild(preview);
-
   // Note textarea
   const noteLabel = document.createElement('label');
-  noteLabel.textContent = 'Note (optional)';
-  noteLabel.style.cssText = `font-weight: 600; font-size: 12px; color: ${colors.labelColor};`;
+  noteLabel.textContent = 'Note';
+  noteLabel.style.cssText = `font-weight: 400; font-size: 12px; color: ${colors.labelColor};`;
   container.appendChild(noteLabel);
 
   const noteArea = document.createElement('textarea');
@@ -306,7 +385,7 @@ function showEditor(): void {
     background: ${colors.cancelBg};
     color: ${colors.cancelText};
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 400;
   `;
   cancelBtn.addEventListener('click', () => dismissEditor());
 
@@ -319,10 +398,10 @@ function showEditor(): void {
     padding: 6px 12px;
     border: none;
     border-radius: 999px;
-    background: #111111;
+    background: #748DBF;
     color: #ffffff;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 400;
   `;
   submitBtn.addEventListener('click', () => {
     handleSubmit(noteArea.value.trim());
@@ -344,7 +423,8 @@ function showEditor(): void {
   document.addEventListener('keydown', editorEscapeListener);
 }
 
-function dismissEditor(): void {
+function dismissEditor(keepHighlight = false): void {
+  if (!keepHighlight) removeTempHighlight();
   editorHost?.remove();
   editorHost = null;
   editorShadow = null;
@@ -413,6 +493,9 @@ async function handleSubmit(note: string): Promise<void> {
       pageTitle: document.title,
     },
   });
+
+  // Remove temp highlight before rendering permanent one
+  removeTempHighlight();
 
   // Render immediately
   renderManualAnnotation(annotation, root);

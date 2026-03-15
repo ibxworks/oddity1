@@ -5,12 +5,12 @@ export const annotationPluginKey = new PluginKey('annotations');
 
 // Visual styles matching extension/renderer/styles.ts
 const TYPE_STYLES = {
-  highlight:          { bg: '#FFDD6926', underline: '1.5px solid #FFDD69' },
-  recall:             { bg: '#243C6199', underline: '1.5px solid #5B8AC5' },
-  provoking_question: { bg: '#F5574C26', underline: '1.5px solid #F5574C' },
-  insight:            { bg: '#2D7A4F4d', underline: '1.5px solid #BFF3D3' },
-  caveat:             { bg: '#F5574C26', underline: '1.5px solid #F5574C' },
-  vocabulary:         { bg: '#243C6199', underline: '1.5px solid #5B8AC5' },
+  highlight:          { bg: '#FFDD691A', underline: '1.5px solid #FFDD69E6' },
+  recall:             { bg: '#578E6C1A', underline: '1.5px solid #578E6CE6' },
+  provoking_question: { bg: '#F5574C1A', underline: '1.5px solid #F5574CE6' },
+  insight:            { bg: '#578E6C1A', underline: '1.5px solid #578E6CE6' },
+  caveat:             { bg: '#F5574C1A', underline: '1.5px solid #F5574CE6' },
+  vocabulary:         { bg: '#578E6C1A', underline: '1.5px solid #578E6CE6' },
 };
 
 function buildDecorations(doc, annotations) {

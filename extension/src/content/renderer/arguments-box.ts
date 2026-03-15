@@ -7,7 +7,6 @@ import type {
 
 import {
   getMarginNotesContentLeft,
-  getMarginNotesContentRight,
 } from "./margin-notes.js";
 import {
   getThemeMode,
@@ -74,6 +73,7 @@ let listDragUpHandler: (() => void) | null = null;
 
 let manualRunCb: (() => void) | null = null;
 let notEnabledPanelEl: HTMLDivElement | null = null;
+let enableBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
@@ -147,7 +147,11 @@ export function initArgumentsBox(): void {
 
   hostEl = document.createElement("oddity-arguments-box");
   hostEl.style.cssText =
-    "position: fixed; bottom: 0; right: 0; z-index: 2147483647; pointer-events: none;";
+    "position: fixed; bottom: 0; right: 0; z-index: 2147483647; pointer-events: none; overflow: visible;";
+  // Stop keyboard events from leaking to the host page (e.g. Claude's chat input)
+  for (const evt of ['keydown', 'keyup', 'keypress', 'input', 'beforeinput'] as const) {
+    hostEl.addEventListener(evt, (e) => e.stopPropagation());
+  }
   document.body.appendChild(hostEl);
 
   shadowRoot = hostEl.attachShadow({ mode: "closed" });
@@ -267,7 +271,7 @@ export function initArgumentsBox(): void {
   const addBtn = document.createElement("button");
   addBtn.className = "args-header-icon-btn";
   addBtn.title = "Add";
-  addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><line x1="7.5" y1="2" x2="7.5" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="2" y1="7.5" x2="13" y2="7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+  addBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 19 19" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8.5" width="1.5" height="18.5" rx="0.5" fill="currentColor"/><rect x="18.5" y="8.5" width="1.5" height="18.5" rx="0.5" transform="rotate(90 18.5 8.5)" fill="currentColor"/></svg>`;
   // ── Plus-button tooltip ──
   const addTooltip = document.createElement("div");
   addTooltip.className = "add-tooltip";
@@ -291,7 +295,7 @@ export function initArgumentsBox(): void {
   const copyIconBtn = document.createElement("button");
   copyIconBtn.className = "args-header-icon-btn";
   copyIconBtn.title = "Copy";
-  copyIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 5V3.5A1.5 1.5 0 0 0 8.5 2H3.5A1.5 1.5 0 0 0 2 3.5v5A1.5 1.5 0 0 0 3.5 10H5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  copyIconBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.4883 5.5H7.94922C6.59655 5.5 5.5 6.59655 5.5 7.94922V17.4883C5.5 18.8409 6.59655 19.9375 7.94922 19.9375H17.4883C18.8409 19.9375 19.9375 18.8409 19.9375 17.4883V7.94922C19.9375 6.59655 18.8409 5.5 17.4883 5.5Z" stroke="currentColor" stroke-width="1.375" stroke-linejoin="round"/><path d="M16.4785 5.5L16.5 4.46875C16.4982 3.83113 16.2441 3.22014 15.7932 2.76928C15.3424 2.31841 14.7314 2.06431 14.0938 2.0625H4.8125C4.08382 2.06465 3.38559 2.35508 2.87034 2.87034C2.35508 3.38559 2.06465 4.08382 2.0625 4.8125V14.0938C2.06431 14.7314 2.31841 15.3424 2.76928 15.7932C3.22014 16.2441 3.83113 16.4982 4.46875 16.5H5.5" stroke="currentColor" stroke-width="1.375" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   copyIconBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     handleCopy(copyIconBtn);
@@ -300,7 +304,7 @@ export function initArgumentsBox(): void {
   const exportIconBtn = document.createElement("button");
   exportIconBtn.className = "args-header-icon-btn";
   exportIconBtn.title = "Export PDF";
-  exportIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 2v8M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11.5v1A1.5 1.5 0 0 0 4 14h7a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  exportIconBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15.5305 8.28025L10.5305 13.2802C10.2375 13.5732 9.7625 13.5732 9.4705 13.2802L4.4705 8.28025C4.1765 7.98725 4.1765 7.51225 4.4705 7.22025C4.7645 6.92825 5.2375 6.92625 5.5305 7.22025L9.2505 10.9403V0.75025C9.2505 0.33625 9.5865 0.000249863 10.0005 0.000249863C10.4145 0.000249863 10.7505 0.33625 10.7505 0.75025V10.9403L14.4705 7.22025C14.6165 7.07325 14.8085 7.00025 15.0005 7.00025C15.1925 7.00025 15.3845 7.07225 15.5305 7.22025C15.8235 7.51325 15.8235 7.98725 15.5305 8.28025Z" fill="currentColor"/><path d="M17.708 19.694H2.292C1.028 19.694 0 18.666 0 17.402V11.75C0 11.336 0.336 11 0.75 11C1.164 11 1.5 11.336 1.5 11.75V17.402C1.5 17.839 1.855 18.194 2.292 18.194H17.708C18.145 18.194 18.5 17.839 18.5 17.402V11.75C18.5 11.336 18.836 11 19.25 11C19.664 11 20 11.336 20 11.75V17.402C20 18.666 18.972 19.694 17.708 19.694Z" fill="currentColor"/></svg>`;
   exportIconBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     document.dispatchEvent(
@@ -436,6 +440,34 @@ export function initArgumentsBox(): void {
   });
   containerEl.appendChild(closeBtnEl);
 
+  // ── Enable-site bubble (visible when collapsed & not-enabled) ──
+  enableBubbleEl = document.createElement("div");
+  enableBubbleEl.className = "args-enable-bubble";
+  enableBubbleEl.addEventListener("click", (e) => e.stopPropagation());
+
+  const bubbleTextWrapper = document.createElement("span");
+  bubbleTextWrapper.className = "args-enable-bubble-text";
+  bubbleTextWrapper.innerHTML = `<a class="args-enable-bubble-link">Click here</a> to enable Oddity 1 `;
+
+  const bubbleLink = bubbleTextWrapper.querySelector(".args-enable-bubble-link")!;
+  bubbleLink.addEventListener("click", (e) => {
+    e.stopPropagation();
+    enableBubbleEl?.remove();
+    if (dimmed) toggleDimmedPanel();
+  });
+
+  const bubbleClose = document.createElement("button");
+  bubbleClose.className = "args-enable-bubble-close";
+  bubbleClose.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  bubbleClose.addEventListener("click", (e) => {
+    e.stopPropagation();
+    enableBubbleEl?.remove();
+  });
+
+  enableBubbleEl.appendChild(bubbleTextWrapper);
+  enableBubbleEl.appendChild(bubbleClose);
+  containerEl.appendChild(enableBubbleEl);
+
   // ── Resize handle (top-left corner, visible only when expanded) ──
   const resizeHandle = document.createElement("div");
   resizeHandle.className = "args-resize-handle";
@@ -505,6 +537,8 @@ export function initArgumentsBox(): void {
     e.stopPropagation();
     const en = panelToggleInput!.checked;
     panelToggleLabelEl!.textContent = en ? "On" : "Off";
+    extensionEnabled = en;
+    containerEl?.classList.toggle("oddity-enabled", en);
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
       chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
@@ -536,7 +570,7 @@ export function initArgumentsBox(): void {
       const stored = await chrome.storage.local.get("hadAccount");
       showAuthView(stored["hadAccount"] ? "signin" : "signup");
     } else {
-      // Authenticated — mark red stroke if site not whitelisted (even if extension is off)
+      // Authenticated — check if site is whitelisted
       const prefsStored = await chrome.storage.local.get("preferences");
       const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
       const hostname = window.location.hostname.replace(/^www\./, "");
@@ -544,8 +578,8 @@ export function initArgumentsBox(): void {
       if (!siteEnabled) {
         dimmed = true;
         containerEl?.classList.add("oddity-not-enabled");
-        updateModeToggleVisibility();
       }
+      updateModeToggleVisibility();
     }
   }).catch(() => {});
 }
@@ -611,6 +645,14 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
 export function setArgumentsBoxDimmed(isDimmed: boolean): void {
   dimmed = isDimmed;
   containerEl?.classList.toggle("oddity-not-enabled", isDimmed);
+  if (isDimmed) {
+    // Site not enabled → show as OFF (no green stroke, toggle off)
+    containerEl?.classList.remove("oddity-enabled");
+    if (panelToggleInput) panelToggleInput.checked = false;
+    if (panelToggleLabelEl) panelToggleLabelEl.textContent = "Off";
+    if (dashToggleInput) dashToggleInput.checked = false;
+    if (dashToggleLabelEl) dashToggleLabelEl.textContent = "Off";
+  }
   updateModeToggleVisibility();
 }
 
@@ -632,7 +674,7 @@ export function updateArgumentsBoxStyle(
 ): void {
   const host = shadowRoot?.host as HTMLElement;
   if (!host) return;
-  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "default"]);
+  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "fraunces"]);
   host.style.setProperty("--oddity-note-size", SIZE_MAP[fontSize ?? "default"]);
   renderList(); // re-layout since sizes changed
 }
@@ -693,7 +735,7 @@ export async function handleRemoteSignIn(user: {
     Array.isArray(enabledSites) &&
     enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
   if (!siteEnabled) {
-    // Collapse to button with red stroke — don't auto-expand the "not enabled" panel
+    // Collapse to button — don't auto-expand the "not enabled" panel
     dimmed = true;
     containerEl?.classList.add("oddity-not-enabled");
     updateModeToggleVisibility();
@@ -782,6 +824,7 @@ export function destroyArgumentsBox(): void {
   manualRunCb = null;
   notEnabledPanelEl = null;
   blockedPanelEl = null;
+  enableBubbleEl = null;
   canonicalItems = [];
   liveItems = [];
 }
@@ -817,6 +860,9 @@ function showNotEnabledOverlay(): void {
   const removeOverlay = () => {
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
+    containerEl?.classList.remove("oddity-not-enabled");
+    dimmed = false;
+    toggleBarEl?.classList.add("visible");
   };
 
   const enableExtension = () => {
@@ -906,10 +952,15 @@ function showBlockedOverlay(): void {
 }
 
 function toggleDimmedPanel(): void {
+  enableBubbleEl?.remove();
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
-  toggleBarEl?.classList.toggle("visible", expanded);
   if (!expanded) {
+    toggleBarEl?.classList.remove("visible");
+    if (containerEl) {
+      containerEl.style.height = "";
+      containerEl.style.width = "";
+    }
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
     notEnabledPanelEl?.remove();
@@ -1093,6 +1144,8 @@ function buildDashboardFace(): HTMLDivElement {
     if (dashToggleLabelEl) dashToggleLabelEl.textContent = en ? "On" : "Off";
     if (panelToggleInput) panelToggleInput.checked = en;
     if (panelToggleLabelEl) panelToggleLabelEl.textContent = en ? "On" : "Off";
+    extensionEnabled = en;
+    containerEl?.classList.toggle("oddity-enabled", en);
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
       chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
@@ -1185,7 +1238,7 @@ function buildDashboardFace(): HTMLDivElement {
     const btn = document.createElement("button");
     btn.className =
       "args-dash-density-btn" +
-      (value === "terry" ? " args-dash-density-active" : "");
+      (value === "jerry" ? " args-dash-density-active" : "");
     btn.dataset.intensity = value;
     btn.textContent = label;
     btn.addEventListener("click", () => {
@@ -1623,7 +1676,7 @@ function buildDashboardFace(): HTMLDivElement {
 async function loadDashboardPrefs(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-  const personality = (prefs.depth_personality as string) ?? "terry";
+  const personality = (prefs.depth_personality as string) ?? "jerry";
   dashDensityBtns.forEach((btn) => {
     btn.classList.toggle(
       "args-dash-density-active",
@@ -1631,7 +1684,7 @@ async function loadDashboardPrefs(): Promise<void> {
     );
   });
   if (dashFontSelect)
-    dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
+    dashFontSelect.value = (prefs.annotation_font as string) ?? "fraunces";
   if (dashFontSizeSelect)
     dashFontSizeSelect.value =
       (prefs.annotation_font_size as string) ?? "default";
@@ -1643,7 +1696,7 @@ async function loadDashboardPrefs(): Promise<void> {
       | import("@oddity/shared").AnnotationFontSize
       | undefined,
   );
-  const persona = (prefs.persona as string) ?? "Terry";
+  const persona = (prefs.persona as string) ?? "Jerry";
   if (dashPersonaSelect) dashPersonaSelect.value = persona;
   if (dashPersonaAvatarImgEl) {
     dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
@@ -1652,9 +1705,14 @@ async function loadDashboardPrefs(): Promise<void> {
   if (dashPersonaCircleEl)
     dashPersonaCircleEl.style.background =
       persona === "Jerry" ? "#FDCB24" : "#fff";
-  const enabled = prefs.enabled !== false;
+  // If the site is not enabled (dimmed), force toggle to OFF
+  const enabled = dimmed ? false : prefs.enabled !== false;
   if (dashToggleInput) dashToggleInput.checked = enabled;
   if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (panelToggleInput) panelToggleInput.checked = enabled;
+  if (panelToggleLabelEl) panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  extensionEnabled = enabled;
+  containerEl?.classList.toggle("oddity-enabled", enabled);
 }
 
 async function loadDashboardData(): Promise<void> {
@@ -2019,7 +2077,7 @@ function renderList(): void {
     const editBtn = document.createElement("button");
     editBtn.className = "note-icon-btn note-edit-btn";
     editBtn.title = "Edit";
-    editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
+    editBtn.innerHTML = `<span class="icon-dark"><svg width="18" height="18" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.1641 1.33105C19.7393 -0.243794 22.2929 -0.243751 23.8682 1.33105C25.4435 2.90636 25.4435 5.46083 23.8682 7.03613L8.41699 22.4883C7.76597 23.1393 6.94983 23.6009 6.05664 23.8242L1.26465 25.0225C0.608468 25.1865 0.0136891 24.5917 0.177734 23.9355L1.37598 19.1436C1.59927 18.2504 2.0609 17.4342 2.71191 16.7832L18.1641 1.33105ZM16.4727 5.55664L3.97949 18.0508C3.55812 18.4722 3.25879 19 3.11426 19.5781L2.33887 22.6787L2.27832 22.9219L5.62207 22.0859C6.20018 21.9414 6.72804 21.6421 7.14941 21.2207L13.3965 14.9736L19.6426 8.72656L19.748 8.62109L19.6426 8.51465L16.5781 5.4502L16.4727 5.55664ZM22.6016 2.59863C21.726 1.72311 20.3062 1.72311 19.4307 2.59863L17.8457 4.18359L17.9512 4.29004L20.9092 7.24805L21.0156 7.35352L21.1211 7.24805L22.6016 5.76953C23.4771 4.89404 23.477 3.47416 22.6016 2.59863Z" fill="white" stroke="#363636" stroke-width="0.3"/></svg></span><span class="icon-light"><svg width="18" height="18" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.1641 1.33105C19.7393 -0.243794 22.2929 -0.243751 23.8682 1.33105C25.4435 2.90636 25.4435 5.46083 23.8682 7.03613L8.41699 22.4883C7.76597 23.1393 6.94983 23.6009 6.05664 23.8242L1.26465 25.0225C0.608468 25.1865 0.0136891 24.5917 0.177734 23.9355L1.37598 19.1436C1.59927 18.2504 2.0609 17.4342 2.71191 16.7832L18.1641 1.33105ZM16.4727 5.55664L3.97949 18.0508C3.55812 18.4722 3.25879 19 3.11426 19.5781L2.33887 22.6787L2.27832 22.9219L5.62207 22.0859C6.20018 21.9414 6.72804 21.6421 7.14941 21.2207L13.3965 14.9736L19.6426 8.72656L19.748 8.62109L19.6426 8.51465L16.5781 5.4502L16.4727 5.55664ZM22.6016 2.59863C21.726 1.72311 20.3062 1.72311 19.4307 2.59863L17.8457 4.18359L17.9512 4.29004L20.9092 7.24805L21.0156 7.35352L21.1211 7.24805L22.6016 5.76953C23.4771 4.89404 23.477 3.47416 22.6016 2.59863Z" fill="#293038" stroke="white" stroke-width="0.3"/></svg></span>`;
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (!item.feedbackId && !item.annotationId) return;
@@ -2105,7 +2163,7 @@ function renderList(): void {
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "note-icon-btn note-delete-btn";
     deleteBtn.title = "Delete";
-    deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
+    deleteBtn.innerHTML = `<span class="icon-dark"><svg width="15" height="19" viewBox="0 0 22 27" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.9219 7.43945C19.5106 7.28746 20.0695 7.65114 20.1689 8.25781C20.1871 8.36904 20.1904 8.48758 20.1904 8.61621C20.1916 12.9442 20.1921 17.2726 20.1914 21.6006C20.191 23.8874 18.6924 25.7032 16.4473 26.127C16.1796 26.1775 15.898 26.1959 15.6172 26.1963C12.4044 26.2013 9.19156 26.2003 5.97852 26.1992C3.69159 26.1985 1.85256 24.6628 1.45312 22.418C1.41441 22.2002 1.39474 21.976 1.39453 21.7549C1.39094 17.3332 1.39019 12.9109 1.39355 8.48926C1.3939 8.11363 1.54191 7.815 1.7627 7.62891C1.98301 7.44332 2.28797 7.35899 2.62695 7.43457C3.04346 7.52748 3.36132 7.89535 3.39258 8.32715C3.39929 8.42013 3.3955 8.50965 3.39551 8.62207C3.39566 12.6316 3.39648 16.6411 3.39648 20.6787H3.39551L3.39648 20.6855C3.41225 21.17 3.37743 21.7036 3.45996 22.1953C3.65247 23.341 4.68451 24.1899 5.83789 24.1924C9.13566 24.1995 12.4336 24.1998 15.7314 24.1924C17.1037 24.1893 18.1861 23.0585 18.1865 21.6758C18.188 17.2823 18.1867 12.8885 18.1875 8.49512C18.1876 7.94499 18.484 7.55251 18.9219 7.43945Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M7.26953 0.203125C9.62027 0.198508 11.9716 0.199014 14.3223 0.204102C14.6616 0.204899 14.922 0.314719 15.0977 0.492188C15.2735 0.670059 15.3822 0.934127 15.3848 1.27637C15.3898 1.9497 15.3867 2.62192 15.3867 3.29785V3.7998H15.9141C17.3757 3.79981 18.8361 3.79648 20.2969 3.80078C20.9586 3.80273 21.3942 4.24054 21.3867 4.82031C21.3799 5.3401 20.9666 5.77238 20.4453 5.80176C20.3502 5.8071 20.2583 5.80371 20.1475 5.80371H1.2666C0.639678 5.80015 0.20525 5.37415 0.200195 4.81543C0.195178 4.24231 0.62806 3.8045 1.26758 3.80176C2.72789 3.7955 4.1877 3.79982 5.64941 3.7998H6.1709L6.18359 3.61328C6.18866 3.53651 6.20002 3.43702 6.2002 3.34961C6.20145 2.65408 6.19707 1.96406 6.20215 1.27148C6.20465 0.931308 6.31364 0.668386 6.49023 0.491211C6.66684 0.314264 6.92879 0.203859 7.26953 0.203125ZM8.20312 3.7998H13.3838V2.21973H8.20312V3.7998Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M8.31055 9.80664C8.83083 9.76813 9.2791 10.1133 9.37012 10.627C9.39137 10.7472 9.3973 10.8761 9.39746 11.0117C9.39941 12.7069 9.39844 14.4024 9.39844 16.126C9.39842 17.149 9.40636 18.1395 9.39648 19.1309C9.38809 19.9463 8.64467 20.4191 7.97754 20.1025C7.76977 20.0039 7.62709 19.8731 7.53516 19.7178C7.44262 19.5613 7.39442 19.3667 7.39453 19.1309C7.39576 16.499 7.39446 13.8671 7.39453 11.2354C7.39454 11.0691 7.39044 10.9185 7.39648 10.7646C7.41659 10.2586 7.81791 9.84333 8.31055 9.80664Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M13.0742 9.80664C13.5841 9.74797 14.0478 10.0748 14.165 10.5918C14.1862 10.6852 14.1894 10.7898 14.1895 10.9092C14.1911 13.6331 14.189 16.3586 14.1934 19.083C14.1937 19.3328 14.1473 19.5393 14.0547 19.7041C13.9635 19.8663 13.8198 20.0013 13.6016 20.1006C13.3815 20.2006 13.1833 20.2215 13.001 20.1826C12.8191 20.1437 12.6362 20.0418 12.4521 19.8672C12.2593 19.6446 12.1865 19.3976 12.1865 19.1094C12.1869 16.3662 12.1849 13.6236 12.1885 10.8809C12.1893 10.2842 12.5612 9.86575 13.0742 9.80664Z" fill="white" stroke="#363636" stroke-width="0.4"/></svg></span><span class="icon-light"><svg width="15" height="19" viewBox="0 0 22 27" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.9219 7.43945C19.5106 7.28746 20.0695 7.65114 20.1689 8.25781C20.1871 8.36904 20.1904 8.48758 20.1904 8.61621C20.1916 12.9442 20.1921 17.2726 20.1914 21.6006C20.191 23.8874 18.6924 25.7032 16.4473 26.127C16.1796 26.1775 15.898 26.1959 15.6172 26.1963C12.4044 26.2013 9.19156 26.2003 5.97852 26.1992C3.69159 26.1985 1.85256 24.6628 1.45312 22.418C1.41441 22.2002 1.39474 21.976 1.39453 21.7549C1.39094 17.3332 1.39019 12.9109 1.39355 8.48926C1.3939 8.11363 1.54191 7.815 1.7627 7.62891C1.98301 7.44332 2.28797 7.35899 2.62695 7.43457C3.04346 7.52748 3.36132 7.89535 3.39258 8.32715C3.39929 8.42013 3.3955 8.50965 3.39551 8.62207C3.39566 12.6316 3.39648 16.6411 3.39648 20.6787H3.39551L3.39648 20.6855C3.41225 21.17 3.37743 21.7036 3.45996 22.1953C3.65247 23.341 4.68451 24.1899 5.83789 24.1924C9.13566 24.1995 12.4336 24.1998 15.7314 24.1924C17.1037 24.1893 18.1861 23.0585 18.1865 21.6758C18.188 17.2823 18.1867 12.8885 18.1875 8.49512C18.1876 7.94499 18.484 7.55251 18.9219 7.43945Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M7.26953 0.203125C9.62027 0.198508 11.9716 0.199014 14.3223 0.204102C14.6616 0.204899 14.922 0.314719 15.0977 0.492188C15.2735 0.670059 15.3822 0.934127 15.3848 1.27637C15.3898 1.9497 15.3867 2.62192 15.3867 3.29785V3.7998H15.9141C17.3757 3.79981 18.8361 3.79648 20.2969 3.80078C20.9586 3.80273 21.3942 4.24054 21.3867 4.82031C21.3799 5.3401 20.9666 5.77238 20.4453 5.80176C20.3502 5.8071 20.2583 5.80371 20.1475 5.80371H1.2666C0.639678 5.80015 0.20525 5.37415 0.200195 4.81543C0.195178 4.24231 0.62806 3.8045 1.26758 3.80176C2.72789 3.7955 4.1877 3.79982 5.64941 3.7998H6.1709L6.18359 3.61328C6.18866 3.53651 6.20002 3.43702 6.2002 3.34961C6.20145 2.65408 6.19707 1.96406 6.20215 1.27148C6.20465 0.931308 6.31364 0.668386 6.49023 0.491211C6.66684 0.314264 6.92879 0.203859 7.26953 0.203125ZM8.20312 3.7998H13.3838V2.21973H8.20312V3.7998Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M8.31055 9.80664C8.83083 9.76813 9.2791 10.1133 9.37012 10.627C9.39137 10.7472 9.3973 10.8761 9.39746 11.0117C9.39941 12.7069 9.39844 14.4024 9.39844 16.126C9.39842 17.149 9.40636 18.1395 9.39648 19.1309C9.38809 19.9463 8.64467 20.4191 7.97754 20.1025C7.76977 20.0039 7.62709 19.8731 7.53516 19.7178C7.44262 19.5613 7.39442 19.3667 7.39453 19.1309C7.39576 16.499 7.39446 13.8671 7.39453 11.2354C7.39454 11.0691 7.39044 10.9185 7.39648 10.7646C7.41659 10.2586 7.81791 9.84333 8.31055 9.80664Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M13.0742 9.80664C13.5841 9.74797 14.0478 10.0748 14.165 10.5918C14.1862 10.6852 14.1894 10.7898 14.1895 10.9092C14.1911 13.6331 14.189 16.3586 14.1934 19.083C14.1937 19.3328 14.1473 19.5393 14.0547 19.7041C13.9635 19.8663 13.8198 20.0013 13.6016 20.1006C13.3815 20.2006 13.1833 20.2215 13.001 20.1826C12.8191 20.1437 12.6362 20.0418 12.4521 19.8672C12.2593 19.6446 12.1865 19.3976 12.1865 19.1094C12.1869 16.3662 12.1849 13.6236 12.1885 10.8809C12.1893 10.2842 12.5612 9.86575 13.0742 9.80664Z" fill="#293038" stroke="white" stroke-width="0.4"/></svg></span>`;
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (item.feedbackId) {
@@ -2186,19 +2244,7 @@ function renderList(): void {
     }
     listEl.style.height = `${top}px`;
 
-    const contentRight =
-      getMarginNotesContentRight() ||
-      (() => {
-        const hashEl = document.querySelector(
-          "[data-oddity-hash]",
-        ) as HTMLElement | null;
-        return hashEl
-          ? hashEl.getBoundingClientRect().right
-          : window.innerWidth * 0.7;
-      })();
-    const availableWidth = window.innerWidth - contentRight - 16 - 20;
-    const panelWidth = Math.min(300, Math.max(134, availableWidth));
-    containerEl?.style.setProperty("--panel-width", `${panelWidth}px`);
+    containerEl?.style.setProperty("--panel-width", "300px");
   });
 }
 
@@ -2245,11 +2291,12 @@ function updateModeTogglePosition(): void {
   const marginLeft = 8;
   const marginRight = contentLeft - 16;
   const availableWidth = marginRight - marginLeft;
+  modeToggleHostEl.style.visibility = "";
   if (availableWidth < 80) {
-    modeToggleHostEl.style.visibility = "hidden";
+    // Not enough room in the left margin — pin to left edge
+    modeToggleHostEl.style.left = `${marginLeft}px`;
     return;
   }
-  modeToggleHostEl.style.visibility = "";
   const marginCenter = (marginLeft + marginRight) / 2;
   const left = marginCenter - TOGGLE_OVERLAY_WIDTH / 2;
   modeToggleHostEl.style.left = `${Math.max(marginLeft, left)}px`;
@@ -2328,10 +2375,11 @@ const TOGGLE_OVERLAY_CSS = `
     display: grid;
     grid-template-columns: 1fr 1fr;
     padding: 4px;
-    background: #2a2a2a;
+    background: #292929;
     border-radius: 12px;
     position: relative;
     cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
   }
 
   .mode-slider {
@@ -2340,11 +2388,12 @@ const TOGGLE_OVERLAY_CSS = `
     left: 4px;
     width: calc(50% - 4px);
     height: calc(100% - 8px);
-    background: #404040;
+    background: #434343;
     border-radius: 9px;
     transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
     pointer-events: none;
     z-index: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08);
   }
 
   .mode-toggle[data-active="depth"] .mode-slider {
@@ -2356,9 +2405,9 @@ const TOGGLE_OVERLAY_CSS = `
     padding: 7px 18px;
     text-align: center;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 400;
     font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
-    color: #888;
+    color: #787A7D;
     background: transparent;
     border: none;
     border-radius: 9px;
@@ -2370,18 +2419,18 @@ const TOGGLE_OVERLAY_CSS = `
   }
 
   .mode-active {
-    color: #fff;
+    color: #FFFFFF;
   }
 
   .mode-btn:hover:not(.mode-active) {
-    color: #bbb;
+    color: #FFFFFF;
   }
 
-  :host([data-theme="light"]) .mode-toggle  { background: #e8e8e8; }
-  :host([data-theme="light"]) .mode-slider  { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  :host([data-theme="light"]) .mode-btn     { color: #888; }
-  :host([data-theme="light"]) .mode-active  { color: #333; }
-  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { color: #555; }
+  :host([data-theme="light"]) .mode-toggle  { background: #E6E6E6; box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08); }
+  :host([data-theme="light"]) .mode-slider  { background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08); }
+  :host([data-theme="light"]) .mode-btn     { color: #858E97; }
+  :host([data-theme="light"]) .mode-active  { color: #696F77; }
+  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { color: #696F77; }
 `;
 
 const ARGUMENTS_BOX_CSS = `
@@ -2404,6 +2453,7 @@ const ARGUMENTS_BOX_CSS = `
     align-items: flex-end;
     gap: 0;
     pointer-events: none;
+    overflow: visible;
   }
 
   /* ── Toggle bar (top-left, outside the panel) ── */
@@ -2415,10 +2465,12 @@ const ARGUMENTS_BOX_CSS = `
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
-    align-self: flex-start;
-    margin-bottom: -28px;
-    position: relative;
+    position: absolute;
+    top: 0px;
+    left: 20px;
     z-index: 3;
+    transform: scale(0.81);
+    transform-origin: left center;
   }
 
   .args-toggle-bar.visible {
@@ -2439,7 +2491,7 @@ const ARGUMENTS_BOX_CSS = `
     pointer-events: auto;
     overflow: visible;
     position: relative;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     cursor: pointer;
@@ -2463,14 +2515,14 @@ const ARGUMENTS_BOX_CSS = `
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     z-index: 0;
     pointer-events: none;
   }
 
-  .args-container:not(.expanded):hover {
+  .args-container:not(.expanded):not(.oddity-not-enabled):hover {
     transform: scale(1.08);
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
     transition:
@@ -2492,7 +2544,7 @@ const ARGUMENTS_BOX_CSS = `
     height: calc(100vh - 90px + 32px);
     border-radius: 16px;
     box-shadow: none;
-    border: 2px solid rgba(231, 231, 231, 0.5);
+    border: 1px solid #363636;
     cursor: default;
     background: transparent;
     backdrop-filter: none;
@@ -2529,6 +2581,11 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-container.expanded .args-resize-handle {
     display: block;
+  }
+
+  .args-container.oddity-not-enabled .args-resize-handle,
+  .args-container.dashboard .args-resize-handle {
+    display: none;
   }
 
   :host([data-theme="light"]) .args-resize-handle::after {
@@ -2693,7 +2750,7 @@ const ARGUMENTS_BOX_CSS = `
   /* ── Toggle bar ── */
 
   .args-enabled-label {
-    font-size: 13px;
+    font-size: 12px;
     color: rgba(255, 255, 255, 0.7);
     font-family: system-ui, -apple-system, sans-serif;
   }
@@ -2705,8 +2762,8 @@ const ARGUMENTS_BOX_CSS = `
   .args-panel-toggle-slider {
     display: inline-block;
     position: relative;
-    width: 36px;
-    height: 21px;
+    width: 32px;
+    height: 19px;
     background: rgba(255, 255, 255, 0.25);
     border-radius: 100px;
     cursor: pointer;
@@ -2717,10 +2774,10 @@ const ARGUMENTS_BOX_CSS = `
   .args-panel-toggle-slider::after {
     content: '';
     position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 15px;
-    height: 15px;
+    top: 2.5px;
+    left: 2.5px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: #fff;
     transition: transform 0.2s;
@@ -2732,7 +2789,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-panel-toggle-input:checked + .args-panel-toggle-slider::after {
-    transform: translateX(15px);
+    transform: translateX(13px);
   }
 
   /* ── Purpose section ── */
@@ -2746,17 +2803,16 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-purpose-label {
-    font-size: 11px;
+    font-size: 9.5px;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.5);
     font-family: system-ui, -apple-system, sans-serif;
     letter-spacing: 0.04em;
-    text-transform: uppercase;
   }
 
   .args-purpose-input {
     all: unset;
-    font-size: 12.5px;
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.85);
     font-family: system-ui, -apple-system, sans-serif;
     line-height: 1.5;
@@ -2796,7 +2852,7 @@ const ARGUMENTS_BOX_CSS = `
     left: 50%;
     transform: translateX(-50%);
     width: calc(100% - 32px);
-    background: rgba(40, 40, 50, 0.82);
+    background: rgba(255, 255, 255, 0.07);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 6.5px;
@@ -2806,14 +2862,14 @@ const ARGUMENTS_BOX_CSS = `
     line-height: 1.45;
     color: #FFFFFF;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+    box-shadow: 0 1.5px 6px rgba(0,0,0,0.09), 0 0.5px 1.5px rgba(0,0,0,0.06);
     transition: box-shadow 0.2s;
     box-sizing: border-box;
     flex-shrink: 0;
   }
 
   .arg-card:hover {
-    box-shadow: 0 3px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
   }
 
   .arg-card.expanded {
@@ -2835,7 +2891,7 @@ const ARGUMENTS_BOX_CSS = `
     font-size: var(--oddity-note-size);
     font-weight: 900;
     letter-spacing: normal;
-    color: #59709E;
+    color: #748DBF;
     margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
@@ -2935,7 +2991,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: #59709E;
+    background: #748DBF;
     color: #fff;
     font-size: 13px;
     display: flex;
@@ -2975,7 +3031,7 @@ const ARGUMENTS_BOX_CSS = `
     font-weight: 450;
     padding: 4px 10px;
     border-radius: 100px;
-    background: #59709E;
+    background: #748DBF;
     color: #fff;
     opacity: 1;
     transition: opacity 0.15s;
@@ -2989,6 +3045,12 @@ const ARGUMENTS_BOX_CSS = `
   .arg-card .note-feedback-pill.active {
     opacity: 1;
   }
+
+  /* ── Icon theme switching for argument cards ── */
+  .icon-light { display: none; }
+  .icon-dark { display: inline-flex; }
+  :host([data-theme="light"]) .icon-light { display: inline-flex; }
+  :host([data-theme="light"]) .icon-dark { display: none; }
 
   .arg-card .note-icon-btn {
     all: unset;
@@ -3049,7 +3111,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .arg-card .note-save-btn {
-    background: #59709E;
+    background: #748DBF;
     color: #fff;
     opacity: 0.8;
   }
@@ -3155,7 +3217,8 @@ const ARGUMENTS_BOX_CSS = `
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
-    padding: 16px 14px 24px;
+    padding: 0px 14px 14px;
+    padding-top: 10px;
     flex-shrink: 0;
   }
 
@@ -3166,13 +3229,14 @@ const ARGUMENTS_BOX_CSS = `
     background: #363636;
     color: #fff;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 400;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     text-align: center;
     border-radius: 100px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background 0.15s, box-shadow 0.15s;
     box-sizing: border-box;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1);
   }
 
   .args-sketch-btn:hover {
@@ -3181,7 +3245,7 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-footer-text {
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.6);
+    color: #FFFFFF;
     cursor: pointer;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-weight: 400;
@@ -3190,7 +3254,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-footer-text:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255, 255, 255, 0.7);
   }
 
   /* ── Close button (top-center, slides in from above) ── */
@@ -3250,10 +3314,15 @@ const ARGUMENTS_BOX_CSS = `
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    border-color: #E7E7E7;
+  }
+
+  :host([data-theme="light"]) .args-container.expanded::after {
+    background: rgba(255, 255, 255, 0.3);
   }
 
   :host([data-theme="light"]) .args-main-title {
-    color: #1a1a1a;
+    color: #748DBF;
   }
 
   :host([data-theme="light"]) .args-header-icon-btn {
@@ -3311,7 +3380,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .arg-card-header {
-    color: #59709e;
+    color: #748DBF;
   }
 
   :host([data-theme="light"]) .arg-card-body {
@@ -3349,17 +3418,90 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .args-footer-text {
-    color: rgba(0, 0, 0, 0.5);
+    color: #363636;
   }
 
   :host([data-theme="light"]) .args-footer-text:hover {
-    color: rgba(0, 0, 0, 0.8);
+    color: #1a1a1a;
   }
 
-  /* ── Not-enabled state (red button) ── */
+  :host([data-theme="light"]) .args-sketch-btn {
+    background: #748DBF;
+    color: #fff;
+  }
 
-  .args-container.oddity-not-enabled:not(.expanded) {
-    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #ef4444;
+  :host([data-theme="light"]) .args-sketch-btn:hover {
+    background: #6580B0;
+  }
+
+  /* ── Not-enabled state (no colored stroke) ── */
+
+  .args-container.oddity-not-enabled.expanded {
+    height: calc((100vh - 58px) * 0.5 + 32px);
+    width: 225px;
+  }
+
+  /* ── Enable-site bubble (speech bubble to the left of collapsed button) ── */
+
+  .args-enable-bubble {
+    display: none;
+    position: absolute;
+    right: 20px;
+    bottom: calc(100% + 8px);
+    white-space: nowrap;
+    padding: 14px 22px;
+    background: #fff;
+    color: #393939;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.4;
+    font-family: system-ui, -apple-system, sans-serif;
+    border-radius: 16px;
+    pointer-events: auto;
+    z-index: 3;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .args-enable-bubble-close {
+    all: unset;
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+
+  .args-enable-bubble-close:hover {
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+  }
+
+  .args-enable-bubble-text {
+    color: #393939;
+  }
+
+  .args-enable-bubble-link {
+    color: #393939;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .args-enable-bubble-link:hover {
+    color: #000;
+  }
+
+  .args-container.oddity-not-enabled:not(.expanded) .args-enable-bubble {
+    display: block;
   }
 
   /* ── Not-enabled overlay panel ── */
@@ -3400,8 +3542,8 @@ const ARGUMENTS_BOX_CSS = `
     flex: 1;
     display: block;
     padding: 11px 12px;
-    background: #22c55e;
-    color: #fff;
+    background: #363636;
+    color: #ffffff;
     font-size: 13px;
     font-weight: 500;
     font-family: system-ui, -apple-system, sans-serif;
@@ -3413,7 +3555,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-run-btn:hover {
-    background: #16a34a;
+    background: #4a4a4a;
   }
 
   .args-run-btn--secondary {
@@ -3459,14 +3601,14 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .args-container.dashboard {
-    height: 440px;
+    height: min(440px, calc(100vh - 60px));
   }
 
   /* ── Dashboard state ── */
 
   .args-container.dashboard {
     width: 290px;
-    height: 440px;
+    height: min(440px, calc(100vh - 60px));
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: #fff;

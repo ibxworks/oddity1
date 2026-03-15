@@ -37,10 +37,10 @@ const toast = document.getElementById('toast')!;
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   annotation_mode: 'overview',
-  depth_personality: 'terry',
+  depth_personality: 'jerry',
   visible_types: [...ALL_OVERVIEW_TYPES, 'user_written'],
   enabled_sites: [],
-  annotation_font: 'default',
+  annotation_font: 'fraunces',
   annotation_font_size: 'default',
 };
 
@@ -52,7 +52,7 @@ async function init(): Promise<void> {
   if (stored['preferences']) {
     const prefs = stored['preferences'] as UserPreferences;
     // Migrate renamed personality: gary → sally
-    let personality = prefs.depth_personality ?? 'terry';
+    let personality = prefs.depth_personality ?? 'jerry';
     if (personality === ('gary' as DepthPersonality)) personality = 'sally';
     currentPrefs = {
       enabled: prefs.enabled ?? true,
@@ -60,7 +60,7 @@ async function init(): Promise<void> {
       depth_personality: personality,
       visible_types: prefs.visible_types ?? [...ALL_OVERVIEW_TYPES, 'user_written'],
       enabled_sites: prefs.enabled_sites ?? [],
-      annotation_font: prefs.annotation_font ?? 'default',
+      annotation_font: prefs.annotation_font ?? 'fraunces',
       annotation_font_size: prefs.annotation_font_size ?? 'default',
     };
   }

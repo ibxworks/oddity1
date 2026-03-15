@@ -32,13 +32,13 @@ describe("@oddity/shared exports", () => {
     // 5 overview + 12 depth + 1 user_written = 18, but consequence overlaps so unique keys = 17
     const keys = Object.keys(shared.ANNOTATION_COLORS);
     expect(keys.length).toBeGreaterThanOrEqual(17);
-    expect(shared.ANNOTATION_COLORS.core_claim).toBe("#F5C842");
-    expect(shared.ANNOTATION_COLORS.evidence).toBe("#F5C842");
-    expect(shared.ANNOTATION_COLORS.outcome).toBe("#F5C842");
+    expect(shared.ANNOTATION_COLORS.core_claim).toBe("#FFDD69");
+    expect(shared.ANNOTATION_COLORS.evidence).toBe("#FFDD69");
+    expect(shared.ANNOTATION_COLORS.outcome).toBe("#FFDD69");
     expect(shared.ANNOTATION_COLORS.caveat).toBe("#F5574C");
-    expect(shared.ANNOTATION_COLORS.insight).toBe("#50B87A");
-    expect(shared.ANNOTATION_COLORS.vocabulary).toBe("#50B87A");
-    expect(shared.ANNOTATION_COLORS.user_written).toBe("#A1927B");
+    expect(shared.ANNOTATION_COLORS.insight).toBe("#578E6C");
+    expect(shared.ANNOTATION_COLORS.vocabulary).toBe("#578E6C");
+    expect(shared.ANNOTATION_COLORS.user_written).toBe("#748DBF");
   });
 
   it("exports annotation labels for all types", () => {
