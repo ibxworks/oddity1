@@ -6,11 +6,11 @@ export const annotationPluginKey = new PluginKey('annotations');
 // Visual styles matching extension/renderer/styles.ts
 const TYPE_STYLES = {
   highlight:          { bg: '#FFDD6926', underline: '1.5px solid #FFDD69' },
-  recall:             { bg: '#243C6199', underline: '1.5px solid #5B8AC5' },
+  recall:             { bg: '#50B87A26', underline: '1.5px solid #50B87A' },
   provoking_question: { bg: '#F5574C26', underline: '1.5px solid #F5574C' },
-  insight:            { bg: '#2D7A4F4d', underline: '1.5px solid #BFF3D3' },
+  insight:            { bg: '#50B87A26', underline: '1.5px solid #50B87A' },
   caveat:             { bg: '#F5574C26', underline: '1.5px solid #F5574C' },
-  vocabulary:         { bg: '#243C6199', underline: '1.5px solid #5B8AC5' },
+  vocabulary:         { bg: '#50B87A26', underline: '1.5px solid #50B87A' },
 };
 
 function buildDecorations(doc, annotations) {

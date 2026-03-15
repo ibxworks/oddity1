@@ -505,6 +505,8 @@ export function initArgumentsBox(): void {
     e.stopPropagation();
     const en = panelToggleInput!.checked;
     panelToggleLabelEl!.textContent = en ? "On" : "Off";
+    extensionEnabled = en;
+    containerEl?.classList.toggle("oddity-enabled", en);
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
       chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
@@ -536,7 +538,7 @@ export function initArgumentsBox(): void {
       const stored = await chrome.storage.local.get("hadAccount");
       showAuthView(stored["hadAccount"] ? "signin" : "signup");
     } else {
-      // Authenticated — mark red stroke if site not whitelisted (even if extension is off)
+      // Authenticated — check if site is whitelisted
       const prefsStored = await chrome.storage.local.get("preferences");
       const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
       const hostname = window.location.hostname.replace(/^www\./, "");
@@ -611,6 +613,14 @@ export function setArgumentsBoxEnabled(enabled: boolean): void {
 export function setArgumentsBoxDimmed(isDimmed: boolean): void {
   dimmed = isDimmed;
   containerEl?.classList.toggle("oddity-not-enabled", isDimmed);
+  if (isDimmed) {
+    // Site not enabled → show as OFF (no green stroke, toggle off)
+    containerEl?.classList.remove("oddity-enabled");
+    if (panelToggleInput) panelToggleInput.checked = false;
+    if (panelToggleLabelEl) panelToggleLabelEl.textContent = "Off";
+    if (dashToggleInput) dashToggleInput.checked = false;
+    if (dashToggleLabelEl) dashToggleLabelEl.textContent = "Off";
+  }
   updateModeToggleVisibility();
 }
 
@@ -632,7 +642,7 @@ export function updateArgumentsBoxStyle(
 ): void {
   const host = shadowRoot?.host as HTMLElement;
   if (!host) return;
-  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "default"]);
+  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "fraunces"]);
   host.style.setProperty("--oddity-note-size", SIZE_MAP[fontSize ?? "default"]);
   renderList(); // re-layout since sizes changed
 }
@@ -693,7 +703,7 @@ export async function handleRemoteSignIn(user: {
     Array.isArray(enabledSites) &&
     enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
   if (!siteEnabled) {
-    // Collapse to button with red stroke — don't auto-expand the "not enabled" panel
+    // Collapse to button — don't auto-expand the "not enabled" panel
     dimmed = true;
     containerEl?.classList.add("oddity-not-enabled");
     updateModeToggleVisibility();
@@ -1093,6 +1103,8 @@ function buildDashboardFace(): HTMLDivElement {
     if (dashToggleLabelEl) dashToggleLabelEl.textContent = en ? "On" : "Off";
     if (panelToggleInput) panelToggleInput.checked = en;
     if (panelToggleLabelEl) panelToggleLabelEl.textContent = en ? "On" : "Off";
+    extensionEnabled = en;
+    containerEl?.classList.toggle("oddity-enabled", en);
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
       chrome.storage.local.set({ preferences: { ...prefs, enabled: en } });
@@ -1185,7 +1197,7 @@ function buildDashboardFace(): HTMLDivElement {
     const btn = document.createElement("button");
     btn.className =
       "args-dash-density-btn" +
-      (value === "terry" ? " args-dash-density-active" : "");
+      (value === "jerry" ? " args-dash-density-active" : "");
     btn.dataset.intensity = value;
     btn.textContent = label;
     btn.addEventListener("click", () => {
@@ -1623,7 +1635,7 @@ function buildDashboardFace(): HTMLDivElement {
 async function loadDashboardPrefs(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-  const personality = (prefs.depth_personality as string) ?? "terry";
+  const personality = (prefs.depth_personality as string) ?? "jerry";
   dashDensityBtns.forEach((btn) => {
     btn.classList.toggle(
       "args-dash-density-active",
@@ -1631,7 +1643,7 @@ async function loadDashboardPrefs(): Promise<void> {
     );
   });
   if (dashFontSelect)
-    dashFontSelect.value = (prefs.annotation_font as string) ?? "default";
+    dashFontSelect.value = (prefs.annotation_font as string) ?? "fraunces";
   if (dashFontSizeSelect)
     dashFontSizeSelect.value =
       (prefs.annotation_font_size as string) ?? "default";
@@ -1643,7 +1655,7 @@ async function loadDashboardPrefs(): Promise<void> {
       | import("@oddity/shared").AnnotationFontSize
       | undefined,
   );
-  const persona = (prefs.persona as string) ?? "Terry";
+  const persona = (prefs.persona as string) ?? "Jerry";
   if (dashPersonaSelect) dashPersonaSelect.value = persona;
   if (dashPersonaAvatarImgEl) {
     dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
@@ -1652,9 +1664,14 @@ async function loadDashboardPrefs(): Promise<void> {
   if (dashPersonaCircleEl)
     dashPersonaCircleEl.style.background =
       persona === "Jerry" ? "#FDCB24" : "#fff";
-  const enabled = prefs.enabled !== false;
+  // If the site is not enabled (dimmed), force toggle to OFF
+  const enabled = dimmed ? false : prefs.enabled !== false;
   if (dashToggleInput) dashToggleInput.checked = enabled;
   if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (panelToggleInput) panelToggleInput.checked = enabled;
+  if (panelToggleLabelEl) panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  extensionEnabled = enabled;
+  containerEl?.classList.toggle("oddity-enabled", enabled);
 }
 
 async function loadDashboardData(): Promise<void> {
@@ -3356,11 +3373,7 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(0, 0, 0, 0.8);
   }
 
-  /* ── Not-enabled state (red button) ── */
-
-  .args-container.oddity-not-enabled:not(.expanded) {
-    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #ef4444;
-  }
+  /* ── Not-enabled state (no colored stroke) ── */
 
   /* ── Not-enabled overlay panel ── */
 
@@ -3400,8 +3413,8 @@ const ARGUMENTS_BOX_CSS = `
     flex: 1;
     display: block;
     padding: 11px 12px;
-    background: #22c55e;
-    color: #fff;
+    background: #363636;
+    color: #ffffff;
     font-size: 13px;
     font-weight: 500;
     font-family: system-ui, -apple-system, sans-serif;
@@ -3413,7 +3426,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-run-btn:hover {
-    background: #16a34a;
+    background: #4a4a4a;
   }
 
   .args-run-btn--secondary {

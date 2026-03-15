@@ -391,7 +391,7 @@ export function updateMarginNotesStyle(
 ): void {
   const host = shadowRoot?.host as HTMLElement;
   if (!host) return;
-  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "default"]);
+  host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "fraunces"]);
   host.style.setProperty("--oddity-note-size", SIZE_MAP[fontSize ?? "default"]);
 }
 
@@ -1346,12 +1346,6 @@ const MARGIN_NOTES_CSS = `
     color: #293038;
   }
 
-  /* Vocab and recall label color override */
-  [data-annotation-type="vocabulary"] .note-label,
-  [data-annotation-type="recall"] .note-label {
-    color: #779EDA !important;
-  }
-
   /* Icon buttons */
   .note-icon-btn {
     all: unset;
@@ -1502,19 +1496,6 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="light"]) .note-user-badge {
     color: rgba(41, 48, 56, 0.6);
-  }
-
-  :host([data-theme="light"]) [data-annotation-type="core_claim"] .note-label {
-    color: #4A90D9 !important;
-  }
-
-  :host([data-theme="light"]) [data-annotation-type="recall"] .note-label,
-  :host([data-theme="light"]) [data-annotation-type="vocabulary"] .note-label {
-    color: #243C61 !important;
-  }
-
-  :host([data-theme="light"]) [data-annotation-type="insight"] .note-label {
-    color: #70AC87 !important;
   }
 
   :host([data-theme="light"].has-dimmed) .oddity-note.expanded {

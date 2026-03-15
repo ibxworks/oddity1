@@ -109,7 +109,7 @@ let blocked = false;
 
 let enabled = true;
 let currentMode: AnnotationMode = "overview";
-let currentPersonality: DepthPersonality = "terry";
+let currentPersonality: DepthPersonality = "jerry";
 let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;

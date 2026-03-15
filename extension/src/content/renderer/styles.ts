@@ -49,11 +49,11 @@ const visualMap: Partial<Record<AnnotationType, AnnotationVisual>> = {
   perspective: makeVisual("perspective"),
 
   // ── Depth types (enrichment) ──
-  insight: makeVisual("insight", { bgOpacity: "4d" }),
-  recall: makeVisual("recall", { bgOpacity: "99", underlineColor: "#5B8AC5" }),
+  insight: makeVisual("insight"),
+  recall: makeVisual("recall"),
   study: makeVisual("study"),
   translation: makeVisual("translation"),
-  vocabulary: makeVisual("vocabulary", { bgOpacity: "99", underlineColor: "#5B8AC5" }),
+  vocabulary: makeVisual("vocabulary"),
 
   // ── User-written ──
   user_written: makeVisual("user_written"),
