@@ -1,5 +1,6 @@
 import type { Annotation } from '@oddity/shared';
 import { getVisual } from './styles.js';
+import { getThemeMode } from './theme-detector.js';
 
 const ATTR = 'data-oddity-id';
 
@@ -90,7 +91,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     const span = document.createElement('span');
     span.setAttribute(ATTR, annotation.id);
     span.setAttribute('data-oddity-type', annotation.type);
-    const visual = getVisual(annotation.type);
+    const visual = getVisual(annotation.type, getThemeMode());
     let bgColor = visual.backgroundColor;
     let underlineStyle = visual.underlineStyle;
     const bgCss = bgColor ? `background-color: ${bgColor};` : '';

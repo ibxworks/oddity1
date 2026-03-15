@@ -38,7 +38,7 @@ describe("@oddity/shared exports", () => {
     expect(shared.ANNOTATION_COLORS.caveat).toBe("#F5574C");
     expect(shared.ANNOTATION_COLORS.insight).toBe("#50B87A");
     expect(shared.ANNOTATION_COLORS.vocabulary).toBe("#50B87A");
-    expect(shared.ANNOTATION_COLORS.user_written).toBe("#A1927B");
+    expect(shared.ANNOTATION_COLORS.user_written).toBe("#59709E");
   });
 
   it("exports annotation labels for all types", () => {

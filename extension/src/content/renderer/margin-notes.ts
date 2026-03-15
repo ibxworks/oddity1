@@ -5,7 +5,7 @@ import type {
   AnnotationFontSize,
   AnnotationType,
 } from "@oddity/shared";
-import { ANNOTATION_COLORS, ANNOTATION_LABELS } from "@oddity/shared";
+import { ANNOTATION_LABELS, getAnnotationColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
 import { removeAnchors } from "./anchors.js";
 import {
@@ -404,7 +404,7 @@ function createNoteElement(
   onDelete?: (annotationId: string) => void,
   contentHash = "",
 ): HTMLDivElement {
-  const color = ANNOTATION_COLORS[annotation.type];
+  const color = getAnnotationColor(annotation.type, getThemeMode());
   const label = ANNOTATION_LABELS[annotation.type];
   const isManual = annotation.id.startsWith("manual-");
 
@@ -1277,7 +1277,7 @@ const MARGIN_NOTES_CSS = `
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: var(--note-color, #c4913a);
+    background: var(--note-color, #748DBF);
     color: #fff;
     font-size: 13px;
     display: flex;

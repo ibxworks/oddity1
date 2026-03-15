@@ -104,6 +104,41 @@ export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
   user_written: "#59709E",
 };
 
+// ─── Light-mode overrides ───
+
+export const ANNOTATION_COLORS_LIGHT: Record<AnnotationType, string> = {
+  // Overview — muted gold
+  core_claim: "#DCAF16",
+  evidence: "#DCAF16",
+  outcome: "#DCAF16",
+  background: "#DCAF16",
+  transition: "#DCAF16",
+  // Critical — red (unchanged)
+  caveat: "#F5574C",
+  counterargument: "#F5574C",
+  alternative: "#F5574C",
+  fallacy: "#F5574C",
+  criteria: "#F5574C",
+  perspective: "#F5574C",
+  consequence: "#F5574C",
+  // Enrichment — muted green
+  insight: "#578E6C",
+  recall: "#578E6C",
+  study: "#578E6C",
+  translation: "#578E6C",
+  vocabulary: "#578E6C",
+  // User-written — muted blue
+  user_written: "#748DBF",
+};
+
+/** Return the correct annotation color for a given theme. */
+export function getAnnotationColor(
+  type: AnnotationType,
+  theme: "light" | "dark",
+): string {
+  return (theme === "light" ? ANNOTATION_COLORS_LIGHT : ANNOTATION_COLORS)[type] ?? "#888";
+}
+
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
   ...OVERVIEW_LABELS,
   ...DEPTH_LABELS,

@@ -1,5 +1,7 @@
 import type { AnnotationType } from '@oddity/shared';
-import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '@oddity/shared';
+import { ANNOTATION_LABELS, getAnnotationColor } from '@oddity/shared';
+
+export type ThemeMode = 'light' | 'dark';
 
 export type AnnotationVisual = {
   type: AnnotationType;
@@ -11,14 +13,15 @@ export type AnnotationVisual = {
 };
 
 /**
- * Helper to build a consistent visual entry for any annotation type.
- * Uses the unified ANNOTATION_COLORS/LABELS constants.
+ * Build a visual entry for an annotation type, using the correct
+ * color set for the given theme.
  */
 function makeVisual(
   type: AnnotationType,
+  theme: ThemeMode,
   opts?: { bgOpacity?: string; underlineColor?: string },
 ): AnnotationVisual {
-  const color = ANNOTATION_COLORS[type] ?? "#888";
+  const color = getAnnotationColor(type, theme);
   const bgOpacity = opts?.bgOpacity ?? "26"; // 15% default
   const underlineColor = opts?.underlineColor ?? color;
 
@@ -32,33 +35,6 @@ function makeVisual(
   };
 }
 
-const visualMap: Partial<Record<AnnotationType, AnnotationVisual>> = {
-  // ── Overview labels ──
-  core_claim: makeVisual("core_claim"),
-  evidence: makeVisual("evidence"),
-  outcome: makeVisual("outcome"),
-  background: makeVisual("background"),
-  transition: makeVisual("transition"),
-
-  // ── Depth types (critical) ──
-  caveat: makeVisual("caveat"),
-  counterargument: makeVisual("counterargument"),
-  alternative: makeVisual("alternative"),
-  fallacy: makeVisual("fallacy"),
-  criteria: makeVisual("criteria"),
-  perspective: makeVisual("perspective"),
-
-  // ── Depth types (enrichment) ──
-  insight: makeVisual("insight"),
-  recall: makeVisual("recall"),
-  study: makeVisual("study"),
-  translation: makeVisual("translation"),
-  vocabulary: makeVisual("vocabulary"),
-
-  // ── User-written ──
-  user_written: makeVisual("user_written"),
-};
-
 const fallbackVisual: AnnotationVisual = {
   type: "user_written",
   backgroundColor: "#88888826",
@@ -68,6 +44,6 @@ const fallbackVisual: AnnotationVisual = {
   color: "#888",
 };
 
-export function getVisual(type: AnnotationType): AnnotationVisual {
-  return visualMap[type] ?? fallbackVisual;
+export function getVisual(type: AnnotationType, theme: ThemeMode = 'dark'): AnnotationVisual {
+  return makeVisual(type, theme) ?? fallbackVisual;
 }

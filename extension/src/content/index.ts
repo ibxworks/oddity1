@@ -70,6 +70,28 @@ import {
 import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
 import { createStabilityWatcher } from "./stability.js";
 
+// ─── Extension context guard ───
+// After extension reload/update, content scripts lose access to chrome.* APIs.
+// Catch these errors globally so they don't surface as uncaught exceptions.
+
+const _contextInvalidRe = /Extension context invalidated/;
+
+window.addEventListener("error", (e) => {
+  if (_contextInvalidRe.test(e.message)) {
+    e.preventDefault();
+  }
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e.reason;
+  if (
+    reason instanceof Error &&
+    _contextInvalidRe.test(reason.message)
+  ) {
+    e.preventDefault();
+  }
+});
+
 // ─── State ───
 
 const annotatedRegions = new Set<string>();

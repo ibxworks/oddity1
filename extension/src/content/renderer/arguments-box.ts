@@ -7,7 +7,6 @@ import type {
 
 import {
   getMarginNotesContentLeft,
-  getMarginNotesContentRight,
 } from "./margin-notes.js";
 import {
   getThemeMode,
@@ -2241,19 +2240,7 @@ function renderList(): void {
     }
     listEl.style.height = `${top}px`;
 
-    const contentRight =
-      getMarginNotesContentRight() ||
-      (() => {
-        const hashEl = document.querySelector(
-          "[data-oddity-hash]",
-        ) as HTMLElement | null;
-        return hashEl
-          ? hashEl.getBoundingClientRect().right
-          : window.innerWidth * 0.7;
-      })();
-    const availableWidth = window.innerWidth - contentRight - 16 - 20;
-    const panelWidth = Math.min(300, Math.max(134, availableWidth));
-    containerEl?.style.setProperty("--panel-width", `${panelWidth}px`);
+    containerEl?.style.setProperty("--panel-width", "300px");
   });
 }
 
@@ -3313,7 +3300,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .args-main-title {
-    color: #1a1a1a;
+    color: #748DBF;
   }
 
   :host([data-theme="light"]) .args-header-icon-btn {
@@ -3371,7 +3358,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .arg-card-header {
-    color: #59709e;
+    color: #748DBF;
   }
 
   :host([data-theme="light"]) .arg-card-body {
@@ -3414,6 +3401,15 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .args-footer-text:hover {
     color: rgba(0, 0, 0, 0.8);
+  }
+
+  :host([data-theme="light"]) .args-sketch-btn {
+    background: #748DBF;
+    color: #fff;
+  }
+
+  :host([data-theme="light"]) .args-sketch-btn:hover {
+    background: #6580B0;
   }
 
   /* ── Not-enabled state (no colored stroke) ── */
