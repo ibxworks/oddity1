@@ -74,6 +74,7 @@ let listDragUpHandler: (() => void) | null = null;
 
 let manualRunCb: (() => void) | null = null;
 let notEnabledPanelEl: HTMLDivElement | null = null;
+let enableBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
@@ -436,6 +437,34 @@ export function initArgumentsBox(): void {
   });
   containerEl.appendChild(closeBtnEl);
 
+  // ── Enable-site bubble (visible when collapsed & not-enabled) ──
+  enableBubbleEl = document.createElement("div");
+  enableBubbleEl.className = "args-enable-bubble";
+  enableBubbleEl.addEventListener("click", (e) => e.stopPropagation());
+
+  const bubbleTextWrapper = document.createElement("span");
+  bubbleTextWrapper.className = "args-enable-bubble-text";
+  bubbleTextWrapper.innerHTML = `<a class="args-enable-bubble-link">Click here</a> to enable Oddity 1 `;
+
+  const bubbleLink = bubbleTextWrapper.querySelector(".args-enable-bubble-link")!;
+  bubbleLink.addEventListener("click", (e) => {
+    e.stopPropagation();
+    enableBubbleEl?.remove();
+    if (dimmed) toggleDimmedPanel();
+  });
+
+  const bubbleClose = document.createElement("button");
+  bubbleClose.className = "args-enable-bubble-close";
+  bubbleClose.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  bubbleClose.addEventListener("click", (e) => {
+    e.stopPropagation();
+    enableBubbleEl?.remove();
+  });
+
+  enableBubbleEl.appendChild(bubbleTextWrapper);
+  enableBubbleEl.appendChild(bubbleClose);
+  containerEl.appendChild(enableBubbleEl);
+
   // ── Resize handle (top-left corner, visible only when expanded) ──
   const resizeHandle = document.createElement("div");
   resizeHandle.className = "args-resize-handle";
@@ -792,6 +821,7 @@ export function destroyArgumentsBox(): void {
   manualRunCb = null;
   notEnabledPanelEl = null;
   blockedPanelEl = null;
+  enableBubbleEl = null;
   canonicalItems = [];
   liveItems = [];
 }
@@ -919,6 +949,7 @@ function showBlockedOverlay(): void {
 }
 
 function toggleDimmedPanel(): void {
+  enableBubbleEl?.remove();
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
   if (!expanded) {
@@ -2494,7 +2525,7 @@ const ARGUMENTS_BOX_CSS = `
     pointer-events: none;
   }
 
-  .args-container:not(.expanded):hover {
+  .args-container:not(.expanded):not(.oddity-not-enabled):hover {
     transform: scale(1.08);
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
     transition:
@@ -3390,6 +3421,69 @@ const ARGUMENTS_BOX_CSS = `
   .args-container.oddity-not-enabled.expanded {
     height: calc((100vh - 58px) * 0.5 + 32px);
     width: 225px;
+  }
+
+  /* ── Enable-site bubble (speech bubble to the left of collapsed button) ── */
+
+  .args-enable-bubble {
+    display: none;
+    position: absolute;
+    right: 20px;
+    bottom: calc(100% + 8px);
+    white-space: nowrap;
+    padding: 14px 22px;
+    background: #fff;
+    color: #393939;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.4;
+    font-family: system-ui, -apple-system, sans-serif;
+    border-radius: 16px;
+    pointer-events: auto;
+    z-index: 3;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .args-enable-bubble-close {
+    all: unset;
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+
+  .args-enable-bubble-close:hover {
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+  }
+
+  .args-enable-bubble-text {
+    color: #393939;
+  }
+
+  .args-enable-bubble-link {
+    color: #393939;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .args-enable-bubble-link:hover {
+    color: #000;
+  }
+
+  .args-container.oddity-not-enabled:not(.expanded) .args-enable-bubble {
+    display: block;
   }
 
   /* ── Not-enabled overlay panel ── */
