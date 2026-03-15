@@ -11,7 +11,7 @@ import { getThemeMode } from './renderer/theme-detector.js';
 
 // ─── Theme Color Maps ───
 
-const ACCENT = '#A1927B';
+const ACCENT = '#59709E';
 
 const LIGHT_COLORS = {
   cardBg: 'rgba(255,255,255,0.35)',
@@ -51,6 +51,7 @@ let currentRange: Range | null = null;
 let selectionChangeListener: (() => void) | null = null;
 let escapeListener: ((e: KeyboardEvent) => void) | null = null;
 let outsideClickListener: ((e: MouseEvent) => void) | null = null;
+let tempHighlightContainer: HTMLDivElement | null = null;
 
 /**
  * Initialize manual annotation creation UI.
@@ -203,6 +204,63 @@ function dismissFab(): void {
   }
 }
 
+// ─── Temporary Highlight (replaces OS selection visually) ───
+
+function applyTempHighlight(): void {
+  removeTempHighlight();
+  if (!currentRange) return;
+
+  tempHighlightContainer = document.createElement('div');
+  tempHighlightContainer.style.cssText =
+    'position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2147483645;';
+  document.body.appendChild(tempHighlightContainer);
+
+  drawTempRects();
+
+  const onScrollResize = () => requestAnimationFrame(drawTempRects);
+  window.addEventListener('scroll', onScrollResize, { passive: true, capture: true });
+  window.addEventListener('resize', onScrollResize, { passive: true });
+
+  (tempHighlightContainer as HTMLDivElement & { _cleanup?: () => void })._cleanup = () => {
+    window.removeEventListener('scroll', onScrollResize, { capture: true });
+    window.removeEventListener('resize', onScrollResize);
+  };
+}
+
+function drawTempRects(): void {
+  if (!tempHighlightContainer || !currentRange) return;
+  tempHighlightContainer.innerHTML = '';
+
+  const bgColor = ACCENT + '26'; // 15% opacity, same as annotation highlights
+  const rects = currentRange.getClientRects();
+
+  for (let i = 0; i < rects.length; i++) {
+    const rect = rects[i]!;
+    if (rect.width === 0 || rect.height === 0) continue;
+
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position: fixed;
+      left: ${rect.left}px;
+      top: ${rect.top}px;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      background-color: ${bgColor};
+      border-bottom: 1.5px solid ${ACCENT};
+      pointer-events: none;
+    `;
+    tempHighlightContainer.appendChild(el);
+  }
+}
+
+function removeTempHighlight(): void {
+  if (tempHighlightContainer) {
+    (tempHighlightContainer as HTMLDivElement & { _cleanup?: () => void })._cleanup?.();
+    tempHighlightContainer.remove();
+    tempHighlightContainer = null;
+  }
+}
+
 // ─── Annotation Editor ───
 
 function showEditor(): void {
@@ -288,6 +346,7 @@ function showEditor(): void {
     box-sizing: border-box;
     line-height: 1.4;
   `;
+  noteArea.addEventListener('focus', () => applyTempHighlight(), { once: true });
   container.appendChild(noteArea);
 
   // Buttons
@@ -345,6 +404,7 @@ function showEditor(): void {
 }
 
 function dismissEditor(): void {
+  removeTempHighlight();
   editorHost?.remove();
   editorHost = null;
   editorShadow = null;
@@ -413,6 +473,9 @@ async function handleSubmit(note: string): Promise<void> {
       pageTitle: document.title,
     },
   });
+
+  // Remove temp highlight before rendering permanent one
+  removeTempHighlight();
 
   // Render immediately
   renderManualAnnotation(annotation, root);

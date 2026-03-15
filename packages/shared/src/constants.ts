@@ -101,7 +101,7 @@ export const DEPTH_LABELS: Record<DepthType, string> = {
 export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
   ...OVERVIEW_COLORS,
   ...DEPTH_COLORS,
-  user_written: "#A1927B",
+  user_written: "#59709E",
 };
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
