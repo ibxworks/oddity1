@@ -2552,6 +2552,11 @@ const ARGUMENTS_BOX_CSS = `
     display: block;
   }
 
+  .args-container.oddity-not-enabled .args-resize-handle,
+  .args-container.dashboard .args-resize-handle {
+    display: none;
+  }
+
   :host([data-theme="light"]) .args-resize-handle::after {
     border-top-color: rgba(0, 0, 0, 0.3);
     border-left-color: rgba(0, 0, 0, 0.3);
