@@ -918,8 +918,8 @@ function showBlockedOverlay(): void {
 function toggleDimmedPanel(): void {
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
-  toggleBarEl?.classList.toggle("visible", expanded);
   if (!expanded) {
+    toggleBarEl?.classList.remove("visible");
     if (containerEl) {
       containerEl.style.height = "";
       containerEl.style.width = "";
@@ -3380,9 +3380,8 @@ const ARGUMENTS_BOX_CSS = `
   /* ── Not-enabled state (no colored stroke) ── */
 
   .args-container.oddity-not-enabled.expanded {
-    height: calc((100vh - 58px) * 0.5);
+    height: calc((100vh - 58px) * 0.5 + 32px);
     width: 225px;
-    transform: none;
   }
 
   /* ── Not-enabled overlay panel ── */
