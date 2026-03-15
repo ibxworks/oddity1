@@ -148,6 +148,10 @@ export function initArgumentsBox(): void {
   hostEl = document.createElement("oddity-arguments-box");
   hostEl.style.cssText =
     "position: fixed; bottom: 0; right: 0; z-index: 2147483647; pointer-events: none; overflow: visible;";
+  // Stop keyboard events from leaking to the host page (e.g. Claude's chat input)
+  for (const evt of ['keydown', 'keyup', 'keypress', 'input', 'beforeinput'] as const) {
+    hostEl.addEventListener(evt, (e) => e.stopPropagation());
+  }
   document.body.appendChild(hostEl);
 
   shadowRoot = hostEl.attachShadow({ mode: "closed" });
@@ -2371,10 +2375,11 @@ const TOGGLE_OVERLAY_CSS = `
     display: grid;
     grid-template-columns: 1fr 1fr;
     padding: 4px;
-    background: #2a2a2a;
+    background: #292929;
     border-radius: 12px;
     position: relative;
     cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
   }
 
   .mode-slider {
@@ -2383,11 +2388,12 @@ const TOGGLE_OVERLAY_CSS = `
     left: 4px;
     width: calc(50% - 4px);
     height: calc(100% - 8px);
-    background: #404040;
+    background: #434343;
     border-radius: 9px;
     transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
     pointer-events: none;
     z-index: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08);
   }
 
   .mode-toggle[data-active="depth"] .mode-slider {
@@ -2399,9 +2405,9 @@ const TOGGLE_OVERLAY_CSS = `
     padding: 7px 18px;
     text-align: center;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 400;
     font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
-    color: #888;
+    color: #787A7D;
     background: transparent;
     border: none;
     border-radius: 9px;
@@ -2413,18 +2419,18 @@ const TOGGLE_OVERLAY_CSS = `
   }
 
   .mode-active {
-    color: #fff;
+    color: #FFFFFF;
   }
 
   .mode-btn:hover:not(.mode-active) {
-    color: #bbb;
+    color: #FFFFFF;
   }
 
-  :host([data-theme="light"]) .mode-toggle  { background: #e8e8e8; }
-  :host([data-theme="light"]) .mode-slider  { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  :host([data-theme="light"]) .mode-btn     { color: #888; }
-  :host([data-theme="light"]) .mode-active  { color: #333; }
-  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { color: #555; }
+  :host([data-theme="light"]) .mode-toggle  { background: #E6E6E6; box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08); }
+  :host([data-theme="light"]) .mode-slider  { background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08); }
+  :host([data-theme="light"]) .mode-btn     { color: #858E97; }
+  :host([data-theme="light"]) .mode-active  { color: #696F77; }
+  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { color: #696F77; }
 `;
 
 const ARGUMENTS_BOX_CSS = `
@@ -2485,7 +2491,7 @@ const ARGUMENTS_BOX_CSS = `
     pointer-events: auto;
     overflow: visible;
     position: relative;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     cursor: pointer;
@@ -2509,7 +2515,7 @@ const ARGUMENTS_BOX_CSS = `
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     z-index: 0;
@@ -2846,7 +2852,7 @@ const ARGUMENTS_BOX_CSS = `
     left: 50%;
     transform: translateX(-50%);
     width: calc(100% - 32px);
-    background: rgba(40, 40, 50, 0.82);
+    background: rgba(255, 255, 255, 0.07);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 6.5px;
@@ -3305,6 +3311,10 @@ const ARGUMENTS_BOX_CSS = `
     border-color: #E7E7E7;
   }
 
+  :host([data-theme="light"]) .args-container.expanded::after {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
   :host([data-theme="light"]) .args-main-title {
     color: #748DBF;
   }
@@ -3585,14 +3595,14 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .args-container.dashboard {
-    height: 440px;
+    height: min(440px, calc(100vh - 60px));
   }
 
   /* ── Dashboard state ── */
 
   .args-container.dashboard {
     width: 290px;
-    height: 440px;
+    height: min(440px, calc(100vh - 60px));
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: #fff;

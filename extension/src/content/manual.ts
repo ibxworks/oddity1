@@ -314,6 +314,11 @@ function showEditor(): void {
     left: ${rangeRect.left + scrollX}px;
     top: ${rangeRect.bottom + scrollY + 8}px;
   `;
+  // Stop all keyboard events from leaking to the host page (e.g. Claude's chat input)
+  for (const evt of ['keydown', 'keyup', 'keypress', 'input', 'beforeinput'] as const) {
+    editorHost.addEventListener(evt, (e) => e.stopPropagation());
+  }
+
   document.body.appendChild(editorHost);
 
   editorShadow = editorHost.attachShadow({ mode: 'closed' });
