@@ -827,6 +827,9 @@ function showNotEnabledOverlay(): void {
   const removeOverlay = () => {
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
+    containerEl?.classList.remove("oddity-not-enabled");
+    dimmed = false;
+    toggleBarEl?.classList.add("visible");
   };
 
   const enableExtension = () => {
