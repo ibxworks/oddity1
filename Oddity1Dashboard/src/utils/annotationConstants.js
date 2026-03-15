@@ -3,11 +3,11 @@
 
 export const ANNOTATION_COLORS = {
   highlight: "#FFDD69",
-  recall: "#50B87A",
+  recall: "#578E6C",
   provoking_question: "#F5574C",
-  insight: "#50B87A",
+  insight: "#578E6C",
   caveat: "#F5574C",
-  vocabulary: "#50B87A",
+  vocabulary: "#578E6C",
 };
 
 export const ANNOTATION_LABELS = {

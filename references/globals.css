@@ -529,7 +529,7 @@ button { cursor: pointer; font-family: var(--font-b); }
 }
 
 /* Tag colors per annotation type */
-.anno-chip.highlight .anno-chip-tag { color: #DCAF16; }
+.anno-chip.highlight .anno-chip-tag { color: #FFDD69; }
 .anno-chip.insight   .anno-chip-tag { color: #70AC87; }
 .anno-chip.caveat    .anno-chip-tag { color: #F5574C; }
 .anno-chip.prov      .anno-chip-tag { color: #F5574C; }
@@ -624,8 +624,8 @@ button { cursor: pointer; font-family: var(--font-b); }
 .anno-chip.prov .ace-send    { background: #F5574C; color: #fff; }
 .anno-chip.prov .ace-quick:not(.muted) { background: #F5574C; color: #fff; }
 
-.anno-chip.highlight .ace-send    { background: #DCAF16; }
-.anno-chip.highlight .ace-quick:not(.muted) { background: #DCAF16; }
+.anno-chip.highlight .ace-send    { background: #FFDD69; }
+.anno-chip.highlight .ace-quick:not(.muted) { background: #FFDD69; }
 
 .anno-chip.vocab .ace-send    { background: #243C61; color: #fff; }
 .anno-chip.vocab .ace-quick:not(.muted) { background: #243C61; color: #fff; }
@@ -1788,10 +1788,10 @@ footer {
   letter-spacing: normal;
   text-transform: none;
   margin-bottom: 4px;
-  color: #DCAF16;
+  color: #FFDD69;
 }
 
-.prod-note-card.highlight   .prod-note-tag { color: #DCAF16; }
+.prod-note-card.highlight   .prod-note-tag { color: #FFDD69; }
 .prod-note-card.insight     .prod-note-tag { color: #70AC87; }
 .prod-note-card.provocation .prod-note-tag { color: #F5574C; }
 .prod-note-card.caveat      .prod-note-tag { color: #F5574C; }

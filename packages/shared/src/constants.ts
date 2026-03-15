@@ -47,11 +47,11 @@ export const CACHE_TTL_DAYS = 30;
 // ─── Overview Annotation Colors & Labels ───
 
 export const OVERVIEW_COLORS: Record<OverviewLabel, string> = {
-  core_claim: "#F5C842",
-  evidence: "#F5C842",
-  outcome: "#F5C842",
-  background: "#F5C842",
-  transition: "#F5C842",
+  core_claim: "#FFDD69",
+  evidence: "#FFDD69",
+  outcome: "#FFDD69",
+  background: "#FFDD69",
+  transition: "#FFDD69",
 };
 
 export const OVERVIEW_LABELS: Record<OverviewLabel, string> = {
@@ -74,11 +74,11 @@ export const DEPTH_COLORS: Record<DepthType, string> = {
   perspective: "#F5574C",
   consequence: "#F5574C",
   // Enrichment — green
-  insight: "#50B87A",
-  recall: "#50B87A",
-  study: "#50B87A",
-  translation: "#50B87A",
-  vocabulary: "#50B87A",
+  insight: "#578E6C",
+  recall: "#578E6C",
+  study: "#578E6C",
+  translation: "#578E6C",
+  vocabulary: "#578E6C",
 };
 
 export const DEPTH_LABELS: Record<DepthType, string> = {
@@ -101,19 +101,19 @@ export const DEPTH_LABELS: Record<DepthType, string> = {
 export const ANNOTATION_COLORS: Record<AnnotationType, string> = {
   ...OVERVIEW_COLORS,
   ...DEPTH_COLORS,
-  user_written: "#59709E",
+  user_written: "#748DBF",
 };
 
 // ─── Light-mode overrides ───
 
 export const ANNOTATION_COLORS_LIGHT: Record<AnnotationType, string> = {
-  // Overview — muted gold
-  core_claim: "#DCAF16",
-  evidence: "#DCAF16",
-  outcome: "#DCAF16",
-  background: "#DCAF16",
-  transition: "#DCAF16",
-  // Critical — red (unchanged)
+  // Overview — yellow
+  core_claim: "#FFDD69",
+  evidence: "#FFDD69",
+  outcome: "#FFDD69",
+  background: "#FFDD69",
+  transition: "#FFDD69",
+  // Critical — red
   caveat: "#F5574C",
   counterargument: "#F5574C",
   alternative: "#F5574C",
@@ -121,13 +121,13 @@ export const ANNOTATION_COLORS_LIGHT: Record<AnnotationType, string> = {
   criteria: "#F5574C",
   perspective: "#F5574C",
   consequence: "#F5574C",
-  // Enrichment — muted green
+  // Enrichment — green
   insight: "#578E6C",
   recall: "#578E6C",
   study: "#578E6C",
   translation: "#578E6C",
   vocabulary: "#578E6C",
-  // User-written — muted blue
+  // User-written — blue
   user_written: "#748DBF",
 };
 

@@ -147,7 +147,7 @@ export function initArgumentsBox(): void {
 
   hostEl = document.createElement("oddity-arguments-box");
   hostEl.style.cssText =
-    "position: fixed; bottom: 0; right: 0; z-index: 2147483647; pointer-events: none;";
+    "position: fixed; bottom: 0; right: 0; z-index: 2147483647; pointer-events: none; overflow: visible;";
   document.body.appendChild(hostEl);
 
   shadowRoot = hostEl.attachShadow({ mode: "closed" });
@@ -267,7 +267,7 @@ export function initArgumentsBox(): void {
   const addBtn = document.createElement("button");
   addBtn.className = "args-header-icon-btn";
   addBtn.title = "Add";
-  addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><line x1="7.5" y1="2" x2="7.5" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="2" y1="7.5" x2="13" y2="7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+  addBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 19 19" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8.5" width="1.5" height="18.5" rx="0.5" fill="currentColor"/><rect x="18.5" y="8.5" width="1.5" height="18.5" rx="0.5" transform="rotate(90 18.5 8.5)" fill="currentColor"/></svg>`;
   // ── Plus-button tooltip ──
   const addTooltip = document.createElement("div");
   addTooltip.className = "add-tooltip";
@@ -291,7 +291,7 @@ export function initArgumentsBox(): void {
   const copyIconBtn = document.createElement("button");
   copyIconBtn.className = "args-header-icon-btn";
   copyIconBtn.title = "Copy";
-  copyIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 5V3.5A1.5 1.5 0 0 0 8.5 2H3.5A1.5 1.5 0 0 0 2 3.5v5A1.5 1.5 0 0 0 3.5 10H5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  copyIconBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.4883 5.5H7.94922C6.59655 5.5 5.5 6.59655 5.5 7.94922V17.4883C5.5 18.8409 6.59655 19.9375 7.94922 19.9375H17.4883C18.8409 19.9375 19.9375 18.8409 19.9375 17.4883V7.94922C19.9375 6.59655 18.8409 5.5 17.4883 5.5Z" stroke="currentColor" stroke-width="1.375" stroke-linejoin="round"/><path d="M16.4785 5.5L16.5 4.46875C16.4982 3.83113 16.2441 3.22014 15.7932 2.76928C15.3424 2.31841 14.7314 2.06431 14.0938 2.0625H4.8125C4.08382 2.06465 3.38559 2.35508 2.87034 2.87034C2.35508 3.38559 2.06465 4.08382 2.0625 4.8125V14.0938C2.06431 14.7314 2.31841 15.3424 2.76928 15.7932C3.22014 16.2441 3.83113 16.4982 4.46875 16.5H5.5" stroke="currentColor" stroke-width="1.375" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   copyIconBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     handleCopy(copyIconBtn);
@@ -300,7 +300,7 @@ export function initArgumentsBox(): void {
   const exportIconBtn = document.createElement("button");
   exportIconBtn.className = "args-header-icon-btn";
   exportIconBtn.title = "Export PDF";
-  exportIconBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 2v8M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11.5v1A1.5 1.5 0 0 0 4 14h7a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  exportIconBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15.5305 8.28025L10.5305 13.2802C10.2375 13.5732 9.7625 13.5732 9.4705 13.2802L4.4705 8.28025C4.1765 7.98725 4.1765 7.51225 4.4705 7.22025C4.7645 6.92825 5.2375 6.92625 5.5305 7.22025L9.2505 10.9403V0.75025C9.2505 0.33625 9.5865 0.000249863 10.0005 0.000249863C10.4145 0.000249863 10.7505 0.33625 10.7505 0.75025V10.9403L14.4705 7.22025C14.6165 7.07325 14.8085 7.00025 15.0005 7.00025C15.1925 7.00025 15.3845 7.07225 15.5305 7.22025C15.8235 7.51325 15.8235 7.98725 15.5305 8.28025Z" fill="currentColor"/><path d="M17.708 19.694H2.292C1.028 19.694 0 18.666 0 17.402V11.75C0 11.336 0.336 11 0.75 11C1.164 11 1.5 11.336 1.5 11.75V17.402C1.5 17.839 1.855 18.194 2.292 18.194H17.708C18.145 18.194 18.5 17.839 18.5 17.402V11.75C18.5 11.336 18.836 11 19.25 11C19.664 11 20 11.336 20 11.75V17.402C20 18.666 18.972 19.694 17.708 19.694Z" fill="currentColor"/></svg>`;
   exportIconBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     document.dispatchEvent(
@@ -574,8 +574,8 @@ export function initArgumentsBox(): void {
       if (!siteEnabled) {
         dimmed = true;
         containerEl?.classList.add("oddity-not-enabled");
-        updateModeToggleVisibility();
       }
+      updateModeToggleVisibility();
     }
   }).catch(() => {});
 }
@@ -2287,11 +2287,12 @@ function updateModeTogglePosition(): void {
   const marginLeft = 8;
   const marginRight = contentLeft - 16;
   const availableWidth = marginRight - marginLeft;
+  modeToggleHostEl.style.visibility = "";
   if (availableWidth < 80) {
-    modeToggleHostEl.style.visibility = "hidden";
+    // Not enough room in the left margin — pin to left edge
+    modeToggleHostEl.style.left = `${marginLeft}px`;
     return;
   }
-  modeToggleHostEl.style.visibility = "";
   const marginCenter = (marginLeft + marginRight) / 2;
   const left = marginCenter - TOGGLE_OVERLAY_WIDTH / 2;
   modeToggleHostEl.style.left = `${Math.max(marginLeft, left)}px`;
@@ -2446,6 +2447,7 @@ const ARGUMENTS_BOX_CSS = `
     align-items: flex-end;
     gap: 0;
     pointer-events: none;
+    overflow: visible;
   }
 
   /* ── Toggle bar (top-left, outside the panel) ── */
@@ -2457,10 +2459,12 @@ const ARGUMENTS_BOX_CSS = `
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
-    align-self: flex-start;
-    margin-bottom: -28px;
-    position: relative;
+    position: absolute;
+    top: 0px;
+    left: 20px;
     z-index: 3;
+    transform: scale(0.81);
+    transform-origin: left center;
   }
 
   .args-toggle-bar.visible {
@@ -2505,7 +2509,7 @@ const ARGUMENTS_BOX_CSS = `
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.3);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     z-index: 0;
@@ -2534,7 +2538,7 @@ const ARGUMENTS_BOX_CSS = `
     height: calc(100vh - 90px + 32px);
     border-radius: 16px;
     box-shadow: none;
-    border: 2px solid rgba(231, 231, 231, 0.5);
+    border: 1px solid #363636;
     cursor: default;
     background: transparent;
     backdrop-filter: none;
@@ -2740,7 +2744,7 @@ const ARGUMENTS_BOX_CSS = `
   /* ── Toggle bar ── */
 
   .args-enabled-label {
-    font-size: 13px;
+    font-size: 12px;
     color: rgba(255, 255, 255, 0.7);
     font-family: system-ui, -apple-system, sans-serif;
   }
@@ -2752,8 +2756,8 @@ const ARGUMENTS_BOX_CSS = `
   .args-panel-toggle-slider {
     display: inline-block;
     position: relative;
-    width: 36px;
-    height: 21px;
+    width: 32px;
+    height: 19px;
     background: rgba(255, 255, 255, 0.25);
     border-radius: 100px;
     cursor: pointer;
@@ -2764,10 +2768,10 @@ const ARGUMENTS_BOX_CSS = `
   .args-panel-toggle-slider::after {
     content: '';
     position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 15px;
-    height: 15px;
+    top: 2.5px;
+    left: 2.5px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: #fff;
     transition: transform 0.2s;
@@ -2779,7 +2783,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-panel-toggle-input:checked + .args-panel-toggle-slider::after {
-    transform: translateX(15px);
+    transform: translateX(13px);
   }
 
   /* ── Purpose section ── */
@@ -2793,17 +2797,16 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-purpose-label {
-    font-size: 11px;
+    font-size: 9.5px;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.5);
     font-family: system-ui, -apple-system, sans-serif;
     letter-spacing: 0.04em;
-    text-transform: uppercase;
   }
 
   .args-purpose-input {
     all: unset;
-    font-size: 12.5px;
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.85);
     font-family: system-ui, -apple-system, sans-serif;
     line-height: 1.5;
@@ -2853,14 +2856,14 @@ const ARGUMENTS_BOX_CSS = `
     line-height: 1.45;
     color: #FFFFFF;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+    box-shadow: 0 1.5px 6px rgba(0,0,0,0.09), 0 0.5px 1.5px rgba(0,0,0,0.06);
     transition: box-shadow 0.2s;
     box-sizing: border-box;
     flex-shrink: 0;
   }
 
   .arg-card:hover {
-    box-shadow: 0 3px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
   }
 
   .arg-card.expanded {
@@ -2882,7 +2885,7 @@ const ARGUMENTS_BOX_CSS = `
     font-size: var(--oddity-note-size);
     font-weight: 900;
     letter-spacing: normal;
-    color: #59709E;
+    color: #748DBF;
     margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
@@ -2982,7 +2985,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: #59709E;
+    background: #748DBF;
     color: #fff;
     font-size: 13px;
     display: flex;
@@ -3022,7 +3025,7 @@ const ARGUMENTS_BOX_CSS = `
     font-weight: 450;
     padding: 4px 10px;
     border-radius: 100px;
-    background: #59709E;
+    background: #748DBF;
     color: #fff;
     opacity: 1;
     transition: opacity 0.15s;
@@ -3096,7 +3099,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .arg-card .note-save-btn {
-    background: #59709E;
+    background: #748DBF;
     color: #fff;
     opacity: 0.8;
   }
@@ -3202,7 +3205,8 @@ const ARGUMENTS_BOX_CSS = `
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
-    padding: 16px 14px 24px;
+    padding: 0px 14px 14px;
+    padding-top: 10px;
     flex-shrink: 0;
   }
 
@@ -3213,13 +3217,14 @@ const ARGUMENTS_BOX_CSS = `
     background: #363636;
     color: #fff;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 400;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     text-align: center;
     border-radius: 100px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background 0.15s, box-shadow 0.15s;
     box-sizing: border-box;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1);
   }
 
   .args-sketch-btn:hover {
@@ -3228,7 +3233,7 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-footer-text {
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.6);
+    color: #363636;
     cursor: pointer;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-weight: 400;
@@ -3237,7 +3242,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-footer-text:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: #1a1a1a;
   }
 
   /* ── Close button (top-center, slides in from above) ── */
@@ -3297,6 +3302,7 @@ const ARGUMENTS_BOX_CSS = `
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    border-color: #E7E7E7;
   }
 
   :host([data-theme="light"]) .args-main-title {
@@ -3396,11 +3402,11 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .args-footer-text {
-    color: rgba(0, 0, 0, 0.5);
+    color: #363636;
   }
 
   :host([data-theme="light"]) .args-footer-text:hover {
-    color: rgba(0, 0, 0, 0.8);
+    color: #1a1a1a;
   }
 
   :host([data-theme="light"]) .args-sketch-btn {

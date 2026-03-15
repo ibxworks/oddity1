@@ -1,5 +1,4 @@
 import type { Annotation, AnnotationType } from '@oddity/shared';
-import { getThemeMode } from './theme-detector.js';
 
 const OVERLAY_ID = 'oddity-overlay';
 const Z_INDEX = 2147483646;
@@ -120,16 +119,41 @@ export function filterByTypes(visibleTypes: AnnotationType[]): void {
 
 export function emphasizeAnnotation(id: string): void {
   emphasizedId = id;
-  const isLight = getThemeMode() === 'light';
   document.querySelectorAll<HTMLSpanElement>(`[data-oddity-id]`).forEach(span => {
-    if (span.getAttribute('data-oddity-id') !== id) { span.style.filter = ''; return; }
+    if (span.getAttribute('data-oddity-id') !== id) {
+      span.style.filter = '';
+      span.dataset.oddityOrigBg = '';
+      span.dataset.oddityOrigBorder = '';
+      return;
+    }
     const type = span.getAttribute('data-oddity-type') ?? '';
-    if (isLight) {
-      span.style.filter = type === 'user_written' ? 'saturate(2.0)' : 'saturate(1.6)';
+
+    if (type === 'user_written') {
+      // Blue: swap color to #3987FF, no brightness/opacity change
+      if (!span.dataset.oddityOrigBg) span.dataset.oddityOrigBg = span.style.backgroundColor;
+      if (!span.dataset.oddityOrigBorder) span.dataset.oddityOrigBorder = span.style.borderBottom;
+      span.style.backgroundColor = 'rgba(57, 135, 255, 0.2)';
+      span.style.borderBottom = '1.5px solid rgba(57, 135, 255, 0.9)';
+      span.style.filter = '';
     } else {
-      span.style.filter = 'brightness(1.5)';
+      // All other colors: boost opacity + slight brightness
+      const bg = span.style.backgroundColor;
+      if (!span.dataset.oddityOrigBg) span.dataset.oddityOrigBg = bg;
+      const currentBg = span.dataset.oddityOrigBg || bg;
+      span.style.backgroundColor = boostAlpha(currentBg, 0.3);
+      span.style.filter = 'brightness(1.1)';
     }
   });
+}
+
+/** Boost the alpha of a CSS color to a target value. */
+function boostAlpha(color: string, targetAlpha: number): string {
+  const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+  if (rgbaMatch) {
+    const [, r, g, b] = rgbaMatch;
+    return `rgba(${r}, ${g}, ${b}, ${targetAlpha})`;
+  }
+  return color;
 }
 
 /**
@@ -139,6 +163,14 @@ export function deemphasizeAnnotation(): void {
   emphasizedId = null;
   document.querySelectorAll<HTMLSpanElement>(`[data-oddity-id]`).forEach(span => {
     span.style.filter = '';
+    if (span.dataset.oddityOrigBg) {
+      span.style.backgroundColor = span.dataset.oddityOrigBg;
+      span.dataset.oddityOrigBg = '';
+    }
+    if (span.dataset.oddityOrigBorder) {
+      span.style.borderBottom = span.dataset.oddityOrigBorder;
+      span.dataset.oddityOrigBorder = '';
+    }
   });
 }
 

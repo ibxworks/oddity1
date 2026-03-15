@@ -339,27 +339,10 @@ function showEditor(): void {
     width: 320px;
   `;
 
-  // Selected text preview
-  const preview = document.createElement('div');
-  const selectedText = currentRange.toString().trim();
-  preview.textContent = selectedText.length > 80 ? selectedText.slice(0, 80) + '...' : selectedText;
-  preview.style.cssText = `
-    padding: 6px 8px;
-    background: ${colors.previewBg};
-    border-radius: 4px;
-    font-style: italic;
-    color: ${colors.previewText};
-    font-size: 12px;
-    line-height: 1.4;
-    border-left: 3px solid ${getAccent()};
-    border-radius: 8px;
-  `;
-  container.appendChild(preview);
-
   // Note textarea
   const noteLabel = document.createElement('label');
-  noteLabel.textContent = 'Note (optional)';
-  noteLabel.style.cssText = `font-weight: 600; font-size: 12px; color: ${colors.labelColor};`;
+  noteLabel.textContent = 'Note';
+  noteLabel.style.cssText = `font-weight: 400; font-size: 12px; color: ${colors.labelColor};`;
   container.appendChild(noteLabel);
 
   const noteArea = document.createElement('textarea');
@@ -397,7 +380,7 @@ function showEditor(): void {
     background: ${colors.cancelBg};
     color: ${colors.cancelText};
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 400;
   `;
   cancelBtn.addEventListener('click', () => dismissEditor());
 
@@ -410,10 +393,10 @@ function showEditor(): void {
     padding: 6px 12px;
     border: none;
     border-radius: 999px;
-    background: #111111;
+    background: #748DBF;
     color: #ffffff;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 400;
   `;
   submitBtn.addEventListener('click', () => {
     handleSubmit(noteArea.value.trim());

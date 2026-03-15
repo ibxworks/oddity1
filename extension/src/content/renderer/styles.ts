@@ -22,8 +22,9 @@ function makeVisual(
   opts?: { bgOpacity?: string; underlineColor?: string },
 ): AnnotationVisual {
   const color = getAnnotationColor(type, theme);
-  const bgOpacity = opts?.bgOpacity ?? "26"; // 15% default
-  const underlineColor = opts?.underlineColor ?? color;
+  // Blue (user_written) gets 0.2 opacity (33), all others get 0.1 (1A)
+  const bgOpacity = opts?.bgOpacity ?? (type === "user_written" ? "33" : "1A");
+  const underlineColor = opts?.underlineColor ?? (color + "E6"); // 0.9 opacity
 
   return {
     type,

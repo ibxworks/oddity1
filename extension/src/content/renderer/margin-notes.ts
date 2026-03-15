@@ -1093,7 +1093,7 @@ const MARGIN_NOTES_CSS = `
   .oddity-note {
     position: absolute;
     width: ${NOTE_EXPANDED_WIDTH}px;
-    padding: 10px 12px;
+    padding: 13px 18px;
     font-family: var(--oddity-note-font);
     font-size: var(--oddity-note-size);
     line-height: 1.45;
@@ -1141,7 +1141,7 @@ const MARGIN_NOTES_CSS = `
 
   .note-text {
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
