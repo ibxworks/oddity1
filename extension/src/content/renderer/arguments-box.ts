@@ -920,6 +920,10 @@ function toggleDimmedPanel(): void {
   containerEl?.classList.toggle("expanded", expanded);
   toggleBarEl?.classList.toggle("visible", expanded);
   if (!expanded) {
+    if (containerEl) {
+      containerEl.style.height = "";
+      containerEl.style.width = "";
+    }
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     closeBtnEl?.classList.remove("hovered");
     notEnabledPanelEl?.remove();
@@ -3374,6 +3378,12 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   /* ── Not-enabled state (no colored stroke) ── */
+
+  .args-container.oddity-not-enabled.expanded {
+    height: calc((100vh - 58px) * 0.5);
+    width: 225px;
+    transform: none;
+  }
 
   /* ── Not-enabled overlay panel ── */
 
