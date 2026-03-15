@@ -8,12 +8,12 @@ import type {
 import { ANNOTATION_LABELS, getAnnotationColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
 import { removeAnchors } from "./anchors.js";
+import { addLiveFeedback } from "./arguments-box.js";
 import {
   deemphasizeAnnotation,
   emphasizeAnnotation,
   removeAnnotation as removeAnnotationOverlay,
 } from "./overlay.js";
-import { addLiveFeedback } from "./arguments-box.js";
 import {
   getThemeMode,
   offThemeChange,
@@ -99,7 +99,13 @@ export function initMarginNotes(region: Element): void {
   hostEl.style.cssText =
     "position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 2147483645;";
   // Stop keyboard events from leaking to the host page
-  for (const evt of ['keydown', 'keyup', 'keypress', 'input', 'beforeinput'] as const) {
+  for (const evt of [
+    "keydown",
+    "keyup",
+    "keypress",
+    "input",
+    "beforeinput",
+  ] as const) {
     hostEl.addEventListener(evt, (e) => e.stopPropagation());
   }
   document.body.appendChild(hostEl);
@@ -126,7 +132,9 @@ export function initMarginNotes(region: Element): void {
   });
 
   // Unpin on any click outside a card/anchor
-  docClickHandler = () => { if (pinnedId) unpinAll(); };
+  docClickHandler = () => {
+    if (pinnedId) unpinAll();
+  };
   document.addEventListener("click", docClickHandler);
 
   startTracking();
@@ -135,21 +143,27 @@ export function initMarginNotes(region: Element): void {
   document.addEventListener("oddity:feedback-edited", ((e: CustomEvent) => {
     const { feedbackId, replyText } = e.detail;
     if (!shadowRoot) return;
-    const bubble = shadowRoot.querySelector(`.note-reply-bubble[data-feedback-id="${feedbackId}"]`);
+    const bubble = shadowRoot.querySelector(
+      `.note-reply-bubble[data-feedback-id="${feedbackId}"]`,
+    );
     if (bubble) bubble.textContent = replyText;
   }) as EventListener);
 
   document.addEventListener("oddity:feedback-deleted", ((e: CustomEvent) => {
     const { feedbackId } = e.detail;
     if (!shadowRoot) return;
-    const bubble = shadowRoot.querySelector(`.note-reply-bubble[data-feedback-id="${feedbackId}"]`);
+    const bubble = shadowRoot.querySelector(
+      `.note-reply-bubble[data-feedback-id="${feedbackId}"]`,
+    );
     if (bubble) bubble.remove();
   }) as EventListener);
 
   // Fetch user profile for name badge on manual annotations
-  sendMessage({ action: "getProfile" } as any).then((p: any) => {
-    userName = p?.display_name?.split(" ")[0] ?? null;
-  }).catch(() => {});
+  sendMessage({ action: "getProfile" } as any)
+    .then((p: any) => {
+      userName = p?.display_name?.split(" ")[0] ?? null;
+    })
+    .catch(() => {});
 }
 
 export function addMarginNote(
@@ -187,12 +201,21 @@ export function addMarginNote(
   noteIndex++;
 
   // Resolve content hash: prefer explicit param, then region's hash, then first hash on page
-  const resolvedHash = contentHash
-    ?? (noteRegion as HTMLElement).dataset?.oddityHash
-    ?? document.querySelector("[data-oddity-hash]")?.getAttribute("data-oddity-hash")
-    ?? "";
+  const resolvedHash =
+    contentHash ??
+    (noteRegion as HTMLElement).dataset?.oddityHash ??
+    document
+      .querySelector("[data-oddity-hash]")
+      ?.getAttribute("data-oddity-hash") ??
+    "";
 
-  const el = createNoteElement(annotation, side, feedback, onDelete, resolvedHash);
+  const el = createNoteElement(
+    annotation,
+    side,
+    feedback,
+    onDelete,
+    resolvedHash,
+  );
   shadowRoot.appendChild(el);
 
   const note: MarginNote = {
@@ -296,7 +319,7 @@ export function onAnchorClick(annotationId: string): void {
     unpinAll();
   } else if (!justUnpinned) {
     pinnedId = annotationId;
-    hostEl?.classList.add('has-pinned');
+    hostEl?.classList.add("has-pinned");
     expandMarginNote(annotationId);
     emphasizeAnnotation(annotationId);
     dimOtherNotes(annotationId);
@@ -305,9 +328,11 @@ export function onAnchorClick(annotationId: string): void {
 
 function unpinAll(): void {
   pinnedId = null;
-  hostEl?.classList.remove('has-pinned');
+  hostEl?.classList.remove("has-pinned");
   justUnpinned = true;
-  setTimeout(() => { justUnpinned = false; }, 0);
+  setTimeout(() => {
+    justUnpinned = false;
+  }, 0);
   forceCollapseAll();
   undimAllNotes();
   deemphasizeAnnotation();
@@ -318,7 +343,7 @@ export function isAnyMarginNoteExpanded(): boolean {
 }
 
 export function dimOtherNotes(annotationId: string): void {
-  hostEl?.classList.add('has-dimmed');
+  hostEl?.classList.add("has-dimmed");
   for (const note of notes) {
     if (note.id === annotationId) {
       note.element.classList.remove("dimmed");
@@ -329,7 +354,7 @@ export function dimOtherNotes(annotationId: string): void {
 }
 
 export function undimAllNotes(): void {
-  hostEl?.classList.remove('has-dimmed');
+  hostEl?.classList.remove("has-dimmed");
   for (const note of notes) {
     note.element.classList.remove("dimmed");
   }
@@ -337,17 +362,23 @@ export function undimAllNotes(): void {
 
 export function onAnchorHoverStart(annotationId: string): void {
   if (pinnedId && pinnedId !== annotationId) return;
-  if (anchorHoverTimer) { clearTimeout(anchorHoverTimer); anchorHoverTimer = null; }
-  if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+  if (anchorHoverTimer) {
+    clearTimeout(anchorHoverTimer);
+    anchorHoverTimer = null;
+  }
+  if (collapseTimer) {
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
   emphasizeAnnotation(annotationId);
   dimOtherNotes(annotationId);
   const note = notes.find((n) => n.id === annotationId);
-  note?.element.classList.add('anchor-hovered');
+  note?.element.classList.add("anchor-hovered");
 }
 
 export function onAnchorHoverEnd(): void {
   if (pinnedId) return;
-  for (const note of notes) note.element.classList.remove('anchor-hovered');
+  for (const note of notes) note.element.classList.remove("anchor-hovered");
   undimAllNotes();
   deemphasizeAnnotation();
   // If a note is already expanded the cursor entered it before mouseleave fired
@@ -408,7 +439,13 @@ function createNoteElement(
   onDelete?: (annotationId: string) => void,
   contentHash = "",
 ): HTMLDivElement {
-  const ENRICHMENT_TYPES = new Set(["insight", "recall", "study", "translation", "vocabulary"]);
+  const ENRICHMENT_TYPES = new Set([
+    "insight",
+    "recall",
+    "study",
+    "translation",
+    "vocabulary",
+  ]);
   const theme = getThemeMode();
   let color = getAnnotationColor(annotation.type, theme);
   // Green enrichment notes use a lighter accent in dark mode
@@ -448,11 +485,14 @@ function createNoteElement(
     (f) => f.feedback_type === "thumbs_up" || f.feedback_type === "thumbs_down",
   );
   thumbFeedback.sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
   const latestThumb = thumbFeedback[0] ?? null;
-  const existingThumbUp = latestThumb?.feedback_type === "thumbs_up" ? latestThumb : null;
-  const existingThumbDown = latestThumb?.feedback_type === "thumbs_down" ? latestThumb : null;
+  const existingThumbUp =
+    latestThumb?.feedback_type === "thumbs_up" ? latestThumb : null;
+  const existingThumbDown =
+    latestThumb?.feedback_type === "thumbs_down" ? latestThumb : null;
   let reactionBadge: HTMLSpanElement | null = null;
   if (existingThumbUp || existingThumbDown) {
     reactionBadge = document.createElement("span");
@@ -568,7 +608,7 @@ function createNoteElement(
     replyBar.className = "note-reply-bar";
     const replyInput = document.createElement("input");
     replyInput.type = "text";
-    replyInput.placeholder = "Thoughts?";
+    replyInput.placeholder = "Add a note...";
     replyInput.className = "note-reply-input";
     replyInput.addEventListener("keydown", (e) => {
       e.stopPropagation();
@@ -593,27 +633,42 @@ function createNoteElement(
     const feedbackRow = document.createElement("div");
     feedbackRow.className = "note-feedback-row";
 
-    let currentFeedbackId: string | null = existingThumbUp?.id ?? existingThumbDown?.id ?? null;
+    let currentFeedbackId: string | null =
+      existingThumbUp?.id ?? existingThumbDown?.id ?? null;
 
     const thumbUp = document.createElement("button");
-    thumbUp.className = "note-feedback-pill" + (existingThumbUp ? " active" : "");
-    thumbUp.textContent = "Exactly!";
+    thumbUp.className =
+      "note-feedback-pill" + (existingThumbUp ? " active" : "");
+    thumbUp.textContent = "Helpful";
     thumbUp.title = "Helpful";
     thumbUp.addEventListener("click", (e) => {
       e.stopPropagation();
       if (thumbUp.classList.contains("active")) {
         // Undo thumbs up
         thumbUp.classList.remove("active");
-        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", false);
+        reactionBadge = updateReactionBadge(
+          labelEl,
+          reactionBadge,
+          "thumbs_up",
+          false,
+        );
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
+          sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: currentFeedbackId },
+          });
           currentFeedbackId = null;
         }
       } else {
         // Activate thumbs up, deactivate thumbs down
         thumbUp.classList.add("active");
         thumbDown.classList.remove("active");
-        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
+        reactionBadge = updateReactionBadge(
+          labelEl,
+          reactionBadge,
+          "thumbs_up",
+          true,
+        );
         addLiveFeedback("✓", annotation.content.note, {
           quote: annotation.anchor.exact,
         });
@@ -631,8 +686,13 @@ function createNoteElement(
             if (fb?.id) currentFeedbackId = fb.id;
           });
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } })
-            .then(() => { currentFeedbackId = null; return doSave(); });
+          sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: currentFeedbackId },
+          }).then(() => {
+            currentFeedbackId = null;
+            return doSave();
+          });
         } else {
           doSave();
         }
@@ -640,24 +700,39 @@ function createNoteElement(
     });
 
     const thumbDown = document.createElement("button");
-    thumbDown.className = "note-feedback-pill note-feedback-pill--negative" + (existingThumbDown ? " active" : "");
-    thumbDown.textContent = "Hmm..?";
+    thumbDown.className =
+      "note-feedback-pill note-feedback-pill--negative" +
+      (existingThumbDown ? " active" : "");
+    thumbDown.textContent = "Not helpful";
     thumbDown.title = "Not helpful";
     thumbDown.addEventListener("click", (e) => {
       e.stopPropagation();
       if (thumbDown.classList.contains("active")) {
         // Undo thumbs down
         thumbDown.classList.remove("active");
-        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", false);
+        reactionBadge = updateReactionBadge(
+          labelEl,
+          reactionBadge,
+          "thumbs_down",
+          false,
+        );
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } });
+          sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: currentFeedbackId },
+          });
           currentFeedbackId = null;
         }
       } else {
         // Activate thumbs down, deactivate thumbs up
         thumbDown.classList.add("active");
         thumbUp.classList.remove("active");
-        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
+        reactionBadge = updateReactionBadge(
+          labelEl,
+          reactionBadge,
+          "thumbs_down",
+          true,
+        );
         addLiveFeedback("✗", annotation.content.note, {
           quote: annotation.anchor.exact,
         });
@@ -675,8 +750,13 @@ function createNoteElement(
             if (fb?.id) currentFeedbackId = fb.id;
           });
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId } })
-            .then(() => { currentFeedbackId = null; return doSave(); });
+          sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: currentFeedbackId },
+          }).then(() => {
+            currentFeedbackId = null;
+            return doSave();
+          });
         } else {
           doSave();
         }
@@ -698,8 +778,8 @@ function createNoteElement(
   }
 
   // Wrap expanded content children in an inner div for CSS grid animation
-  const expandedInner = document.createElement('div');
-  expandedInner.className = 'note-expanded-inner';
+  const expandedInner = document.createElement("div");
+  expandedInner.className = "note-expanded-inner";
   while (expandedContent.firstChild) {
     expandedInner.appendChild(expandedContent.firstChild);
   }
@@ -729,12 +809,12 @@ function createNoteElement(
   el.addEventListener("click", (e) => {
     e.stopPropagation();
     // Don't unpin when clicking interactive elements inside the card
-    if ((e.target as HTMLElement).closest('button, input, textarea')) return;
+    if ((e.target as HTMLElement).closest("button, input, textarea")) return;
     if (pinnedId) {
       unpinAll();
     } else if (!justUnpinned) {
       pinnedId = annotation.id;
-      hostEl?.classList.add('has-pinned');
+      hostEl?.classList.add("has-pinned");
       expandMarginNote(annotation.id);
       emphasizeAnnotation(annotation.id);
       dimOtherNotes(annotation.id);
@@ -783,13 +863,16 @@ function submitReply(
       replyText: text,
       pageTitle: document.title,
     },
-  }).then((fb: any) => {
-    if (fb?.id) bubble.dataset.feedbackId = fb.id;
-  }).catch(() => {});
+  })
+    .then((fb: any) => {
+      if (fb?.id) bubble.dataset.feedbackId = fb.id;
+    })
+    .catch(() => {});
 
-  const excerpt = annotation.content.note.length > 40
-    ? annotation.content.note.slice(0, 37) + "\u2026"
-    : annotation.content.note;
+  const excerpt =
+    annotation.content.note.length > 40
+      ? annotation.content.note.slice(0, 37) + "\u2026"
+      : annotation.content.note;
   addLiveFeedback("↳", text, {
     type: "reply",
     replyHeader: excerpt,
@@ -983,9 +1066,7 @@ function getContentBounds(
 }
 
 function resolveOverlaps(): void {
-  const visibleNotes = notes.filter(
-    (n) => n.element.style.display !== "none",
-  );
+  const visibleNotes = notes.filter((n) => n.element.style.display !== "none");
   resolveOverlapsForSide(visibleNotes);
 }
 
@@ -1030,7 +1111,10 @@ function applyPositions(): void {
 
     if (note.side === "left") {
       const availableWidth = sharedContentLeft - MARGIN_PADDING - 8;
-      const noteWidth = Math.min(NOTE_EXPANDED_WIDTH, Math.max(100, availableWidth));
+      const noteWidth = Math.min(
+        NOTE_EXPANDED_WIDTH,
+        Math.max(100, availableWidth),
+      );
       note.element.style.width = `${noteWidth}px`;
       note.element.style.left = `${Math.max(8, sharedContentLeft - MARGIN_PADDING - noteWidth)}px`;
     } else {
@@ -1052,7 +1136,7 @@ function recomputePositions(): void {
       note.topPx = note.anchorTopPx;
     }
     // Only update collapsedHeight when not expanded so expanding never shifts other notes
-    if (!note.element.classList.contains('expanded')) {
+    if (!note.element.classList.contains("expanded")) {
       note.collapsedHeight = note.element.offsetHeight;
     }
     note.height = note.collapsedHeight;

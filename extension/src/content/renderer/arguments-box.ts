@@ -5,9 +5,7 @@ import type {
   AnnotationFontSize,
 } from "@oddity/shared";
 
-import {
-  getMarginNotesContentLeft,
-} from "./margin-notes.js";
+import { getMarginNotesContentLeft } from "./margin-notes.js";
 import {
   getThemeMode,
   offThemeChange,
@@ -149,7 +147,13 @@ export function initArgumentsBox(): void {
   hostEl.style.cssText =
     "position: fixed; bottom: 0; right: 0; z-index: 2147483647; pointer-events: none; overflow: visible;";
   // Stop keyboard events from leaking to the host page (e.g. Claude's chat input)
-  for (const evt of ['keydown', 'keyup', 'keypress', 'input', 'beforeinput'] as const) {
+  for (const evt of [
+    "keydown",
+    "keyup",
+    "keypress",
+    "input",
+    "beforeinput",
+  ] as const) {
     hostEl.addEventListener(evt, (e) => e.stopPropagation());
   }
   document.body.appendChild(hostEl);
@@ -449,7 +453,9 @@ export function initArgumentsBox(): void {
   bubbleTextWrapper.className = "args-enable-bubble-text";
   bubbleTextWrapper.innerHTML = `<a class="args-enable-bubble-link">Click here</a> to enable Oddity 1 `;
 
-  const bubbleLink = bubbleTextWrapper.querySelector(".args-enable-bubble-link")!;
+  const bubbleLink = bubbleTextWrapper.querySelector(
+    ".args-enable-bubble-link",
+  )!;
   bubbleLink.addEventListener("click", (e) => {
     e.stopPropagation();
     enableBubbleEl?.remove();
@@ -490,7 +496,8 @@ export function initArgumentsBox(): void {
     resizeStartY = e.clientY;
     resizeStartW = containerEl!.offsetWidth;
     resizeStartH = containerEl!.offsetHeight;
-    const defaultW = parseFloat(containerEl!.style.getPropertyValue("--panel-width")) || 300;
+    const defaultW =
+      parseFloat(containerEl!.style.getPropertyValue("--panel-width")) || 300;
     const defaultH = window.innerHeight - 58;
     resizeMinW = defaultW * 0.75;
     resizeMinH = defaultH * 0.5;
@@ -503,8 +510,14 @@ export function initArgumentsBox(): void {
 
   function onResizeMove(e: MouseEvent) {
     if (!containerEl) return;
-    const newW = Math.min(resizeMaxW, Math.max(resizeMinW, resizeStartW + (resizeStartX - e.clientX)));
-    const newH = Math.min(resizeMaxH, Math.max(resizeMinH, resizeStartH + (resizeStartY - e.clientY)));
+    const newW = Math.min(
+      resizeMaxW,
+      Math.max(resizeMinW, resizeStartW + (resizeStartX - e.clientX)),
+    );
+    const newH = Math.min(
+      resizeMaxH,
+      Math.max(resizeMinH, resizeStartH + (resizeStartY - e.clientY)),
+    );
     containerEl.style.width = `${newW}px`;
     containerEl.style.height = `${newH}px`;
   }
@@ -560,28 +573,38 @@ export function initArgumentsBox(): void {
   initModeToggleOverlay();
 
   // On init: set auth/site state without requiring user interaction
-  chrome.runtime.sendMessage({ action: "getAuthStatus", payload: {} }).then(async (result: { authenticated: boolean }) => {
-    if (blocked) return; // blocked domains skip auth/whitelist UI
-    localAuthState = result?.authenticated ?? false;
-    if (!result?.authenticated) {
-      updateModeToggleVisibility();
-      toggle();
-      showDashboard();
-      const stored = await chrome.storage.local.get("hadAccount");
-      showAuthView(stored["hadAccount"] ? "signin" : "signup");
-    } else {
-      // Authenticated — check if site is whitelisted
-      const prefsStored = await chrome.storage.local.get("preferences");
-      const enabledSites = (prefsStored["preferences"] as Record<string, unknown>)?.["enabled_sites"] as string[] | undefined;
-      const hostname = window.location.hostname.replace(/^www\./, "");
-      const siteEnabled = sessionSiteEnabled || (Array.isArray(enabledSites) && enabledSites.some(s => hostname === s || hostname.endsWith("." + s)));
-      if (!siteEnabled) {
-        dimmed = true;
-        containerEl?.classList.add("oddity-not-enabled");
+  chrome.runtime
+    .sendMessage({ action: "getAuthStatus", payload: {} })
+    .then(async (result: { authenticated: boolean }) => {
+      if (blocked) return; // blocked domains skip auth/whitelist UI
+      localAuthState = result?.authenticated ?? false;
+      if (!result?.authenticated) {
+        updateModeToggleVisibility();
+        toggle();
+        showDashboard();
+        const stored = await chrome.storage.local.get("hadAccount");
+        showAuthView(stored["hadAccount"] ? "signin" : "signup");
+      } else {
+        // Authenticated — check if site is whitelisted
+        const prefsStored = await chrome.storage.local.get("preferences");
+        const enabledSites = (
+          prefsStored["preferences"] as Record<string, unknown>
+        )?.["enabled_sites"] as string[] | undefined;
+        const hostname = window.location.hostname.replace(/^www\./, "");
+        const siteEnabled =
+          sessionSiteEnabled ||
+          (Array.isArray(enabledSites) &&
+            enabledSites.some(
+              (s) => hostname === s || hostname.endsWith("." + s),
+            ));
+        if (!siteEnabled) {
+          dimmed = true;
+          containerEl?.classList.add("oddity-not-enabled");
+        }
+        updateModeToggleVisibility();
       }
-      updateModeToggleVisibility();
-    }
-  }).catch(() => {});
+    })
+    .catch(() => {});
 }
 
 export function updateArgumentsBox(
@@ -619,7 +642,8 @@ export function addLiveFeedback(
 /** Mode toggle should only show when the user is signed in, the extension is enabled, and the site is not dimmed. */
 function updateModeToggleVisibility(): void {
   if (!modeToggleHostEl) return;
-  const show = boxVisible && extensionEnabled && !dimmed && localAuthState === true;
+  const show =
+    boxVisible && extensionEnabled && !dimmed && localAuthState === true;
   modeToggleHostEl.style.display = show ? "" : "none";
 }
 
@@ -1234,7 +1258,11 @@ function buildDashboardFace(): HTMLDivElement {
   const personalityGroup = document.createElement("div");
   personalityGroup.className = "args-dash-density-group";
   dashDensityBtns = [];
-  for (const [value, label] of [["terry", "Terry"], ["jerry", "Jerry"], ["sally", "Sally"]] as [string, string][]) {
+  for (const [value, label] of [
+    ["terry", "Terry"],
+    ["jerry", "Jerry"],
+    ["sally", "Sally"],
+  ] as [string, string][]) {
     const btn = document.createElement("button");
     btn.className =
       "args-dash-density-btn" +
@@ -1710,7 +1738,8 @@ async function loadDashboardPrefs(): Promise<void> {
   if (dashToggleInput) dashToggleInput.checked = enabled;
   if (dashToggleLabelEl) dashToggleLabelEl.textContent = enabled ? "On" : "Off";
   if (panelToggleInput) panelToggleInput.checked = enabled;
-  if (panelToggleLabelEl) panelToggleLabelEl.textContent = enabled ? "On" : "Off";
+  if (panelToggleLabelEl)
+    panelToggleLabelEl.textContent = enabled ? "On" : "Off";
   extensionEnabled = enabled;
   containerEl?.classList.toggle("oddity-enabled", enabled);
 }
@@ -1860,12 +1889,18 @@ function flushNoteCache(): void {
 
 /** Load persisted note cache on init. */
 function loadNoteCache(): void {
-  chrome.storage.local.get("_oddity_note_cache").then((result) => {
-    const cached = result["_oddity_note_cache"] as Record<string, string> | undefined;
-    if (cached) {
-      for (const [k, v] of Object.entries(cached)) annotationNoteCache.set(k, v);
-    }
-  }).catch(() => {});
+  chrome.storage.local
+    .get("_oddity_note_cache")
+    .then((result) => {
+      const cached = result["_oddity_note_cache"] as
+        | Record<string, string>
+        | undefined;
+      if (cached) {
+        for (const [k, v] of Object.entries(cached))
+          annotationNoteCache.set(k, v);
+      }
+    })
+    .catch(() => {});
 }
 loadNoteCache();
 
@@ -1998,12 +2033,12 @@ function renderList(): void {
     repliesContainer.className = "note-replies";
     expandedInner.appendChild(repliesContainer);
 
-    // Reply input bar ("Thoughts?")
+    // Reply input bar ("Add a note...")
     const replyBar = document.createElement("div");
     replyBar.className = "note-reply-bar";
     const replyInput = document.createElement("input");
     replyInput.type = "text";
-    replyInput.placeholder = "Thoughts?";
+    replyInput.placeholder = "Add a note...";
     replyInput.className = "note-reply-input";
 
     const submitArgReply = () => {
@@ -2063,11 +2098,11 @@ function renderList(): void {
     pillGroup.className = "note-pill-group";
     const thumbUp = document.createElement("button");
     thumbUp.className = "note-feedback-pill";
-    thumbUp.textContent = "Exactly!";
+    thumbUp.textContent = "Helpful";
     thumbUp.addEventListener("click", (e) => e.stopPropagation());
     const thumbDown = document.createElement("button");
     thumbDown.className = "note-feedback-pill";
-    thumbDown.textContent = "Hmm..?";
+    thumbDown.textContent = "Not helpful";
     thumbDown.addEventListener("click", (e) => e.stopPropagation());
     pillGroup.appendChild(thumbUp);
     pillGroup.appendChild(thumbDown);
@@ -2253,11 +2288,15 @@ function handleCopy(btn: HTMLButtonElement): void {
 
   function getLabel(item: ArgumentItem): string {
     if (item.type === "reply") {
-      return item.replyHeader ? `Reply to \u201c${item.replyHeader}\u201d` : "Reply";
+      return item.replyHeader
+        ? `Reply to \u201c${item.replyHeader}\u201d`
+        : "Reply";
     }
     const src = item.quote || item.text;
     const MAX = 60;
-    return src.length > MAX ? `\u201c${src.slice(0, MAX)}\u2026\u201d` : `\u201c${src}\u201d`;
+    return src.length > MAX
+      ? `\u201c${src.slice(0, MAX)}\u2026\u201d`
+      : `\u201c${src}\u201d`;
   }
 
   const plainText = allItems
@@ -2270,22 +2309,28 @@ function handleCopy(btn: HTMLButtonElement): void {
 
   const blob = new Blob([html], { type: "text/html" });
   const textBlob = new Blob([plainText], { type: "text/plain" });
-  navigator.clipboard.write([
-    new ClipboardItem({ "text/html": blob, "text/plain": textBlob }),
-  ]).then(() => {
-    btn.classList.add("copied");
-    setTimeout(() => btn.classList.remove("copied"), 1500);
-  });
+  navigator.clipboard
+    .write([new ClipboardItem({ "text/html": blob, "text/plain": textBlob })])
+    .then(() => {
+      btn.classList.add("copied");
+      setTimeout(() => btn.classList.remove("copied"), 1500);
+    });
 }
 
 // ─── Mode Toggle Overlay ───
 
 function updateModeTogglePosition(): void {
   if (!modeToggleHostEl) return;
-  const contentLeft = getMarginNotesContentLeft() || (() => {
-    const hashEl = document.querySelector("[data-oddity-hash]") as HTMLElement | null;
-    return hashEl ? hashEl.getBoundingClientRect().left : window.innerWidth * 0.3;
-  })();
+  const contentLeft =
+    getMarginNotesContentLeft() ||
+    (() => {
+      const hashEl = document.querySelector(
+        "[data-oddity-hash]",
+      ) as HTMLElement | null;
+      return hashEl
+        ? hashEl.getBoundingClientRect().left
+        : window.innerWidth * 0.3;
+    })();
   // The left margin column runs from ~8px to contentLeft - 16px (MARGIN_PADDING).
   // Center the toggle within that column.
   const marginLeft = 8;
@@ -2306,7 +2351,8 @@ function initModeToggleOverlay(): void {
   if (modeToggleHostEl) return;
 
   modeToggleHostEl = document.createElement("div");
-  modeToggleHostEl.style.cssText = "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto; display: none;";
+  modeToggleHostEl.style.cssText =
+    "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto; display: none;";
   document.body.appendChild(modeToggleHostEl);
 
   modeToggleShadowRoot = modeToggleHostEl.attachShadow({ mode: "closed" });
@@ -2347,7 +2393,9 @@ function initModeToggleOverlay(): void {
     modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
     toggleEl.dataset.active = mode;
-    document.dispatchEvent(new CustomEvent("oddity:modeChange", { detail: { mode } }));
+    document.dispatchEvent(
+      new CustomEvent("oddity:modeChange", { detail: { mode } }),
+    );
   }
 
   toggleEl.addEventListener("click", handleToggleClick);
