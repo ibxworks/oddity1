@@ -1,5 +1,5 @@
 import type { AnnotationType } from '@oddity/shared';
-import { ANNOTATION_LABELS, getAnnotationColor } from '@oddity/shared';
+import { ALL_OVERVIEW_TYPES, ANNOTATION_LABELS, getAnnotationColor } from '@oddity/shared';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -26,10 +26,12 @@ function makeVisual(
   const bgOpacity = opts?.bgOpacity ?? (type === "user_written" ? "33" : "1A");
   const underlineColor = opts?.underlineColor ?? (color + "E6"); // 0.9 opacity
 
+  const isOverview = (ALL_OVERVIEW_TYPES as readonly string[]).includes(type);
+
   return {
     type,
     backgroundColor: color + bgOpacity,
-    underlineStyle: `1.5px solid ${underlineColor}`,
+    underlineStyle: isOverview ? null : `1.5px solid ${underlineColor}`,
     gutterIcon: null,
     label: ANNOTATION_LABELS[type] ?? type.toUpperCase(),
     color,
@@ -45,6 +47,8 @@ const fallbackVisual: AnnotationVisual = {
   color: "#888",
 };
 
-export function getVisual(type: AnnotationType, theme: ThemeMode = 'dark'): AnnotationVisual {
-  return makeVisual(type, theme) ?? fallbackVisual;
+export function getVisual(type: AnnotationType, theme: ThemeMode = 'dark', labelOverride?: string): AnnotationVisual {
+  const visual = makeVisual(type, theme) ?? fallbackVisual;
+  if (labelOverride) visual.label = labelOverride;
+  return visual;
 }

@@ -38,7 +38,9 @@ type ArgumentItem = {
   quote?: string; // header: highlighted text from page (for manual/reaction)
   sortKey: string;
   type: "reply" | "manual" | "reaction";
-  replyHeader?: string;
+  replyHeader?: string; // truncated annotation note (for display)
+  replyFullNote?: string; // full annotation note text (for copy/sketch)
+  replyAnchor?: string; // anchor text of the annotation being replied to
   feedbackId?: string;
   annotationId?: string;
   annotation?: Annotation; // Full annotation object for manual type
@@ -73,8 +75,20 @@ let listDragMoveHandler: ((e: MouseEvent) => void) | null = null;
 let listDragUpHandler: (() => void) | null = null;
 
 let manualRunCb: (() => void) | null = null;
+let inputTextProviderCb: (() => string) | null = null;
+let activeTab: "notes" | "sketch" = "notes";
+let tabBarEl: HTMLDivElement | null = null;
+let notesTabBtn: HTMLButtonElement | null = null;
+let sketchTabBtn: HTMLButtonElement | null = null;
+let sketchContentEl: HTMLDivElement | null = null;
+let sketchBuffer = "";
+let sketchLoading = false;
+let sketchBtnEl: HTMLButtonElement | null = null;
+let footerEl: HTMLDivElement | null = null;
+let purposeInputEl: HTMLTextAreaElement | null = null;
 let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
+let emptyBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
@@ -117,7 +131,10 @@ let dashAuthToggleLinkEl: HTMLSpanElement | null = null;
 let dashSignInMode: "signin" | "signup" = "signup";
 let dashFaceEl: HTMLDivElement | null = null;
 let footerTextEl: HTMLSpanElement | null = null;
-let sessionSiteEnabled = false; // set to true when user runs once or always-enables this session
+// Persisted via sessionStorage so it survives page refresh within the same tab
+let sessionSiteEnabled = (() => {
+  try { return sessionStorage.getItem("oddity1_session_enabled") === "1"; } catch { return false; }
+})();
 let localAuthState: boolean | null = null; // cached auth state — avoids re-querying background on every toggle
 
 // ── Button drag state ──
@@ -345,16 +362,45 @@ export function initArgumentsBox(): void {
   purposeInput.placeholder = "Why are you reading this?";
   purposeInput.rows = 2;
   purposeInput.addEventListener("click", (e) => e.stopPropagation());
+  purposeInput.addEventListener("input", () => {
+    purposeInput.classList.remove("args-purpose-error");
+    purposeInput.placeholder = "Why are you reading this?";
+  });
+  purposeInputEl = purposeInput;
 
   purposeSection.appendChild(purposeLabel);
   purposeSection.appendChild(purposeInput);
   panelFace.appendChild(purposeSection);
+
+  // ── Tab Bar ──
+  tabBarEl = document.createElement("div");
+  tabBarEl.className = "args-tab-bar";
+
+  notesTabBtn = document.createElement("button");
+  notesTabBtn.className = "args-tab active";
+  notesTabBtn.textContent = "Notes";
+  notesTabBtn.addEventListener("click", (e) => { e.stopPropagation(); switchTab("notes"); });
+
+  sketchTabBtn = document.createElement("button");
+  sketchTabBtn.className = "args-tab";
+  sketchTabBtn.textContent = "Sketch";
+  sketchTabBtn.addEventListener("click", (e) => { e.stopPropagation(); switchTab("sketch"); });
+
+  tabBarEl.appendChild(notesTabBtn);
+  tabBarEl.appendChild(sketchTabBtn);
+  panelFace.appendChild(tabBarEl);
 
   // ── List ──
   listEl = document.createElement("div");
   listEl.className = "args-list";
   panelFace.appendChild(listEl);
   renderList();
+
+  // ── Sketch Content ──
+  sketchContentEl = document.createElement("div");
+  sketchContentEl.className = "args-sketch-content";
+  sketchContentEl.style.display = "none";
+  panelFace.appendChild(sketchContentEl);
 
   // Drag-to-scroll
   listEl.addEventListener("mousedown", (e) => {
@@ -386,13 +432,18 @@ export function initArgumentsBox(): void {
   document.addEventListener("mouseup", listDragUpHandler);
 
   // ── Footer ──
-  const footer = document.createElement("div");
+  footerEl = document.createElement("div");
+  const footer = footerEl;
   footer.className = "args-footer";
 
   const sketchBtn = document.createElement("button");
   sketchBtn.className = "args-sketch-btn";
   sketchBtn.textContent = "Sketch my Argument";
-  sketchBtn.addEventListener("click", (e) => e.stopPropagation());
+  sketchBtnEl = sketchBtn;
+  sketchBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    handleSketch();
+  });
   footer.appendChild(sketchBtn);
 
   footerTextEl = document.createElement("span");
@@ -479,6 +530,27 @@ export function initArgumentsBox(): void {
   enableBubbleEl.appendChild(bubbleTextWrapper);
   enableBubbleEl.appendChild(bubbleClose);
   containerEl.appendChild(enableBubbleEl);
+
+  // ── Empty-annotations bubble (visible when collapsed & empty result) ──
+  emptyBubbleEl = document.createElement("div");
+  emptyBubbleEl.className = "args-empty-bubble";
+  emptyBubbleEl.addEventListener("click", (e) => e.stopPropagation());
+
+  const emptyBubbleText = document.createElement("span");
+  emptyBubbleText.className = "args-empty-bubble-text";
+  emptyBubbleText.textContent = "This text is too short or not the right type for Oddity 1";
+
+  const emptyBubbleClose = document.createElement("button");
+  emptyBubbleClose.className = "args-enable-bubble-close";
+  emptyBubbleClose.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"><line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  emptyBubbleClose.addEventListener("click", (e) => {
+    e.stopPropagation();
+    emptyBubbleEl?.classList.remove("visible");
+  });
+
+  emptyBubbleEl.appendChild(emptyBubbleText);
+  emptyBubbleEl.appendChild(emptyBubbleClose);
+  containerEl.appendChild(emptyBubbleEl);
 
   // ── Resize handle (top-left corner, visible only when expanded) ──
   const resizeHandle = document.createElement("div");
@@ -702,6 +774,14 @@ export function setArgumentsBoxDimmed(isDimmed: boolean): void {
   updateModeToggleVisibility();
 }
 
+export function showEmptyAnnotationsBubble(): void {
+  emptyBubbleEl?.classList.add("visible");
+}
+
+export function hideEmptyAnnotationsBubble(): void {
+  emptyBubbleEl?.classList.remove("visible");
+}
+
 export function setArgumentsBoxBlocked(isBlocked: boolean): void {
   blocked = isBlocked;
   containerEl?.classList.toggle("oddity-blocked", isBlocked);
@@ -712,6 +792,26 @@ export function setArgumentsBoxBlocked(isBlocked: boolean): void {
 
 export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
+}
+
+export function setInputTextProvider(cb: () => string): void {
+  inputTextProviderCb = cb;
+}
+
+export function appendSketchChunk(text: string, done: boolean): void {
+  if (!sketchContentEl) return;
+  if (text) {
+    sketchBuffer += text;
+    sketchContentEl.innerHTML = renderMarkdown(sketchBuffer);
+    sketchContentEl.scrollTop = sketchContentEl.scrollHeight;
+  }
+  if (done) {
+    sketchLoading = false;
+    if (sketchBtnEl) {
+      sketchBtnEl.disabled = false;
+      sketchBtnEl.textContent = "Sketch my Argument";
+    }
+  }
 }
 
 export function updateArgumentsBoxStyle(
@@ -929,6 +1029,7 @@ function showNotEnabledOverlay(): void {
     e.stopPropagation();
     enableExtension();
     sessionSiteEnabled = true;
+    try { sessionStorage.setItem("oddity1_session_enabled", "1"); } catch {}
     removeOverlay();
     manualRunCb?.();
   });
@@ -947,6 +1048,7 @@ function showNotEnabledOverlay(): void {
       .then(() => enableExtension())
       .catch(() => enableExtension());
     sessionSiteEnabled = true;
+    try { sessionStorage.setItem("oddity1_session_enabled", "1"); } catch {}
     removeOverlay();
     manualRunCb?.();
   });
@@ -1876,6 +1978,7 @@ function buildItems(
       const srcAnnotationType = findAnnotationType(annotations, fb.annotation_id);
       if (fb.feedback_type === "thumbs_up") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
+        const anchor = findAnnotationQuote(annotations, fb.annotation_id);
         const excerpt = note.length > 40 ? note.slice(0, 37) + "\u2026" : note;
         items.push({
           icon: "↳",
@@ -1883,6 +1986,8 @@ function buildItems(
           sortKey: fb.created_at,
           type: "reply",
           replyHeader: excerpt,
+          replyFullNote: note,
+          replyAnchor: anchor,
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
           contentHash: fbHash,
@@ -1890,6 +1995,7 @@ function buildItems(
         });
       } else if (fb.feedback_type === "thumbs_down") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
+        const anchor = findAnnotationQuote(annotations, fb.annotation_id);
         const excerpt = note.length > 40 ? note.slice(0, 37) + "\u2026" : note;
         items.push({
           icon: "↳",
@@ -1897,6 +2003,8 @@ function buildItems(
           sortKey: fb.created_at,
           type: "reply",
           replyHeader: excerpt,
+          replyFullNote: note,
+          replyAnchor: anchor,
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
           contentHash: fbHash,
@@ -1904,6 +2012,7 @@ function buildItems(
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
+        const anchor = findAnnotationQuote(annotations, fb.annotation_id);
         const excerpt = note.length > 40 ? note.slice(0, 37) + "\u2026" : note;
         items.push({
           icon: "↳",
@@ -1911,6 +2020,8 @@ function buildItems(
           sortKey: fb.created_at,
           type: "reply",
           replyHeader: excerpt,
+          replyFullNote: note,
+          replyAnchor: anchor,
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
           contentHash: fbHash,
@@ -2222,7 +2333,7 @@ function renderList(): void {
           chrome.runtime
             .sendMessage({
               action: "updateFeedback",
-              payload: { feedbackId: item.feedbackId, replyText: newText },
+              payload: { feedbackId: item.feedbackId, replyText: newText, contentHash: item.contentHash, url: window.location.href },
             })
             .catch(() => {});
           item.text = newText;
@@ -2254,7 +2365,7 @@ function renderList(): void {
           body.textContent = newText;
           document.dispatchEvent(
             new CustomEvent("oddity:annotation-edited", {
-              detail: { annotationId: item.annotationId, note: newText },
+              detail: { annotationId: item.annotationId, note: newText, contentHash: item.contentHash },
             }),
           );
         }
@@ -2292,7 +2403,11 @@ function renderList(): void {
         chrome.runtime
           .sendMessage({
             action: "deleteFeedback",
-            payload: { feedbackId: item.feedbackId },
+            payload: {
+              feedbackId: item.feedbackId,
+              contentHash: item.contentHash,
+              url: window.location.href,
+            },
           })
           .catch(() => {});
         canonicalItems = canonicalItems.filter((i) => i.feedbackId !== item.feedbackId);
@@ -2391,28 +2506,160 @@ function renderList(): void {
   });
 }
 
+// ─── Tab Switching ───
+
+function switchTab(tab: "notes" | "sketch"): void {
+  activeTab = tab;
+  if (notesTabBtn) notesTabBtn.className = tab === "notes" ? "args-tab active" : "args-tab";
+  if (sketchTabBtn) sketchTabBtn.className = tab === "sketch" ? "args-tab active" : "args-tab";
+  if (listEl) listEl.style.display = tab === "notes" ? "" : "none";
+  if (footerEl) footerEl.style.display = tab === "notes" ? "" : "none";
+  if (sketchContentEl) sketchContentEl.style.display = tab === "sketch" ? "" : "none";
+}
+
+// ─── Sketch Handler ───
+
+function handleSketch(): void {
+  if (sketchLoading) return;
+
+  // Validate purpose
+  const purpose = purposeInputEl?.value.trim() ?? "";
+  if (!purpose) {
+    if (purposeInputEl) {
+      purposeInputEl.classList.add("args-purpose-error");
+      purposeInputEl.placeholder = "Please fill in your purpose first";
+      purposeInputEl.focus();
+    }
+    return;
+  }
+
+  // Get input text
+  const inputText = inputTextProviderCb?.() ?? "";
+  if (!inputText) return;
+
+  // Compile user reactions with full context (same format as copy button)
+  const allItems = [...canonicalItems, ...liveItems];
+  const userReactions = allItems
+    .map((i) => formatItemPlain(i))
+    .join("\n\n");
+
+  // Disable button, switch to sketch tab, show loading
+  sketchLoading = true;
+  sketchBuffer = "";
+  if (sketchBtnEl) {
+    sketchBtnEl.disabled = true;
+    sketchBtnEl.textContent = "Sketching...";
+  }
+  if (sketchContentEl) {
+    sketchContentEl.innerHTML = '<div class="args-sketch-loading"><span></span><span></span><span></span></div>';
+  }
+  switchTab("sketch");
+
+  // Send request to background
+  chrome.runtime.sendMessage({
+    action: "requestSketch",
+    payload: { inputText, purpose, userReactions },
+  }).catch(() => {
+    sketchLoading = false;
+    if (sketchBtnEl) {
+      sketchBtnEl.disabled = false;
+      sketchBtnEl.textContent = "Sketch my Argument";
+    }
+    if (sketchContentEl) {
+      sketchContentEl.innerHTML = '<div class="args-sketch-error">Failed to generate sketch. Please try again.</div>';
+    }
+  });
+}
+
+// ─── Copy & Label Helpers ───
+
+/** Short display label for an argument item (used in the UI list). */
+function getLabel(item: ArgumentItem): string {
+  if (item.type === "reply") {
+    return item.replyHeader ? `Reply to \u201c${item.replyHeader}\u201d` : "Reply";
+  }
+  const src = item.quote || item.text;
+  const MAX = 60;
+  return src.length > MAX ? `\u201c${src.slice(0, MAX)}\u2026\u201d` : `\u201c${src}\u201d`;
+}
+
+/**
+ * Format a single item as rich plain text for copy / sketch export.
+ * Includes the full annotation note and anchor text for context.
+ */
+function formatItemPlain(item: ArgumentItem): string {
+  if (item.type === "reply") {
+    const lines: string[] = [];
+    // Header: what annotation the user replied to
+    lines.push(`Reply to annotation: \u201c${item.replyFullNote || item.replyHeader || ""}\u201d`);
+    if (item.replyAnchor) {
+      lines.push(`Anchor (highlighted text): \u201c${item.replyAnchor}\u201d`);
+    }
+    lines.push(`User's response: ${item.text}`);
+    return lines.join("\n");
+  }
+  // manual (user-written note)
+  const lines: string[] = [];
+  lines.push("User-written note");
+  if (item.quote) {
+    lines.push(`Anchor (highlighted text): \u201c${item.quote}\u201d`);
+  }
+  lines.push(`Note: ${item.text}`);
+  return lines.join("\n");
+}
+
+/**
+ * Format a single item as HTML for rich clipboard copy.
+ */
+function formatItemHtml(item: ArgumentItem): string {
+  if (item.type === "reply") {
+    const parts: string[] = [];
+    parts.push(`<b>Reply to annotation:</b> \u201c${escapeHtml(item.replyFullNote || item.replyHeader || "")}\u201d`);
+    if (item.replyAnchor) {
+      parts.push(`<i>Anchor:</i> \u201c${escapeHtml(item.replyAnchor)}\u201d`);
+    }
+    parts.push(`<b>User\u2019s response:</b> ${escapeHtml(item.text)}`);
+    return parts.join("<br>");
+  }
+  const parts: string[] = [];
+  parts.push("<b>User-written note</b>");
+  if (item.quote) {
+    parts.push(`<i>Anchor:</i> \u201c${escapeHtml(item.quote)}\u201d`);
+  }
+  parts.push(`<b>Note:</b> ${escapeHtml(item.text)}`);
+  return parts.join("<br>");
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Minimal markdown → HTML renderer (bold, bullets, line breaks). */
+function renderMarkdown(md: string): string {
+  const escaped = md
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return escaped
+    // Bold: **text**
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    // Bullet lines: - item or * item
+    .replace(/^[\-\*]\s+(.+)$/gm, "<li>$1</li>")
+    // Wrap consecutive <li> in <ul>
+    .replace(/((?:<li>.*<\/li>\n?)+)/g, "<ul>$1</ul>")
+    // Line breaks
+    .replace(/\n/g, "<br>");
+}
+
 function handleCopy(btn: HTMLButtonElement): void {
   const allItems = [...canonicalItems, ...liveItems];
 
-  function getLabel(item: ArgumentItem): string {
-    if (item.type === "reply") {
-      return item.replyHeader
-        ? `Reply to \u201c${item.replyHeader}\u201d`
-        : "Reply";
-    }
-    const src = item.quote || item.text;
-    const MAX = 60;
-    return src.length > MAX
-      ? `\u201c${src.slice(0, MAX)}\u2026\u201d`
-      : `\u201c${src}\u201d`;
-  }
-
   const plainText = allItems
-    .map((i) => `${getLabel(i)}\n${i.text}`)
+    .map((i) => formatItemPlain(i))
     .join("\n\n");
 
   const html = allItems
-    .map((i) => `<b>${getLabel(i)}</b><br>${i.text}`)
+    .map((i) => formatItemHtml(i))
     .join("<br><br>");
 
   const blob = new Blob([html], { type: "text/html" });
@@ -3446,6 +3693,111 @@ const ARGUMENTS_BOX_CSS = `
     background: #484848;
   }
 
+  .args-sketch-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ── Tab Bar ── */
+  .args-tab-bar {
+    display: flex;
+    gap: 0;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+  }
+
+  .args-tab {
+    all: unset;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .args-tab:hover {
+    color: rgba(255,255,255,0.7);
+  }
+
+  .args-tab.active {
+    color: #fff;
+    border-bottom-color: #748DBF;
+  }
+
+  /* ── Sketch Content ── */
+  .args-sketch-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    font-family: var(--oddity-note-font, "Helvetica Neue", Helvetica, Arial, sans-serif);
+    font-size: var(--oddity-note-size, 14px);
+    color: #e0e0e0;
+    line-height: 1.55;
+    min-height: 0;
+  }
+
+  .args-sketch-content strong {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .args-sketch-content ul {
+    margin: 6px 0;
+    padding-left: 18px;
+  }
+
+  .args-sketch-content li {
+    margin-bottom: 4px;
+  }
+
+  .args-sketch-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    padding: 32px 0;
+  }
+
+  .args-sketch-loading span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.4);
+    animation: sketchPulse 1.2s ease-in-out infinite;
+  }
+
+  .args-sketch-loading span:nth-child(2) { animation-delay: 0.2s; }
+  .args-sketch-loading span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes sketchPulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1.2); }
+  }
+
+  .args-sketch-error {
+    padding: 16px;
+    color: rgba(255,100,100,0.8);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  /* ── Purpose Error ── */
+  .args-purpose-input.args-purpose-error {
+    border-color: rgba(255,120,80,0.6) !important;
+    animation: purposeShake 0.4s ease;
+  }
+
+  @keyframes purposeShake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-2px); }
+    80% { transform: translateX(2px); }
+  }
+
   .args-footer-text {
     font-size: 13px;
     color: #FFFFFF;
@@ -3640,6 +3992,38 @@ const ARGUMENTS_BOX_CSS = `
     background: #6580B0;
   }
 
+  :host([data-theme="light"]) .args-tab-bar {
+    border-bottom-color: rgba(0,0,0,0.08);
+  }
+
+  :host([data-theme="light"]) .args-tab {
+    color: rgba(0,0,0,0.4);
+  }
+
+  :host([data-theme="light"]) .args-tab:hover {
+    color: rgba(0,0,0,0.65);
+  }
+
+  :host([data-theme="light"]) .args-tab.active {
+    color: #111;
+  }
+
+  :host([data-theme="light"]) .args-sketch-content {
+    color: #333;
+  }
+
+  :host([data-theme="light"]) .args-sketch-content strong {
+    color: #111;
+  }
+
+  :host([data-theme="light"]) .args-sketch-loading span {
+    background: rgba(0,0,0,0.3);
+  }
+
+  :host([data-theme="light"]) .args-purpose-input.args-purpose-error {
+    border-color: rgba(220,80,40,0.6) !important;
+  }
+
   /* ── Not-enabled state (no colored stroke) ── */
 
   .args-container.oddity-not-enabled.expanded {
@@ -3708,6 +4092,41 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-container.oddity-not-enabled:not(.expanded) .args-enable-bubble {
     display: block;
+  }
+
+  /* ── Empty-annotations bubble ── */
+
+  .args-empty-bubble {
+    display: none;
+    position: absolute;
+    right: 20px;
+    bottom: calc(100% + 8px);
+    max-width: 260px;
+    white-space: normal;
+    padding: 14px 22px;
+    background: #fff;
+    color: #393939;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    font-family: system-ui, -apple-system, sans-serif;
+    border-radius: 16px;
+    pointer-events: auto;
+    z-index: 3;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .args-empty-bubble.visible {
+    display: block;
+  }
+
+  .args-container.expanded .args-empty-bubble {
+    display: none;
+  }
+
+  .args-empty-bubble-text {
+    color: #393939;
   }
 
   /* ── Not-enabled overlay panel ── */

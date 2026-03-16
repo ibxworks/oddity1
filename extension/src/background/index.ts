@@ -13,6 +13,7 @@ import {
   deleteFeedback as apiDeleteFeedback,
   updateFeedback as apiUpdateFeedback,
   requestAnnotationsStreaming,
+  requestSketchStreaming,
   saveAnnotation,
   saveFeedback as apiSaveFeedback,
   sendUserFeedback as apiSendUserFeedback,
@@ -99,9 +100,10 @@ chrome.runtime.onMessage.addListener(
             // DON'T return — fall through to fetch fresh merged data from server
           }
 
-          // Cancel any previous in-flight request for the same tab+region
+          // Cancel any previous in-flight request for the same tab+region+mode
+          // Include mode in the key so overview and depth requests don't cancel each other
           const tabId = sender.tab?.id ?? 0;
-          const key = abortKey(tabId, regionId);
+          const key = abortKey(tabId, `${mode}:${regionId}`);
           inflight.get(key)?.abort();
           const controller = new AbortController();
           inflight.set(key, controller);
@@ -295,9 +297,65 @@ chrome.runtime.onMessage.addListener(
           return saved;
         }
 
+        case "requestSketch": {
+          const { inputText, purpose, userReactions } = message.payload;
+          const tabId = sender.tab?.id;
+          if (!tabId) return { error: "No tab" };
+
+          try {
+            await requestSketchStreaming(
+              {
+                input_text: inputText,
+                purpose,
+                user_reactions: userReactions,
+              },
+              (text) => {
+                sendToTab(tabId, {
+                  action: "sketchChunk",
+                  payload: { text, done: false },
+                }).catch(() => {});
+              },
+            );
+            await sendToTab(tabId, {
+              action: "sketchChunk",
+              payload: { text: "", done: true },
+            });
+          } catch (err) {
+            console.error("[Oddity 1] Sketch error:", err);
+            await sendToTab(tabId, {
+              action: "sketchChunk",
+              payload: { text: "", done: true },
+            }).catch(() => {});
+            return { error: String(err) };
+          }
+          return { success: true };
+        }
+
         case "deleteAnnotation": {
           const { annotationId: delId, url: delUrl, contentHash: delHash } = message.payload;
           await apiDeleteAnnotation(delId, delUrl, delHash);
+
+          // Evict deleted annotation from session cache so it doesn't
+          // reappear on page refresh via stale-while-revalidate.
+          for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+            const cached = await getFromSessionCache(delHash, intensity);
+            if (cached) {
+              cached.annotations = cached.annotations.filter((a) => a.id !== delId);
+              // Also remove orphaned feedback for this annotation
+              cached.feedback = cached.feedback.filter((f) => f.annotation_id !== delId);
+              await setInSessionCache(delHash, intensity, cached.annotations, cached.feedback);
+            }
+          }
+
+          // Evict from URL prediction cache so revisits don't resurface it.
+          if (delUrl) {
+            const urlCached = await getUrlCache(delUrl);
+            if (urlCached) {
+              urlCached.annotations = urlCached.annotations.filter((a) => a.id !== delId);
+              await setUrlCache(delUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
+            }
+          }
+
           return { success: true };
         }
 
@@ -330,7 +388,7 @@ chrome.runtime.onMessage.addListener(
 
           // Update session cache so the next page load includes this feedback
           // immediately instead of waiting for the stale-while-revalidate fetch.
-          for (const intensity of ["overview:terry", "overview:jerry", "overview:gary", "depth:terry", "depth:jerry", "depth:gary"]) {
+          for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
             const cached = await getFromSessionCache(contentHash, intensity);
             if (cached) {
               cached.feedback.push(fb);
@@ -342,13 +400,56 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "updateFeedback": {
-          const { feedbackId: ufId, replyText: ufText } = message.payload;
+          const { feedbackId: ufId, replyText: ufText, contentHash: ufHash, url: ufUrl } = message.payload;
           const updatedFb = await apiUpdateFeedback(ufId, ufText);
+
+          // Update caches so edits survive page refresh
+          if (ufHash) {
+            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+              const cached = await getFromSessionCache(ufHash, intensity);
+              if (cached) {
+                const fb = cached.feedback.find((f) => f.id === ufId);
+                if (fb) fb.reply_text = ufText;
+                await setInSessionCache(ufHash, intensity, cached.annotations, cached.feedback);
+              }
+            }
+          }
+          if (ufUrl) {
+            const urlCached = await getUrlCache(ufUrl);
+            if (urlCached) {
+              const fb = (urlCached as any).feedback?.find((f: any) => f.id === ufId);
+              if (fb) fb.reply_text = ufText;
+              await setUrlCache(ufUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
+            }
+          }
+
           return updatedFb;
         }
 
         case "deleteFeedback": {
-          await apiDeleteFeedback(message.payload.feedbackId);
+          const { feedbackId: delFbId, contentHash: delFbHash, url: delFbUrl } = message.payload;
+          await apiDeleteFeedback(delFbId);
+
+          // Evict deleted feedback from session cache
+          if (delFbHash) {
+            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+              const cached = await getFromSessionCache(delFbHash, intensity);
+              if (cached) {
+                cached.feedback = cached.feedback.filter((f) => f.id !== delFbId);
+                await setInSessionCache(delFbHash, intensity, cached.annotations, cached.feedback);
+              }
+            }
+          }
+
+          // Evict from URL prediction cache
+          if (delFbUrl) {
+            const urlCached = await getUrlCache(delFbUrl);
+            if (urlCached) {
+              urlCached.feedback = (urlCached as any).feedback?.filter((f: any) => f.id !== delFbId) ?? [];
+              await setUrlCache(delFbUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
+            }
+          }
+
           return { success: true };
         }
 
@@ -356,6 +457,27 @@ chrome.runtime.onMessage.addListener(
           const { annotationId: annId, annotation: updatedAnn, url: updUrl, contentHash: updHash, pageTitle: updTitle } =
             message.payload;
           const result = await apiUpdateAnnotation(annId, updatedAnn, updUrl, updHash, updTitle);
+
+          // Update caches so edits survive page refresh
+          if (updHash) {
+            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+              const cached = await getFromSessionCache(updHash, intensity);
+              if (cached) {
+                const idx = cached.annotations.findIndex((a) => a.id === annId);
+                if (idx !== -1) cached.annotations[idx] = updatedAnn;
+                await setInSessionCache(updHash, intensity, cached.annotations, cached.feedback);
+              }
+            }
+          }
+          if (updUrl) {
+            const urlCached = await getUrlCache(updUrl);
+            if (urlCached) {
+              const idx = urlCached.annotations.findIndex((a) => a.id === annId);
+              if (idx !== -1) urlCached.annotations[idx] = updatedAnn;
+              await setUrlCache(updUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
+            }
+          }
+
           return result;
         }
 
@@ -510,7 +632,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
               action: "settingsUpdated",
               payload: {
                 enabled: prefs.enabled ?? true,
-                annotationMode: prefs.annotation_mode ?? "overview",
+                annotationMode: prefs.annotation_mode ?? "all",
                 depthPersonality: ((prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality) ?? "jerry",
                 visibleTypes: prefs.visible_types ?? [],
                 annotationFont: prefs.annotation_font,

@@ -5,6 +5,7 @@ import { createRateLimiter } from "../lib/rate-limiter.js";
 import adaptersRouter from "./adapters.js";
 import annotateRouter from "./annotate.js";
 import annotationsRouter from "./annotations.js";
+import sketchRouter from "./sketch.js";
 import feedbackRouter from "./feedback.js";
 import userFeedbackRouter from "./user-feedback.js";
 import preferencesRouter from "./user/preferences.js";
@@ -25,6 +26,7 @@ app.use("/api/adapters", adaptersRouter);
 
 // Protected routes
 app.use("/api/annotate", authMiddleware, createRateLimiter(), annotateRouter);
+app.use("/api/sketch", authMiddleware, createRateLimiter(), sketchRouter);
 app.use("/api/annotations/feedback", authMiddleware, feedbackRouter);
 app.use("/api/annotations", authMiddleware, annotationsRouter);
 app.use("/api/user/preferences", authMiddleware, preferencesRouter);

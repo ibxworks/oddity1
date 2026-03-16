@@ -34,6 +34,10 @@ import {
   setArgumentsBoxBlocked,
   setManualRunCallback,
   setSignOutCallback,
+  setInputTextProvider,
+  appendSketchChunk,
+  showEmptyAnnotationsBubble,
+  hideEmptyAnnotationsBubble,
   updateArgumentsBox,
   updateArgumentsBoxStyle,
 } from "./renderer/arguments-box.js";
@@ -59,6 +63,7 @@ import {
   removeMarginNote,
   setMarginNoteMode,
   setMarginNotesVisible,
+  updateMarginNoteText,
   updateMarginNotesStyle,
 } from "./renderer/margin-notes.js";
 import {
@@ -233,6 +238,8 @@ const regionByHash = new Map<string, DetectedRegion>();
 const activeHashes = new Map<Element, string>();
 /** Annotation IDs that were deleted locally — prevents re-addition from in-flight server responses. */
 const deletedAnnotationIds = new Set<string>();
+/** Feedback IDs that were deleted locally — prevents re-addition from in-flight server responses. */
+const deletedFeedbackIds = new Set<string>();
 /** Elements currently tracked by the chat observer (including in-progress streaming). */
 const chatTrackedElements = new WeakSet<Element>();
 let siteWhitelisted = false;
@@ -262,6 +269,30 @@ let activeRescanTimer: ReturnType<typeof setTimeout> | null = null;
 let lastKnownUrl = window.location.href;
 /** Interval ID for URL polling. */
 let urlPollInterval: ReturnType<typeof setInterval> | null = null;
+
+// ─── Input Text Provider (for Sketch my Argument) ───
+
+/** Collect the same text that was sent for annotation generation from all regions. */
+function collectInputText(): string {
+  const parts: string[] = [];
+  for (const region of regions) {
+    const extracted =
+      region.source === "readability"
+        ? extractWithReadability()
+        : extractText(region);
+    if (extracted?.text) parts.push(extracted.text);
+  }
+  // Also include regions tracked by hash (chat observer regions)
+  for (const [, region] of regionByHash) {
+    if (regions.includes(region)) continue; // already added
+    const extracted =
+      region.source === "readability"
+        ? extractWithReadability()
+        : extractText(region);
+    if (extracted?.text) parts.push(extracted.text);
+  }
+  return parts.join("\n\n");
+}
 
 // ─── Arguments Box Sync ───
 
@@ -437,9 +468,13 @@ async function init(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = stored?.preferences;
 
-  // Restore personality from stored preferences (mode always resets to overview on page load)
+  // Restore personality from stored preferences (mode always resets to "all" on page load)
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
+  }
+  // Always reset stored mode to "all" on page load so popup/background stay in sync
+  if (prefs && prefs.annotation_mode !== "all") {
+    chrome.storage.local.set({ preferences: { ...prefs, annotation_mode: "all" } });
   }
   visibleTypes = [
     ...(currentMode === "all" ? ALL_ANNOTATION_TYPES : currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
@@ -453,6 +488,7 @@ async function init(): Promise<void> {
     initArgumentsBox();
     setArgumentsBoxEnabled(false);
     setManualRunCallback(manualRun);
+    setInputTextProvider(collectInputText);
     return;
   }
 
@@ -468,6 +504,7 @@ async function init(): Promise<void> {
     initArgumentsBox();
     setArgumentsBoxEnabled(enabled);
     setManualRunCallback(manualRun);
+    setInputTextProvider(collectInputText);
     return;
   }
 
@@ -475,13 +512,19 @@ async function init(): Promise<void> {
   const enabledSites: string[] = prefs?.enabled_sites ?? DEFAULT_ENABLED_SITES;
   const currentDomain = extractDomain();
 
-  if (isDomainWhitelisted(currentDomain, enabledSites)) {
+  // Check if this site was manually enabled earlier this session (survives page refresh)
+  let sessionEnabled = false;
+  try { sessionEnabled = sessionStorage.getItem("oddity1_session_enabled") === "1"; } catch {}
+
+  if (isDomainWhitelisted(currentDomain, enabledSites) || sessionEnabled) {
     siteWhitelisted = true;
+    if (sessionEnabled) manualRunTriggered = true;
     await startPipeline();
   } else {
     siteWhitelisted = false;
     console.log(`[Oddity 1] Site not whitelisted: ${currentDomain} — waiting for manual run`);
     initArgumentsBox();
+    setInputTextProvider(collectInputText);
     setArgumentsBoxEnabled(enabled);
     setArgumentsBoxDimmed(true);
     setManualRunCallback(manualRun);
@@ -517,6 +560,7 @@ async function startPipeline(): Promise<void> {
     initKeyboardNav();
     initArgumentsBox();
     setArgumentsBoxEnabled(enabled);
+    setInputTextProvider(collectInputText);
 
     // Eagerly create the margin-notes shadow DOM container so addMarginNote()
     // never silently returns. We pass document.body as a temporary regionEl;
@@ -574,6 +618,7 @@ async function startPipeline(): Promise<void> {
   initManualAnnotations();
   initKeyboardNav();
   initArgumentsBox();
+  setInputTextProvider(collectInputText);
   setArgumentsBoxEnabled(enabled);
 
   if (regions.length > 0) {
@@ -966,6 +1011,16 @@ function handleAnnotationDeleted(annotationId: string): void {
     }
   }
 
+  // Also remove orphaned feedback for this annotation from both stores
+  for (const store of [overviewFeedback, depthFeedback]) {
+    for (const [regionId, fbs] of store) {
+      const filtered = fbs.filter((f) => f.annotation_id !== annotationId);
+      if (filtered.length !== fbs.length) {
+        store.set(regionId, filtered);
+      }
+    }
+  }
+
   // Delete from server so it doesn't come back on future requests
   sendMessage({
     action: "deleteAnnotation",
@@ -1305,6 +1360,11 @@ onMessage((message: ExtensionMessage) => {
         .then(() => ({ success: true }))
         .catch((err) => ({ success: false, error: String(err) }));
     }
+    case "sketchChunk": {
+      const { text, done } = message.payload;
+      appendSketchChunk(text, done);
+      break;
+    }
     case "annotationReady": {
       // Progressive rendering: single annotation from streaming pipeline
       const { regionId: streamRegionId, annotation } = message.payload;
@@ -1318,6 +1378,7 @@ onMessage((message: ExtensionMessage) => {
       if (!plainPending && !modePending) break;
       streamedRegions.add(streamRegionId);
       longWaitManager.handleFirstAnnotation(streamRegionId);
+      hideEmptyAnnotationsBubble();
 
       // Always store the annotation regardless of current visible types —
       // it may be needed when the user switches mode later.
@@ -1394,10 +1455,11 @@ onMessage((message: ExtensionMessage) => {
       break;
     }
     case "annotationsReady": {
-      const { regionId, annotations: rawAnnotations, feedback } = message.payload;
+      const { regionId, annotations: rawAnnotations, feedback: rawFeedback } = message.payload;
 
-      // Filter out annotations that were locally deleted (prevents re-addition from in-flight responses)
+      // Filter out annotations and feedback that were locally deleted (prevents re-addition from in-flight responses)
       const annotations = rawAnnotations.filter((a: Annotation) => !deletedAnnotationIds.has(a.id));
+      const feedback = rawFeedback.filter((f: AnnotationFeedback) => !deletedFeedbackIds.has(f.id));
 
       // Determine which mode this response belongs to.
       // Priority: annotation data > pendingModeByHash tracking > fallback.
@@ -1433,6 +1495,16 @@ onMessage((message: ExtensionMessage) => {
       }
 
       longWaitManager.handleFinalResult(regionId, annotations.length);
+
+      // Show/hide empty-annotations bubble when the Input Guard returns []
+      if (annotations.length === 0 && !responseGenerated.has(regionId)) {
+        // Check if ALL regions across both stores are empty (no AI annotations)
+        const allEmpty = [...overviewAnnotations.values(), ...depthAnnotations.values()]
+          .every((arr) => arr.every((a) => a.type === "user_written"));
+        if (allEmpty) showEmptyAnnotationsBubble();
+      } else if (annotations.length > 0) {
+        hideEmptyAnnotationsBubble();
+      }
 
       // Stale-while-revalidate: mode already generated and no active pending request
       if (responseGenerated.has(regionId) && !isPlainPending && !isModePending) {
@@ -1530,21 +1602,58 @@ onMessage((message: ExtensionMessage) => {
         // Mode changed: switch annotation display
         switchMode(viewMode, newPersonality);
       } else if (personalityChanged) {
-        // Personality changed: clear current mode's cache and re-generate
+        // Personality only affects depth annotations — preserve user-written notes and their feedback
         currentPersonality = newPersonality;
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
-        if (currentMode === "depth" || currentMode === "all") {
-          depthAnnotations.clear();
-          depthFeedback.clear();
-          depthGenerated.clear();
+
+        // Preserve user-written annotations and their feedback before clearing
+        const savedUserWritten = new Map<string, Annotation[]>();
+        const savedUserFeedback = new Map<string, AnnotationFeedback[]>();
+        for (const store of [overviewAnnotations, depthAnnotations]) {
+          for (const [hash, anns] of store) {
+            const uw = anns.filter((a) => a.type === "user_written");
+            if (uw.length > 0) {
+              const existing = savedUserWritten.get(hash) ?? [];
+              const ids = new Set(existing.map((a) => a.id));
+              for (const a of uw) { if (!ids.has(a.id)) existing.push(a); }
+              savedUserWritten.set(hash, existing);
+            }
+          }
         }
-        if (currentMode === "overview") {
-          overviewAnnotations.clear();
-          overviewFeedback.clear();
-          overviewGenerated.clear();
+        for (const store of [overviewFeedback, depthFeedback]) {
+          for (const [hash, fbs] of store) {
+            const existing = savedUserFeedback.get(hash) ?? [];
+            const ids = new Set(existing.map((f) => f.id));
+            for (const f of fbs) { if (!ids.has(f.id)) existing.push(f); }
+            savedUserFeedback.set(hash, existing);
+          }
         }
+
+        // Only clear depth (personality doesn't affect overview)
+        depthAnnotations.clear();
+        depthFeedback.clear();
+        depthGenerated.clear();
+
+        // Restore user-written annotations and all feedback to both stores
+        for (const [hash, anns] of savedUserWritten) {
+          for (const store of [overviewAnnotations, depthAnnotations]) {
+            const list = store.get(hash) ?? [];
+            const ids = new Set(list.map((a) => a.id));
+            for (const a of anns) { if (!ids.has(a.id)) list.push(a); }
+            store.set(hash, list);
+          }
+        }
+        for (const [hash, fbs] of savedUserFeedback) {
+          for (const store of [overviewFeedback, depthFeedback]) {
+            const list = store.get(hash) ?? [];
+            const ids = new Set(list.map((f) => f.id));
+            for (const f of fbs) { if (!ids.has(f.id)) list.push(f); }
+            store.set(hash, list);
+          }
+        }
+
         annotatedRegions.clear();
         pendingRegions.clear();
         pendingModeByHash.clear();
@@ -1754,6 +1863,21 @@ document.addEventListener("oddity:annotation-deleted", (e) => {
   handleAnnotationDeleted(annotationId);
 });
 
+document.addEventListener("oddity:feedback-deleted", (e) => {
+  const { feedbackId } = (e as CustomEvent<{ feedbackId: string; annotationId?: string }>).detail;
+  deletedFeedbackIds.add(feedbackId);
+
+  // Remove from both in-memory feedback stores
+  for (const store of [overviewFeedback, depthFeedback]) {
+    for (const [regionId, fbs] of store) {
+      const filtered = fbs.filter((f) => f.id !== feedbackId);
+      if (filtered.length !== fbs.length) {
+        store.set(regionId, filtered);
+      }
+    }
+  }
+});
+
 document.addEventListener("oddity:modeChange", (e) => {
   const { mode } = (e as CustomEvent<{ mode: ViewMode }>).detail;
   if (mode === currentMode) return;
@@ -1782,6 +1906,51 @@ document.addEventListener("oddity:manualAnnotationCreated", (e) => {
       store.set(contentHash, list);
     }
   }
+});
+
+// ─── Annotation / Feedback Edit Sync ───
+// Edits from either margin notes or argument box dispatch these events.
+// We update the in-memory stores so mode switches and re-renders show the latest text,
+// then sync both views.
+
+document.addEventListener("oddity:annotation-edited", (e) => {
+  const { annotationId, note } = (e as CustomEvent<{
+    annotationId: string;
+    note: string;
+    contentHash?: string;
+  }>).detail;
+
+  // Update in-memory stores (both modes) so mode switches keep the edit
+  for (const store of [overviewAnnotations, depthAnnotations]) {
+    for (const [, anns] of store) {
+      const ann = anns.find((a) => a.id === annotationId);
+      if (ann) ann.content.note = note;
+    }
+  }
+
+  // Update the margin note DOM (in case the edit came from the argument box)
+  updateMarginNoteText(annotationId, note);
+
+  // Update the argument box (in case the edit came from the margin note)
+  syncArgumentsBox();
+});
+
+document.addEventListener("oddity:feedback-edited", (e) => {
+  const { feedbackId, replyText } = (e as CustomEvent<{
+    feedbackId: string;
+    replyText: string;
+  }>).detail;
+
+  // Update in-memory feedback stores
+  for (const store of [overviewFeedback, depthFeedback]) {
+    for (const [, fbs] of store) {
+      const fb = fbs.find((f) => f.id === feedbackId);
+      if (fb) fb.reply_text = replyText;
+    }
+  }
+
+  // Sync the argument box view
+  syncArgumentsBox();
 });
 
 // ─── Ctrl+O Manual Run Handler ───

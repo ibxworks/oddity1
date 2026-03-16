@@ -36,7 +36,7 @@ const toast = document.getElementById('toast')!;
 
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
-  annotation_mode: 'overview',
+  annotation_mode: 'all',
   depth_personality: 'jerry',
   visible_types: [...ALL_OVERVIEW_TYPES, 'user_written'],
   enabled_sites: [],
@@ -56,7 +56,7 @@ async function init(): Promise<void> {
     if (personality === ('gary' as DepthPersonality)) personality = 'sally';
     currentPrefs = {
       enabled: prefs.enabled ?? true,
-      annotation_mode: prefs.annotation_mode ?? 'overview',
+      annotation_mode: prefs.annotation_mode ?? 'all',
       depth_personality: personality,
       visible_types: prefs.visible_types ?? [...ALL_OVERVIEW_TYPES, 'user_written'],
       enabled_sites: prefs.enabled_sites ?? [],

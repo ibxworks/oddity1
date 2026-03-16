@@ -463,6 +463,7 @@ async function handleSubmit(note: string): Promise<void> {
     });
   });
   const rawMode = storedPrefs.annotation_mode as string | undefined;
+  // Manual annotations need a concrete mode (overview/depth), not "all"
   const annotationMode: "overview" | "depth" = rawMode === "depth" ? "depth" : "overview";
 
   const annotation: Annotation = {

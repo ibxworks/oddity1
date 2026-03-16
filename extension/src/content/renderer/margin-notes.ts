@@ -327,6 +327,19 @@ function addInlinePopover(
     mouseInInlinePopover = false;
     if (!pinnedId) scheduleInlineHide();
   });
+  // Click on the inline popover itself toggles expand/collapse (same as anchor click)
+  el.addEventListener("click", (e) => {
+    // Don't intercept clicks on interactive elements inside the note
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, textarea, a, .note-feedback-pill, .note-icon-btn, .note-reply-input")) return;
+    e.stopPropagation();
+    if (pinnedId === annotation.id) {
+      unpinInlinePopover();
+    } else {
+      expandInlinePopover(annotation.id);
+      emphasizeAnnotation(annotation.id);
+    }
+  });
 
   const popover: InlinePopover = {
     id: annotation.id,
@@ -541,6 +554,25 @@ export function removeMarginNote(annotationId: string): void {
 
   resolveOverlaps();
   applyPositions();
+}
+
+/** Update the displayed text of a margin note (both traditional and inline). */
+export function updateMarginNoteText(annotationId: string, newNote: string): void {
+  // Check inline popovers
+  const popover = inlinePopovers.get(annotationId);
+  if (popover) {
+    popover.annotation.content.note = newNote;
+    const textEl = popover.element.querySelector(".note-body-text") as HTMLElement | null;
+    if (textEl) textEl.textContent = newNote;
+    return;
+  }
+  // Traditional margin notes
+  const note = notes.find((n) => n.id === annotationId);
+  if (note) {
+    note.annotation.content.note = newNote;
+    const textEl = note.element.querySelector(".note-body-text") as HTMLElement | null;
+    if (textEl) textEl.textContent = newNote;
+  }
 }
 
 export function clearMarginNotes(): void {
@@ -800,7 +832,7 @@ function createNoteElement(
   const labelColor = (theme === "light" && OVERVIEW_TYPES.has(annotation.type))
     ? "#DCAF16"
     : color;
-  const label = ANNOTATION_LABELS[annotation.type];
+  const label = annotation.label || ANNOTATION_LABELS[annotation.type];
   const isManual = annotation.id.startsWith("manual-");
 
   const el = document.createElement("div");
@@ -1007,10 +1039,7 @@ function createNoteElement(
           false,
         );
         if (currentFeedbackId) {
-          sendMessage({
-            action: "deleteFeedback",
-            payload: { feedbackId: currentFeedbackId },
-          });
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: window.location.href } });
           currentFeedbackId = null;
         }
       } else {
@@ -1045,13 +1074,8 @@ function createNoteElement(
             }
           });
         if (currentFeedbackId) {
-          sendMessage({
-            action: "deleteFeedback",
-            payload: { feedbackId: currentFeedbackId },
-          }).then(() => {
-            currentFeedbackId = null;
-            return doSave();
-          });
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: window.location.href } })
+            .then(() => { currentFeedbackId = null; return doSave(); });
         } else {
           doSave();
         }
@@ -1076,10 +1100,7 @@ function createNoteElement(
           false,
         );
         if (currentFeedbackId) {
-          sendMessage({
-            action: "deleteFeedback",
-            payload: { feedbackId: currentFeedbackId },
-          });
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: window.location.href } });
           currentFeedbackId = null;
         }
       } else {
@@ -1114,13 +1135,8 @@ function createNoteElement(
             }
           });
         if (currentFeedbackId) {
-          sendMessage({
-            action: "deleteFeedback",
-            payload: { feedbackId: currentFeedbackId },
-          }).then(() => {
-            currentFeedbackId = null;
-            return doSave();
-          });
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: window.location.href } })
+            .then(() => { currentFeedbackId = null; return doSave(); });
         } else {
           doSave();
         }
@@ -1300,6 +1316,12 @@ function enterEditMode(
       annotation.content.note = newNote;
       textEl.textContent = newNote;
       exitEditMode(noteEl, textarea, editActions, textEl);
+      // Notify content script so in-memory stores and argument box are updated
+      document.dispatchEvent(
+        new CustomEvent("oddity:annotation-edited", {
+          detail: { annotationId: annotation.id, note: newNote, contentHash },
+        }),
+      );
     });
   });
 
