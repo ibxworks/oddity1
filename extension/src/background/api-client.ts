@@ -28,8 +28,12 @@ export class RateLimitError extends Error {
   }
 }
 
-/** Global rate limit gate: timestamp (ms) until which all requests should be blocked. */
-let rateLimitUntil = 0;
+/** Rate limit gate for annotation requests: timestamp (ms) until which requests should be blocked. */
+let annotationRateLimitUntil = 0;
+/** Rate limit gate for sketch requests (separate from annotations). */
+let sketchRateLimitUntil = 0;
+/** Max rate limit duration: 5 minutes. Servers may return absurdly long values. */
+const MAX_RATE_LIMIT_SECS = 300;
 
 // ─── Internal Fetch with Auth ───
 
@@ -107,9 +111,9 @@ export async function requestAnnotationsStreaming(
   onAnnotation: (annotation: Annotation) => void,
   signal?: AbortSignal,
 ): Promise<AnnotationResponse> {
-  // Block if globally rate-limited
-  if (Date.now() < rateLimitUntil) {
-    const waitSec = Math.ceil((rateLimitUntil - Date.now()) / 1000);
+  // Block if rate-limited (annotation-specific gate)
+  if (Date.now() < annotationRateLimitUntil) {
+    const waitSec = Math.ceil((annotationRateLimitUntil - Date.now()) / 1000);
     throw new RateLimitError(waitSec);
   }
 
@@ -147,7 +151,9 @@ export async function requestAnnotationsStreaming(
       const parsed = JSON.parse(body);
       if (parsed.retry_after) retryAfter = Math.ceil(Number(parsed.retry_after));
     } catch {}
-    rateLimitUntil = Date.now() + retryAfter * 1000;
+    // Cap to prevent absurdly long blocks (server may return hours)
+    retryAfter = Math.min(retryAfter, MAX_RATE_LIMIT_SECS);
+    annotationRateLimitUntil = Date.now() + retryAfter * 1000;
     throw new RateLimitError(retryAfter);
   }
 
@@ -218,8 +224,9 @@ export async function requestSketchStreaming(
   onChunk: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  if (Date.now() < rateLimitUntil) {
-    const waitSec = Math.ceil((rateLimitUntil - Date.now()) / 1000);
+  // Block if sketch-specific rate limit is active
+  if (Date.now() < sketchRateLimitUntil) {
+    const waitSec = Math.ceil((sketchRateLimitUntil - Date.now()) / 1000);
     throw new RateLimitError(waitSec);
   }
 
@@ -252,7 +259,8 @@ export async function requestSketchStreaming(
       const parsed = JSON.parse(body);
       if (parsed.retry_after) retryAfter = Math.ceil(Number(parsed.retry_after));
     } catch {}
-    rateLimitUntil = Date.now() + retryAfter * 1000;
+    retryAfter = Math.min(retryAfter, MAX_RATE_LIMIT_SECS);
+    sketchRateLimitUntil = Date.now() + retryAfter * 1000;
     throw new RateLimitError(retryAfter);
   }
 

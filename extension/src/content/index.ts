@@ -40,6 +40,7 @@ import {
   hideEmptyAnnotationsBubble,
   updateArgumentsBox,
   updateArgumentsBoxStyle,
+  updateDashboardPersonality,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -83,9 +84,35 @@ import { createStabilityWatcher } from "./stability.js";
 
 const _contextInvalidRe = /Extension context invalidated/;
 
+/** Check whether the extension context is still valid (false after reload/update). */
+function isContextValid(): boolean {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
+/** Tear down all polling/observers when context is invalidated. */
+function teardownOnInvalidContext(): void {
+  if (urlPollInterval) {
+    clearInterval(urlPollInterval);
+    urlPollInterval = null;
+  }
+  activeChatObserver?.stop();
+  activeChatObserver = null;
+  activeBodyObserver?.disconnect();
+  activeBodyObserver = null;
+  if (activeRescanTimer) {
+    clearTimeout(activeRescanTimer);
+    activeRescanTimer = null;
+  }
+}
+
 window.addEventListener("error", (e) => {
   if (_contextInvalidRe.test(e.message)) {
     e.preventDefault();
+    teardownOnInvalidContext();
   }
 });
 
@@ -96,6 +123,7 @@ window.addEventListener("unhandledrejection", (e) => {
     _contextInvalidRe.test(reason.message)
   ) {
     e.preventDefault();
+    teardownOnInvalidContext();
   }
 });
 
@@ -338,6 +366,9 @@ function syncArgumentsBox(): void {
 function resetAnnotationState(): void {
   console.log("[Oddity 1] Resetting annotation state (SPA navigation)");
 
+  // Abort all in-flight annotation requests in the background service worker
+  sendMessage({ action: "abortAllRequests", payload: {} }).catch(() => {});
+
   // Stop observers
   activeChatObserver?.stop();
   activeChatObserver = null;
@@ -395,6 +426,12 @@ function resetAnnotationState(): void {
  */
 function watchUrlChanges(): void {
   function onUrlChange(): void {
+    // After extension reload/update, stop polling — chrome.* APIs are dead
+    if (!isContextValid()) {
+      teardownOnInvalidContext();
+      return;
+    }
+
     const newUrl = window.location.href;
     if (newUrl === lastKnownUrl) return;
 
@@ -405,6 +442,11 @@ function watchUrlChanges(): void {
 
     resetAnnotationState();
     init().catch((err) => {
+      // Suppress "Extension context invalidated" — expected after reload
+      if (_contextInvalidRe.test(String(err))) {
+        teardownOnInvalidContext();
+        return;
+      }
       console.error("[Oddity 1] Re-init after SPA navigation failed:", err);
     });
   }
@@ -441,6 +483,9 @@ function manualRun(): void {
 // ─── Pipeline ───
 
 async function init(): Promise<void> {
+  // Bail out immediately if the extension context is dead (reload/update)
+  if (!isContextValid()) return;
+
   console.log("[Oddity 1] Content script initializing");
 
   // Keep URL in sync (used by SPA navigation watcher)
@@ -465,7 +510,13 @@ async function init(): Promise<void> {
   }
 
   // Load stored preferences before doing any work
-  const stored = await chrome.storage.local.get("preferences");
+  let stored: Record<string, unknown>;
+  try {
+    stored = await chrome.storage.local.get("preferences");
+  } catch {
+    // Extension context invalidated mid-init (reload/update)
+    return;
+  }
   const prefs = stored?.preferences;
 
   // Restore personality from stored preferences (mode always resets to "all" on page load)
@@ -512,13 +563,8 @@ async function init(): Promise<void> {
   const enabledSites: string[] = prefs?.enabled_sites ?? DEFAULT_ENABLED_SITES;
   const currentDomain = extractDomain();
 
-  // Check if this site was manually enabled earlier this session (survives page refresh)
-  let sessionEnabled = false;
-  try { sessionEnabled = sessionStorage.getItem("oddity1_session_enabled") === "1"; } catch {}
-
-  if (isDomainWhitelisted(currentDomain, enabledSites) || sessionEnabled) {
+  if (isDomainWhitelisted(currentDomain, enabledSites)) {
     siteWhitelisted = true;
-    if (sessionEnabled) manualRunTriggered = true;
     await startPipeline();
   } else {
     siteWhitelisted = false;
@@ -1053,67 +1099,27 @@ function attachAnchorHoverListeners(
 }
 
 /**
- * Remove annotations whose anchors overlap with an earlier annotation in the
- * same render batch. Uses the root element's text content to find positions.
- * Annotations whose exact string cannot be located are passed through unchanged.
+ * Check if a Range overlaps with any already-injected anchor spans in the DOM.
+ * Uses Selection/Range intersection: if the range contains (or is contained by)
+ * any existing anchor span, they overlap.
  */
-function deduplicateOverlappingAnchors(annotations: Annotation[], root: Element): Annotation[] {
-  const text = root.textContent ?? '';
-  type Positioned = { ann: Annotation; start: number; end: number };
-  const locatable: Positioned[] = [];
-  const unlocatable: Annotation[] = [];
-
-  for (const ann of annotations) {
-    const pos = findBestMatch(text, ann.anchor.exact, ann.anchor.prefix, ann.anchor.suffix);
-    if (pos === -1) {
-      unlocatable.push(ann);
-    } else {
-      locatable.push({ ann, start: pos, end: pos + ann.anchor.exact.length });
+function rangeOverlapsExistingAnchors(range: Range, root: Element): boolean {
+  // Query all anchor spans anywhere in the document (handles cross-region overlap)
+  const anchors = (root === document.body ? root : document.body).querySelectorAll("[data-oddity-id]");
+  for (const anchor of anchors) {
+    try {
+      if (!anchor.isConnected) continue;
+      const anchorRange = document.createRange();
+      anchorRange.selectNodeContents(anchor);
+      // Two ranges overlap iff: a.end > b.start AND b.end > a.start
+      const aEndVsBStart = range.compareBoundaryPoints(Range.END_TO_START, anchorRange);
+      const bEndVsAStart = anchorRange.compareBoundaryPoints(Range.END_TO_START, range);
+      if (aEndVsBStart > 0 && bEndVsAStart > 0) return true;
+    } catch {
+      // Skip detached or incomparable nodes
     }
   }
-
-  locatable.sort((a, b) => a.start - b.start);
-
-  const kept: Positioned[] = [];
-  for (const item of locatable) {
-    const overlaps = kept.some((k) => item.start < k.end && item.end > k.start);
-    if (!overlaps) kept.push(item);
-  }
-
-  return [...kept.map((k) => k.ann), ...unlocatable];
-}
-
-/** Find the best occurrence of `exact` in `text` using prefix/suffix context. */
-function findBestMatch(text: string, exact: string, prefix?: string, suffix?: string): number {
-  if (!prefix && !suffix) return text.indexOf(exact);
-
-  let searchFrom = 0;
-  let bestPos = -1;
-  let bestScore = -1;
-
-  while (searchFrom < text.length) {
-    const pos = text.indexOf(exact, searchFrom);
-    if (pos === -1) break;
-
-    let score = 0;
-    if (prefix) {
-      const before = text.slice(Math.max(0, pos - prefix.length - 10), pos);
-      if (before.includes(prefix)) score += 2;
-    }
-    if (suffix) {
-      const after = text.slice(pos + exact.length, pos + exact.length + suffix.length + 10);
-      if (after.includes(suffix)) score += 2;
-    }
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestPos = pos;
-    }
-
-    searchFrom = pos + 1;
-  }
-
-  return bestPos;
+  return false;
 }
 
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
@@ -1123,7 +1129,7 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
 
   // Guard: skip if the root element has been detached from the DOM (common on SPAs like ChatGPT)
   if (root !== document.body && !root.isConnected) {
-    console.warn(`[Oddity 1] Skipping render for ${regionId.slice(0, 12)}… — element detached`);
+    console.debug(`[Oddity 1] Skipping render for ${regionId.slice(0, 12)}… — element detached`);
     return;
   }
 
@@ -1141,18 +1147,13 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
     return aIsBg - bIsBg;
   });
 
-  // Remove annotations whose anchors overlap with an earlier annotation
-  const nonOverlapping = deduplicateOverlappingAnchors(visible, root);
-
   // Invalidate text-node index once before the batch — ensures a clean index.
-  // The index is reused across all annotations in this region (5–10× fewer TreeWalker traversals).
-  // Later annotations may see slightly shifted positions due to prior injectAnchors DOM mutations,
-  // but the existing fuzzy fallback chain in resolveSelector handles these gracefully.
   invalidateTextNodeIndex(root);
 
-  // Single-pass: resolve + render one annotation at a time
-  // This avoids stale ranges from prior DOM mutations (injectAnchors splits text nodes)
-  for (const annotation of nonOverlapping) {
+  // Render one annotation at a time. Before each, check if its resolved range
+  // overlaps with any already-injected anchor spans in the DOM. This handles
+  // both within-region and cross-region overlap robustly.
+  for (const annotation of visible) {
     try {
       const range = resolveSelector(root, annotation.anchor);
       if (!range) {
@@ -1162,6 +1163,9 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
         continue;
       }
 
+      // Skip if this range overlaps with any already-rendered anchor span
+      if (rangeOverlapsExistingAnchors(range, root)) continue;
+
       let anchors = injectAnchors(annotation, range);
 
       // Retry once: prior injectAnchors calls mutate the DOM (split/wrap text nodes),
@@ -1170,6 +1174,8 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
         invalidateTextNodeIndex(root);
         const retryRange = resolveSelector(root, annotation.anchor);
         if (retryRange) {
+          // Re-check overlap after index invalidation
+          if (rangeOverlapsExistingAnchors(retryRange, root)) continue;
           anchors = injectAnchors(annotation, retryRange);
         }
       }
@@ -1265,9 +1271,20 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
       setOverlayVisible(true);
       setMarginNotesVisible(true);
       setArgumentsBoxVisible(true);
-      for (const region of regions) {
-        if (needsOverview) handleStableRegionForMode(region, region.element, "overview");
-        if (needsDepth) handleStableRegionForMode(region, region.element, "depth");
+      // Stagger requests to avoid burst rate limiting
+      for (let i = 0; i < regions.length; i++) {
+        const region = regions[i]!;
+        const delay = i * 500;
+        if (needsOverview) {
+          if (i === 0) handleStableRegionForMode(region, region.element, "overview");
+          else setTimeout(() => handleStableRegionForMode(region, region.element, "overview"), delay);
+        }
+        if (needsDepth) {
+          // Offset depth requests by 250ms from overview to interleave
+          const depthDelay = delay + (needsOverview ? 250 : 0);
+          if (depthDelay === 0) handleStableRegionForMode(region, region.element, "depth");
+          else setTimeout(() => handleStableRegionForMode(region, region.element, "depth"), depthDelay);
+        }
       }
     }
   } else {
@@ -1410,10 +1427,16 @@ onMessage((message: ExtensionMessage) => {
       // Skip if the element has been detached (common on SPAs like ChatGPT)
       if (streamRoot !== document.body && !streamRoot.isConnected) break;
 
-      // Render the single annotation immediately
+      // Render the single annotation immediately (with overlap check)
       try {
         const range = resolveSelector(streamRoot, annotation.anchor);
         if (range) {
+          // Check if this range overlaps with any existing anchor spans
+          if (rangeOverlapsExistingAnchors(range, streamRoot)) {
+            // Store the annotation but skip rendering — it will be deduped on full re-render
+            break;
+          }
+
           let anchors = injectAnchors(annotation, range);
           if (anchors.length === 0) {
             invalidateTextNodeIndex(streamRoot);
@@ -1604,6 +1627,7 @@ onMessage((message: ExtensionMessage) => {
       } else if (personalityChanged) {
         // Personality only affects depth annotations — preserve user-written notes and their feedback
         currentPersonality = newPersonality;
+        updateDashboardPersonality(newPersonality);
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
@@ -1663,8 +1687,20 @@ onMessage((message: ExtensionMessage) => {
         setOverlayVisible(true);
         setMarginNotesVisible(true);
         setArgumentsBoxVisible(true);
-        for (const region of regions) {
-          handleStableRegion(region, region.element);
+
+        // Re-render existing overview annotations immediately (they were cleared above)
+        rerenderAll();
+
+        // Fire new depth requests with the updated personality — staggered to avoid rate limits
+        for (let i = 0; i < regions.length; i++) {
+          const region = regions[i]!;
+          if (i === 0) {
+            handleStableRegionForMode(region, region.element, "depth");
+          } else {
+            // Stagger subsequent requests by 500ms each to avoid burst rate limiting
+            const delay = i * 500;
+            setTimeout(() => handleStableRegionForMode(region, region.element, "depth"), delay);
+          }
         }
       } else if (!wasEnabled && enabled) {
         if (!pipelineInitialized) {
@@ -1861,6 +1897,27 @@ document.addEventListener("oddity:scroll-to-annotation", ((e: CustomEvent) => {
 document.addEventListener("oddity:annotation-deleted", (e) => {
   const { annotationId } = (e as CustomEvent<{ annotationId: string }>).detail;
   handleAnnotationDeleted(annotationId);
+});
+
+// ─── Feedback Added Sync ───
+// When a user submits a reply/reaction, the saved feedback must be added
+// to the in-memory stores so that syncArgumentsBox() doesn't lose it.
+
+window.addEventListener("oddity:feedback-added", (e) => {
+  const { feedback, contentHash } = (e as CustomEvent<{
+    feedback: AnnotationFeedback;
+    contentHash: string;
+  }>).detail;
+  if (!feedback?.id || !contentHash) return;
+
+  // Add to both feedback stores so it survives mode switches
+  for (const store of [overviewFeedback, depthFeedback]) {
+    const list = store.get(contentHash) ?? [];
+    if (!list.some((f) => f.id === feedback.id)) {
+      list.push(feedback);
+      store.set(contentHash, list);
+    }
+  }
 });
 
 document.addEventListener("oddity:feedback-deleted", (e) => {

@@ -131,10 +131,7 @@ let dashAuthToggleLinkEl: HTMLSpanElement | null = null;
 let dashSignInMode: "signin" | "signup" = "signup";
 let dashFaceEl: HTMLDivElement | null = null;
 let footerTextEl: HTMLSpanElement | null = null;
-// Persisted via sessionStorage so it survives page refresh within the same tab
-let sessionSiteEnabled = (() => {
-  try { return sessionStorage.getItem("oddity1_session_enabled") === "1"; } catch { return false; }
-})();
+let sessionSiteEnabled = false;
 let localAuthState: boolean | null = null; // cached auth state — avoids re-querying background on every toggle
 
 // ── Button drag state ──
@@ -538,7 +535,7 @@ export function initArgumentsBox(): void {
 
   const emptyBubbleText = document.createElement("span");
   emptyBubbleText.className = "args-empty-bubble-text";
-  emptyBubbleText.textContent = "This text is too short or not the right type for Oddity 1";
+  emptyBubbleText.textContent = "This text is too short or not annotatable for Oddity 1";
 
   const emptyBubbleClose = document.createElement("button");
   emptyBubbleClose.className = "args-enable-bubble-close";
@@ -827,6 +824,21 @@ export function updateArgumentsBoxStyle(
 
 let signOutCb: (() => void) | null = null;
 
+/** Update the dashboard's personality display (avatar, select, buttons). */
+export function updateDashboardPersonality(personality: string): void {
+  const display = personality.charAt(0).toUpperCase() + personality.slice(1);
+  if (dashPersonaSelect) dashPersonaSelect.value = display;
+  if (dashPersonaAvatarImgEl) {
+    dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${display}.png`);
+    dashPersonaAvatarImgEl.alt = display;
+  }
+  if (dashPersonaCircleEl)
+    dashPersonaCircleEl.style.background = display === "Jerry" ? "#FDCB24" : "#fff";
+  dashDensityBtns.forEach((b) =>
+    b.classList.toggle("args-dash-density-active", b.dataset.intensity === personality),
+  );
+}
+
 export function setSignOutCallback(cb: () => void): void {
   signOutCb = cb;
 }
@@ -1029,7 +1041,6 @@ function showNotEnabledOverlay(): void {
     e.stopPropagation();
     enableExtension();
     sessionSiteEnabled = true;
-    try { sessionStorage.setItem("oddity1_session_enabled", "1"); } catch {}
     removeOverlay();
     manualRunCb?.();
   });
@@ -1048,7 +1059,6 @@ function showNotEnabledOverlay(): void {
       .then(() => enableExtension())
       .catch(() => enableExtension());
     sessionSiteEnabled = true;
-    try { sessionStorage.setItem("oddity1_session_enabled", "1"); } catch {}
     removeOverlay();
     manualRunCb?.();
   });
@@ -1351,7 +1361,7 @@ function buildDashboardFace(): HTMLDivElement {
 
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-      chrome.storage.local.set({ preferences: { ...prefs, persona: name, depth_personality: personality } });
+      chrome.storage.local.set({ preferences: { ...prefs, depth_personality: personality } });
     });
   });
 
@@ -1866,7 +1876,8 @@ async function loadDashboardPrefs(): Promise<void> {
       | import("@oddity/shared").AnnotationFontSize
       | undefined,
   );
-  const persona = (prefs.persona as string) ?? "Jerry";
+  // Derive display name from depth_personality (single source of truth)
+  const persona = personality.charAt(0).toUpperCase() + personality.slice(1);
   if (dashPersonaSelect) dashPersonaSelect.value = persona;
   if (dashPersonaAvatarImgEl) {
     dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
@@ -2254,6 +2265,14 @@ function renderList(): void {
               replyText: text,
               pageTitle: document.title,
             },
+          })
+          .then((fb: any) => {
+            if (fb?.id) {
+              bubble.dataset.feedbackId = fb.id;
+              window.dispatchEvent(new CustomEvent("oddity:feedback-added", {
+                detail: { feedback: fb, contentHash: item.contentHash ?? "" },
+              }));
+            }
           })
           .catch(() => {});
       }
@@ -2652,15 +2671,17 @@ function renderMarkdown(md: string): string {
 }
 
 function handleCopy(btn: HTMLButtonElement): void {
-  const allItems = [...canonicalItems, ...liveItems];
+  let plainText: string;
+  let html: string;
 
-  const plainText = allItems
-    .map((i) => formatItemPlain(i))
-    .join("\n\n");
-
-  const html = allItems
-    .map((i) => formatItemHtml(i))
-    .join("<br><br>");
+  if (activeTab === "sketch" && sketchBuffer) {
+    plainText = sketchBuffer;
+    html = renderMarkdown(sketchBuffer);
+  } else {
+    const allItems = [...canonicalItems, ...liveItems];
+    plainText = allItems.map((i) => formatItemPlain(i)).join("\n\n");
+    html = allItems.map((i) => formatItemHtml(i)).join("<br><br>");
+  }
 
   const blob = new Blob([html], { type: "text/html" });
   const textBlob = new Blob([plainText], { type: "text/plain" });
@@ -4101,9 +4122,10 @@ const ARGUMENTS_BOX_CSS = `
     position: absolute;
     right: 20px;
     bottom: calc(100% + 8px);
-    max-width: 260px;
+    min-width: 260px;
+    max-width: 360px;
     white-space: normal;
-    padding: 14px 22px;
+    padding: 12px 20px;
     background: #fff;
     color: #393939;
     font-size: 14px;
