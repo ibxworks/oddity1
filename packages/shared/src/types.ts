@@ -51,6 +51,8 @@ export type Annotation = {
   id: string;
   mode: AnnotationMode;
   type: AnnotationType;
+  /** LLM-generated title (overview chunks). Falls back to ANNOTATION_LABELS[type] when absent. */
+  label?: string;
   anchor: TextQuoteSelector;
   content: AnnotationContent;
 };
@@ -250,9 +252,9 @@ export type ExtensionMessage =
     }
   | {
       action: "updateFeedback";
-      payload: { feedbackId: string; replyText: string };
+      payload: { feedbackId: string; replyText: string; contentHash?: string; url?: string };
     }
-  | { action: "deleteFeedback"; payload: { feedbackId: string } }
+  | { action: "deleteFeedback"; payload: { feedbackId: string; contentHash?: string; url?: string } }
   | {
       action: "updateAnnotation";
       payload: {
@@ -290,4 +292,16 @@ export type ExtensionMessage =
               annotation_count: number;
             };
           };
+    }
+  | {
+      action: "requestSketch";
+      payload: {
+        inputText: string;
+        purpose: string;
+        userReactions: string;
+      };
+    }
+  | {
+      action: "sketchChunk";
+      payload: { text: string; done: boolean };
     };

@@ -462,7 +462,9 @@ async function handleSubmit(note: string): Promise<void> {
       resolve((result["preferences"] ?? {}) as Record<string, unknown>);
     });
   });
-  const annotationMode = (storedPrefs.annotation_mode as "overview" | "depth") ?? "overview";
+  const rawMode = storedPrefs.annotation_mode as string | undefined;
+  // Manual annotations need a concrete mode (overview/depth), not "all"
+  const annotationMode: "overview" | "depth" = rawMode === "depth" ? "depth" : "overview";
 
   const annotation: Annotation = {
     id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -500,9 +502,16 @@ async function handleSubmit(note: string): Promise<void> {
   // Render immediately
   renderManualAnnotation(annotation, root);
 
+  // Notify index.ts to store the annotation so it survives mode switches
+  document.dispatchEvent(new CustomEvent('oddity:manualAnnotationCreated', {
+    detail: { annotation, contentHash },
+  }));
+
   addLiveFeedback("✎", annotation.content.note, {
     quote: annotation.anchor.exact,
     type: "manual",
+    annotationId: annotation.id,
+    contentHash,
   });
 
   dismissEditor();
@@ -532,6 +541,10 @@ function renderManualAnnotation(annotation: Annotation, root: Element): void {
     removeMarginNote(annotationId);
     removeAnchors(annotationId);
     removeAnnotation(annotationId);
+    // Notify index.ts to remove from stores and sync argument box
+    document.dispatchEvent(new CustomEvent('oddity:annotation-deleted', {
+      detail: { annotationId },
+    }));
   };
 
   addMarginNote(annotation, stableRange, [], handleDelete);

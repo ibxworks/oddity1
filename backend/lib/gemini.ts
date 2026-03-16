@@ -46,7 +46,8 @@ function mapOverviewOutput(raw: unknown[]): unknown[] {
     return {
       id: item.id ?? randomUUID(),
       mode: "overview",
-      type: (item.label ?? item.type ?? "").replace(/\s+/g, "_").toLowerCase(),
+      type: "core_claim",
+      label: item.label ?? "",
       anchor: {
         type: "TextQuoteSelector",
         exact: item.anchor ?? item.exact ?? "",
@@ -218,6 +219,40 @@ export async function* generateAnnotationsStream(
   }
 
   return allAnnotations;
+}
+
+// ─── Sketch Generation ───
+
+const sketchPrompt: string = promptsConfig.sketch_prompt ?? "";
+
+/**
+ * Streaming sketch generator. Yields plain-text chunks as the LLM produces them.
+ */
+export async function* generateSketchStream(
+  inputText: string,
+  purpose: string,
+  userReactions: string,
+): AsyncGenerator<string, void, unknown> {
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: sketchPrompt,
+    generationConfig: {
+      responseMimeType: "text/plain" as const,
+      maxOutputTokens: 2048,
+      temperature: 0.3,
+    },
+  });
+
+  const userMessage = `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${userReactions}`;
+
+  const stream = await model.generateContentStream({
+    contents: [{ role: "user", parts: [{ text: userMessage }] }],
+  });
+
+  for await (const chunk of stream.stream) {
+    const delta = chunk.text();
+    if (delta) yield delta;
+  }
 }
 
 /**

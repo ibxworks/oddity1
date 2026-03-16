@@ -25,7 +25,7 @@ export function exportAsMarkdown(
   }
 
   for (const ann of annotations) {
-    const label = ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase();
+    const label = ann.label || (ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase());
     lines.push(`### [${label}]`);
     lines.push('');
     lines.push(`> ${ann.anchor.exact}`);

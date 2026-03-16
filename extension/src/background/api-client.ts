@@ -19,6 +19,18 @@ export class AuthError extends Error {
   }
 }
 
+export class RateLimitError extends Error {
+  retryAfter: number;
+  constructor(retryAfter: number) {
+    super(`Rate limit exceeded. Retry after ${retryAfter}s`);
+    this.name = 'RateLimitError';
+    this.retryAfter = retryAfter;
+  }
+}
+
+/** Global rate limit gate: timestamp (ms) until which all requests should be blocked. */
+let rateLimitUntil = 0;
+
 // ─── Internal Fetch with Auth ───
 
 async function authFetch(
@@ -95,6 +107,12 @@ export async function requestAnnotationsStreaming(
   onAnnotation: (annotation: Annotation) => void,
   signal?: AbortSignal,
 ): Promise<AnnotationResponse> {
+  // Block if globally rate-limited
+  if (Date.now() < rateLimitUntil) {
+    const waitSec = Math.ceil((rateLimitUntil - Date.now()) / 1000);
+    throw new RateLimitError(waitSec);
+  }
+
   async function doStreamingFetch(token: string | null): Promise<Response> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -120,6 +138,17 @@ export async function requestAnnotationsStreaming(
       throw new AuthError();
     }
     res = await doStreamingFetch(retryToken);
+  }
+
+  if (res.status === 429) {
+    const body = await res.text().catch(() => '');
+    let retryAfter = 60; // default 60s
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.retry_after) retryAfter = Math.ceil(Number(parsed.retry_after));
+    } catch {}
+    rateLimitUntil = Date.now() + retryAfter * 1000;
+    throw new RateLimitError(retryAfter);
   }
 
   if (!res.ok) {
@@ -178,6 +207,94 @@ export async function requestAnnotationsStreaming(
   }
 
   return { success: true, cached, annotations, feedback };
+}
+
+/**
+ * Request a sketch via SSE streaming. Calls onChunk for each text delta,
+ * then resolves with the full assembled text.
+ */
+export async function requestSketchStreaming(
+  payload: { input_text: string; purpose: string; user_reactions: string },
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (Date.now() < rateLimitUntil) {
+    const waitSec = Math.ceil((rateLimitUntil - Date.now()) / 1000);
+    throw new RateLimitError(waitSec);
+  }
+
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return fetch(`${BACKEND_URL}/api/sketch`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal,
+    });
+  }
+
+  let res = await doFetch(await getAccessToken());
+
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) throw new AuthError();
+    res = await doFetch(retryToken);
+  }
+
+  if (res.status === 429) {
+    const body = await res.text().catch(() => '');
+    let retryAfter = 60;
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.retry_after) retryAfter = Math.ceil(Number(parsed.retry_after));
+    } catch {}
+    rateLimitUntil = Date.now() + retryAfter * 1000;
+    throw new RateLimitError(retryAfter);
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`requestSketchStreaming failed (${res.status}): ${body}`);
+  }
+  if (!res.body) throw new Error('No response body for sketch SSE stream');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.error) throw new Error(event.error);
+          if (event.text) {
+            fullText += event.text;
+            onChunk(event.text);
+          }
+        } catch {
+          // Skip malformed events
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullText;
 }
 
 export async function getAnnotations(

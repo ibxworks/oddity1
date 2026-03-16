@@ -91,7 +91,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     const span = document.createElement('span');
     span.setAttribute(ATTR, annotation.id);
     span.setAttribute('data-oddity-type', annotation.type);
-    const visual = getVisual(annotation.type, getThemeMode());
+    const visual = getVisual(annotation.type, getThemeMode(), annotation.label);
     let bgColor = visual.backgroundColor;
     let underlineStyle = visual.underlineStyle;
     const bgCss = bgColor ? `background-color: ${bgColor};` : '';

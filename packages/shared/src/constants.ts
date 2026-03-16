@@ -169,3 +169,8 @@ export const ALL_DEPTH_TYPES: DepthType[] = [
   "translation",
   "vocabulary",
 ];
+
+export const ALL_ANNOTATION_TYPES: AnnotationType[] = [
+  ...ALL_OVERVIEW_TYPES,
+  ...ALL_DEPTH_TYPES,
+];

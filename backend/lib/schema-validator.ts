@@ -47,6 +47,7 @@ const AnnotationSchema = z.object({
   id: z.string().min(1),
   mode: AnnotationModeSchema,
   type: AllAnnotationTypes,
+  label: z.string().optional(),
   anchor: TextQuoteSelectorSchema,
   content: AnnotationContentSchema,
 });

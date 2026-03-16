@@ -89,7 +89,7 @@ let isSignUpMode = true;
 
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
-  annotation_mode: "overview",
+  annotation_mode: "all",
   depth_personality: "jerry",
   visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
   enabled_sites: [],
@@ -135,7 +135,7 @@ async function init(): Promise<void> {
     if (personality === ("gary" as DepthPersonality)) personality = "sally";
     currentPrefs = {
       enabled: prefs.enabled ?? true,
-      annotation_mode: prefs.annotation_mode ?? "overview",
+      annotation_mode: prefs.annotation_mode ?? "all",
       depth_personality: personality,
       visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
       enabled_sites: prefs.enabled_sites ?? [],
@@ -168,6 +168,11 @@ function applyPrefsToUI(): void {
       btn.dataset["intensity"] === currentPrefs.depth_personality,
     );
   }
+
+  // Sync top avatar with personality
+  const displayName = (currentPrefs.depth_personality ?? "jerry").charAt(0).toUpperCase() + (currentPrefs.depth_personality ?? "jerry").slice(1);
+  profilePersonaSelect.value = displayName;
+  applyPersonaVisuals(displayName);
 
   // Font select
   fontSelect.value = currentPrefs.annotation_font;
@@ -370,6 +375,11 @@ intensityGroup.addEventListener("click", (e) => {
     b.classList.toggle("active", b === btn);
   }
 
+  // Sync the top avatar and persona selector with the selected personality
+  const displayName = personality.charAt(0).toUpperCase() + personality.slice(1);
+  profilePersonaSelect.value = displayName;
+  applyPersonaVisuals(displayName);
+
   savePrefs();
 });
 
@@ -491,11 +501,22 @@ const profileCircleEl = profileAvatarImg.closest(
 function applyPersonaVisuals(name: string): void {
   profileAvatarImg.src = `/${name}.png`;
   profileAvatarImg.alt = name;
-  profileCircleEl.style.background = name === "Jerry" ? "#FDCB24" : "#fff";
+  const bgMap: Record<string, string> = { Jerry: "#FDCB24", Terry: "#fff", Sally: "#fff" };
+  profileCircleEl.style.background = bgMap[name] ?? "#fff";
 }
 
 profilePersonaSelect.addEventListener("change", () => {
   applyPersonaVisuals(profilePersonaSelect.value);
+
+  // Sync personality buttons and preference with the dropdown
+  const personality = profilePersonaSelect.value.toLowerCase() as DepthPersonality;
+  currentPrefs.depth_personality = personality;
+  for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(
+    ".density-btn",
+  )) {
+    b.classList.toggle("active", b.dataset["intensity"] === personality);
+  }
+  savePrefs();
 });
 
 // ─── Profile Popover (bottom bar) ───

@@ -214,7 +214,7 @@ function markTextInNode(
 // ─── Sidenote Inner HTML ───
 
 function buildSidenoteInner(ann: Annotation): string {
-  const label = ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase();
+  const label = ann.label || (ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase());
   const note = ann.content.note ? esc(ann.content.note) : '';
 
   let sections = '';
@@ -263,7 +263,7 @@ function buildDocument(
   let unmatchedSection = '';
   if (unmatchedAnnotations.length > 0) {
     const items = unmatchedAnnotations.map((ann) => {
-      const label = ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase();
+      const label = ann.label || (ANNOTATION_LABELS[ann.type] ?? ann.type.toUpperCase());
       const note = ann.content.note ? esc(ann.content.note) : '';
       return `<li class="extra-note note-${ann.type}">
   <span class="sn-label">${esc(label)}</span>
