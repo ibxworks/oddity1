@@ -3,7 +3,9 @@ import type {
   AnnotationFeedback,
   AnnotationFont,
   AnnotationFontSize,
+  AnnotationType,
 } from "@oddity/shared";
+import { getAnnotationColor } from "@oddity/shared";
 
 import { getMarginNotesContentLeft } from "./margin-notes.js";
 import {
@@ -41,6 +43,7 @@ type ArgumentItem = {
   annotationId?: string;
   annotation?: Annotation; // Full annotation object for manual type
   contentHash?: string; // region content hash for feedback API calls
+  annotationType?: AnnotationType; // source annotation type for color
 };
 
 // ─── State ───
@@ -75,6 +78,8 @@ let enableBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
+const deletedFeedbackIds = new Set<string>();
+const deletedAnnotationIds = new Set<string>();
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let closeBtnHideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -131,12 +136,13 @@ let btnDragUpHandler: (() => void) | null = null;
 
 let modeToggleHostEl: HTMLElement | null = null;
 let modeToggleShadowRoot: ShadowRoot | null = null;
+let modeToggleAllBtn: HTMLButtonElement | null = null;
 let modeToggleOverviewBtn: HTMLButtonElement | null = null;
 let modeToggleDepthBtn: HTMLButtonElement | null = null;
 let modeToggleResizeHandler: (() => void) | null = null;
 let modeToggleThemeHandler: ((mode: "light" | "dark") => void) | null = null;
 
-const TOGGLE_OVERLAY_WIDTH = 168; // px — approximate rendered width of the two buttons
+const TOGGLE_OVERLAY_WIDTH = 240; // px — approximate rendered width of the three buttons
 
 // ─── Public API ───
 
@@ -412,11 +418,11 @@ export function initArgumentsBox(): void {
   contentClip.appendChild(buildDashboardFace());
   containerEl.appendChild(contentClip);
 
-  // Track mouse position to show close button only in top half
+  // Track mouse position to show close button only in top 30%
   containerEl.addEventListener("mousemove", (e) => {
     if (!expanded) return;
     const rect = containerEl!.getBoundingClientRect();
-    const inTopHalf = e.clientY < rect.top + rect.height / 2;
+    const inTopHalf = e.clientY < rect.top + rect.height * 0.3;
     if (inTopHalf) {
       showCloseBtn();
     } else {
@@ -622,21 +628,37 @@ export function updateArgumentsBox(
   }, 150);
 }
 
+/** Pre-cache annotation types from any annotation map (call with both modes to persist colors across switches). */
+export function cacheAnnotationMeta(annotations: Map<string, Annotation[]>): void {
+  cacheAnnotationNotes(annotations);
+}
+
 export function addLiveFeedback(
   icon: string,
   text: string,
-  opts?: { quote?: string; type?: ArgumentItem["type"]; replyHeader?: string },
-): void {
-  if (!hostEl) return;
+  opts?: { quote?: string; type?: ArgumentItem["type"]; replyHeader?: string; annotationType?: AnnotationType; annotationId?: string; contentHash?: string },
+): string {
+  if (!hostEl) return "";
+  const sortKey = `live-${Date.now()}`;
   liveItems.push({
     icon,
     text,
     quote: opts?.quote,
     replyHeader: opts?.replyHeader,
-    sortKey: `live-${Date.now()}`,
+    sortKey,
     type: opts?.type ?? "reaction",
+    annotationType: opts?.annotationType,
+    annotationId: opts?.annotationId,
+    contentHash: opts?.contentHash,
   });
   renderList();
+  return sortKey;
+}
+
+/** Update a live item's feedbackId once the server responds. */
+export function updateLiveFeedbackId(sortKey: string, feedbackId: string): void {
+  const item = liveItems.find((i) => i.sortKey === sortKey);
+  if (item) item.feedbackId = feedbackId;
 }
 
 /** Mode toggle should only show when the user is signed in, the extension is enabled, and the site is not dimmed. */
@@ -801,6 +823,7 @@ export function destroyArgumentsBox(): void {
   modeToggleHostEl?.remove();
   modeToggleHostEl = null;
   modeToggleShadowRoot = null;
+  modeToggleAllBtn = null;
   modeToggleOverviewBtn = null;
   modeToggleDepthBtn = null;
   if (listDragMoveHandler) {
@@ -1202,7 +1225,7 @@ function buildDashboardFace(): HTMLDivElement {
 
   dashPersonaSelect = document.createElement("select");
   dashPersonaSelect.className = "args-dash-persona-select";
-  for (const name of ["Terry", "Jerry"]) {
+  for (const name of ["Terry", "Jerry", "Sally"]) {
     const opt = document.createElement("option");
     opt.value = name;
     opt.textContent = name;
@@ -1217,9 +1240,16 @@ function buildDashboardFace(): HTMLDivElement {
     if (dashPersonaCircleEl)
       dashPersonaCircleEl.style.background =
         name === "Jerry" ? "#FDCB24" : "#fff";
+
+    // Sync personality buttons with the dropdown
+    const personality = name.toLowerCase();
+    dashDensityBtns.forEach((b) =>
+      b.classList.toggle("args-dash-density-active", b.dataset.intensity === personality),
+    );
+
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-      chrome.storage.local.set({ preferences: { ...prefs, persona: name } });
+      chrome.storage.local.set({ preferences: { ...prefs, persona: name, depth_personality: personality } });
     });
   });
 
@@ -1274,6 +1304,16 @@ function buildDashboardFace(): HTMLDivElement {
         b.classList.remove("args-dash-density-active"),
       );
       btn.classList.add("args-dash-density-active");
+
+      // Sync the top avatar and persona selector
+      if (dashPersonaSelect) dashPersonaSelect.value = label;
+      if (dashPersonaAvatarImgEl) {
+        dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${label}.png`);
+        dashPersonaAvatarImgEl.alt = label;
+      }
+      if (dashPersonaCircleEl)
+        dashPersonaCircleEl.style.background = label === "Jerry" ? "#FDCB24" : "#fff";
+
       chrome.storage.local.get("preferences").then((stored) => {
         const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
         chrome.storage.local.set({
@@ -1813,6 +1853,7 @@ function buildItems(
 
   for (const [hash, anns] of annotations) {
     for (const ann of anns) {
+      if (deletedAnnotationIds.has(ann.id)) continue;
       if (ann.id.startsWith("manual-")) {
         items.push({
           icon: "✎",
@@ -1830,30 +1871,36 @@ function buildItems(
 
   for (const [hash, fbs] of feedback) {
     for (const fb of fbs) {
+      if (deletedFeedbackIds.has(fb.id)) continue;
       const fbHash = annHashMap.get(fb.annotation_id) ?? hash;
+      const srcAnnotationType = findAnnotationType(annotations, fb.annotation_id);
       if (fb.feedback_type === "thumbs_up") {
+        const note = findAnnotationNote(annotations, fb.annotation_id);
+        const excerpt = note.length > 40 ? note.slice(0, 37) + "\u2026" : note;
         items.push({
-          icon: "✓",
-          text:
-            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
-          quote: findAnnotationQuote(annotations, fb.annotation_id),
+          icon: "↳",
+          text: "I agree",
           sortKey: fb.created_at,
-          type: "reaction",
+          type: "reply",
+          replyHeader: excerpt,
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
           contentHash: fbHash,
+          annotationType: srcAnnotationType,
         });
       } else if (fb.feedback_type === "thumbs_down") {
+        const note = findAnnotationNote(annotations, fb.annotation_id);
+        const excerpt = note.length > 40 ? note.slice(0, 37) + "\u2026" : note;
         items.push({
-          icon: "✗",
-          text:
-            fb.reply_text || findAnnotationNote(annotations, fb.annotation_id),
-          quote: findAnnotationQuote(annotations, fb.annotation_id),
+          icon: "↳",
+          text: "I don't think so",
           sortKey: fb.created_at,
-          type: "reaction",
+          type: "reply",
+          replyHeader: excerpt,
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
           contentHash: fbHash,
+          annotationType: srcAnnotationType,
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
@@ -1867,6 +1914,7 @@ function buildItems(
           feedbackId: fb.id,
           annotationId: fb.annotation_id,
           contentHash: fbHash,
+          annotationType: srcAnnotationType,
         });
       }
     }
@@ -1879,38 +1927,44 @@ function buildItems(
 // In-memory cache of annotation note texts, keyed by annotation ID.
 // Survives annotation cache regeneration (which assigns new UUIDs).
 const annotationNoteCache = new Map<string, string>();
+// In-memory cache of annotation types, keyed by annotation ID.
+const annotationTypeCache = new Map<string, string>();
 
 /** Persist the note cache to chrome.storage.local for cross-session survival. */
 function flushNoteCache(): void {
   const obj: Record<string, string> = {};
   for (const [k, v] of annotationNoteCache) obj[k] = v;
-  chrome.storage.local.set({ _oddity_note_cache: obj }).catch(() => {});
+  const typeObj: Record<string, string> = {};
+  for (const [k, v] of annotationTypeCache) typeObj[k] = v;
+  chrome.storage.local.set({ _oddity_note_cache: obj, _oddity_type_cache: typeObj }).catch(() => {});
 }
 
 /** Load persisted note cache on init. */
 function loadNoteCache(): void {
-  chrome.storage.local
-    .get("_oddity_note_cache")
-    .then((result) => {
-      const cached = result["_oddity_note_cache"] as
-        | Record<string, string>
-        | undefined;
-      if (cached) {
-        for (const [k, v] of Object.entries(cached))
-          annotationNoteCache.set(k, v);
-      }
-    })
-    .catch(() => {});
+  chrome.storage.local.get(["_oddity_note_cache", "_oddity_type_cache"]).then((result) => {
+    const cached = result["_oddity_note_cache"] as Record<string, string> | undefined;
+    if (cached) {
+      for (const [k, v] of Object.entries(cached)) annotationNoteCache.set(k, v);
+    }
+    const typeCached = result["_oddity_type_cache"] as Record<string, string> | undefined;
+    if (typeCached) {
+      for (const [k, v] of Object.entries(typeCached)) annotationTypeCache.set(k, v);
+    }
+  }).catch(() => {});
 }
 loadNoteCache();
 
-/** Index all annotation notes so replies can look them up even after ID changes. */
+/** Index all annotation notes and types so replies can look them up even after ID changes. */
 function cacheAnnotationNotes(annotations: Map<string, Annotation[]>): void {
   let added = false;
   for (const [, anns] of annotations) {
     for (const ann of anns) {
       if (!annotationNoteCache.has(ann.id)) {
         annotationNoteCache.set(ann.id, ann.content.note);
+        added = true;
+      }
+      if (!annotationTypeCache.has(ann.id)) {
+        annotationTypeCache.set(ann.id, ann.type);
         added = true;
       }
     }
@@ -1939,6 +1993,18 @@ function findAnnotationQuote(
     if (ann) return ann.anchor.exact;
   }
   return "";
+}
+
+function findAnnotationType(
+  annotations: Map<string, Annotation[]>,
+  annotationId: string,
+): AnnotationType | undefined {
+  for (const [, anns] of annotations) {
+    const ann = anns.find((a) => a.id === annotationId);
+    if (ann) return ann.type;
+  }
+  // Fallback: check the persisted type cache
+  return annotationTypeCache.get(annotationId) as AnnotationType | undefined;
 }
 
 function expandCard(id: string): void {
@@ -1999,6 +2065,18 @@ function renderList(): void {
     card.className = "arg-card";
     card.dataset.cardId = cardId;
     if (item.feedbackId) card.dataset.feedbackId = item.feedbackId;
+
+    // Apply annotation-specific color for non-manual items
+    if (item.annotationType && item.type !== "manual") {
+      const theme = getThemeMode();
+      const color = getAnnotationColor(item.annotationType, theme);
+      card.style.setProperty("--arg-card-color", color);
+      card.classList.add("arg-card--colored");
+      // Yellow notes need dark text for readability
+      if (color === "#FFDD69" || color === "#DCAF16") {
+        card.classList.add("arg-card--yellow");
+      }
+    }
 
     // Label (1 line max, like note-label)
     const header = document.createElement("div");
@@ -2081,7 +2159,7 @@ function renderList(): void {
     replyInput.addEventListener("click", (e) => e.stopPropagation());
     const sendBtn = document.createElement("button");
     sendBtn.className = "note-reply-send";
-    sendBtn.innerHTML = "&#8593;";
+    sendBtn.innerHTML = `<span class="arrow-light"><svg width="10" height="13" viewBox="0 0 12 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.05377 0.219671C5.76087 -0.0732222 5.286 -0.0732222 4.99311 0.219671L0.220136 4.99264C-0.0727572 5.28553 -0.0727572 5.76041 0.220136 6.0533C0.51303 6.3462 0.987903 6.3462 1.2808 6.0533L5.52344 1.81066L9.76608 6.0533C10.059 6.3462 10.5338 6.3462 10.8267 6.0533C11.1196 5.76041 11.1196 5.28553 10.8267 4.99264L6.05377 0.219671ZM5.52344 15.75H6.27344L6.27344 0.750001H5.52344H4.77344L4.77344 15.75H5.52344Z" fill="white"/></svg></span><span class="arrow-dark"><svg width="10" height="13" viewBox="0 0 12 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.05377 0.219671C5.76087 -0.0732222 5.286 -0.0732222 4.99311 0.219671L0.220136 4.99264C-0.0727572 5.28553 -0.0727572 5.76041 0.220136 6.0533C0.51303 6.3462 0.987903 6.3462 1.2808 6.0533L5.52344 1.81066L9.76608 6.0533C10.059 6.3462 10.5338 6.3462 10.8267 6.0533C11.1196 5.76041 11.1196 5.28553 10.8267 4.99264L6.05377 0.219671ZM5.52344 15.75H6.27344L6.27344 0.750001H5.52344H4.77344L4.77344 15.75H5.52344Z" fill="#293038"/></svg></span>`;
     sendBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       submitArgReply();
@@ -2096,16 +2174,20 @@ function renderList(): void {
 
     const pillGroup = document.createElement("div");
     pillGroup.className = "note-pill-group";
-    const thumbUp = document.createElement("button");
-    thumbUp.className = "note-feedback-pill";
-    thumbUp.textContent = "Helpful";
-    thumbUp.addEventListener("click", (e) => e.stopPropagation());
-    const thumbDown = document.createElement("button");
-    thumbDown.className = "note-feedback-pill";
-    thumbDown.textContent = "Not helpful";
-    thumbDown.addEventListener("click", (e) => e.stopPropagation());
-    pillGroup.appendChild(thumbUp);
-    pillGroup.appendChild(thumbDown);
+    const goToBtn = document.createElement("button");
+    goToBtn.className = "note-feedback-pill note-goto-pill";
+    goToBtn.textContent = "Go to highlight ↗";
+    goToBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (item.annotationId) {
+        document.dispatchEvent(
+          new CustomEvent("oddity:scroll-to-annotation", {
+            detail: { annotationId: item.annotationId },
+          }),
+        );
+      }
+    });
+    pillGroup.appendChild(goToBtn);
 
     const iconGroup = document.createElement("div");
     iconGroup.className = "note-icon-group";
@@ -2201,20 +2283,27 @@ function renderList(): void {
     deleteBtn.innerHTML = `<span class="icon-dark"><svg width="15" height="19" viewBox="0 0 22 27" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.9219 7.43945C19.5106 7.28746 20.0695 7.65114 20.1689 8.25781C20.1871 8.36904 20.1904 8.48758 20.1904 8.61621C20.1916 12.9442 20.1921 17.2726 20.1914 21.6006C20.191 23.8874 18.6924 25.7032 16.4473 26.127C16.1796 26.1775 15.898 26.1959 15.6172 26.1963C12.4044 26.2013 9.19156 26.2003 5.97852 26.1992C3.69159 26.1985 1.85256 24.6628 1.45312 22.418C1.41441 22.2002 1.39474 21.976 1.39453 21.7549C1.39094 17.3332 1.39019 12.9109 1.39355 8.48926C1.3939 8.11363 1.54191 7.815 1.7627 7.62891C1.98301 7.44332 2.28797 7.35899 2.62695 7.43457C3.04346 7.52748 3.36132 7.89535 3.39258 8.32715C3.39929 8.42013 3.3955 8.50965 3.39551 8.62207C3.39566 12.6316 3.39648 16.6411 3.39648 20.6787H3.39551L3.39648 20.6855C3.41225 21.17 3.37743 21.7036 3.45996 22.1953C3.65247 23.341 4.68451 24.1899 5.83789 24.1924C9.13566 24.1995 12.4336 24.1998 15.7314 24.1924C17.1037 24.1893 18.1861 23.0585 18.1865 21.6758C18.188 17.2823 18.1867 12.8885 18.1875 8.49512C18.1876 7.94499 18.484 7.55251 18.9219 7.43945Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M7.26953 0.203125C9.62027 0.198508 11.9716 0.199014 14.3223 0.204102C14.6616 0.204899 14.922 0.314719 15.0977 0.492188C15.2735 0.670059 15.3822 0.934127 15.3848 1.27637C15.3898 1.9497 15.3867 2.62192 15.3867 3.29785V3.7998H15.9141C17.3757 3.79981 18.8361 3.79648 20.2969 3.80078C20.9586 3.80273 21.3942 4.24054 21.3867 4.82031C21.3799 5.3401 20.9666 5.77238 20.4453 5.80176C20.3502 5.8071 20.2583 5.80371 20.1475 5.80371H1.2666C0.639678 5.80015 0.20525 5.37415 0.200195 4.81543C0.195178 4.24231 0.62806 3.8045 1.26758 3.80176C2.72789 3.7955 4.1877 3.79982 5.64941 3.7998H6.1709L6.18359 3.61328C6.18866 3.53651 6.20002 3.43702 6.2002 3.34961C6.20145 2.65408 6.19707 1.96406 6.20215 1.27148C6.20465 0.931308 6.31364 0.668386 6.49023 0.491211C6.66684 0.314264 6.92879 0.203859 7.26953 0.203125ZM8.20312 3.7998H13.3838V2.21973H8.20312V3.7998Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M8.31055 9.80664C8.83083 9.76813 9.2791 10.1133 9.37012 10.627C9.39137 10.7472 9.3973 10.8761 9.39746 11.0117C9.39941 12.7069 9.39844 14.4024 9.39844 16.126C9.39842 17.149 9.40636 18.1395 9.39648 19.1309C9.38809 19.9463 8.64467 20.4191 7.97754 20.1025C7.76977 20.0039 7.62709 19.8731 7.53516 19.7178C7.44262 19.5613 7.39442 19.3667 7.39453 19.1309C7.39576 16.499 7.39446 13.8671 7.39453 11.2354C7.39454 11.0691 7.39044 10.9185 7.39648 10.7646C7.41659 10.2586 7.81791 9.84333 8.31055 9.80664Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M13.0742 9.80664C13.5841 9.74797 14.0478 10.0748 14.165 10.5918C14.1862 10.6852 14.1894 10.7898 14.1895 10.9092C14.1911 13.6331 14.189 16.3586 14.1934 19.083C14.1937 19.3328 14.1473 19.5393 14.0547 19.7041C13.9635 19.8663 13.8198 20.0013 13.6016 20.1006C13.3815 20.2006 13.1833 20.2215 13.001 20.1826C12.8191 20.1437 12.6362 20.0418 12.4521 19.8672C12.2593 19.6446 12.1865 19.3976 12.1865 19.1094C12.1869 16.3662 12.1849 13.6236 12.1885 10.8809C12.1893 10.2842 12.5612 9.86575 13.0742 9.80664Z" fill="white" stroke="#363636" stroke-width="0.4"/></svg></span><span class="icon-light"><svg width="15" height="19" viewBox="0 0 22 27" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.9219 7.43945C19.5106 7.28746 20.0695 7.65114 20.1689 8.25781C20.1871 8.36904 20.1904 8.48758 20.1904 8.61621C20.1916 12.9442 20.1921 17.2726 20.1914 21.6006C20.191 23.8874 18.6924 25.7032 16.4473 26.127C16.1796 26.1775 15.898 26.1959 15.6172 26.1963C12.4044 26.2013 9.19156 26.2003 5.97852 26.1992C3.69159 26.1985 1.85256 24.6628 1.45312 22.418C1.41441 22.2002 1.39474 21.976 1.39453 21.7549C1.39094 17.3332 1.39019 12.9109 1.39355 8.48926C1.3939 8.11363 1.54191 7.815 1.7627 7.62891C1.98301 7.44332 2.28797 7.35899 2.62695 7.43457C3.04346 7.52748 3.36132 7.89535 3.39258 8.32715C3.39929 8.42013 3.3955 8.50965 3.39551 8.62207C3.39566 12.6316 3.39648 16.6411 3.39648 20.6787H3.39551L3.39648 20.6855C3.41225 21.17 3.37743 21.7036 3.45996 22.1953C3.65247 23.341 4.68451 24.1899 5.83789 24.1924C9.13566 24.1995 12.4336 24.1998 15.7314 24.1924C17.1037 24.1893 18.1861 23.0585 18.1865 21.6758C18.188 17.2823 18.1867 12.8885 18.1875 8.49512C18.1876 7.94499 18.484 7.55251 18.9219 7.43945Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M7.26953 0.203125C9.62027 0.198508 11.9716 0.199014 14.3223 0.204102C14.6616 0.204899 14.922 0.314719 15.0977 0.492188C15.2735 0.670059 15.3822 0.934127 15.3848 1.27637C15.3898 1.9497 15.3867 2.62192 15.3867 3.29785V3.7998H15.9141C17.3757 3.79981 18.8361 3.79648 20.2969 3.80078C20.9586 3.80273 21.3942 4.24054 21.3867 4.82031C21.3799 5.3401 20.9666 5.77238 20.4453 5.80176C20.3502 5.8071 20.2583 5.80371 20.1475 5.80371H1.2666C0.639678 5.80015 0.20525 5.37415 0.200195 4.81543C0.195178 4.24231 0.62806 3.8045 1.26758 3.80176C2.72789 3.7955 4.1877 3.79982 5.64941 3.7998H6.1709L6.18359 3.61328C6.18866 3.53651 6.20002 3.43702 6.2002 3.34961C6.20145 2.65408 6.19707 1.96406 6.20215 1.27148C6.20465 0.931308 6.31364 0.668386 6.49023 0.491211C6.66684 0.314264 6.92879 0.203859 7.26953 0.203125ZM8.20312 3.7998H13.3838V2.21973H8.20312V3.7998Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M8.31055 9.80664C8.83083 9.76813 9.2791 10.1133 9.37012 10.627C9.39137 10.7472 9.3973 10.8761 9.39746 11.0117C9.39941 12.7069 9.39844 14.4024 9.39844 16.126C9.39842 17.149 9.40636 18.1395 9.39648 19.1309C9.38809 19.9463 8.64467 20.4191 7.97754 20.1025C7.76977 20.0039 7.62709 19.8731 7.53516 19.7178C7.44262 19.5613 7.39442 19.3667 7.39453 19.1309C7.39576 16.499 7.39446 13.8671 7.39453 11.2354C7.39454 11.0691 7.39044 10.9185 7.39648 10.7646C7.41659 10.2586 7.81791 9.84333 8.31055 9.80664Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M13.0742 9.80664C13.5841 9.74797 14.0478 10.0748 14.165 10.5918C14.1862 10.6852 14.1894 10.7898 14.1895 10.9092C14.1911 13.6331 14.189 16.3586 14.1934 19.083C14.1937 19.3328 14.1473 19.5393 14.0547 19.7041C13.9635 19.8663 13.8198 20.0013 13.6016 20.1006C13.3815 20.2006 13.1833 20.2215 13.001 20.1826C12.8191 20.1437 12.6362 20.0418 12.4521 19.8672C12.2593 19.6446 12.1865 19.3976 12.1865 19.1094C12.1869 16.3662 12.1849 13.6236 12.1885 10.8809C12.1893 10.2842 12.5612 9.86575 13.0742 9.80664Z" fill="#293038" stroke="white" stroke-width="0.4"/></svg></span>`;
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      const removeBySortKey = () => {
+        canonicalItems = canonicalItems.filter((i) => i.sortKey !== item.sortKey);
+        liveItems = liveItems.filter((i) => i.sortKey !== item.sortKey);
+      };
       if (item.feedbackId) {
+        deletedFeedbackIds.add(item.feedbackId);
         chrome.runtime
           .sendMessage({
             action: "deleteFeedback",
             payload: { feedbackId: item.feedbackId },
           })
           .catch(() => {});
-        card.remove();
+        canonicalItems = canonicalItems.filter((i) => i.feedbackId !== item.feedbackId);
+        liveItems = liveItems.filter((i) => i.feedbackId !== item.feedbackId);
         document.dispatchEvent(
           new CustomEvent("oddity:feedback-deleted", {
-            detail: { feedbackId: item.feedbackId },
+            detail: { feedbackId: item.feedbackId, annotationId: item.annotationId },
           }),
         );
       } else if (item.annotationId) {
+        deletedAnnotationIds.add(item.annotationId);
         chrome.runtime
           .sendMessage({
             action: "deleteAnnotation",
@@ -2225,13 +2314,18 @@ function renderList(): void {
             },
           })
           .catch(() => {});
-        card.remove();
+        canonicalItems = canonicalItems.filter((i) => i.annotationId !== item.annotationId);
+        liveItems = liveItems.filter((i) => i.annotationId !== item.annotationId);
         document.dispatchEvent(
           new CustomEvent("oddity:annotation-deleted", {
             detail: { annotationId: item.annotationId },
           }),
         );
+      } else {
+        // Live items without feedbackId/annotationId — remove by sortKey
+        removeBySortKey();
       }
+      renderList();
     });
     iconGroup.appendChild(editBtn);
     iconGroup.appendChild(deleteBtn);
@@ -2245,6 +2339,19 @@ function renderList(): void {
     card.appendChild(header);
     card.appendChild(body);
     card.appendChild(expandedContent);
+
+    // Double-click: scroll to the linked highlight in the text
+    card.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      if ((e.target as HTMLElement).closest("button, input, textarea")) return;
+      if (item.annotationId) {
+        document.dispatchEvent(
+          new CustomEvent("oddity:scroll-to-annotation", {
+            detail: { annotationId: item.annotationId },
+          }),
+        );
+      }
+    });
 
     // Click: toggle expand/collapse (suppressed if user was dragging)
     card.addEventListener("click", (e) => {
@@ -2266,20 +2373,21 @@ function renderList(): void {
 
   // Measure collapsed heights then fix positions — mirrors margin notes' rAF approach.
   // Cards are position:absolute so expanding one never shifts siblings.
+  // Double rAF ensures the browser has completed layout before we measure.
   requestAnimationFrame(() => {
-    if (!listEl) return;
-    const GAP = 10;
-    let top = GAP;
-    let maxCardWidth = 110; // min card width
-    const cards = listEl.querySelectorAll<HTMLDivElement>(".arg-card");
-    for (const card of cards) {
-      card.style.top = `${top}px`;
-      top += card.offsetHeight + GAP;
-      if (card.offsetWidth > maxCardWidth) maxCardWidth = card.offsetWidth;
-    }
-    listEl.style.height = `${top}px`;
+    requestAnimationFrame(() => {
+      if (!listEl) return;
+      const GAP = 10;
+      let top = GAP;
+      const cards = listEl.querySelectorAll<HTMLDivElement>(".arg-card");
+      for (const card of cards) {
+        card.style.top = `${top}px`;
+        top += card.offsetHeight + GAP;
+      }
+      listEl.style.height = `${top}px`;
 
-    containerEl?.style.setProperty("--panel-width", "300px");
+      containerEl?.style.setProperty("--panel-width", "300px");
+    });
   });
 }
 
@@ -2370,13 +2478,18 @@ function initModeToggleOverlay(): void {
 
   const toggleEl = document.createElement("div");
   toggleEl.className = "mode-toggle";
-  toggleEl.dataset.active = "overview";
+  toggleEl.dataset.active = "all";
 
   const sliderEl = document.createElement("div");
   sliderEl.className = "mode-slider";
 
+  modeToggleAllBtn = document.createElement("button");
+  modeToggleAllBtn.className = "mode-btn mode-active";
+  modeToggleAllBtn.textContent = "All";
+  modeToggleAllBtn.dataset.mode = "all";
+
   modeToggleOverviewBtn = document.createElement("button");
-  modeToggleOverviewBtn.className = "mode-btn mode-active";
+  modeToggleOverviewBtn.className = "mode-btn";
   modeToggleOverviewBtn.textContent = "Overview";
   modeToggleOverviewBtn.dataset.mode = "overview";
 
@@ -2385,11 +2498,13 @@ function initModeToggleOverlay(): void {
   modeToggleDepthBtn.textContent = "Depth";
   modeToggleDepthBtn.dataset.mode = "depth";
 
-  function handleToggleClick(e: MouseEvent): void {
+  function handleBtnClick(e: MouseEvent): void {
     e.stopPropagation();
-    // Any click anywhere on the toggle switches to the other mode
-    const isOverview = modeToggleOverviewBtn!.classList.contains("mode-active");
-    const mode = isOverview ? "depth" : "overview";
+    const target = (e.target as HTMLElement).closest("[data-mode]") as HTMLElement | null;
+    if (!target) return;
+    const mode = target.dataset.mode as string;
+    if (mode === toggleEl.dataset.active) return;
+    modeToggleAllBtn!.classList.toggle("mode-active", mode === "all");
     modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
     toggleEl.dataset.active = mode;
@@ -2398,9 +2513,10 @@ function initModeToggleOverlay(): void {
     );
   }
 
-  toggleEl.addEventListener("click", handleToggleClick);
+  toggleEl.addEventListener("click", handleBtnClick);
 
   toggleEl.appendChild(sliderEl);
+  toggleEl.appendChild(modeToggleAllBtn);
   toggleEl.appendChild(modeToggleOverviewBtn);
   toggleEl.appendChild(modeToggleDepthBtn);
   modeToggleShadowRoot.appendChild(toggleEl);
@@ -2421,7 +2537,7 @@ const TOGGLE_OVERLAY_CSS = `
 
   .mode-toggle {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     padding: 4px;
     background: #292929;
     border-radius: 12px;
@@ -2434,7 +2550,7 @@ const TOGGLE_OVERLAY_CSS = `
     position: absolute;
     top: 4px;
     left: 4px;
-    width: calc(50% - 4px);
+    width: calc(33.333% - 2.67px);
     height: calc(100% - 8px);
     background: #434343;
     border-radius: 9px;
@@ -2444,8 +2560,12 @@ const TOGGLE_OVERLAY_CSS = `
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08);
   }
 
-  .mode-toggle[data-active="depth"] .mode-slider {
+  .mode-toggle[data-active="overview"] .mode-slider {
     transform: translateX(100%);
+  }
+
+  .mode-toggle[data-active="depth"] .mode-slider {
+    transform: translateX(200%);
   }
 
   .mode-btn {
@@ -2853,7 +2973,7 @@ const ARGUMENTS_BOX_CSS = `
   .args-purpose-label {
     font-size: 9.5px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.5);
+    color: #E6E6E6;
     font-family: system-ui, -apple-system, sans-serif;
     letter-spacing: 0.04em;
   }
@@ -2930,6 +3050,8 @@ const ARGUMENTS_BOX_CSS = `
     filter: grayscale(0.6);
     pointer-events: none;
   }
+
+  /* Colored card overrides moved after default styles — see below */
 
   /* Header = note-label (max 1 line) */
   .arg-card-header {
@@ -3019,7 +3141,8 @@ const ARGUMENTS_BOX_CSS = `
     all: unset;
     flex: 1;
     min-width: 0;
-    background: #DFE7EF;
+    background: #FFFFFF;
+    border: 1px solid #DFE7EF;
     border-radius: 100px;
     padding: 5px 12px;
     font-size: var(--oddity-note-size);
@@ -3027,6 +3150,7 @@ const ARGUMENTS_BOX_CSS = `
     color: #293038;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     line-height: 1;
+    box-sizing: border-box;
   }
 
   .arg-card .note-reply-input::placeholder {
@@ -3094,11 +3218,38 @@ const ARGUMENTS_BOX_CSS = `
     opacity: 1;
   }
 
+  /* Colored cards (LLM-generated annotation feedback) — must come after default styles */
+  .arg-card--colored .arg-card-header {
+    color: var(--arg-card-color);
+  }
+  .arg-card--colored .note-reply-send {
+    background: var(--arg-card-color);
+  }
+  .arg-card--colored .note-feedback-pill {
+    background: var(--arg-card-color);
+  }
+
+  /* Yellow note cards: dark text for readability */
+  .arg-card--yellow .arg-card-header {
+    color: var(--arg-card-color);
+  }
+  .arg-card--yellow .note-reply-send .arrow-light { display: none; }
+  .arg-card--yellow .note-reply-send .arrow-dark { display: inline-flex; }
+  .arg-card--yellow .note-feedback-pill {
+    color: #293038;
+  }
+
   /* ── Icon theme switching for argument cards ── */
   .icon-light { display: none; }
   .icon-dark { display: inline-flex; }
   :host([data-theme="light"]) .icon-light { display: inline-flex; }
   :host([data-theme="light"]) .icon-dark { display: none; }
+
+  /* ── Arrow theme switching for send button ── */
+  .note-reply-send .arrow-dark { display: none; }
+  .note-reply-send .arrow-light { display: inline-flex; }
+  :host([data-theme="light"]) .note-reply-send .arrow-dark { display: inline-flex; }
+  :host([data-theme="light"]) .note-reply-send .arrow-light { display: none; }
 
   .arg-card .note-icon-btn {
     all: unset;
@@ -3182,11 +3333,11 @@ const ARGUMENTS_BOX_CSS = `
     font-family: system-ui, -apple-system, sans-serif;
   }
 
-  /* ── Mode Toggle (Overview / Depth) ── */
+  /* ── Mode Toggle (All / Overview / Depth) ── */
 
   .args-mode-toggle {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     padding: 4px;
     margin: 8px 14px;
     flex-shrink: 0;
@@ -3200,7 +3351,7 @@ const ARGUMENTS_BOX_CSS = `
     position: absolute;
     top: 4px;
     left: 4px;
-    width: calc(50% - 4px);
+    width: calc(33.333% - 2.67px);
     height: calc(100% - 8px);
     background: #404040;
     border-radius: 9px;
@@ -3209,8 +3360,12 @@ const ARGUMENTS_BOX_CSS = `
     z-index: 0;
   }
 
-  .args-mode-toggle[data-active="depth"] .args-mode-slider {
+  .args-mode-toggle[data-active="overview"] .args-mode-slider {
     transform: translateX(100%);
+  }
+
+  .args-mode-toggle[data-active="depth"] .args-mode-slider {
+    transform: translateX(200%);
   }
 
   .args-mode-btn {
@@ -3429,6 +3584,9 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .arg-card-header {
     color: #748DBF;
+  }
+  :host([data-theme="light"]) .arg-card--colored .arg-card-header {
+    color: var(--arg-card-color);
   }
 
   :host([data-theme="light"]) .arg-card-body {

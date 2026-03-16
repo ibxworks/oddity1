@@ -8,6 +8,7 @@ import {
 } from "./adapter-registry.js";
 import {
   AuthError,
+  RateLimitError,
   deleteAnnotation as apiDeleteAnnotation,
   deleteFeedback as apiDeleteFeedback,
   updateFeedback as apiUpdateFeedback,
@@ -446,6 +447,12 @@ chrome.runtime.onMessage.addListener(
         // Intentional cancellation — not an error, no response needed
         if (err instanceof DOMException && err.name === 'AbortError') {
           sendResponse({ aborted: true });
+          return;
+        }
+
+        if (err instanceof RateLimitError) {
+          console.warn(`[Oddity 1] Rate limited — retry after ${err.retryAfter}s`);
+          sendResponse({ error: `Rate limited. Please wait ~${Math.ceil(err.retryAfter / 60)} min.`, rateLimited: true });
           return;
         }
 

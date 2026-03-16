@@ -19,6 +19,18 @@ export class AuthError extends Error {
   }
 }
 
+export class RateLimitError extends Error {
+  retryAfter: number;
+  constructor(retryAfter: number) {
+    super(`Rate limit exceeded. Retry after ${retryAfter}s`);
+    this.name = 'RateLimitError';
+    this.retryAfter = retryAfter;
+  }
+}
+
+/** Global rate limit gate: timestamp (ms) until which all requests should be blocked. */
+let rateLimitUntil = 0;
+
 // ─── Internal Fetch with Auth ───
 
 async function authFetch(
@@ -95,6 +107,12 @@ export async function requestAnnotationsStreaming(
   onAnnotation: (annotation: Annotation) => void,
   signal?: AbortSignal,
 ): Promise<AnnotationResponse> {
+  // Block if globally rate-limited
+  if (Date.now() < rateLimitUntil) {
+    const waitSec = Math.ceil((rateLimitUntil - Date.now()) / 1000);
+    throw new RateLimitError(waitSec);
+  }
+
   async function doStreamingFetch(token: string | null): Promise<Response> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -120,6 +138,17 @@ export async function requestAnnotationsStreaming(
       throw new AuthError();
     }
     res = await doStreamingFetch(retryToken);
+  }
+
+  if (res.status === 429) {
+    const body = await res.text().catch(() => '');
+    let retryAfter = 60; // default 60s
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.retry_after) retryAfter = Math.ceil(Number(parsed.retry_after));
+    } catch {}
+    rateLimitUntil = Date.now() + retryAfter * 1000;
+    throw new RateLimitError(retryAfter);
   }
 
   if (!res.ok) {

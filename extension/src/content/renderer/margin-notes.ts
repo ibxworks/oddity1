@@ -4,11 +4,12 @@ import type {
   AnnotationFont,
   AnnotationFontSize,
   AnnotationType,
+  ViewMode,
 } from "@oddity/shared";
 import { ANNOTATION_LABELS, getAnnotationColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
 import { removeAnchors } from "./anchors.js";
-import { addLiveFeedback } from "./arguments-box.js";
+import { addLiveFeedback, updateLiveFeedbackId } from "./arguments-box.js";
 import {
   deemphasizeAnnotation,
   emphasizeAnnotation,
@@ -36,6 +37,14 @@ type MarginNote = {
   element: HTMLDivElement;
 };
 
+type InlinePopover = {
+  id: string;
+  annotation: Annotation;
+  range: Range;
+  element: HTMLDivElement;
+  visible: boolean;
+};
+
 // ─── State ───
 
 let hostEl: HTMLDivElement | null = null;
@@ -57,6 +66,16 @@ let justUnpinned = false;
 let userName: string | null = null;
 let sharedContentRight = 0;
 let sharedContentLeftViewport = 0;
+let timelineLineEl: HTMLDivElement | null = null;
+
+// ─── Inline Popover State (Depth mode) ───
+let currentAnnotationMode: ViewMode = "overview";
+let inlinePopovers: Map<string, InlinePopover> = new Map();
+let inlineShowTimer: ReturnType<typeof setTimeout> | null = null;
+let inlineHideTimer: ReturnType<typeof setTimeout> | null = null;
+let inlineHoveredId: string | null = null;
+let mouseInInlinePopover = false;
+let mouseInAnchor = false;
 
 const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
@@ -123,6 +142,9 @@ export function initMarginNotes(region: Element): void {
   style.textContent = MARGIN_NOTES_CSS;
   shadowRoot.appendChild(style);
 
+  // Timeline line disabled for now
+  timelineLineEl = null;
+
   // Apply initial font/size from stored preferences
   chrome.storage.local.get("preferences", (result) => {
     const prefs = result["preferences"];
@@ -150,12 +172,20 @@ export function initMarginNotes(region: Element): void {
   }) as EventListener);
 
   document.addEventListener("oddity:feedback-deleted", ((e: CustomEvent) => {
-    const { feedbackId } = e.detail;
+    const { feedbackId, annotationId } = e.detail;
     if (!shadowRoot) return;
-    const bubble = shadowRoot.querySelector(
-      `.note-reply-bubble[data-feedback-id="${feedbackId}"]`,
-    );
+    // Remove reply bubble if present
+    const bubble = shadowRoot.querySelector(`.note-reply-bubble[data-feedback-id="${feedbackId}"]`);
     if (bubble) bubble.remove();
+    // Deactivate thumbs pill and remove reaction badge on the source margin note
+    if (annotationId) {
+      const noteEl = shadowRoot.querySelector(`.oddity-note[data-annotation-id="${annotationId}"]`);
+      if (noteEl) {
+        noteEl.dispatchEvent(new Event("oddity:reset-reaction"));
+        const badge = noteEl.querySelector(".note-reaction-badge");
+        if (badge) badge.remove();
+      }
+    }
   }) as EventListener);
 
   // Fetch user profile for name badge on manual annotations
@@ -166,6 +196,10 @@ export function initMarginNotes(region: Element): void {
     .catch(() => {});
 }
 
+export function setMarginNoteMode(mode: ViewMode): void {
+  currentAnnotationMode = mode;
+}
+
 export function addMarginNote(
   annotation: Annotation,
   range: Range,
@@ -174,6 +208,18 @@ export function addMarginNote(
   contentHash?: string,
 ): void {
   if (!shadowRoot || !regionEl) return;
+
+  // In depth mode, use inline popovers instead of margin notes (except user-written notes)
+  // In "all" mode, depth annotations also use inline popovers; overview annotations use margin notes
+  const useInlinePopover = annotation.type !== "user_written" && (
+    currentAnnotationMode === "depth" ||
+    (currentAnnotationMode === "all" && annotation.mode === "depth")
+  );
+  if (useInlinePopover) {
+    addInlinePopover(annotation, range, feedback, onDelete, contentHash);
+    return;
+  }
+
   // Deduplicate: skip if a note for this annotation already exists
   if (notes.some((n) => n.id === annotation.id)) return;
 
@@ -242,7 +288,248 @@ export function addMarginNote(
   });
 }
 
+// ─── Inline Popover (Depth mode) ───
+
+function addInlinePopover(
+  annotation: Annotation,
+  range: Range,
+  feedback: AnnotationFeedback[] = [],
+  onDelete?: (annotationId: string) => void,
+  contentHash?: string,
+): void {
+  if (!shadowRoot) return;
+  // Deduplicate
+  if (inlinePopovers.has(annotation.id)) return;
+
+  const rects = range.getClientRects();
+  if (rects.length === 0) return;
+
+  const noteRegion = regionEl;
+
+  // Resolve content hash
+  const resolvedHash = contentHash
+    ?? (noteRegion as HTMLElement)?.dataset?.oddityHash
+    ?? document.querySelector("[data-oddity-hash]")?.getAttribute("data-oddity-hash")
+    ?? "";
+
+  const el = createNoteElement(annotation, "left", feedback, onDelete, resolvedHash);
+  el.classList.add("oddity-note--inline");
+
+  // Override the default margin-note hover/click handlers on the card element.
+  // The card's built-in mouseenter/mouseleave/click (from createNoteElement) still
+  // work for internal interactions (buttons, inputs), but we add inline-specific
+  // hover bridge behavior.
+  el.addEventListener("mouseenter", () => {
+    mouseInInlinePopover = true;
+    cancelInlineHide();
+  });
+  el.addEventListener("mouseleave", () => {
+    mouseInInlinePopover = false;
+    if (!pinnedId) scheduleInlineHide();
+  });
+
+  const popover: InlinePopover = {
+    id: annotation.id,
+    annotation,
+    range,
+    element: el,
+    visible: false,
+  };
+
+  inlinePopovers.set(annotation.id, popover);
+}
+
+function showInlinePopover(annotationId: string): void {
+  if (!shadowRoot) return;
+  const popover = inlinePopovers.get(annotationId);
+  if (!popover) return;
+
+  // Cancel any pending hide
+  cancelInlineHide();
+  cancelInlineShow();
+
+  inlineHoveredId = annotationId;
+
+  inlineShowTimer = setTimeout(() => {
+    inlineShowTimer = null;
+    if (!shadowRoot || !popover) return;
+
+    // Hide any other visible inline popover (not pinned)
+    if (!pinnedId) {
+      for (const [id, p] of inlinePopovers) {
+        if (id !== annotationId && p.visible) {
+          p.element.remove();
+          p.visible = false;
+          p.element.classList.remove("expanded");
+        }
+      }
+    }
+
+    if (!popover.visible) {
+      shadowRoot.appendChild(popover.element);
+      popover.visible = true;
+    }
+
+    positionInlinePopover(popover);
+  }, 150);
+}
+
+function hideInlinePopover(annotationId?: string): void {
+  scheduleInlineHide(annotationId);
+}
+
+function scheduleInlineHide(annotationId?: string): void {
+  cancelInlineHide();
+  inlineHideTimer = setTimeout(() => {
+    inlineHideTimer = null;
+    if (mouseInInlinePopover || mouseInAnchor || pinnedId) return;
+
+    if (annotationId) {
+      const popover = inlinePopovers.get(annotationId);
+      if (popover && popover.visible) {
+        popover.element.remove();
+        popover.visible = false;
+        popover.element.classList.remove("expanded");
+      }
+    } else if (inlineHoveredId) {
+      const popover = inlinePopovers.get(inlineHoveredId);
+      if (popover && popover.visible) {
+        popover.element.remove();
+        popover.visible = false;
+        popover.element.classList.remove("expanded");
+      }
+    }
+
+    inlineHoveredId = null;
+  }, 300);
+}
+
+function cancelInlineShow(): void {
+  if (inlineShowTimer !== null) {
+    clearTimeout(inlineShowTimer);
+    inlineShowTimer = null;
+  }
+}
+
+function cancelInlineHide(): void {
+  if (inlineHideTimer !== null) {
+    clearTimeout(inlineHideTimer);
+    inlineHideTimer = null;
+  }
+}
+
+function expandInlinePopover(annotationId: string): void {
+  const popover = inlinePopovers.get(annotationId);
+  if (!popover) return;
+
+  // Show the popover if not already visible
+  if (!popover.visible && shadowRoot) {
+    cancelInlineShow();
+    cancelInlineHide();
+    shadowRoot.appendChild(popover.element);
+    popover.visible = true;
+    positionInlinePopover(popover);
+  }
+
+  // Collapse any other expanded inline popover
+  for (const [id, p] of inlinePopovers) {
+    if (id !== annotationId && p.visible) {
+      p.element.classList.remove("expanded");
+      p.element.remove();
+      p.visible = false;
+    }
+  }
+
+  pinnedId = annotationId;
+  hostEl?.classList.add("has-pinned");
+  popover.element.classList.add("expanded");
+  expandedId = annotationId;
+
+  // Reposition after expansion (content may change height)
+  requestAnimationFrame(() => positionInlinePopover(popover));
+}
+
+function unpinInlinePopover(): void {
+  const id = pinnedId;
+  pinnedId = null;
+  expandedId = null;
+  hostEl?.classList.remove("has-pinned");
+  justUnpinned = true;
+  setTimeout(() => { justUnpinned = false; }, 0);
+
+  if (id) {
+    const popover = inlinePopovers.get(id);
+    if (popover && popover.visible) {
+      popover.element.classList.remove("expanded");
+      // If still hovering the anchor, keep the collapsed card visible
+      if (!mouseInAnchor && !mouseInInlinePopover) {
+        scheduleInlineHide(id);
+      }
+    }
+  }
+  undimAllNotes();
+  deemphasizeAnnotation();
+}
+
+function positionInlinePopover(popover: InlinePopover): void {
+  const rects = popover.range.getClientRects();
+  if (rects.length === 0) return;
+
+  const firstRect = rects[0]!;
+  const gap = 6;
+  const viewportH = window.innerHeight;
+  const viewportW = window.innerWidth;
+
+  const el = popover.element;
+
+  // Temporarily position off-screen to measure
+  el.style.left = "-9999px";
+  el.style.top = "-9999px";
+
+  requestAnimationFrame(() => {
+    const popRect = el.getBoundingClientRect();
+
+    // Default: below the highlighted text, left-aligned with highlight start
+    let top = firstRect.bottom + gap;
+    let left = firstRect.left;
+
+    // Flip above if not enough space below
+    if (firstRect.bottom + gap + popRect.height > viewportH) {
+      top = firstRect.top - popRect.height - gap;
+    }
+
+    // Clamp horizontal to viewport
+    if (left + popRect.width > viewportW - 8) {
+      left = viewportW - popRect.width - 8;
+    }
+    if (left < 8) {
+      left = 8;
+    }
+
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  });
+}
+
+function repositionVisibleInlinePopovers(): void {
+  for (const [, popover] of inlinePopovers) {
+    if (popover.visible) {
+      positionInlinePopover(popover);
+    }
+  }
+}
+
 export function removeMarginNote(annotationId: string): void {
+  // Check inline popovers first
+  const popover = inlinePopovers.get(annotationId);
+  if (popover) {
+    if (popover.visible) popover.element.remove();
+    inlinePopovers.delete(annotationId);
+    if (pinnedId === annotationId) pinnedId = null;
+    if (expandedId === annotationId) expandedId = null;
+    return;
+  }
+
   const idx = notes.findIndex((n) => n.id === annotationId);
   if (idx === -1) return;
 
@@ -264,6 +551,16 @@ export function clearMarginNotes(): void {
   noteIndex = 0;
   expandedId = null;
   pinnedId = null;
+
+  // Also clear inline popovers
+  for (const [, popover] of inlinePopovers) {
+    if (popover.visible) popover.element.remove();
+  }
+  inlinePopovers.clear();
+  cancelInlineShow();
+  cancelInlineHide();
+  inlineHoveredId = null;
+  mouseInInlinePopover = false;
 }
 
 export function setMarginNotesVisible(v: boolean): void {
@@ -281,6 +578,16 @@ export function filterMarginNotesByTypes(types: AnnotationType[]): void {
     const isVisible = typeSet.has(note.annotation.type);
     note.element.style.display = isVisible ? "" : "none";
     if (!isVisible) hiddenTypes.add(note.annotation.type);
+  }
+
+  // Also filter inline popovers
+  for (const [, popover] of inlinePopovers) {
+    const isVisible = typeSet.has(popover.annotation.type);
+    if (!isVisible && popover.visible) {
+      popover.element.remove();
+      popover.visible = false;
+    }
+    if (!isVisible) hiddenTypes.add(popover.annotation.type);
   }
 
   resolveOverlaps();
@@ -315,6 +622,20 @@ function forceCollapseAll(): void {
 }
 
 export function onAnchorClick(annotationId: string): void {
+  if (currentAnnotationMode !== "overview" && inlinePopovers.has(annotationId)) {
+    if (pinnedId === annotationId) {
+      unpinInlinePopover();
+    } else if (pinnedId) {
+      unpinInlinePopover();
+      expandInlinePopover(annotationId);
+      emphasizeAnnotation(annotationId);
+    } else if (!justUnpinned) {
+      expandInlinePopover(annotationId);
+      emphasizeAnnotation(annotationId);
+    }
+    return;
+  }
+
   if (pinnedId) {
     unpinAll();
   } else if (!justUnpinned) {
@@ -327,6 +648,10 @@ export function onAnchorClick(annotationId: string): void {
 }
 
 function unpinAll(): void {
+  if (currentAnnotationMode !== "overview" && pinnedId && inlinePopovers.has(pinnedId)) {
+    unpinInlinePopover();
+    return;
+  }
   pinnedId = null;
   hostEl?.classList.remove("has-pinned");
   justUnpinned = true;
@@ -361,6 +686,14 @@ export function undimAllNotes(): void {
 }
 
 export function onAnchorHoverStart(annotationId: string): void {
+  if (currentAnnotationMode !== "overview" && inlinePopovers.has(annotationId)) {
+    mouseInAnchor = true;
+    if (pinnedId && pinnedId !== annotationId) return;
+    showInlinePopover(annotationId);
+    emphasizeAnnotation(annotationId);
+    return;
+  }
+
   if (pinnedId && pinnedId !== annotationId) return;
   if (anchorHoverTimer) {
     clearTimeout(anchorHoverTimer);
@@ -376,7 +709,15 @@ export function onAnchorHoverStart(annotationId: string): void {
   note?.element.classList.add("anchor-hovered");
 }
 
-export function onAnchorHoverEnd(): void {
+export function onAnchorHoverEnd(annotationId?: string): void {
+  if (currentAnnotationMode !== "overview" && (!annotationId || inlinePopovers.has(annotationId))) {
+    mouseInAnchor = false;
+    if (pinnedId) return;
+    deemphasizeAnnotation();
+    scheduleInlineHide();
+    return;
+  }
+
   if (pinnedId) return;
   for (const note of notes) note.element.classList.remove("anchor-hovered");
   undimAllNotes();
@@ -410,6 +751,14 @@ export function destroyMarginNotes(): void {
   pinnedId = null;
   fontLink?.remove();
   fontLink = null;
+  timelineLineEl = null;
+
+  // Clean up inline popover state
+  inlinePopovers.clear();
+  cancelInlineShow();
+  cancelInlineHide();
+  inlineHoveredId = null;
+  mouseInInlinePopover = false;
 }
 
 export function getMarginNotesContentRight(): number {
@@ -439,19 +788,18 @@ function createNoteElement(
   onDelete?: (annotationId: string) => void,
   contentHash = "",
 ): HTMLDivElement {
-  const ENRICHMENT_TYPES = new Set([
-    "insight",
-    "recall",
-    "study",
-    "translation",
-    "vocabulary",
-  ]);
+  const ENRICHMENT_TYPES = new Set(["insight", "recall", "study", "translation", "vocabulary"]);
+  const OVERVIEW_TYPES = new Set(["core_claim", "evidence", "outcome", "background", "transition"]);
   const theme = getThemeMode();
   let color = getAnnotationColor(annotation.type, theme);
   // Green enrichment notes use a lighter accent in dark mode
   if (theme === "dark" && ENRICHMENT_TYPES.has(annotation.type)) {
     color = "#BFF3D3";
   }
+  // Overview notes: deeper yellow label in light mode, but buttons stay #FFDD69
+  const labelColor = (theme === "light" && OVERVIEW_TYPES.has(annotation.type))
+    ? "#DCAF16"
+    : color;
   const label = ANNOTATION_LABELS[annotation.type];
   const isManual = annotation.id.startsWith("manual-");
 
@@ -464,12 +812,12 @@ function createNoteElement(
   // Bracket
   const bracket = document.createElement("div");
   bracket.className = "note-bracket";
-  bracket.style.borderColor = color;
+  bracket.style.borderColor = labelColor;
 
   // Label
   const labelEl = document.createElement("span");
   labelEl.className = "note-label";
-  labelEl.style.color = color;
+  labelEl.style.color = labelColor;
   labelEl.textContent = label;
 
   // User name badge for manual annotations
@@ -636,10 +984,16 @@ function createNoteElement(
     let currentFeedbackId: string | null =
       existingThumbUp?.id ?? existingThumbDown?.id ?? null;
 
+    // Listen for external feedback deletion (e.g. from argument box) to reset pill state
+    el.addEventListener("oddity:reset-reaction", () => {
+      thumbUp.classList.remove("active");
+      thumbDown.classList.remove("active");
+      currentFeedbackId = null;
+    });
+
     const thumbUp = document.createElement("button");
-    thumbUp.className =
-      "note-feedback-pill" + (existingThumbUp ? " active" : "");
-    thumbUp.textContent = "Helpful";
+    thumbUp.className = "note-feedback-pill" + (existingThumbUp ? " active" : "");
+    thumbUp.textContent = "Agree";
     thumbUp.title = "Helpful";
     thumbUp.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -663,14 +1017,16 @@ function createNoteElement(
         // Activate thumbs up, deactivate thumbs down
         thumbUp.classList.add("active");
         thumbDown.classList.remove("active");
-        reactionBadge = updateReactionBadge(
-          labelEl,
-          reactionBadge,
-          "thumbs_up",
-          true,
-        );
-        addLiveFeedback("✓", annotation.content.note, {
-          quote: annotation.anchor.exact,
+        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
+        const noteExcerpt = annotation.content.note.length > 40
+          ? annotation.content.note.slice(0, 37) + "\u2026"
+          : annotation.content.note;
+        const liveSortKey = addLiveFeedback("↳", "I agree", {
+          type: "reply",
+          replyHeader: noteExcerpt,
+          annotationType: annotation.type,
+          annotationId: annotation.id,
+          contentHash: contentHash,
         });
         const doSave = () =>
           sendMessage({
@@ -683,7 +1039,10 @@ function createNoteElement(
               pageTitle: document.title,
             },
           }).then((fb: any) => {
-            if (fb?.id) currentFeedbackId = fb.id;
+            if (fb?.id) {
+              currentFeedbackId = fb.id;
+              updateLiveFeedbackId(liveSortKey, fb.id);
+            }
           });
         if (currentFeedbackId) {
           sendMessage({
@@ -727,14 +1086,16 @@ function createNoteElement(
         // Activate thumbs down, deactivate thumbs up
         thumbDown.classList.add("active");
         thumbUp.classList.remove("active");
-        reactionBadge = updateReactionBadge(
-          labelEl,
-          reactionBadge,
-          "thumbs_down",
-          true,
-        );
-        addLiveFeedback("✗", annotation.content.note, {
-          quote: annotation.anchor.exact,
+        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
+        const noteExcerptDown = annotation.content.note.length > 40
+          ? annotation.content.note.slice(0, 37) + "\u2026"
+          : annotation.content.note;
+        const liveSortKeyDown = addLiveFeedback("↳", "I don't think so", {
+          type: "reply",
+          replyHeader: noteExcerptDown,
+          annotationType: annotation.type,
+          annotationId: annotation.id,
+          contentHash: contentHash,
         });
         const doSave = () =>
           sendMessage({
@@ -747,7 +1108,10 @@ function createNoteElement(
               pageTitle: document.title,
             },
           }).then((fb: any) => {
-            if (fb?.id) currentFeedbackId = fb.id;
+            if (fb?.id) {
+              currentFeedbackId = fb.id;
+              updateLiveFeedbackId(liveSortKeyDown, fb.id);
+            }
           });
         if (currentFeedbackId) {
           sendMessage({
@@ -809,9 +1173,17 @@ function createNoteElement(
   el.addEventListener("click", (e) => {
     e.stopPropagation();
     // Don't unpin when clicking interactive elements inside the card
-    if ((e.target as HTMLElement).closest("button, input, textarea")) return;
-    if (pinnedId) {
+    if ((e.target as HTMLElement).closest('button, input, textarea')) return;
+    if (pinnedId === annotation.id) {
       unpinAll();
+    } else if (pinnedId) {
+      // Clicking a different note while one is pinned: switch to the new one
+      unpinAll();
+      pinnedId = annotation.id;
+      hostEl?.classList.add('has-pinned');
+      expandMarginNote(annotation.id);
+      emphasizeAnnotation(annotation.id);
+      dimOtherNotes(annotation.id);
     } else if (!justUnpinned) {
       pinnedId = annotation.id;
       hostEl?.classList.add("has-pinned");
@@ -852,6 +1224,17 @@ function submitReply(
   container.appendChild(bubble);
   container.scrollTop = container.scrollHeight;
 
+  const excerpt = annotation.content.note.length > 40
+    ? annotation.content.note.slice(0, 37) + "\u2026"
+    : annotation.content.note;
+  const liveSortKeyReply = addLiveFeedback("↳", text, {
+    type: "reply",
+    replyHeader: excerpt,
+    annotationType: annotation.type,
+    annotationId: annotation.id,
+    contentHash: hash,
+  });
+
   // Send to background
   sendMessage({
     action: "saveFeedback",
@@ -863,20 +1246,13 @@ function submitReply(
       replyText: text,
       pageTitle: document.title,
     },
-  })
-    .then((fb: any) => {
-      if (fb?.id) bubble.dataset.feedbackId = fb.id;
-    })
-    .catch(() => {});
+  }).then((fb: any) => {
+    if (fb?.id) {
+      bubble.dataset.feedbackId = fb.id;
+      updateLiveFeedbackId(liveSortKeyReply, fb.id);
+    }
+  }).catch(() => {});
 
-  const excerpt =
-    annotation.content.note.length > 40
-      ? annotation.content.note.slice(0, 37) + "\u2026"
-      : annotation.content.note;
-  addLiveFeedback("↳", text, {
-    type: "reply",
-    replyHeader: excerpt,
-  });
 
   input.value = "";
 }
@@ -1100,7 +1476,11 @@ function applyPositions(): void {
     if (cl < sharedContentLeft) sharedContentLeft = cl;
   }
   if (!isFinite(sharedContentLeft)) sharedContentLeft = 0;
-  sharedContentLeftViewport = sharedContentLeft - window.scrollX;
+  // Only update the shared left if we have notes — preserve the last known
+  // value so the mode toggle doesn't jump when notes are cleared (e.g. depth mode).
+  if (leftNotes.length > 0) {
+    sharedContentLeftViewport = sharedContentLeft - window.scrollX;
+  }
 
   for (const note of notes) {
     const bounds = getContentBounds(note.region, note.range);
@@ -1123,7 +1503,46 @@ function applyPositions(): void {
     note.element.style.top = `${note.topPx}px`;
   }
   sharedContentRight = maxContentRight;
+
+  // Update the timeline line (overview mode only)
+  updateTimelineLine(leftNotes, sharedContentLeft);
+
   document.dispatchEvent(new CustomEvent("oddity:layoutUpdated"));
+}
+
+function updateTimelineLine(leftNotes: MarginNote[], sharedContentLeft: number): void {
+  if (!timelineLineEl) return;
+
+  // Only show in overview mode with 2+ visible notes
+  const visibleNotes = leftNotes.filter((n) => n.element.style.display !== "none");
+  if (currentAnnotationMode === "depth" || visibleNotes.length < 2) {
+    timelineLineEl.style.display = "none";
+    return;
+  }
+
+  // Sort by topPx to find first and last
+  const sorted = [...visibleNotes].sort((a, b) => a.topPx - b.topPx);
+  const first = sorted[0]!;
+  const last = sorted[sorted.length - 1]!;
+
+  // Line runs from center of first note to center of last note
+  const noteWidth = Math.min(NOTE_EXPANDED_WIDTH, Math.max(100, sharedContentLeft - MARGIN_PADDING - 8));
+  const noteLeft = Math.max(8, sharedContentLeft - MARGIN_PADDING - noteWidth);
+  const lineCenterX = noteLeft + noteWidth / 2;
+
+  const lineTop = first.topPx;
+  const lineBottom = last.topPx + last.collapsedHeight;
+  const lineHeight = lineBottom - lineTop;
+
+  if (lineHeight <= 0) {
+    timelineLineEl.style.display = "none";
+    return;
+  }
+
+  timelineLineEl.style.display = "";
+  timelineLineEl.style.left = `${lineCenterX}px`;
+  timelineLineEl.style.top = `${lineTop}px`;
+  timelineLineEl.style.height = `${lineHeight}px`;
 }
 
 // ─── Scroll / Resize Tracking ───
@@ -1150,6 +1569,9 @@ function scheduleRedraw(): void {
   if (!needsRedraw) {
     needsRedraw = true;
     requestAnimationFrame(() => {
+      if (currentAnnotationMode !== "overview") {
+        repositionVisibleInlinePopovers();
+      }
       recomputePositions();
       needsRedraw = false;
     });
@@ -1190,7 +1612,7 @@ const MARGIN_NOTES_CSS = `
     padding: 13px 18px;
     font-family: var(--oddity-note-font);
     font-size: var(--oddity-note-size);
-    line-height: 1.45;
+    line-height: 1.6;
     color: #FFFFFF;
     pointer-events: auto;
     cursor: default;
@@ -1223,7 +1645,7 @@ const MARGIN_NOTES_CSS = `
     font-family: var(--oddity-note-font);
     font-style: normal;
     font-size: var(--oddity-note-size);
-    font-weight: 900;
+    font-weight: 700;
     letter-spacing: normal;
     text-transform: lowercase;
     margin-bottom: 4px;
@@ -1243,8 +1665,8 @@ const MARGIN_NOTES_CSS = `
     font-family: var(--oddity-note-font);
     font-style: normal;
     font-size: var(--oddity-note-size);
-    font-weight: 250;
-    line-height: 1.45;
+    font-weight: 370;
+    line-height: 1.6;
     color: #FFFFFF;
   }
 
@@ -1342,16 +1764,17 @@ const MARGIN_NOTES_CSS = `
   .note-reply-bar {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-top: 0px;
-    margin-bottom: 7px;
+    gap: 8px;
+    margin-top: 6px;
+    margin-bottom: 14px;
   }
 
   .note-reply-input {
     all: unset;
     flex: 1;
     min-width: 0;
-    background: #DFE7EF;
+    background: #FFFFFF;
+    border: 1px solid #DFE7EF;
     border-radius: 100px;
     padding: 5px 12px;
     font-size: var(--oddity-note-size);
@@ -1359,6 +1782,7 @@ const MARGIN_NOTES_CSS = `
     color: #293038;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     line-height: 1;
+    box-sizing: border-box;
   }
 
   .note-reply-input::placeholder {
@@ -1395,13 +1819,13 @@ const MARGIN_NOTES_CSS = `
 
   .note-pill-group {
     display: flex;
-    gap: 5px;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
   .note-icon-group {
     display: flex;
-    gap: 2px;
+    gap: 6px;
   }
 
   /* Feedback pills (ace-quick style) */
@@ -1489,6 +1913,7 @@ const MARGIN_NOTES_CSS = `
   :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"] {
     --note-color: #BFF3D3;
   }
+
 
   /* Icon buttons */
   .note-icon-btn {
@@ -1644,6 +2069,52 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="light"].has-dimmed) .oddity-note.expanded {
     box-shadow: -8px 4px 28px rgba(0,0,0,0.22), -3px 2px 8px rgba(0,0,0,0.12);
+  }
+
+  /* ── Timeline line (Overview mode) ── */
+  .oddity-timeline-line {
+    position: absolute;
+    width: 2px;
+    background: #DCAF16;
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
+    border-radius: 1px;
+    transition: opacity 0.25s ease;
+  }
+
+  :host(.has-dimmed) .oddity-timeline-line {
+    opacity: 0.05;
+  }
+
+  /* ── Inline popover (Depth mode) ── */
+  .oddity-note.oddity-note--inline {
+    position: fixed;
+    width: 320px;
+    max-width: 90vw;
+    pointer-events: auto;
+    z-index: 10;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+    animation: inlinePopoverIn 0.2s ease-out forwards;
+  }
+
+  .oddity-note.oddity-note--inline.expanded {
+    width: 360px;
+    max-width: 90vw;
+    box-shadow: 0 10px 36px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.35);
+  }
+
+  @keyframes inlinePopoverIn {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
 
 `;
