@@ -1071,6 +1071,9 @@ function createNoteElement(
             if (fb?.id) {
               currentFeedbackId = fb.id;
               updateLiveFeedbackId(liveSortKey, fb.id);
+              window.dispatchEvent(new CustomEvent("oddity:feedback-added", {
+                detail: { feedback: fb, contentHash: contentHash },
+              }));
             }
           });
         if (currentFeedbackId) {
@@ -1132,6 +1135,9 @@ function createNoteElement(
             if (fb?.id) {
               currentFeedbackId = fb.id;
               updateLiveFeedbackId(liveSortKeyDown, fb.id);
+              window.dispatchEvent(new CustomEvent("oddity:feedback-added", {
+                detail: { feedback: fb, contentHash: contentHash },
+              }));
             }
           });
         if (currentFeedbackId) {
@@ -1266,6 +1272,10 @@ function submitReply(
     if (fb?.id) {
       bubble.dataset.feedbackId = fb.id;
       updateLiveFeedbackId(liveSortKeyReply, fb.id);
+      // Update in-memory feedback stores so syncArgumentsBox doesn't lose this
+      window.dispatchEvent(new CustomEvent("oddity:feedback-added", {
+        detail: { feedback: fb, contentHash: hash },
+      }));
     }
   }).catch(() => {});
 

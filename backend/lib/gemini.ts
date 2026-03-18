@@ -9,7 +9,7 @@ import { validateAnnotations } from "./schema-validator.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
-const modelName = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
+const modelName = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview";
 
 // Load prompt config once at startup
 const promptsConfig = JSON.parse(

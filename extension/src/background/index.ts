@@ -33,6 +33,32 @@ function abortKey(tabId: number, regionId: string): string {
   return `${tabId}:${regionId}`;
 }
 
+// ─── Per-tab concurrency limiter ───
+// Prevents bursts of simultaneous API requests (personality change, "all" mode).
+const MAX_CONCURRENT_PER_TAB = 3;
+const tabConcurrency = new Map<number, number>();
+
+/** Acquire a concurrency slot for a tab. Resolves when a slot is available. */
+async function acquireSlot(tabId: number, signal: AbortSignal): Promise<void> {
+  while ((tabConcurrency.get(tabId) ?? 0) >= MAX_CONCURRENT_PER_TAB) {
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  tabConcurrency.set(tabId, (tabConcurrency.get(tabId) ?? 0) + 1);
+}
+
+function releaseSlot(tabId: number): void {
+  const current = tabConcurrency.get(tabId) ?? 1;
+  if (current <= 1) tabConcurrency.delete(tabId);
+  else tabConcurrency.set(tabId, current - 1);
+}
+
+// Track recently deleted annotation/feedback IDs so the stale-while-revalidate
+// cache write doesn't re-add them from a concurrent server response.
+const deletedAnnotationIds = new Set<string>();
+const deletedFeedbackIds = new Set<string>();
+
 // ─── Installed Event ───
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -87,13 +113,16 @@ chrome.runtime.onMessage.addListener(
           const cached = await getFromSessionCache(contentHash, sessionCacheKey);
           if (cached) {
             console.log(`[Oddity 1] Session cache hit for ${contentHash.slice(0, 12)}… (stale-while-revalidate)`);
+            // Filter out locally deleted items before sending cached data
+            const cachedAnnotations = cached.annotations.filter((a) => !deletedAnnotationIds.has(a.id));
+            const cachedFeedback = cached.feedback.filter((f) => !deletedFeedbackIds.has(f.id));
             if (sender.tab?.id) {
               await sendToTab(sender.tab.id, {
                 action: "annotationsReady",
                 payload: {
                   regionId: contentHash,
-                  annotations: cached.annotations,
-                  feedback: cached.feedback,
+                  annotations: cachedAnnotations,
+                  feedback: cachedFeedback,
                 },
               });
             }
@@ -107,6 +136,11 @@ chrome.runtime.onMessage.addListener(
           inflight.get(key)?.abort();
           const controller = new AbortController();
           inflight.set(key, controller);
+
+          // Throttle concurrent requests per tab to prevent rate limit bursts
+          let slotAcquired = false;
+          await acquireSlot(tabId, controller.signal);
+          slotAcquired = true;
 
           try {
             // Defense-in-depth: validate payload before sending to API
@@ -153,8 +187,14 @@ chrome.runtime.onMessage.addListener(
             // Check if aborted
             if (controller.signal.aborted) return { aborted: true };
 
-            const annotations = result.annotations;
-            const feedback = result.feedback ?? [];
+            // Filter out locally deleted items so stale-while-revalidate
+            // doesn't re-add them from a concurrent server response.
+            const annotations = result.annotations.filter(
+              (a: { id: string }) => !deletedAnnotationIds.has(a.id),
+            );
+            const feedback = (result.feedback ?? []).filter(
+              (f: { id: string }) => !deletedFeedbackIds.has(f.id),
+            );
 
             // Populate caches for future revisits
             await setInSessionCache(contentHash, sessionCacheKey, annotations, feedback);
@@ -174,6 +214,7 @@ chrome.runtime.onMessage.addListener(
 
             return result;
           } finally {
+            if (slotAcquired) releaseSlot(tabId);
             if (inflight.get(key) === controller) {
               inflight.delete(key);
             }
@@ -183,6 +224,21 @@ chrome.runtime.onMessage.addListener(
         case "getUrlPrediction": {
           const prediction = await getUrlCache(message.payload.url);
           return prediction ?? null;
+        }
+
+        case "abortAllRequests": {
+          // Abort all in-flight requests for the sending tab (SPA navigation cleanup)
+          const abortTabId = sender.tab?.id ?? 0;
+          const prefix = `${abortTabId}:`;
+          for (const [key, controller] of inflight) {
+            if (key.startsWith(prefix)) {
+              controller.abort();
+              inflight.delete(key);
+            }
+          }
+          // Reset concurrency tracking for this tab
+          tabConcurrency.delete(abortTabId);
+          return { success: true };
         }
 
         case "getAdapters": {
@@ -322,9 +378,13 @@ chrome.runtime.onMessage.addListener(
             });
           } catch (err) {
             console.error("[Oddity 1] Sketch error:", err);
+            const isRateLimit = err instanceof RateLimitError;
+            const errorText = isRateLimit
+              ? `\n\n⚠️ Rate limited. Please wait a moment and try again.`
+              : `\n\n⚠️ Something went wrong. Please try again.`;
             await sendToTab(tabId, {
               action: "sketchChunk",
-              payload: { text: "", done: true },
+              payload: { text: errorText, done: true },
             }).catch(() => {});
             return { error: String(err) };
           }
@@ -333,10 +393,10 @@ chrome.runtime.onMessage.addListener(
 
         case "deleteAnnotation": {
           const { annotationId: delId, url: delUrl, contentHash: delHash } = message.payload;
-          await apiDeleteAnnotation(delId, delUrl, delHash);
+          deletedAnnotationIds.add(delId);
 
-          // Evict deleted annotation from session cache so it doesn't
-          // reappear on page refresh via stale-while-revalidate.
+          // Evict from caches FIRST (before API call) so that if the service
+          // worker is killed mid-execution, the caches are already clean.
           for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
             const cached = await getFromSessionCache(delHash, intensity);
             if (cached) {
@@ -346,15 +406,17 @@ chrome.runtime.onMessage.addListener(
               await setInSessionCache(delHash, intensity, cached.annotations, cached.feedback);
             }
           }
-
-          // Evict from URL prediction cache so revisits don't resurface it.
           if (delUrl) {
             const urlCached = await getUrlCache(delUrl);
             if (urlCached) {
               urlCached.annotations = urlCached.annotations.filter((a) => a.id !== delId);
+              urlCached.feedback = urlCached.feedback.filter((f) => f.annotation_id !== delId);
               await setUrlCache(delUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
             }
           }
+
+          // Then delete from server (may fail if SW is killed, but caches are safe)
+          await apiDeleteAnnotation(delId, delUrl, delHash);
 
           return { success: true };
         }
@@ -428,9 +490,10 @@ chrome.runtime.onMessage.addListener(
 
         case "deleteFeedback": {
           const { feedbackId: delFbId, contentHash: delFbHash, url: delFbUrl } = message.payload;
-          await apiDeleteFeedback(delFbId);
+          deletedFeedbackIds.add(delFbId);
 
-          // Evict deleted feedback from session cache
+          // Evict from caches FIRST (before API call) so that if the service
+          // worker is killed mid-execution, the caches are already clean.
           if (delFbHash) {
             for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
               const cached = await getFromSessionCache(delFbHash, intensity);
@@ -440,15 +503,16 @@ chrome.runtime.onMessage.addListener(
               }
             }
           }
-
-          // Evict from URL prediction cache
           if (delFbUrl) {
             const urlCached = await getUrlCache(delFbUrl);
             if (urlCached) {
-              urlCached.feedback = (urlCached as any).feedback?.filter((f: any) => f.id !== delFbId) ?? [];
+              urlCached.feedback = urlCached.feedback.filter((f) => f.id !== delFbId);
               await setUrlCache(delFbUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
             }
           }
+
+          // Then delete from server
+          await apiDeleteFeedback(delFbId);
 
           return { success: true };
         }
