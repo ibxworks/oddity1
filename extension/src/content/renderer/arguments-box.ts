@@ -2499,17 +2499,48 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   const sketchMock = document.createElement("div");
   sketchMock.className = "args-onboarding-sketch-mock";
 
+  // User's reply/reaction cards (float at top, then collapse into sketch)
+  const replyCards = document.createElement("div");
+  replyCards.className = "args-onboarding-reply-cards";
+
+  const replyCardData = [
+    { icon: "\uD83D\uDC4D", text: "\u201cRenewable energy has accelerated\u201d", color: "#DCAF16" },
+    { icon: "\uD83D\uDC4E", text: "\u201cInfrastructure costs remain high\u201d", color: "#F5574C" },
+    { icon: "\uD83D\uDCAC", text: "Sample size is small\u2026", color: "#748DBF" },
+  ];
+  const replyCardEls: HTMLElement[] = [];
+  for (const rc of replyCardData) {
+    const card = document.createElement("div");
+    card.className = "args-onboarding-reply-card";
+    card.style.setProperty("--card-color", rc.color);
+
+    const icon = document.createElement("span");
+    icon.className = "args-onboarding-reply-card-icon";
+    icon.textContent = rc.icon;
+
+    const text = document.createElement("span");
+    text.className = "args-onboarding-reply-card-text";
+    text.textContent = rc.text;
+
+    card.appendChild(icon);
+    card.appendChild(text);
+    replyCards.appendChild(card);
+    replyCardEls.push(card);
+  }
+
+  // Sketch button
   const sketchBtn = document.createElement("div");
   sketchBtn.className = "args-onboarding-sketch-btn";
   sketchBtn.textContent = "Sketch my Argument";
 
+  // Sketch output
   const sketchOutput = document.createElement("div");
   sketchOutput.className = "args-onboarding-sketch-output";
 
   const sketchLines = [
-    "The article argues that renewable energy adoption has accelerated beyond initial projections.",
-    "You noted a key caveat: infrastructure costs remain a barrier in developing economies.",
-    "Your position suggests cautious optimism, acknowledging progress while flagging structural risks.",
+    "The article argues that renewable energy adoption has accelerated beyond projections.",
+    "You agreed with the core claim but flagged that infrastructure costs remain a barrier.",
+    "You also noted the small sample size, suggesting cautious optimism over the findings.",
   ];
   const sketchInner = document.createElement("div");
   sketchInner.className = "args-onboarding-sketch-inner";
@@ -2522,6 +2553,7 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   }
   sketchOutput.appendChild(sketchInner);
 
+  sketchMock.appendChild(replyCards);
   sketchMock.appendChild(sketchBtn);
   sketchMock.appendChild(sketchOutput);
   vis4.appendChild(sketchMock);
@@ -2531,7 +2563,7 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   title4.textContent = "Sketch Your Argument";
   const body4 = document.createElement("div");
   body4.className = "args-onboarding-slide-body";
-  body4.textContent = "AI weaves your reactions into a coherent argument you can export.";
+  body4.textContent = "Your reactions and replies compile into a coherent argument.";
 
   slide4.appendChild(vis4);
   slide4.appendChild(title4);
@@ -2540,18 +2572,26 @@ function showOnboardingSlideshow(onComplete: () => void): void {
 
   function animateSlide4() {
     resetSlide4();
-    // Button pulse (as if clicked)
-    delay(() => sketchBtn.classList.add("pulse"), 400);
-    delay(() => sketchBtn.classList.remove("pulse"), 700);
-    // Output area expands
-    delay(() => sketchOutput.classList.add("active"), 800);
-    // Stream text line by line
-    let startTime = 1200;
+    // 1. Reply cards appear staggered
+    replyCardEls.forEach((c, i) => {
+      delay(() => c.classList.add("entered"), 300 + i * 250);
+    });
+    // 2. Button pulses (as if clicked)
+    delay(() => sketchBtn.classList.add("pulse"), 1200);
+    delay(() => sketchBtn.classList.remove("pulse"), 1500);
+    // 3. Reply cards collapse/fade out
+    delay(() => {
+      replyCardEls.forEach(c => c.classList.add("collapsed"));
+    }, 1600);
+    // 4. Output area expands
+    delay(() => sketchOutput.classList.add("active"), 2000);
+    // 5. Stream text line by line
+    let startTime = 2400;
     for (let i = 0; i < sketchLines.length; i++) {
       const lineText = sketchLines[i]!;
       const lineEl = sketchLineEls[i]!;
-      typewriter(lineEl, lineText, 25, startTime);
-      startTime += lineText.length * 25 + 300;
+      typewriter(lineEl, lineText, 20, startTime);
+      startTime += lineText.length * 20 + 200;
     }
   }
 
@@ -2559,6 +2599,7 @@ function showOnboardingSlideshow(onComplete: () => void): void {
     sketchBtn.classList.remove("pulse");
     sketchOutput.classList.remove("active");
     sketchLineEls.forEach(el => { el.textContent = ""; });
+    replyCardEls.forEach(c => c.classList.remove("entered", "collapsed"));
   }
 
   overlay.appendChild(track);
@@ -5679,14 +5720,66 @@ const ARGUMENTS_BOX_CSS = `
     animation: onboarding-blink 0.8s step-end infinite;
   }
 
-  /* ── Slide 4: sketch mockup with streaming text ── */
+  /* ── Slide 4: replies → sketch compilation ── */
 
   .args-onboarding-sketch-mock {
     width: 100%;
     max-width: 280px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+  }
+
+  /* Mini reply/reaction cards that collapse into the sketch */
+  .args-onboarding-reply-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .args-onboarding-reply-card {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 10px;
+    background: #f7f7f5;
+    border-radius: 8px;
+    border-left: 3px solid var(--card-color, #ccc);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #3a3a36;
+    opacity: 0;
+    transform: translateX(-12px);
+    max-height: 32px;
+    overflow: hidden;
+    transition: opacity 0.35s ease, transform 0.35s ease, max-height 0.4s ease, padding 0.4s ease, margin 0.4s ease, border-width 0.4s ease;
+  }
+
+  .args-onboarding-reply-card.entered {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .args-onboarding-reply-card.collapsed {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin: 0;
+    border-width: 0;
+    transform: translateY(-4px) scale(0.95);
+  }
+
+  .args-onboarding-reply-card-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .args-onboarding-reply-card-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
   }
 
   .args-onboarding-sketch-btn {
