@@ -65,6 +65,7 @@ let blocked = false;
 let extensionEnabled = true;
 let boxVisible = true;
 let expandedCardId: string | null = null;
+let layoutPending = false;
 
 // Drag-to-scroll state
 let listDragging = false;
@@ -221,6 +222,14 @@ export function initArgumentsBox(): void {
       } else {
         toggle();
       }
+    }
+  });
+
+  // Re-layout cards after the container finishes its width transition (56px → 300px).
+  // Without this, cards measured during the transition get incorrect heights.
+  containerEl.addEventListener("transitionend", (e) => {
+    if (e.propertyName === "width" && expanded && layoutPending) {
+      scheduleLayout();
     }
   });
 
@@ -2129,6 +2138,25 @@ function findAnnotationType(
   return annotationTypeCache.get(annotationId) as AnnotationType | undefined;
 }
 
+/** Measure card heights and set absolute top positions. Double rAF ensures layout is settled. */
+function scheduleLayout(): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (!listEl) return;
+      const GAP = 10;
+      let top = GAP;
+      const cards = listEl.querySelectorAll<HTMLDivElement>(".arg-card");
+      for (const card of cards) {
+        card.style.top = `${top}px`;
+        top += card.offsetHeight + GAP;
+      }
+      listEl.style.height = `${top}px`;
+      containerEl?.style.setProperty("--panel-width", "300px");
+      layoutPending = false;
+    });
+  });
+}
+
 function expandCard(id: string): void {
   if (expandedCardId && expandedCardId !== id) {
     const prev = listEl?.querySelector<HTMLDivElement>(
@@ -2507,22 +2535,13 @@ function renderList(): void {
 
   // Measure collapsed heights then fix positions — mirrors margin notes' rAF approach.
   // Cards are position:absolute so expanding one never shifts siblings.
-  // Double rAF ensures the browser has completed layout before we measure.
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      if (!listEl) return;
-      const GAP = 10;
-      let top = GAP;
-      const cards = listEl.querySelectorAll<HTMLDivElement>(".arg-card");
-      for (const card of cards) {
-        card.style.top = `${top}px`;
-        top += card.offsetHeight + GAP;
-      }
-      listEl.style.height = `${top}px`;
-
-      containerEl?.style.setProperty("--panel-width", "300px");
-    });
-  });
+  // Only layout if the container is expanded; otherwise defer until it opens
+  // (measuring at 56px collapsed width produces incorrect tall card heights).
+  if (expanded) {
+    scheduleLayout();
+  } else {
+    layoutPending = true;
+  }
 }
 
 // ─── Tab Switching ───
