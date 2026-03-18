@@ -66,6 +66,7 @@ let extensionEnabled = true;
 let boxVisible = true;
 let expandedCardId: string | null = null;
 let layoutPending = false;
+let onboardingOverlayEl: HTMLDivElement | null = null;
 
 // Drag-to-scroll state
 let listDragging = false;
@@ -1802,30 +1803,38 @@ function buildDashboardFace(): HTMLDivElement {
       localAuthState = true;
       await chrome.storage.local.set({ hadAccount: true });
       if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
-      if (containerEl) {
-        containerEl.style.height = "";
-        containerEl.style.width = "";
-      }
       dashSignInEmailEl!.value = "";
       dashSignInPasswordEl!.value = "";
       dashSignInNameEl!.value = "";
-      if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
-      const prefsStored = await chrome.storage.local.get("preferences");
-      const enabledSites = (
-        prefsStored["preferences"] as Record<string, unknown>
-      )?.["enabled_sites"] as string[] | undefined;
-      const hostname = window.location.hostname.replace(/^www\./, "");
-      const siteEnabled =
-        Array.isArray(enabledSites) &&
-        enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
-      if (!siteEnabled) {
-        showNotEnabledOverlay();
-      } else {
-        await loadDashboardData();
+
+      // Show onboarding slideshow, then continue with normal post-auth flow
+      if (containerEl) {
+        containerEl.style.width = "340px";
+        containerEl.style.height = "520px";
       }
-      updateModeToggleVisibility();
-      // Notify index.ts so it can start the annotation pipeline on this tab
-      document.dispatchEvent(new CustomEvent("oddity:localSignIn"));
+      showOnboardingSlideshow(async () => {
+        if (containerEl) {
+          containerEl.style.height = "";
+          containerEl.style.width = "";
+        }
+        if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
+        const prefsStored = await chrome.storage.local.get("preferences");
+        const enabledSites = (
+          prefsStored["preferences"] as Record<string, unknown>
+        )?.["enabled_sites"] as string[] | undefined;
+        const hostname = window.location.hostname.replace(/^www\./, "");
+        const siteEnabled =
+          Array.isArray(enabledSites) &&
+          enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
+        if (!siteEnabled) {
+          showNotEnabledOverlay();
+        } else {
+          await loadDashboardData();
+        }
+        updateModeToggleVisibility();
+        // Notify index.ts so it can start the annotation pipeline on this tab
+        document.dispatchEvent(new CustomEvent("oddity:localSignIn"));
+      });
     } catch (err) {
       dashSignInStatusEl!.textContent = String(
         err instanceof Error ? err.message : "Something went wrong",
@@ -2153,6 +2162,498 @@ function scheduleLayout(): void {
       listEl.style.height = `${top}px`;
       containerEl?.style.setProperty("--panel-width", "300px");
       layoutPending = false;
+    });
+  });
+}
+
+// ─── Onboarding Slideshow ───
+
+function showOnboardingSlideshow(onComplete: () => void): void {
+  const dashFace = shadowRoot?.querySelector(".args-dash-face");
+  if (!dashFace) { onComplete(); return; }
+
+  let currentSlide = -1;
+  const TOTAL_SLIDES = 4;
+  let animTimers: ReturnType<typeof setTimeout>[] = [];
+
+  // Utility: schedule a timeout and track it for cleanup
+  const delay = (fn: () => void, ms: number) => {
+    animTimers.push(setTimeout(fn, ms));
+  };
+
+  // Utility: typewriter effect — types text into an element one char at a time
+  const typewriter = (el: HTMLElement, text: string, charMs: number, startMs: number, cb?: () => void) => {
+    let i = 0;
+    delay(() => {
+      const tick = () => {
+        if (i < text.length) {
+          el.textContent = text.slice(0, ++i);
+          delay(tick, charMs);
+        } else if (cb) {
+          cb();
+        }
+      };
+      tick();
+    }, startMs);
+  };
+
+  // Build overlay
+  const overlay = document.createElement("div");
+  overlay.className = "args-onboarding-overlay";
+  onboardingOverlayEl = overlay;
+
+  // Skip button
+  const skipBtn = document.createElement("button");
+  skipBtn.className = "args-onboarding-skip";
+  skipBtn.textContent = "Skip";
+  skipBtn.addEventListener("click", (e) => { e.stopPropagation(); dismiss(); });
+  overlay.appendChild(skipBtn);
+
+  // Track
+  const track = document.createElement("div");
+  track.className = "args-onboarding-track";
+  track.style.setProperty("--slide-index", "0");
+
+  // ═══════════════════════════════════════════
+  // ── Slide 1: Smart Annotations ──
+  // ═══════════════════════════════════════════
+  const slide1 = document.createElement("div");
+  slide1.className = "args-onboarding-slide";
+
+  const vis1 = document.createElement("div");
+  vis1.className = "args-onboarding-slide-visual";
+
+  // Mock article text with inline highlighted phrases (matches real annotation look)
+  const mockParagraph = document.createElement("div");
+  mockParagraph.className = "args-onboarding-paragraph";
+
+  // Each entry: before = plain text, hl = highlighted phrase, after = plain text
+  // overview types get bg only, depth types get bg + underline
+  const paraLines = [
+    { before: "The study found that ", hl: "renewable energy has accelerated", after: " rapidly.", color: "#DCAF16", label: "CORE CLAIM", isOverview: true },
+    { before: "However, ", hl: "infrastructure costs remain high", after: " in many regions.", color: "#F5574C", label: "COUNTERARGUMENT", isOverview: false },
+    { before: "This reflects ", hl: "broader shifts in developing nations", after: ".", color: "#578E6C", label: "INSIGHT", isOverview: false },
+  ];
+  const highlightEls: HTMLElement[] = [];
+  const labelEls: HTMLElement[] = [];
+
+  for (const pl of paraLines) {
+    const lineWrap = document.createElement("div");
+    lineWrap.className = "args-onboarding-pline";
+
+    const beforeSpan = document.createElement("span");
+    beforeSpan.textContent = pl.before;
+
+    const hlSpan = document.createElement("span");
+    hlSpan.className = "args-onboarding-pline-hl";
+    hlSpan.style.setProperty("--hl-color", pl.color);
+    if (!pl.isOverview) {
+      hlSpan.classList.add("has-underline");
+    }
+    hlSpan.textContent = pl.hl;
+    highlightEls.push(hlSpan);
+
+    const afterSpan = document.createElement("span");
+    afterSpan.textContent = pl.after;
+
+    const label = document.createElement("span");
+    label.className = "args-onboarding-pline-label";
+    label.style.color = pl.color;
+    label.textContent = pl.label;
+    labelEls.push(label);
+
+    lineWrap.appendChild(beforeSpan);
+    lineWrap.appendChild(hlSpan);
+    lineWrap.appendChild(afterSpan);
+    lineWrap.appendChild(label);
+    mockParagraph.appendChild(lineWrap);
+  }
+  vis1.appendChild(mockParagraph);
+
+  const title1 = document.createElement("div");
+  title1.className = "args-onboarding-slide-title";
+  title1.textContent = "Smart Annotations";
+  const body1 = document.createElement("div");
+  body1.className = "args-onboarding-slide-body";
+  body1.textContent = "AI reads what you read and highlights what matters \u2014 color-coded by type.";
+
+  slide1.appendChild(vis1);
+  slide1.appendChild(title1);
+  slide1.appendChild(body1);
+  track.appendChild(slide1);
+
+  function animateSlide1() {
+    // Reset
+    highlightEls.forEach(h => h.classList.remove("active"));
+    labelEls.forEach(l => l.classList.remove("active"));
+    // Stagger highlights
+    for (let i = 0; i < highlightEls.length; i++) {
+      delay(() => { highlightEls[i]!.classList.add("active"); }, 400 + i * 800);
+      delay(() => { labelEls[i]!.classList.add("active"); }, 900 + i * 800);
+    }
+  }
+
+  function resetSlide1() {
+    highlightEls.forEach(h => h.classList.remove("active"));
+    labelEls.forEach(l => l.classList.remove("active"));
+  }
+
+  // ═══════════════════════════════════════════
+  // ── Slide 2: Meet Your Readers ──
+  // ═══════════════════════════════════════════
+  const slide2 = document.createElement("div");
+  slide2.className = "args-onboarding-slide";
+
+  const vis2 = document.createElement("div");
+  vis2.className = "args-onboarding-slide-visual";
+
+  const personas = document.createElement("div");
+  personas.className = "args-onboarding-personas";
+
+  const personaData = [
+    { name: "Terry", desc: "Balanced & clear", img: "Terry.png", quote: "\u201cClear and well-supported.\u201d" },
+    { name: "Jerry", desc: "Sharp & critical", img: "Jerry.png", quote: "\u201cBut what about the counter-evidence?\u201d" },
+    { name: "Sally", desc: "Warm & curious", img: "Sally.png", quote: "\u201cThis reminds me of\u2026\u201d" },
+  ];
+  const personaWraps: HTMLElement[] = [];
+  const speechBubbles: HTMLElement[] = [];
+
+  for (const p of personaData) {
+    const wrap = document.createElement("div");
+    wrap.className = "args-onboarding-persona";
+
+    const circle = document.createElement("div");
+    circle.className = "args-onboarding-persona-circle";
+    const img = document.createElement("img");
+    img.src = chrome.runtime.getURL(p.img);
+    img.alt = p.name;
+    circle.appendChild(img);
+
+    const name = document.createElement("div");
+    name.className = "args-onboarding-persona-name";
+    name.textContent = p.name;
+
+    const desc = document.createElement("div");
+    desc.className = "args-onboarding-persona-desc";
+    desc.textContent = p.desc;
+
+    const speech = document.createElement("div");
+    speech.className = "args-onboarding-speech";
+    speech.textContent = p.quote;
+    speechBubbles.push(speech);
+
+    wrap.appendChild(circle);
+    wrap.appendChild(name);
+    wrap.appendChild(desc);
+    wrap.appendChild(speech);
+    personas.appendChild(wrap);
+    personaWraps.push(wrap);
+  }
+  vis2.appendChild(personas);
+
+  const title2 = document.createElement("div");
+  title2.className = "args-onboarding-slide-title";
+  title2.textContent = "Meet Your Readers";
+  const body2 = document.createElement("div");
+  body2.className = "args-onboarding-slide-body";
+  body2.textContent = "Three AI personas, each with a unique perspective on what you read.";
+
+  slide2.appendChild(vis2);
+  slide2.appendChild(title2);
+  slide2.appendChild(body2);
+  track.appendChild(slide2);
+
+  function animateSlide2() {
+    resetSlide2();
+    personaWraps.forEach((w, i) => {
+      delay(() => w.classList.add("entered"), 300 + i * 250);
+    });
+    speechBubbles.forEach((s, i) => {
+      delay(() => s.classList.add("active"), 900 + i * 350);
+    });
+  }
+
+  function resetSlide2() {
+    personaWraps.forEach(w => w.classList.remove("entered"));
+    speechBubbles.forEach(s => s.classList.remove("active"));
+  }
+
+  // ═══════════════════════════════════════════
+  // ── Slide 3: React & Reply ──
+  // ═══════════════════════════════════════════
+  const slide3 = document.createElement("div");
+  slide3.className = "args-onboarding-slide";
+
+  const vis3 = document.createElement("div");
+  vis3.className = "args-onboarding-slide-visual";
+
+  const mockCard = document.createElement("div");
+  mockCard.className = "args-onboarding-mock-card";
+
+  const mockLabel = document.createElement("div");
+  mockLabel.className = "args-onboarding-mock-label";
+  mockLabel.textContent = "CORE CLAIM";
+
+  const mockText = document.createElement("div");
+  mockText.className = "args-onboarding-mock-text";
+  mockText.textContent = "\u201cThe study reveals a significant shift in consumer behavior.\u201d";
+
+  const mockActions = document.createElement("div");
+  mockActions.className = "args-onboarding-mock-actions";
+
+  const thumbUp = document.createElement("span");
+  thumbUp.className = "args-onboarding-mock-thumb";
+  thumbUp.textContent = "\uD83D\uDC4D";
+  const thumbDown = document.createElement("span");
+  thumbDown.className = "args-onboarding-mock-thumb";
+  thumbDown.textContent = "\uD83D\uDC4E";
+
+  mockActions.appendChild(thumbUp);
+  mockActions.appendChild(thumbDown);
+
+  // Reply input area
+  const replyArea = document.createElement("div");
+  replyArea.className = "args-onboarding-reply-area";
+
+  const replyBubble = document.createElement("div");
+  replyBubble.className = "args-onboarding-reply-bubble";
+
+  const replyInput = document.createElement("div");
+  replyInput.className = "args-onboarding-reply-input";
+
+  const replyInputText = document.createElement("span");
+  replyInputText.className = "args-onboarding-reply-input-text";
+
+  const replyInputCursor = document.createElement("span");
+  replyInputCursor.className = "args-onboarding-cursor";
+
+  replyInput.appendChild(replyInputText);
+  replyInput.appendChild(replyInputCursor);
+  replyArea.appendChild(replyBubble);
+  replyArea.appendChild(replyInput);
+
+  mockCard.appendChild(mockLabel);
+  mockCard.appendChild(mockText);
+  mockCard.appendChild(mockActions);
+  mockCard.appendChild(replyArea);
+  vis3.appendChild(mockCard);
+
+  const title3 = document.createElement("div");
+  title3.className = "args-onboarding-slide-title";
+  title3.textContent = "React & Reply";
+  const body3 = document.createElement("div");
+  body3.className = "args-onboarding-slide-body";
+  body3.textContent = "Agree, disagree, or add your own thoughts to any annotation.";
+
+  slide3.appendChild(vis3);
+  slide3.appendChild(title3);
+  slide3.appendChild(body3);
+  track.appendChild(slide3);
+
+  function animateSlide3() {
+    resetSlide3();
+    // Card slides up
+    delay(() => mockCard.classList.add("entered"), 200);
+    // Thumb up gets clicked
+    delay(() => {
+      thumbUp.classList.add("active");
+      thumbUp.classList.add("pulse");
+      delay(() => thumbUp.classList.remove("pulse"), 300);
+    }, 800);
+    // Reply input appears and text types in
+    delay(() => {
+      replyArea.classList.add("active");
+      replyInputCursor.classList.add("active");
+    }, 1400);
+    typewriter(replyInputText, "I agree, but the sample size is small...", 50, 1600, () => {
+      // After typing, cursor stops blinking and reply bubble appears
+      delay(() => {
+        replyInputCursor.classList.remove("active");
+        replyBubble.textContent = "I agree, but the sample size is small...";
+        replyBubble.classList.add("active");
+        replyInputText.textContent = "";
+      }, 300);
+    });
+  }
+
+  function resetSlide3() {
+    mockCard.classList.remove("entered");
+    thumbUp.classList.remove("active", "pulse");
+    thumbDown.classList.remove("active");
+    replyArea.classList.remove("active");
+    replyBubble.classList.remove("active");
+    replyBubble.textContent = "";
+    replyInputText.textContent = "";
+    replyInputCursor.classList.remove("active");
+  }
+
+  // ═══════════════════════════════════════════
+  // ── Slide 4: Sketch Your Argument ──
+  // ═══════════════════════════════════════════
+  const slide4 = document.createElement("div");
+  slide4.className = "args-onboarding-slide";
+
+  const vis4 = document.createElement("div");
+  vis4.className = "args-onboarding-slide-visual";
+
+  const sketchMock = document.createElement("div");
+  sketchMock.className = "args-onboarding-sketch-mock";
+
+  const sketchBtn = document.createElement("div");
+  sketchBtn.className = "args-onboarding-sketch-btn";
+  sketchBtn.textContent = "Sketch my Argument";
+
+  const sketchOutput = document.createElement("div");
+  sketchOutput.className = "args-onboarding-sketch-output";
+
+  const sketchLines = [
+    "The article argues that renewable energy adoption has accelerated beyond initial projections.",
+    "You noted a key caveat: infrastructure costs remain a barrier in developing economies.",
+    "Your position suggests cautious optimism, acknowledging progress while flagging structural risks.",
+  ];
+  const sketchInner = document.createElement("div");
+  sketchInner.className = "args-onboarding-sketch-inner";
+  const sketchLineEls: HTMLElement[] = [];
+  for (let i = 0; i < sketchLines.length; i++) {
+    const line = document.createElement("div");
+    line.className = "args-onboarding-sketch-line";
+    sketchLineEls.push(line);
+    sketchInner.appendChild(line);
+  }
+  sketchOutput.appendChild(sketchInner);
+
+  sketchMock.appendChild(sketchBtn);
+  sketchMock.appendChild(sketchOutput);
+  vis4.appendChild(sketchMock);
+
+  const title4 = document.createElement("div");
+  title4.className = "args-onboarding-slide-title";
+  title4.textContent = "Sketch Your Argument";
+  const body4 = document.createElement("div");
+  body4.className = "args-onboarding-slide-body";
+  body4.textContent = "AI weaves your reactions into a coherent argument you can export.";
+
+  slide4.appendChild(vis4);
+  slide4.appendChild(title4);
+  slide4.appendChild(body4);
+  track.appendChild(slide4);
+
+  function animateSlide4() {
+    resetSlide4();
+    // Button pulse (as if clicked)
+    delay(() => sketchBtn.classList.add("pulse"), 400);
+    delay(() => sketchBtn.classList.remove("pulse"), 700);
+    // Output area expands
+    delay(() => sketchOutput.classList.add("active"), 800);
+    // Stream text line by line
+    let startTime = 1200;
+    for (let i = 0; i < sketchLines.length; i++) {
+      const lineText = sketchLines[i]!;
+      const lineEl = sketchLineEls[i]!;
+      typewriter(lineEl, lineText, 25, startTime);
+      startTime += lineText.length * 25 + 300;
+    }
+  }
+
+  function resetSlide4() {
+    sketchBtn.classList.remove("pulse");
+    sketchOutput.classList.remove("active");
+    sketchLineEls.forEach(el => { el.textContent = ""; });
+  }
+
+  overlay.appendChild(track);
+
+  // ═══════════════════════════════════════════
+  // ── Navigation ──
+  // ═══════════════════════════════════════════
+  const nav = document.createElement("div");
+  nav.className = "args-onboarding-nav";
+
+  const dots = document.createElement("div");
+  dots.className = "args-onboarding-dots";
+  const dotEls: HTMLButtonElement[] = [];
+  for (let i = 0; i < TOTAL_SLIDES; i++) {
+    const dot = document.createElement("button");
+    dot.className = `args-onboarding-dot${i === 0 ? " active" : ""}`;
+    dot.addEventListener("click", (e) => { e.stopPropagation(); goToSlide(i); });
+    dots.appendChild(dot);
+    dotEls.push(dot);
+  }
+  nav.appendChild(dots);
+
+  const nextBtn = document.createElement("button");
+  nextBtn.className = "args-onboarding-next";
+  nextBtn.textContent = "Next";
+  nextBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (currentSlide === TOTAL_SLIDES - 1) {
+      dismiss();
+    } else {
+      goToSlide(currentSlide + 1);
+    }
+  });
+  nav.appendChild(nextBtn);
+  overlay.appendChild(nav);
+
+  // ── Animation lifecycle ──
+  const animStarters = [animateSlide1, animateSlide2, animateSlide3, animateSlide4];
+  const animResetters = [resetSlide1, resetSlide2, resetSlide3, resetSlide4];
+
+  function clearAnimTimers() {
+    animTimers.forEach(t => clearTimeout(t));
+    animTimers = [];
+  }
+
+  function goToSlide(index: number): void {
+    if (index < 0 || index >= TOTAL_SLIDES) return;
+    // Stop current animation
+    clearAnimTimers();
+    if (currentSlide >= 0) animResetters[currentSlide]!();
+    // Move to new slide
+    currentSlide = index;
+    track.style.setProperty("--slide-index", String(index));
+    dotEls.forEach((d, i) => d.classList.toggle("active", i === index));
+    nextBtn.textContent = index === TOTAL_SLIDES - 1 ? "Start Reading" : "Next";
+    // Start animation for new slide (slight delay to let slide transition finish)
+    delay(() => animStarters[index]!(), 350);
+  }
+
+  function dismiss(): void {
+    clearAnimTimers();
+    overlay.style.opacity = "0";
+    overlay.addEventListener("transitionend", () => {
+      overlay.remove();
+      onboardingOverlayEl = null;
+      onComplete();
+    }, { once: true });
+  }
+
+  // ── Keyboard nav ──
+  overlay.tabIndex = 0;
+  overlay.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === "Enter") {
+      e.stopPropagation();
+      if (currentSlide === TOTAL_SLIDES - 1) dismiss();
+      else goToSlide(currentSlide + 1);
+    } else if (e.key === "ArrowLeft") {
+      e.stopPropagation();
+      goToSlide(currentSlide - 1);
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      dismiss();
+    }
+  });
+
+  // Click on overlay shouldn't toggle the container
+  overlay.addEventListener("click", (e) => e.stopPropagation());
+
+  // Append, fade in, and start first slide animation
+  dashFace.appendChild(overlay);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      overlay.classList.add("visible");
+      overlay.focus();
+      goToSlide(0);
     });
   });
 }
@@ -4833,4 +5334,467 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-dash-signin-toggle:hover { color: #111; }
+
+  /* ── Onboarding slideshow ── */
+
+  @keyframes onboarding-pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(0.93); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes onboarding-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .args-onboarding-overlay {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    border-radius: inherit;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    overflow: hidden;
+  }
+
+  .args-onboarding-overlay.visible {
+    opacity: 1;
+  }
+
+  .args-onboarding-skip {
+    all: unset;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    font-size: 12px;
+    color: #8a8a80;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    cursor: pointer;
+    z-index: 1;
+  }
+
+  .args-onboarding-skip:hover {
+    color: #111;
+  }
+
+  .args-onboarding-track {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    transform: translateX(calc(-100% * var(--slide-index, 0)));
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .args-onboarding-slide {
+    flex: 0 0 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px 16px;
+    box-sizing: border-box;
+    text-align: center;
+    gap: 14px;
+  }
+
+  .args-onboarding-slide-title {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a1a1a;
+    letter-spacing: 0.01em;
+    line-height: 1.3;
+  }
+
+  .args-onboarding-slide-body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 12.5px;
+    color: #606060;
+    line-height: 1.5;
+    max-width: 280px;
+  }
+
+  .args-onboarding-slide-visual {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin-bottom: 4px;
+  }
+
+  /* ── Slide 1: mock article with inline highlights ── */
+
+  .args-onboarding-paragraph {
+    width: 100%;
+    max-width: 280px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .args-onboarding-pline {
+    font-family: Georgia, serif;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #3a3a36;
+  }
+
+  /* Inline highlighted phrase — matches real annotation spans */
+  .args-onboarding-pline-hl {
+    background-color: transparent;
+    border-bottom: 1.5px solid transparent;
+    transition: background-color 0.5s ease, border-bottom-color 0.5s ease;
+  }
+
+  .args-onboarding-pline-hl.active {
+    background-color: color-mix(in srgb, var(--hl-color) 15%, transparent);
+  }
+
+  .args-onboarding-pline-hl.has-underline.active {
+    border-bottom-color: var(--hl-color);
+  }
+
+  .args-onboarding-pline-label {
+    display: inline-block;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    margin-left: 6px;
+    opacity: 0;
+    transform: translateY(3px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    vertical-align: middle;
+  }
+
+  .args-onboarding-pline-label.active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Slide 2: persona circles with entrances + speech bubbles ── */
+
+  .args-onboarding-personas {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
+  .args-onboarding-persona {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 80px;
+    opacity: 0;
+    transform: scale(0.7);
+    transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .args-onboarding-persona.entered {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .args-onboarding-persona-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .args-onboarding-persona-circle img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .args-onboarding-persona-name {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1a1a1a;
+  }
+
+  .args-onboarding-persona-desc {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 10px;
+    color: #8a8a80;
+    line-height: 1.35;
+  }
+
+  .args-onboarding-speech {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 9.5px;
+    font-style: italic;
+    color: #606060;
+    background: #f4f4f2;
+    border-radius: 8px;
+    padding: 5px 8px;
+    margin-top: 4px;
+    line-height: 1.35;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    text-align: center;
+  }
+
+  .args-onboarding-speech.active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Slide 3: animated annotation card with reactions ── */
+
+  .args-onboarding-mock-card {
+    width: 100%;
+    max-width: 280px;
+    background: #f7f7f5;
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .args-onboarding-mock-card.entered {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .args-onboarding-mock-label {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    color: #DCAF16;
+    letter-spacing: 0.05em;
+  }
+
+  .args-onboarding-mock-text {
+    font-family: Georgia, serif;
+    font-size: 12px;
+    color: #3a3a36;
+    line-height: 1.45;
+  }
+
+  .args-onboarding-mock-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .args-onboarding-mock-thumb {
+    font-size: 16px;
+    opacity: 0.35;
+    transition: opacity 0.2s, transform 0.2s;
+    cursor: default;
+  }
+
+  .args-onboarding-mock-thumb.active {
+    opacity: 1;
+  }
+
+  .args-onboarding-mock-thumb.pulse {
+    animation: onboarding-pulse 0.3s ease;
+  }
+
+  /* Reply area */
+  .args-onboarding-reply-area {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: opacity 0.3s ease, max-height 0.4s ease;
+  }
+
+  .args-onboarding-reply-area.active {
+    opacity: 1;
+    max-height: 100px;
+  }
+
+  .args-onboarding-reply-bubble {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #748DBF;
+    background: rgba(116,141,191,0.1);
+    border-radius: 10px;
+    padding: 5px 10px;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .args-onboarding-reply-bubble.active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .args-onboarding-reply-input {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border: 1px solid #dfe7ef;
+    border-radius: 100px;
+    padding: 5px 12px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #3a3a36;
+    min-height: 16px;
+  }
+
+  .args-onboarding-reply-input-text {
+    /* typewriter target */
+  }
+
+  .args-onboarding-cursor {
+    display: inline-block;
+    width: 1px;
+    height: 13px;
+    background: #3a3a36;
+    margin-left: 1px;
+    opacity: 0;
+    vertical-align: text-bottom;
+  }
+
+  .args-onboarding-cursor.active {
+    animation: onboarding-blink 0.8s step-end infinite;
+  }
+
+  /* ── Slide 4: sketch mockup with streaming text ── */
+
+  .args-onboarding-sketch-mock {
+    width: 100%;
+    max-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .args-onboarding-sketch-btn {
+    all: unset;
+    display: block;
+    padding: 10px 16px;
+    background: #748DBF;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    text-align: center;
+    border-radius: 100px;
+    letter-spacing: 0.02em;
+    cursor: default;
+  }
+
+  .args-onboarding-sketch-btn.pulse {
+    animation: onboarding-pulse 0.3s ease;
+  }
+
+  .args-onboarding-sketch-output {
+    background: #f7f7f5;
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: left;
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows 0.4s ease, opacity 0.3s ease;
+    overflow: hidden;
+  }
+
+  .args-onboarding-sketch-output.active {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .args-onboarding-sketch-inner {
+    overflow: hidden;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .args-onboarding-sketch-line {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #3a3a36;
+    line-height: 1.55;
+    min-height: 1.55em;
+  }
+
+  .args-onboarding-sketch-line:empty {
+    min-height: 0;
+  }
+
+  /* ── Navigation ── */
+
+  .args-onboarding-nav {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px 20px;
+    flex-shrink: 0;
+  }
+
+  .args-onboarding-dots {
+    display: flex;
+    gap: 6px;
+  }
+
+  .args-onboarding-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.12);
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+    border: none;
+    padding: 0;
+  }
+
+  .args-onboarding-dot.active {
+    background: #1a1a1a;
+    transform: scale(1.2);
+  }
+
+  .args-onboarding-next {
+    all: unset;
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    background: #1a1a1a;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    text-align: center;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: background 0.15s;
+    box-sizing: border-box;
+  }
+
+  .args-onboarding-next:hover {
+    background: #333;
+  }
 `;
