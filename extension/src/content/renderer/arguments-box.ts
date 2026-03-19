@@ -702,7 +702,10 @@ export function updateArgumentsBox(
   debounceTimer = setTimeout(() => {
     cacheAnnotationNotes(annotations);
     canonicalItems = buildItems(annotations, feedback);
-    liveItems = [];
+    // Remove live items that are now in canonical data (matched by feedbackId),
+    // but keep ones still pending server confirmation to avoid glitching user replies.
+    const canonicalFbIds = new Set(canonicalItems.map((i) => i.feedbackId).filter(Boolean));
+    liveItems = liveItems.filter((li) => !li.feedbackId || !canonicalFbIds.has(li.feedbackId));
     renderList();
   }, 150);
 }
@@ -829,6 +832,7 @@ export function updateArgumentsBoxStyle(
   if (!host) return;
   host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "fraunces"]);
   host.style.setProperty("--oddity-note-size", SIZE_MAP[fontSize ?? "default"]);
+  lastRenderedKey = ""; // force rebuild with new styles
   renderList(); // re-layout since sizes changed
 }
 
@@ -2161,6 +2165,8 @@ function scheduleLayout(): void {
       }
       listEl.style.height = `${top}px`;
       containerEl?.style.setProperty("--panel-width", "300px");
+      // Reveal after positioning to prevent the flash where all cards stack at top:0
+      listEl.style.visibility = "";
       layoutPending = false;
     });
   });
@@ -2735,14 +2741,28 @@ function undimAllCards(): void {
     .forEach((c) => c.classList.remove("dimmed"));
 }
 
+/** Fingerprint of the last rendered item set — skip no-op rebuilds. */
+let lastRenderedKey = "";
+
 function renderList(): void {
   if (!listEl) return;
 
   const allItems = [...canonicalItems, ...liveItems];
+
+  // Skip rebuild if the item set hasn't changed (avoids glitchy DOM teardown/rebuild)
+  const itemKey = allItems.map((i) => i.sortKey + (i.feedbackId ?? "")).join("|");
+  if (itemKey === lastRenderedKey) return;
+  lastRenderedKey = itemKey;
+
+  // Hide list during rebuild to prevent the flash where cards stack at top:0
+  // before scheduleLayout positions them. Visibility is restored in scheduleLayout.
+  listEl.style.visibility = "hidden";
+
   listEl.innerHTML = "";
   expandedCardId = null;
 
   if (allItems.length === 0) {
+    listEl.style.visibility = "";
     const empty = document.createElement("div");
     empty.className = "args-empty";
     empty.textContent =

@@ -886,6 +886,13 @@ async function handleStableRegion(
     }
   } catch (err) {
     const errStr = String(err);
+    // Chrome closes the sendMessage channel when the service worker responds
+    // via sendToTab instead of sendResponse. This is expected in our streaming
+    // pattern — annotations still arrive via sendToTab, so don't clean up.
+    if (errStr.includes("message channel closed") || errStr.includes("message port closed")) {
+      console.debug(`[Oddity 1] Message channel closed (expected during streaming)`);
+      return;
+    }
     if (errStr.includes("Auth") || errStr.includes("401")) {
       console.warn(
         "[Oddity 1] Not signed in — open the Oddity extension to sign in",
@@ -980,6 +987,13 @@ async function handleStableRegionForMode(
     }
   } catch (err) {
     const errStr = String(err);
+    // Chrome closes the sendMessage channel when the service worker responds
+    // via sendToTab instead of sendResponse. This is expected in our streaming
+    // pattern — annotations still arrive via sendToTab, so don't clean up.
+    if (errStr.includes("message channel closed") || errStr.includes("message port closed")) {
+      console.debug(`[Oddity 1] Message channel closed (expected during streaming)`);
+      return;
+    }
     if (errStr.includes("Auth") || errStr.includes("401")) {
       showAuthToast();
     } else {
@@ -1414,7 +1428,10 @@ onMessage((message: ExtensionMessage) => {
         }
       }
 
-      syncArgumentsBox();
+      // Don't sync arguments box here — streaming annotations don't add
+      // argument items (only feedback does). Syncing on every annotation
+      // causes the box to rebuild repeatedly, glitching replies and UI state.
+      // The final "annotationsReady" message handles the sync.
 
       // Skip rendering if disabled or type is not visible in current mode
       if (!enabled || !visibleTypes.includes(annotation.type)) break;
