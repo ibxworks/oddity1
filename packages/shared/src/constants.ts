@@ -33,7 +33,7 @@ export const EAGER_WORD_LIMIT = 6000;
 
 // ─── Rate Limits ───
 
-export const RATE_LIMIT_FREE = 5000;
+export const RATE_LIMIT_FREE = 50;
 export const RATE_LIMIT_PRO = 500;
 
 // ─── Request Limits ───
