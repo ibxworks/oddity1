@@ -8,6 +8,7 @@ import type {
 import { getAnnotationColor } from "@oddity/shared";
 
 import { getMarginNotesContentLeft } from "./margin-notes.js";
+import { getPageUrl } from "../page-url.js";
 import {
   getThemeMode,
   offThemeChange,
@@ -92,6 +93,8 @@ let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
+let pdfPanelEl: HTMLDivElement | null = null;
+let pdfRunCb: (() => void) | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
 const deletedFeedbackIds = new Set<string>();
@@ -800,6 +803,15 @@ export function setArgumentsBoxBlocked(isBlocked: boolean): void {
   }
 }
 
+export function setArgumentsBoxPdf(isPdf: boolean): void {
+  containerEl?.classList.toggle("oddity-pdf", isPdf);
+  if (isPdf) showPdfOverlay();
+}
+
+export function setPdfRunCallback(cb: () => void): void {
+  pdfRunCb = cb;
+}
+
 export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
 }
@@ -997,6 +1009,8 @@ export function destroyArgumentsBox(): void {
   manualRunCb = null;
   notEnabledPanelEl = null;
   blockedPanelEl = null;
+  pdfPanelEl = null;
+  pdfRunCb = null;
   enableBubbleEl = null;
   canonicalItems = [];
   liveItems = [];
@@ -1119,6 +1133,52 @@ function showBlockedOverlay(): void {
   contentClip.appendChild(blockedPanelEl);
 
   // Auto-expand so the blocked overlay is visible
+  expanded = true;
+  containerEl?.classList.add("expanded");
+  toggleBarEl?.classList.add("visible");
+}
+
+function showPdfOverlay(): void {
+  if (pdfPanelEl) return;
+  containerEl?.classList.add("oddity-pdf");
+  containerEl?.classList.remove("dashboard");
+  const contentClip = shadowRoot?.querySelector(".args-content-clip");
+  if (!contentClip) return;
+
+  pdfPanelEl = document.createElement("div");
+  pdfPanelEl.className = "args-not-enabled-overlay";
+
+  const msg = document.createElement("div");
+  msg.className = "args-not-enabled-msg";
+  msg.textContent = "This is a PDF";
+
+  const hint = document.createElement("div");
+  hint.className = "args-not-enabled-hint";
+  hint.style.fontSize = "12px";
+  hint.style.marginTop = "4px";
+  hint.textContent = "Convert to HTML to enable Oddity 1";
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "args-not-enabled-btn-row";
+
+  const runBtn = document.createElement("button");
+  runBtn.className = "args-run-btn";
+  runBtn.textContent = "Run as HTML";
+  runBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    runBtn.disabled = true;
+    runBtn.textContent = "Converting…";
+    pdfRunCb?.();
+  });
+
+  btnRow.appendChild(runBtn);
+  pdfPanelEl.appendChild(msg);
+  pdfPanelEl.appendChild(hint);
+  pdfPanelEl.appendChild(btnRow);
+  pdfPanelEl.addEventListener("click", (e) => e.stopPropagation());
+  contentClip.appendChild(pdfPanelEl);
+
+  // Auto-expand so the PDF overlay is visible
   expanded = true;
   containerEl?.classList.add("expanded");
   toggleBarEl?.classList.add("visible");
@@ -2850,7 +2910,7 @@ function renderList(): void {
             payload: {
               annotationId: item.annotationId,
               contentHash: item.contentHash ?? "",
-              url: window.location.href,
+              url: getPageUrl(),
               feedbackType: "reply",
               replyText: text,
               pageTitle: document.title,
@@ -2942,7 +3002,7 @@ function renderList(): void {
           chrome.runtime
             .sendMessage({
               action: "updateFeedback",
-              payload: { feedbackId: item.feedbackId, replyText: newText, contentHash: item.contentHash, url: window.location.href },
+              payload: { feedbackId: item.feedbackId, replyText: newText, contentHash: item.contentHash, url: getPageUrl() },
             })
             .catch(() => {});
           item.text = newText;
@@ -2963,7 +3023,7 @@ function renderList(): void {
               payload: {
                 annotationId: item.annotationId,
                 annotation: updatedAnnotation,
-                url: window.location.href,
+                url: getPageUrl(),
                 contentHash: item.contentHash ?? "",
                 pageTitle: document.title,
               },
@@ -3015,7 +3075,7 @@ function renderList(): void {
             payload: {
               feedbackId: item.feedbackId,
               contentHash: item.contentHash,
-              url: window.location.href,
+              url: getPageUrl(),
             },
           })
           .catch(() => {});
@@ -3033,7 +3093,7 @@ function renderList(): void {
             action: "deleteAnnotation",
             payload: {
               annotationId: item.annotationId,
-              url: window.location.href,
+              url: getPageUrl(),
               contentHash: item.contentHash ?? "",
             },
           })
@@ -4826,6 +4886,12 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-container.oddity-blocked:not(.expanded) {
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #6B7280;
+  }
+
+  /* ── PDF state (uses same overlay styles as not-enabled) ── */
+
+  .args-container.oddity-pdf:not(.expanded) {
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #F59E0B;
   }
 
   :host([data-theme="light"]) .args-container.dashboard {

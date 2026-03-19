@@ -305,4 +305,5 @@ export type ExtensionMessage =
   | {
       action: "sketchChunk";
       payload: { text: string; done: boolean };
-    };
+    }
+  | { action: "injectNextNewTab"; payload: Record<string, never> };

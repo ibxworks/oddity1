@@ -3,6 +3,7 @@ import { ANNOTATION_LABELS, getAnnotationColor } from '@oddity/shared';
 import { sendMessage, onMessage } from '../shared/messaging.js';
 import { sha256 } from '../shared/hash.js';
 import { resolveSelector } from './selector.js';
+import { getPageUrl } from './page-url.js';
 import { renderAnnotation, removeAnnotation } from './renderer/overlay.js';
 import { injectAnchors, removeAnchors } from './renderer/anchors.js';
 import { addLiveFeedback } from './renderer/arguments-box.js';
@@ -489,7 +490,7 @@ async function handleSubmit(note: string): Promise<void> {
   sendMessage({
     action: 'saveManualAnnotation',
     payload: {
-      url: window.location.href,
+      url: getPageUrl(),
       contentHash,
       annotation,
       pageTitle: document.title,

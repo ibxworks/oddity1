@@ -622,6 +622,41 @@ chrome.runtime.onMessage.addListener(
           return { sites: rmList };
         }
 
+        case "injectNextNewTab": {
+          // Listen for the next new tab and inject the content script into it.
+          // Used for PDF→HTML conversion: content script opens a blob tab,
+          // and we need to inject the content script since blob: URLs don't
+          // get automatic content script injection.
+          const onCreated = (tab: chrome.tabs.Tab) => {
+            chrome.tabs.onCreated.removeListener(onCreated);
+            if (!tab.id) return;
+            const tabId = tab.id;
+
+            // Wait for the tab to finish loading before injecting
+            const onUpdated = (updatedId: number, info: chrome.tabs.TabChangeInfo) => {
+              if (updatedId !== tabId || info.status !== "complete") return;
+              chrome.tabs.onUpdated.removeListener(onUpdated);
+
+              const manifest = chrome.runtime.getManifest();
+              const file = manifest.content_scripts?.[0]?.js?.[0];
+              if (!file) return;
+
+              chrome.scripting.executeScript({
+                target: { tabId },
+                files: [file],
+              }).catch((err) => {
+                console.warn("[Oddity 1] Failed to inject into blob tab:", err);
+              });
+            };
+            chrome.tabs.onUpdated.addListener(onUpdated);
+          };
+          chrome.tabs.onCreated.addListener(onCreated);
+
+          // Auto-cleanup if no tab is created within 10s
+          setTimeout(() => chrome.tabs.onCreated.removeListener(onCreated), 10000);
+          return { success: true };
+        }
+
         default:
           return undefined;
       }
@@ -711,6 +746,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
   }
 });
+
 
 // ─── Eager Session Refresh on SW Boot ───
 // MV3 service workers suspend/resume frequently, killing Supabase's
