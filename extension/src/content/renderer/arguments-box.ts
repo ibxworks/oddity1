@@ -93,6 +93,7 @@ let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
+let pdfDetected = false;
 let pdfPanelEl: HTMLDivElement | null = null;
 let pdfRunCb: (() => void) | null = null;
 let canonicalItems: ArgumentItem[] = [];
@@ -804,8 +805,13 @@ export function setArgumentsBoxBlocked(isBlocked: boolean): void {
 }
 
 export function setArgumentsBoxPdf(isPdf: boolean): void {
+  pdfDetected = isPdf;
   containerEl?.classList.toggle("oddity-pdf", isPdf);
-  if (isPdf) showPdfOverlay();
+  if (isPdf) {
+    dimmed = true;
+    containerEl?.classList.add("oddity-not-enabled");
+    showPdfOverlay();
+  }
 }
 
 export function setPdfRunCallback(cb: () => void): void {
@@ -1009,6 +1015,7 @@ export function destroyArgumentsBox(): void {
   manualRunCb = null;
   notEnabledPanelEl = null;
   blockedPanelEl = null;
+  pdfDetected = false;
   pdfPanelEl = null;
   pdfRunCb = null;
   enableBubbleEl = null;
@@ -1198,11 +1205,17 @@ function toggleDimmedPanel(): void {
     closeBtnEl?.classList.remove("hovered");
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
+    pdfPanelEl?.remove();
+    pdfPanelEl = null;
     return;
   } else if (containerEl?.matches(":hover")) {
     showCloseBtn();
   }
-  showNotEnabledOverlay();
+  if (pdfDetected) {
+    showPdfOverlay();
+  } else {
+    showNotEnabledOverlay();
+  }
 }
 
 function toggle(): void {
@@ -4886,12 +4899,6 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-container.oddity-blocked:not(.expanded) {
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #6B7280;
-  }
-
-  /* ── PDF state (uses same overlay styles as not-enabled) ── */
-
-  .args-container.oddity-pdf:not(.expanded) {
-    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2.5px #F59E0B;
   }
 
   :host([data-theme="light"]) .args-container.dashboard {

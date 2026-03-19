@@ -17,10 +17,11 @@ interface TextBlock {
  * and structures it into paragraphs based on vertical position gaps.
  */
 export async function convertPdfToHtml(url: string): Promise<string> {
-  // Fetch the PDF ourselves to avoid CORS/fetch issues inside pdf.js
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.status}`);
-  const data = new Uint8Array(await response.arrayBuffer());
+  // Fetch the PDF binary data via the background script.
+  // Content scripts can't fetch file:// URLs, but the background can.
+  const response = await chrome.runtime.sendMessage({ action: "fetchPdfData", payload: { url } });
+  if (response?.error) throw new Error(response.error);
+  const data = new Uint8Array(response.data);
 
   const pdf = await getDocument({ data }).promise;
   const numPages = pdf.numPages;
@@ -158,6 +159,7 @@ ${pages.join("\n")}
 </body>
 </html>`;
 }
+
 
 function escapeHtml(str: string): string {
   return str

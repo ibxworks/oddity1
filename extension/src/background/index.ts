@@ -622,6 +622,17 @@ chrome.runtime.onMessage.addListener(
           return { sites: rmList };
         }
 
+        case "fetchPdfData": {
+          const { url: pdfUrl } = message.payload;
+          try {
+            const res = await fetch(pdfUrl);
+            const buf = await res.arrayBuffer();
+            return { data: Array.from(new Uint8Array(buf)) };
+          } catch (err) {
+            return { error: `Failed to fetch PDF: ${err}` };
+          }
+        }
+
         case "injectNextNewTab": {
           // Listen for the next new tab and inject the content script into it.
           // Used for PDF→HTML conversion: content script opens a blob tab,
