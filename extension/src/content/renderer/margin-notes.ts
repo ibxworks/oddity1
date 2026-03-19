@@ -8,6 +8,7 @@ import type {
 } from "@oddity/shared";
 import { ANNOTATION_LABELS, getAnnotationColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
+import { getPageUrl } from "../page-url.js";
 import { removeAnchors } from "./anchors.js";
 import { addLiveFeedback, updateLiveFeedbackId } from "./arguments-box.js";
 import {
@@ -947,7 +948,7 @@ function createNoteElement(
         action: "deleteAnnotation",
         payload: {
           annotationId: annotation.id,
-          url: window.location.href,
+          url: getPageUrl(),
           contentHash: contentHash,
         },
       });
@@ -1039,7 +1040,7 @@ function createNoteElement(
           false,
         );
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: window.location.href } });
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } });
           currentFeedbackId = null;
         }
       } else {
@@ -1063,7 +1064,7 @@ function createNoteElement(
             payload: {
               annotationId: annotation.id,
               contentHash: contentHash,
-              url: window.location.href,
+              url: getPageUrl(),
               feedbackType: "thumbs_up",
               pageTitle: document.title,
             },
@@ -1077,7 +1078,7 @@ function createNoteElement(
             }
           });
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: window.location.href } })
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } })
             .then(() => { currentFeedbackId = null; return doSave(); });
         } else {
           doSave();
@@ -1103,7 +1104,7 @@ function createNoteElement(
           false,
         );
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: window.location.href } });
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } });
           currentFeedbackId = null;
         }
       } else {
@@ -1127,7 +1128,7 @@ function createNoteElement(
             payload: {
               annotationId: annotation.id,
               contentHash: contentHash,
-              url: window.location.href,
+              url: getPageUrl(),
               feedbackType: "thumbs_down",
               pageTitle: document.title,
             },
@@ -1141,7 +1142,7 @@ function createNoteElement(
             }
           });
         if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: window.location.href } })
+          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } })
             .then(() => { currentFeedbackId = null; return doSave(); });
         } else {
           doSave();
@@ -1263,7 +1264,7 @@ function submitReply(
     payload: {
       annotationId: annotation.id,
       contentHash: hash,
-      url: window.location.href,
+      url: getPageUrl(),
       feedbackType: "reply",
       replyText: text,
       pageTitle: document.title,
@@ -1318,7 +1319,7 @@ function enterEditMode(
       payload: {
         annotationId: annotation.id,
         annotation: updatedAnnotation,
-        url: window.location.href,
+        url: getPageUrl(),
         contentHash: contentHash,
         pageTitle: document.title,
       },

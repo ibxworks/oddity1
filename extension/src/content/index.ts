@@ -41,6 +41,8 @@ import {
   updateArgumentsBox,
   updateArgumentsBoxStyle,
   updateDashboardPersonality,
+  setArgumentsBoxPdf,
+  setPdfRunCallback,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -77,6 +79,7 @@ import {
 } from "./renderer/overlay.js";
 import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
 import { createStabilityWatcher } from "./stability.js";
+import { getPageUrl } from "./page-url.js";
 
 // ─── Extension context guard ───
 // After extension reload/update, content scripts lose access to chrome.* APIs.
@@ -469,6 +472,34 @@ function isDomainWhitelisted(domain: string, sites: string[]): boolean {
   return sites.some(site => domain === site || domain.endsWith('.' + site));
 }
 
+function isPdfPage(): boolean {
+  // Most reliable: browser sets contentType for PDF responses
+  if (document.contentType === "application/pdf") return true;
+  // Fallback: URL ends in .pdf
+  if (window.location.pathname.toLowerCase().endsWith(".pdf")) return true;
+  // Fallback: Chrome's PDF viewer embed
+  if (document.querySelector('embed[type="application/pdf"]')) return true;
+  return false;
+}
+
+async function handlePdfConversion(): Promise<void> {
+  const pdfUrl = window.location.href;
+  try {
+    const { convertPdfToHtml } = await import("./pdf-converter.js");
+    const html = await convertPdfToHtml(pdfUrl);
+
+    // Tell background to inject content script into the next new tab
+    await sendMessage({ action: "injectNextNewTab", payload: {} });
+
+    // Open converted HTML in a new tab via blob URL
+    const blob = new Blob([html], { type: "text/html" });
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, "_blank");
+  } catch (err) {
+    console.error("[Oddity 1] PDF conversion failed:", err);
+  }
+}
+
 function manualRun(): void {
   if (blocked) return;
   manualRunTriggered = true;
@@ -506,6 +537,16 @@ async function init(): Promise<void> {
   // Block pipeline on app.oddity1.com — the webapp has its own annotation system
   if (isBlockedDomain(domain)) {
     blocked = true;
+    return;
+  }
+
+  // PDF detection — show conversion overlay instead of normal pipeline
+  if (isPdfPage()) {
+    console.log("[Oddity 1] PDF detected — showing conversion overlay");
+    initArgumentsBox();
+    setArgumentsBoxEnabled(true);
+    setArgumentsBoxPdf(true);
+    setPdfRunCallback(handlePdfConversion);
     return;
   }
 
@@ -856,7 +897,7 @@ async function handleStableRegion(
     const result = await sendMessage<{ error?: string }>({
       action: "requestAnnotations",
       payload: {
-        url: window.location.href,
+        url: getPageUrl(),
         regionId: region.id,
         contentHash,
         text: extracted.text,
@@ -886,6 +927,13 @@ async function handleStableRegion(
     }
   } catch (err) {
     const errStr = String(err);
+    // Chrome closes the sendMessage channel when the service worker responds
+    // via sendToTab instead of sendResponse. This is expected in our streaming
+    // pattern — annotations still arrive via sendToTab, so don't clean up.
+    if (errStr.includes("message channel closed") || errStr.includes("message port closed")) {
+      console.debug(`[Oddity 1] Message channel closed (expected during streaming)`);
+      return;
+    }
     if (errStr.includes("Auth") || errStr.includes("401")) {
       console.warn(
         "[Oddity 1] Not signed in — open the Oddity extension to sign in",
@@ -951,7 +999,7 @@ async function handleStableRegionForMode(
     const result = await sendMessage<{ error?: string }>({
       action: "requestAnnotations",
       payload: {
-        url: window.location.href,
+        url: getPageUrl(),
         regionId: region.id,
         contentHash,
         text: extracted.text,
@@ -980,6 +1028,13 @@ async function handleStableRegionForMode(
     }
   } catch (err) {
     const errStr = String(err);
+    // Chrome closes the sendMessage channel when the service worker responds
+    // via sendToTab instead of sendResponse. This is expected in our streaming
+    // pattern — annotations still arrive via sendToTab, so don't clean up.
+    if (errStr.includes("message channel closed") || errStr.includes("message port closed")) {
+      console.debug(`[Oddity 1] Message channel closed (expected during streaming)`);
+      return;
+    }
     if (errStr.includes("Auth") || errStr.includes("401")) {
       showAuthToast();
     } else {
@@ -1001,7 +1056,7 @@ async function tryUrlPrediction(): Promise<void> {
     feedback: AnnotationFeedback[];
   } | null>({
     action: "getUrlPrediction",
-    payload: { url: window.location.href },
+    payload: { url: getPageUrl() },
   });
 
   if (!prediction || !prediction.annotations?.length) return;
@@ -1072,7 +1127,7 @@ function handleAnnotationDeleted(annotationId: string): void {
     action: "deleteAnnotation",
     payload: {
       annotationId,
-      url: window.location.href,
+      url: getPageUrl(),
       contentHash: deletedContentHash ?? "",
     },
   });
@@ -1414,7 +1469,10 @@ onMessage((message: ExtensionMessage) => {
         }
       }
 
-      syncArgumentsBox();
+      // Don't sync arguments box here — streaming annotations don't add
+      // argument items (only feedback does). Syncing on every annotation
+      // causes the box to rebuild repeatedly, glitching replies and UI state.
+      // The final "annotationsReady" message handles the sync.
 
       // Skip rendering if disabled or type is not visible in current mode
       if (!enabled || !visibleTypes.includes(annotation.type)) break;

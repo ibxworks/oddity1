@@ -8,6 +8,7 @@ import type {
 import { getAnnotationColor } from "@oddity/shared";
 
 import { getMarginNotesContentLeft } from "./margin-notes.js";
+import { getPageUrl } from "../page-url.js";
 import {
   getThemeMode,
   offThemeChange,
@@ -92,6 +93,9 @@ let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
+let pdfDetected = false;
+let pdfPanelEl: HTMLDivElement | null = null;
+let pdfRunCb: (() => void) | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
 const deletedFeedbackIds = new Set<string>();
@@ -702,7 +706,10 @@ export function updateArgumentsBox(
   debounceTimer = setTimeout(() => {
     cacheAnnotationNotes(annotations);
     canonicalItems = buildItems(annotations, feedback);
-    liveItems = [];
+    // Remove live items that are now in canonical data (matched by feedbackId),
+    // but keep ones still pending server confirmation to avoid glitching user replies.
+    const canonicalFbIds = new Set(canonicalItems.map((i) => i.feedbackId).filter(Boolean));
+    liveItems = liveItems.filter((li) => !li.feedbackId || !canonicalFbIds.has(li.feedbackId));
     renderList();
   }, 150);
 }
@@ -797,6 +804,20 @@ export function setArgumentsBoxBlocked(isBlocked: boolean): void {
   }
 }
 
+export function setArgumentsBoxPdf(isPdf: boolean): void {
+  pdfDetected = isPdf;
+  containerEl?.classList.toggle("oddity-pdf", isPdf);
+  if (isPdf) {
+    dimmed = true;
+    containerEl?.classList.add("oddity-not-enabled");
+    showPdfOverlay();
+  }
+}
+
+export function setPdfRunCallback(cb: () => void): void {
+  pdfRunCb = cb;
+}
+
 export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
 }
@@ -829,6 +850,7 @@ export function updateArgumentsBoxStyle(
   if (!host) return;
   host.style.setProperty("--oddity-note-font", FONT_MAP[font ?? "fraunces"]);
   host.style.setProperty("--oddity-note-size", SIZE_MAP[fontSize ?? "default"]);
+  lastRenderedKey = ""; // force rebuild with new styles
   renderList(); // re-layout since sizes changed
 }
 
@@ -993,6 +1015,9 @@ export function destroyArgumentsBox(): void {
   manualRunCb = null;
   notEnabledPanelEl = null;
   blockedPanelEl = null;
+  pdfDetected = false;
+  pdfPanelEl = null;
+  pdfRunCb = null;
   enableBubbleEl = null;
   canonicalItems = [];
   liveItems = [];
@@ -1120,6 +1145,52 @@ function showBlockedOverlay(): void {
   toggleBarEl?.classList.add("visible");
 }
 
+function showPdfOverlay(): void {
+  if (pdfPanelEl) return;
+  containerEl?.classList.add("oddity-pdf");
+  containerEl?.classList.remove("dashboard");
+  const contentClip = shadowRoot?.querySelector(".args-content-clip");
+  if (!contentClip) return;
+
+  pdfPanelEl = document.createElement("div");
+  pdfPanelEl.className = "args-not-enabled-overlay";
+
+  const msg = document.createElement("div");
+  msg.className = "args-not-enabled-msg";
+  msg.textContent = "This is a PDF";
+
+  const hint = document.createElement("div");
+  hint.className = "args-not-enabled-hint";
+  hint.style.fontSize = "12px";
+  hint.style.marginTop = "4px";
+  hint.textContent = "Convert to HTML to enable Oddity 1";
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "args-not-enabled-btn-row";
+
+  const runBtn = document.createElement("button");
+  runBtn.className = "args-run-btn";
+  runBtn.textContent = "Run as HTML";
+  runBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    runBtn.disabled = true;
+    runBtn.textContent = "Converting…";
+    pdfRunCb?.();
+  });
+
+  btnRow.appendChild(runBtn);
+  pdfPanelEl.appendChild(msg);
+  pdfPanelEl.appendChild(hint);
+  pdfPanelEl.appendChild(btnRow);
+  pdfPanelEl.addEventListener("click", (e) => e.stopPropagation());
+  contentClip.appendChild(pdfPanelEl);
+
+  // Auto-expand so the PDF overlay is visible
+  expanded = true;
+  containerEl?.classList.add("expanded");
+  toggleBarEl?.classList.add("visible");
+}
+
 function toggleDimmedPanel(): void {
   enableBubbleEl?.remove();
   expanded = !expanded;
@@ -1134,11 +1205,17 @@ function toggleDimmedPanel(): void {
     closeBtnEl?.classList.remove("hovered");
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
+    pdfPanelEl?.remove();
+    pdfPanelEl = null;
     return;
   } else if (containerEl?.matches(":hover")) {
     showCloseBtn();
   }
-  showNotEnabledOverlay();
+  if (pdfDetected) {
+    showPdfOverlay();
+  } else {
+    showNotEnabledOverlay();
+  }
 }
 
 function toggle(): void {
@@ -2161,6 +2238,8 @@ function scheduleLayout(): void {
       }
       listEl.style.height = `${top}px`;
       containerEl?.style.setProperty("--panel-width", "300px");
+      // Reveal after positioning to prevent the flash where all cards stack at top:0
+      listEl.style.visibility = "";
       layoutPending = false;
     });
   });
@@ -2735,14 +2814,28 @@ function undimAllCards(): void {
     .forEach((c) => c.classList.remove("dimmed"));
 }
 
+/** Fingerprint of the last rendered item set — skip no-op rebuilds. */
+let lastRenderedKey = "";
+
 function renderList(): void {
   if (!listEl) return;
 
   const allItems = [...canonicalItems, ...liveItems];
+
+  // Skip rebuild if the item set hasn't changed (avoids glitchy DOM teardown/rebuild)
+  const itemKey = allItems.map((i) => i.sortKey + (i.feedbackId ?? "")).join("|");
+  if (itemKey === lastRenderedKey) return;
+  lastRenderedKey = itemKey;
+
+  // Hide list during rebuild to prevent the flash where cards stack at top:0
+  // before scheduleLayout positions them. Visibility is restored in scheduleLayout.
+  listEl.style.visibility = "hidden";
+
   listEl.innerHTML = "";
   expandedCardId = null;
 
   if (allItems.length === 0) {
+    listEl.style.visibility = "";
     const empty = document.createElement("div");
     empty.className = "args-empty";
     empty.textContent =
@@ -2830,7 +2923,7 @@ function renderList(): void {
             payload: {
               annotationId: item.annotationId,
               contentHash: item.contentHash ?? "",
-              url: window.location.href,
+              url: getPageUrl(),
               feedbackType: "reply",
               replyText: text,
               pageTitle: document.title,
@@ -2922,7 +3015,7 @@ function renderList(): void {
           chrome.runtime
             .sendMessage({
               action: "updateFeedback",
-              payload: { feedbackId: item.feedbackId, replyText: newText, contentHash: item.contentHash, url: window.location.href },
+              payload: { feedbackId: item.feedbackId, replyText: newText, contentHash: item.contentHash, url: getPageUrl() },
             })
             .catch(() => {});
           item.text = newText;
@@ -2943,7 +3036,7 @@ function renderList(): void {
               payload: {
                 annotationId: item.annotationId,
                 annotation: updatedAnnotation,
-                url: window.location.href,
+                url: getPageUrl(),
                 contentHash: item.contentHash ?? "",
                 pageTitle: document.title,
               },
@@ -2995,7 +3088,7 @@ function renderList(): void {
             payload: {
               feedbackId: item.feedbackId,
               contentHash: item.contentHash,
-              url: window.location.href,
+              url: getPageUrl(),
             },
           })
           .catch(() => {});
@@ -3013,7 +3106,7 @@ function renderList(): void {
             action: "deleteAnnotation",
             payload: {
               annotationId: item.annotationId,
-              url: window.location.href,
+              url: getPageUrl(),
               contentHash: item.contentHash ?? "",
             },
           })
