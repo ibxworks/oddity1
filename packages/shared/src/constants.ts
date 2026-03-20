@@ -65,7 +65,7 @@ export const OVERVIEW_LABELS: Record<OverviewLabel, string> = {
 // ─── Depth Annotation Colors & Labels ───
 
 export const DEPTH_COLORS: Record<DepthType, string> = {
-  // Critical — red
+  // Terry/Sally — Critical (red)
   caveat: "#F5574C",
   counterargument: "#F5574C",
   alternative: "#F5574C",
@@ -73,11 +73,23 @@ export const DEPTH_COLORS: Record<DepthType, string> = {
   criteria: "#F5574C",
   perspective: "#F5574C",
   consequence: "#F5574C",
-  // Enrichment — green
+  decision_making: "#F5574C",
+  // Terry/Sally — Enrichment (green)
   insight: "#578E6C",
   recall: "#578E6C",
-  study: "#578E6C",
   translation: "#578E6C",
+  // Jerry — Critical (red)
+  juxtaposition: "#F5574C",
+  outsider: "#F5574C",
+  fixation_breaker: "#F5574C",
+  reverse_brainstorm: "#F5574C",
+  // Jerry — Enrichment (green)
+  incomplete_move: "#578E6C",
+  personal_hook: "#578E6C",
+  role_assignment: "#578E6C",
+  exaggeration: "#578E6C",
+  // Legacy
+  study: "#578E6C",
   vocabulary: "#578E6C",
 };
 
@@ -89,10 +101,19 @@ export const DEPTH_LABELS: Record<DepthType, string> = {
   criteria: "CRITERIA",
   perspective: "PERSPECTIVE",
   consequence: "CONSEQUENCE",
+  decision_making: "DECISION MAKING",
   insight: "INSIGHT",
   recall: "RECALL",
-  study: "STUDY",
   translation: "TRANSLATION",
+  juxtaposition: "JUXTAPOSITION",
+  outsider: "OUTSIDER",
+  fixation_breaker: "FIXATION BREAKER",
+  incomplete_move: "INCOMPLETE MOVE",
+  personal_hook: "PERSONAL HOOK",
+  role_assignment: "ROLE ASSIGNMENT",
+  exaggeration: "EXAGGERATION",
+  reverse_brainstorm: "REVERSE BRAINSTORM",
+  study: "STUDY",
   vocabulary: "VOCABULARY",
 };
 
@@ -113,7 +134,7 @@ export const ANNOTATION_COLORS_LIGHT: Record<AnnotationType, string> = {
   outcome: "#FFDD69",
   background: "#FFDD69",
   transition: "#FFDD69",
-  // Critical — red
+  // Terry/Sally — Critical (red)
   caveat: "#F5574C",
   counterargument: "#F5574C",
   alternative: "#F5574C",
@@ -121,11 +142,23 @@ export const ANNOTATION_COLORS_LIGHT: Record<AnnotationType, string> = {
   criteria: "#F5574C",
   perspective: "#F5574C",
   consequence: "#F5574C",
-  // Enrichment — green
+  decision_making: "#F5574C",
+  // Terry/Sally — Enrichment (green)
   insight: "#578E6C",
   recall: "#578E6C",
-  study: "#578E6C",
   translation: "#578E6C",
+  // Jerry — Critical (red)
+  juxtaposition: "#F5574C",
+  outsider: "#F5574C",
+  fixation_breaker: "#F5574C",
+  reverse_brainstorm: "#F5574C",
+  // Jerry — Enrichment (green)
+  incomplete_move: "#578E6C",
+  personal_hook: "#578E6C",
+  role_assignment: "#578E6C",
+  exaggeration: "#578E6C",
+  // Legacy
+  study: "#578E6C",
   vocabulary: "#578E6C",
   // User-written — blue
   user_written: "#748DBF",
@@ -163,10 +196,19 @@ export const ALL_DEPTH_TYPES: DepthType[] = [
   "criteria",
   "perspective",
   "consequence",
+  "decision_making",
   "insight",
   "recall",
-  "study",
   "translation",
+  "juxtaposition",
+  "outsider",
+  "fixation_breaker",
+  "incomplete_move",
+  "personal_hook",
+  "role_assignment",
+  "exaggeration",
+  "reverse_brainstorm",
+  "study",
   "vocabulary",
 ];
 

@@ -16,6 +16,7 @@ export type OverviewLabel =
 // ─── Depth Types ───
 
 export type DepthType =
+  // Terry / Sally skills
   | "caveat"
   | "counterargument"
   | "alternative"
@@ -25,8 +26,19 @@ export type DepthType =
   | "consequence"
   | "insight"
   | "recall"
-  | "study"
   | "translation"
+  | "decision_making"
+  // Jerry skills
+  | "juxtaposition"
+  | "outsider"
+  | "fixation_breaker"
+  | "incomplete_move"
+  | "personal_hook"
+  | "role_assignment"
+  | "exaggeration"
+  | "reverse_brainstorm"
+  // Legacy (backward compat)
+  | "study"
   | "vocabulary";
 
 // ─── Unified Annotation Type ───

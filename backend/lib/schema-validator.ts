@@ -23,7 +23,7 @@ const AllAnnotationTypes = z.enum([
   'outcome',
   'background',
   'transition',
-  // Depth types
+  // Terry/Sally depth skills
   'caveat',
   'counterargument',
   'alternative',
@@ -31,16 +31,26 @@ const AllAnnotationTypes = z.enum([
   'criteria',
   'perspective',
   'consequence',
+  'decision_making',
   'insight',
   'recall',
-  'study',
   'translation',
-  'vocabulary',
+  // Jerry depth skills
+  'juxtaposition',
+  'outsider',
+  'fixation_breaker',
+  'incomplete_move',
+  'personal_hook',
+  'role_assignment',
+  'exaggeration',
+  'reverse_brainstorm',
   // User-written
   'user_written',
   // Legacy (backward compat for cached data)
   'assumption',
   'open_question',
+  'study',
+  'vocabulary',
 ]);
 
 const AnnotationSchema = z.object({

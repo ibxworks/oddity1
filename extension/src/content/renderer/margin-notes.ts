@@ -9,6 +9,7 @@ import type {
 import { ANNOTATION_LABELS, getAnnotationColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
 import { getPageUrl } from "../page-url.js";
+import { renderMiniMarkdown } from "./mini-markdown.js";
 import { removeAnchors } from "./anchors.js";
 import { addLiveFeedback, updateLiveFeedbackId } from "./arguments-box.js";
 import {
@@ -416,6 +417,15 @@ function addInlinePopover(
   inlinePopovers.set(annotation.id, popover);
 }
 
+/** Fade out an inline popover element, then remove it from the DOM. */
+function fadeOutAndRemove(el: HTMLElement): void {
+  el.classList.add("fading-out");
+  const cleanup = () => { if (el.parentElement) el.remove(); };
+  el.addEventListener("animationend", cleanup, { once: true });
+  // Fallback in case animationend doesn't fire
+  setTimeout(cleanup, 300);
+}
+
 function showInlinePopover(annotationId: string): void {
   if (!shadowRoot) return;
   const popover = inlinePopovers.get(annotationId);
@@ -435,7 +445,7 @@ function showInlinePopover(annotationId: string): void {
     if (!pinnedId) {
       for (const [id, p] of inlinePopovers) {
         if (id !== annotationId && p.visible) {
-          p.element.remove();
+          fadeOutAndRemove(p.element);
           p.visible = false;
           p.element.classList.remove("expanded");
         }
@@ -446,6 +456,8 @@ function showInlinePopover(annotationId: string): void {
       shadowRoot.appendChild(popover.element);
       popover.visible = true;
     }
+    // Cancel any in-progress fade-out
+    popover.element.classList.remove("fading-out");
 
     positionInlinePopover(popover);
   }, 150);
@@ -464,14 +476,14 @@ function scheduleInlineHide(annotationId?: string): void {
     if (annotationId) {
       const popover = inlinePopovers.get(annotationId);
       if (popover && popover.visible) {
-        popover.element.remove();
+        fadeOutAndRemove(popover.element);
         popover.visible = false;
         popover.element.classList.remove("expanded");
       }
     } else if (inlineHoveredId) {
       const popover = inlinePopovers.get(inlineHoveredId);
       if (popover && popover.visible) {
-        popover.element.remove();
+        fadeOutAndRemove(popover.element);
         popover.visible = false;
         popover.element.classList.remove("expanded");
       }
@@ -667,6 +679,8 @@ function showAllInlinePopovers(emphasizedId?: string): void {
       shadowRoot.appendChild(popover.element);
       popover.visible = true;
     }
+    // Cancel any in-progress fade-out
+    popover.element.classList.remove("fading-out");
     positionInlinePopover(popover);
 
     // All notes stay fully visible above the fade — no dimming
@@ -696,7 +710,7 @@ function hideAllInlinePopovers(): void {
       popover.element.classList.remove("expanded");
       popover.element.classList.remove("anchor-hovered");
       popover.element.classList.remove("dimmed");
-      popover.element.remove();
+      fadeOutAndRemove(popover.element);
       popover.visible = false;
     }
   }
@@ -1128,7 +1142,7 @@ function createNoteElement(
   onDelete?: (annotationId: string) => void,
   contentHash = "",
 ): HTMLDivElement {
-  const ENRICHMENT_TYPES = new Set(["insight", "recall", "study", "translation", "vocabulary"]);
+  const ENRICHMENT_TYPES = new Set(["insight", "recall", "study", "translation", "vocabulary", "incomplete_move", "personal_hook", "role_assignment", "exaggeration"]);
   const OVERVIEW_TYPES = new Set(["core_claim", "evidence", "outcome", "background", "transition"]);
   const theme = getThemeMode();
   let color = getAnnotationColor(annotation.type, theme);
@@ -1192,7 +1206,7 @@ function createNoteElement(
   // Note text (collapsed: truncated)
   const textEl = document.createElement("div");
   textEl.className = "note-text";
-  textEl.textContent = annotation.content.note;
+  textEl.innerHTML = renderMiniMarkdown(annotation.content.note);
 
   // Expanded content (hidden by default, shown on .expanded)
   const expandedContent = document.createElement("div");
@@ -1722,8 +1736,8 @@ function createSection(labelText: string, content: string): HTMLDivElement {
   const label = document.createElement("span");
   label.className = "note-section-label";
   label.textContent = labelText;
-  const text = document.createElement("p");
-  text.textContent = content;
+  const text = document.createElement("div");
+  text.innerHTML = renderMiniMarkdown(content);
   section.appendChild(label);
   section.appendChild(text);
   return section;
@@ -2044,6 +2058,24 @@ const MARGIN_NOTES_CSS = `
     font-weight: 370;
     line-height: 1.6;
     color: #FFFFFF;
+  }
+
+  .note-text p {
+    margin: 0 0 4px;
+  }
+  .note-text p:last-child {
+    margin-bottom: 0;
+  }
+  .note-text strong {
+    font-weight: 600;
+  }
+  .note-text ul {
+    margin: 4px 0;
+    padding-left: 16px;
+    list-style: disc;
+  }
+  .note-text li {
+    margin-bottom: 2px;
   }
 
   /* Overview inline popovers: always show full text, no expand/collapse */
@@ -2501,6 +2533,21 @@ const MARGIN_NOTES_CSS = `
       opacity: 1;
       transform: translateY(0) scale(1);
     }
+  }
+
+  @keyframes inlinePopoverOut {
+    from {
+      opacity: 1;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+
+  .oddity-note.oddity-note--inline.fading-out {
+    animation: inlinePopoverOut 0.2s ease-in forwards;
   }
 
 `;

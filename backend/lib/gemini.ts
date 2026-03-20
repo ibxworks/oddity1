@@ -16,9 +16,8 @@ const promptsConfig = JSON.parse(
   readFileSync(resolve(__dirname, "../config/prompts.json"), "utf-8"),
 );
 const overviewPromptTemplate: string = promptsConfig.overview_prompt_template ?? promptsConfig.overview_prompt ?? "";
-const depthPromptTemplate: string = promptsConfig.depth_prompt_template ?? "";
+const depthPrompts: Record<string, string> = promptsConfig.depth_prompts ?? {};
 const overviewPersonalities: Record<string, string> = promptsConfig.overview_personalities ?? {};
-const personalities: Record<string, string> = promptsConfig.personalities ?? {};
 
 /**
  * Build the system prompt for a given mode and personality.
@@ -28,9 +27,9 @@ function buildSystemPrompt(mode: AnnotationMode, personality?: DepthPersonality)
     const personalityText = overviewPersonalities[personality ?? "jerry"] ?? overviewPersonalities.jerry ?? "";
     return overviewPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
   }
-  // Depth mode: substitute personality into template
-  const personalityText = personalities[personality ?? "jerry"] ?? personalities.jerry ?? "";
-  return depthPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
+  // Depth mode: each personality has its own full prompt
+  const key = personality ?? "jerry";
+  return depthPrompts[key] ?? depthPrompts.jerry ?? "";
 }
 
 /**
@@ -71,10 +70,14 @@ function mapDepthOutput(raw: unknown[]): unknown[] {
     // Already in Annotation format
     if (item.mode && item.anchor?.type === "TextQuoteSelector" && item.content) return item;
 
+    // New prompts use "skill", old prompts used "type"
+    const rawType = (item.skill ?? item.type ?? "").replace(/\s+/g, "_").toLowerCase();
+
     return {
       id: item.id ?? randomUUID(),
       mode: "depth",
-      type: (item.type ?? "").replace(/\s+/g, "_").toLowerCase(),
+      type: rawType,
+      label: item.label,
       anchor: {
         type: "TextQuoteSelector",
         exact: item.anchor ?? item.exact ?? "",
