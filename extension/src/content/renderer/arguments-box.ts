@@ -705,10 +705,18 @@ export function updateArgumentsBox(
   debounceTimer = setTimeout(() => {
     cacheAnnotationNotes(annotations);
     canonicalItems = buildItems(annotations, feedback);
-    // Remove live items that are now in canonical data (matched by feedbackId),
-    // but keep ones still pending server confirmation to avoid glitching user replies.
+    // Remove live items that are now in canonical data:
+    // 1. Reply/reaction items: matched by feedbackId
     const canonicalFbIds = new Set(canonicalItems.map((i) => i.feedbackId).filter(Boolean));
-    liveItems = liveItems.filter((li) => !li.feedbackId || !canonicalFbIds.has(li.feedbackId));
+    // 2. Manual annotation items: matched by annotationId (they have no feedbackId)
+    const canonicalManualAnnIds = new Set(
+      canonicalItems.filter((i) => i.type === "manual").map((i) => i.annotationId).filter(Boolean),
+    );
+    liveItems = liveItems.filter((li) => {
+      if (li.feedbackId && canonicalFbIds.has(li.feedbackId)) return false;
+      if (li.type === "manual" && li.annotationId && canonicalManualAnnIds.has(li.annotationId)) return false;
+      return true;
+    });
     renderList();
   }, 150);
 }
@@ -2075,9 +2083,15 @@ function buildItems(
     }
   }
 
+  // Defensive dedup: track emitted feedbackIds to prevent duplicate cards
+  // even if the merged feedback map somehow contains the same entry twice.
+  const emittedFbIds = new Set<string>();
+
   for (const [hash, fbs] of feedback) {
     for (const fb of fbs) {
       if (deletedFeedbackIds.has(fb.id)) continue;
+      if (fb.id && emittedFbIds.has(fb.id)) continue;
+      if (fb.id) emittedFbIds.add(fb.id);
       const fbHash = annHashMap.get(fb.annotation_id) ?? hash;
       const srcAnnotationType = findAnnotationType(annotations, fb.annotation_id);
       if (fb.feedback_type === "thumbs_up") {

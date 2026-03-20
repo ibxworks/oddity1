@@ -264,6 +264,40 @@ function syncUserWrittenToBothStores(regionId: string, annotations: Annotation[]
   otherStore.set(regionId, otherList);
 }
 
+/**
+ * Replace the annotation list for a region in the given store, but preserve
+ * any user_written annotations that aren't in the new list.  API responses
+ * never include user_written annotations, so a plain `.set()` would silently
+ * discard them.
+ */
+function setAnnotationsPreservingUserWritten(
+  store: Map<string, Annotation[]>,
+  regionId: string,
+  incoming: Annotation[],
+): void {
+  const prev = store.get(regionId) ?? [];
+  const incomingIds = new Set(incoming.map((a) => a.id));
+  const preserved = prev.filter((a) => a.type === "user_written" && !incomingIds.has(a.id));
+  store.set(regionId, [...incoming, ...preserved]);
+}
+
+/**
+ * Replace the feedback list for a region in the given store, but preserve
+ * any locally-added feedback entries (e.g. user replies) that aren't in the
+ * new list.  This prevents user-created feedback from being silently dropped
+ * when an API response replaces the store.
+ */
+function setFeedbackPreservingLocal(
+  store: Map<string, AnnotationFeedback[]>,
+  regionId: string,
+  incoming: AnnotationFeedback[],
+): void {
+  const prev = store.get(regionId) ?? [];
+  const incomingIds = new Set(incoming.map((f) => f.id));
+  const preserved = prev.filter((f) => !incomingIds.has(f.id));
+  store.set(regionId, [...incoming, ...preserved]);
+}
+
 const regionByHash = new Map<string, DetectedRegion>();
 /** Tracks current content hash per region element — used for stale response guards */
 const activeHashes = new Map<Element, string>();
@@ -1085,8 +1119,8 @@ async function tryUrlPrediction(): Promise<void> {
   // Route to the correct mode store
   const predAnnStore = predMode === "overview" ? overviewAnnotations : depthAnnotations;
   const predFbStore = predMode === "overview" ? overviewFeedback : depthFeedback;
-  predAnnStore.set(regionId, prediction.annotations);
-  predFbStore.set(regionId, prediction.feedback ?? []);
+  setAnnotationsPreservingUserWritten(predAnnStore, regionId, prediction.annotations);
+  setFeedbackPreservingLocal(predFbStore, regionId, prediction.feedback ?? []);
   syncUserWrittenToBothStores(regionId, prediction.annotations, predMode);
   renderAnnotations(regionId, prediction.annotations);
   syncArgumentsBox();
@@ -1644,8 +1678,8 @@ onMessage((message: ExtensionMessage) => {
       if (responseGenerated.has(regionId) && !isPlainPending && !isModePending) {
         const prev = responseAnnStore.get(regionId) ?? [];
         const prevFb = responseFbStore.get(regionId) ?? [];
-        responseAnnStore.set(regionId, annotations);
-        responseFbStore.set(regionId, feedback);
+        setAnnotationsPreservingUserWritten(responseAnnStore, regionId, annotations);
+        setFeedbackPreservingLocal(responseFbStore, regionId, feedback);
         syncUserWrittenToBothStores(regionId, annotations, responseMode);
         syncArgumentsBox();
 
@@ -1677,11 +1711,11 @@ onMessage((message: ExtensionMessage) => {
       }
 
       responseGenerated.add(regionId);
-      responseFbStore.set(regionId, feedback);
+      setFeedbackPreservingLocal(responseFbStore, regionId, feedback);
 
       const hadStreaming = streamedRegions.has(regionId);
       streamedRegions.delete(regionId);
-      responseAnnStore.set(regionId, annotations);
+      setAnnotationsPreservingUserWritten(responseAnnStore, regionId, annotations);
       syncUserWrittenToBothStores(regionId, annotations, responseMode);
       syncArgumentsBox();
 

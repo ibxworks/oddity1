@@ -123,7 +123,7 @@ export function initMarginNotes(region: Element): void {
   hostEl = document.createElement("div");
   hostEl.id = "oddity-margin-notes";
   hostEl.style.cssText =
-    "position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 2147483645;";
+    "position: fixed; top: 0; left: 0; width: 100%; height: 0; pointer-events: none; z-index: 2147483645;";
   // Stop keyboard events from leaking to the host page
   for (const evt of [
     "keydown",
@@ -621,9 +621,7 @@ function positionInlinePopover(popover: InlinePopover): void {
   }
 
   // Flip above if not enough space below (depth only — overview always stays below)
-  if (currentAnnotationMode !== "overview" && lastRect.bottom + gap + popHeight > viewportH) {
-    top = firstRect.top - popHeight - gap;
-  }
+  // Always stay below the highlight — never flip above
 
   // Depth: clamp right edge to content column boundary
   if (currentAnnotationMode !== "overview" && bounds) {
@@ -1813,24 +1811,27 @@ function resolveOverlapsForSide(sideNotes: MarginNote[]): void {
 function applyPositions(): void {
   // Compute a single shared contentLeft for all left-side notes so they
   // all align on the same leading edge with no stagger.
+  // All horizontal values are viewport-relative (getClientRects() coords)
+  // since notes now use position: fixed.
   const leftNotes = notes.filter((n) => n.side === "left");
   let sharedContentLeft = Infinity;
   let maxContentRight = 0;
   for (const note of leftNotes) {
     const bounds = getContentBounds(note.region, note.range);
-    const cl = bounds.left + window.scrollX;
+    const cl = bounds.left;
     if (cl < sharedContentLeft) sharedContentLeft = cl;
   }
   if (!isFinite(sharedContentLeft)) sharedContentLeft = 0;
   // Only update the shared left if we have notes — preserve the last known
   // value so the mode toggle doesn't jump when notes are cleared (e.g. depth mode).
   if (leftNotes.length > 0) {
-    sharedContentLeftViewport = sharedContentLeft - window.scrollX;
+    sharedContentLeftViewport = sharedContentLeft;
   }
 
+  const scrollY = window.scrollY;
   for (const note of notes) {
     const bounds = getContentBounds(note.region, note.range);
-    const contentRight = bounds.right + window.scrollX;
+    const contentRight = bounds.right;
     if (contentRight > maxContentRight) maxContentRight = contentRight;
 
     note.element.style.right = "auto";
@@ -1846,7 +1847,8 @@ function applyPositions(): void {
     } else {
       note.element.style.left = `${contentRight + MARGIN_PADDING}px`;
     }
-    note.element.style.top = `${note.topPx}px`;
+    // topPx is in document coordinates; convert to viewport for fixed positioning
+    note.element.style.top = `${note.topPx - scrollY}px`;
   }
   sharedContentRight = maxContentRight;
 
@@ -1876,8 +1878,9 @@ function updateTimelineLine(leftNotes: MarginNote[], sharedContentLeft: number):
   const noteLeft = Math.max(8, sharedContentLeft - MARGIN_PADDING - noteWidth);
   const lineCenterX = noteLeft + noteWidth / 2;
 
-  const lineTop = first.topPx;
-  const lineBottom = last.topPx + last.collapsedHeight;
+  const scrollY = window.scrollY;
+  const lineTop = first.topPx - scrollY;
+  const lineBottom = last.topPx + last.collapsedHeight - scrollY;
   const lineHeight = lineBottom - lineTop;
 
   if (lineHeight <= 0) {
@@ -1928,6 +1931,7 @@ function scheduleScrollUpdate(): void {
   if (!needsScrollUpdate) {
     needsScrollUpdate = true;
     requestAnimationFrame(() => {
+      applyPositions();
       repositionVisibleInlinePopovers();
       updateDimCutouts();
       needsScrollUpdate = false;
@@ -1977,7 +1981,7 @@ const MARGIN_NOTES_CSS = `
   }
 
   .oddity-note {
-    position: absolute;
+    position: fixed;
     width: ${NOTE_EXPANDED_WIDTH}px;
     padding: 13px 18px;
     font-family: var(--oddity-note-font);
@@ -2457,7 +2461,7 @@ const MARGIN_NOTES_CSS = `
 
   /* ── Timeline line (Overview mode) ── */
   .oddity-timeline-line {
-    position: absolute;
+    position: fixed;
     width: 2px;
     background: #DCAF16;
     opacity: 0.4;
@@ -2485,8 +2489,6 @@ const MARGIN_NOTES_CSS = `
   }
 
   .oddity-note.oddity-note--inline.expanded {
-    width: 360px;
-    max-width: 90vw;
     box-shadow: 0 10px 36px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.35);
   }
 
