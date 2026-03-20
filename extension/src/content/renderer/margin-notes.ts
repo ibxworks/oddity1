@@ -46,12 +46,6 @@ type InlinePopover = {
   visible: boolean;
 };
 
-type OverviewInlineNote = {
-  id: string;
-  annotation: Annotation;
-  range: Range;
-  element: HTMLDivElement;
-};
 
 // ─── State ───
 
@@ -71,6 +65,7 @@ let fontLink: HTMLLinkElement | null = null;
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
+let justPinnedFromCard = false;
 let userName: string | null = null;
 let sharedContentRight = 0;
 let sharedContentLeftViewport = 0;
@@ -80,8 +75,7 @@ let timelineLineEl: HTMLDivElement | null = null;
 let currentAnnotationMode: ViewMode = "overview";
 let inlinePopovers: Map<string, InlinePopover> = new Map();
 
-// ─── Overview Inline Note State ───
-let overviewInlineNotes: Map<string, OverviewInlineNote> = new Map();
+// ─── Page Dim State (Overview mode) ───
 let pageDimOverlay: HTMLDivElement | null = null;
 let dimmedAnnotationId: string | null = null;
 let inlineShowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -89,6 +83,7 @@ let inlineHideTimer: ReturnType<typeof setTimeout> | null = null;
 let inlineHoveredId: string | null = null;
 let mouseInInlinePopover = false;
 let mouseInAnchor = false;
+let inlineHoverExpandTimer: ReturnType<typeof setTimeout> | null = null;
 
 const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
@@ -167,7 +162,13 @@ export function initMarginNotes(region: Element): void {
   });
 
   // Unpin on any click outside a card/anchor
-  docClickHandler = () => {
+  docClickHandler = (e: MouseEvent) => {
+    // The card's click handler sets justPinnedFromCard synchronously;
+    // the document handler fires in the same event dispatch.  Skip unpin
+    // so the freshly-pinned card stays open.
+    if (justPinnedFromCard) return;
+    const target = e.target as Node;
+    if ((target as Element).closest?.("[data-oddity-id]")) return;
     if (pinnedId) unpinAll();
   };
   document.addEventListener("click", docClickHandler);
@@ -222,16 +223,11 @@ export function addMarginNote(
 ): void {
   if (!shadowRoot || !regionEl) return;
 
-  // In overview mode, render notes inline under their highlights (always visible)
-  if (currentAnnotationMode === "overview") {
-    addOverviewInlineNote(annotation, range, feedback, onDelete, contentHash);
-    return;
-  }
-
-  // In depth mode, use inline popovers instead of margin notes (except user-written notes)
+  // In overview/depth mode, use inline popovers (hover-to-show)
   // In "all" mode, depth annotations also use inline popovers; overview annotations use margin notes
   const useInlinePopover = annotation.type !== "user_written" && (
     currentAnnotationMode === "depth" ||
+    currentAnnotationMode === "overview" ||
     (currentAnnotationMode === "all" && annotation.mode === "depth")
   );
   if (useInlinePopover) {
@@ -341,20 +337,47 @@ function addInlinePopover(
   el.addEventListener("mouseenter", () => {
     mouseInInlinePopover = true;
     cancelInlineHide();
+    // Expand after a short delay on hover (if not already expanded/pinned)
+    if (!pinnedId && expandedId !== annotation.id) {
+      if (inlineHoverExpandTimer) clearTimeout(inlineHoverExpandTimer);
+      inlineHoverExpandTimer = setTimeout(() => {
+        inlineHoverExpandTimer = null;
+        if (mouseInInlinePopover && !pinnedId) {
+          expandInlinePopover(annotation.id, false);
+          emphasizeAnnotation(annotation.id);
+        }
+      }, 200);
+    }
   });
   el.addEventListener("mouseleave", () => {
     mouseInInlinePopover = false;
-    if (!pinnedId) scheduleInlineHide();
+    if (inlineHoverExpandTimer) {
+      clearTimeout(inlineHoverExpandTimer);
+      inlineHoverExpandTimer = null;
+    }
+    if (!pinnedId) {
+      // Collapse if expanded via hover (not pinned)
+      const popover = inlinePopovers.get(annotation.id);
+      if (popover && expandedId === annotation.id) {
+        popover.element.classList.remove("expanded");
+        expandedId = null;
+        if (currentAnnotationMode === "overview") undimPage();
+        deemphasizeAnnotation();
+        requestAnimationFrame(() => positionInlinePopover(popover));
+      }
+      scheduleInlineHide();
+    }
   });
-  // Click on the inline popover itself toggles expand/collapse (same as anchor click)
+  // Click on the inline popover itself pins/unpins
   el.addEventListener("click", (e) => {
-    // Don't intercept clicks on interactive elements inside the note
     const target = e.target as HTMLElement;
     if (target.closest("button, input, textarea, a, .note-feedback-pill, .note-icon-btn, .note-reply-input")) return;
     e.stopPropagation();
     if (pinnedId === annotation.id) {
       unpinInlinePopover();
     } else {
+      justPinnedFromCard = true;
+      setTimeout(() => { justPinnedFromCard = false; }, 0);
       expandInlinePopover(annotation.id);
       emphasizeAnnotation(annotation.id);
     }
@@ -450,7 +473,7 @@ function cancelInlineHide(): void {
   }
 }
 
-function expandInlinePopover(annotationId: string): void {
+function expandInlinePopover(annotationId: string, pin = true): void {
   const popover = inlinePopovers.get(annotationId);
   if (!popover) return;
 
@@ -467,15 +490,24 @@ function expandInlinePopover(annotationId: string): void {
   for (const [id, p] of inlinePopovers) {
     if (id !== annotationId && p.visible) {
       p.element.classList.remove("expanded");
-      p.element.remove();
-      p.visible = false;
+      if (pin) {
+        p.element.remove();
+        p.visible = false;
+      }
     }
   }
 
-  pinnedId = annotationId;
-  hostEl?.classList.add("has-pinned");
+  if (pin) {
+    pinnedId = annotationId;
+    hostEl?.classList.add("has-pinned");
+  }
   popover.element.classList.add("expanded");
   expandedId = annotationId;
+
+  // Overview: dim the page when expanded
+  if (currentAnnotationMode === "overview") {
+    dimPage(annotationId);
+  }
 
   // Reposition after expansion (content may change height)
   requestAnimationFrame(() => positionInlinePopover(popover));
@@ -499,6 +531,10 @@ function unpinInlinePopover(): void {
       }
     }
   }
+  // Overview: remove page dim when unpinning
+  if (currentAnnotationMode === "overview") {
+    undimPage();
+  }
   undimAllNotes();
   deemphasizeAnnotation();
 }
@@ -508,39 +544,53 @@ function positionInlinePopover(popover: InlinePopover): void {
   if (rects.length === 0) return;
 
   const firstRect = rects[0]!;
+  const lastRect = rects[rects.length - 1]!;
   const gap = 6;
   const viewportH = window.innerHeight;
   const viewportW = window.innerWidth;
 
   const el = popover.element;
 
-  // Temporarily position off-screen to measure
-  el.style.left = "-9999px";
-  el.style.top = "-9999px";
+  // Measure dimensions in-place (element is position:fixed so this is accurate).
+  // Avoid moving off-screen to measure — that triggers mouseleave/mouseenter
+  // glitches when repositioning during hover-expand.
+  const popWidth = el.offsetWidth;
+  const popHeight = el.offsetHeight;
 
-  requestAnimationFrame(() => {
-    const popRect = el.getBoundingClientRect();
+  // Position below ALL highlighted text (use last rect's bottom, not first)
+  let top = lastRect.bottom + gap;
+  let left = firstRect.left;
 
-    // Default: below the highlighted text, left-aligned with highlight start
-    let top = firstRect.bottom + gap;
-    let left = firstRect.left;
+  // Get content bounds for alignment constraints
+  const bounds = regionEl ? getContentBounds(regionEl, popover.range) : null;
 
-    // Flip above if not enough space below
-    if (firstRect.bottom + gap + popRect.height > viewportH) {
-      top = firstRect.top - popRect.height - gap;
+  // Overview: align with content column leading edge
+  if (currentAnnotationMode === "overview" && bounds) {
+    left = bounds.left;
+  }
+
+  // Flip above if not enough space below
+  if (lastRect.bottom + gap + popHeight > viewportH) {
+    top = firstRect.top - popHeight - gap;
+  }
+
+  // Depth: clamp right edge to content column boundary
+  if (currentAnnotationMode !== "overview" && bounds) {
+    if (left + popWidth > bounds.right) {
+      left = bounds.right - popWidth;
     }
+  }
 
-    // Clamp horizontal to viewport
-    if (left + popRect.width > viewportW - 8) {
-      left = viewportW - popRect.width - 8;
-    }
-    if (left < 8) {
-      left = 8;
-    }
+  // Clamp horizontal to viewport
+  if (left + popWidth > viewportW - 8) {
+    left = viewportW - popWidth - 8;
+  }
+  if (left < 8) {
+    left = 8;
+  }
 
-    el.style.left = `${left}px`;
-    el.style.top = `${top}px`;
-  });
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
 }
 
 function repositionVisibleInlinePopovers(): void {
@@ -549,150 +599,6 @@ function repositionVisibleInlinePopovers(): void {
       positionInlinePopover(popover);
     }
   }
-}
-
-// ─── Overview Inline Notes (always visible, under highlights) ───
-
-function addOverviewInlineNote(
-  annotation: Annotation,
-  range: Range,
-  feedback: AnnotationFeedback[] = [],
-  onDelete?: (annotationId: string) => void,
-  contentHash?: string,
-): void {
-  if (!shadowRoot) return;
-  if (overviewInlineNotes.has(annotation.id)) return;
-
-  const rects = range.getClientRects();
-  if (rects.length === 0) return;
-
-  const noteRegion = regionEl;
-
-  const resolvedHash = contentHash
-    ?? (noteRegion as HTMLElement)?.dataset?.oddityHash
-    ?? document.querySelector("[data-oddity-hash]")?.getAttribute("data-oddity-hash")
-    ?? "";
-
-  const el = createNoteElement(annotation, "left", feedback, onDelete, resolvedHash);
-  el.classList.add("oddity-note--overview-inline");
-
-  // Click on the note itself to expand/collapse
-  el.addEventListener("click", (e) => {
-    const target = e.target as HTMLElement;
-    if (target.closest("button, input, textarea, a, .note-feedback-pill, .note-icon-btn, .note-reply-input")) return;
-    e.stopPropagation();
-    if (pinnedId === annotation.id) {
-      unpinOverviewNote();
-    } else {
-      expandOverviewNote(annotation.id);
-    }
-  });
-
-  const note: OverviewInlineNote = {
-    id: annotation.id,
-    annotation,
-    range,
-    element: el,
-  };
-
-  overviewInlineNotes.set(annotation.id, note);
-
-  // Immediately append (always visible)
-  shadowRoot.appendChild(el);
-
-  // Position after layout
-  requestAnimationFrame(() => {
-    positionOverviewInlineNote(note);
-  });
-}
-
-function positionOverviewInlineNote(note: OverviewInlineNote): void {
-  const rects = note.range.getClientRects();
-  if (rects.length === 0) return;
-
-  // Use the last rect to position below the end of the highlight
-  const lastRect = rects[rects.length - 1]!;
-  const gap = 6;
-
-  const top = lastRect.bottom + window.scrollY + gap;
-
-  // Align with the content column's leading (left) edge
-  const noteRegion = regionEl ?? document.body;
-  const bounds = getContentBounds(noteRegion, note.range);
-  let left = bounds.left;
-
-  // Clamp horizontal to viewport
-  const viewportW = window.innerWidth;
-  const noteWidth = 320;
-  if (left + noteWidth > viewportW - 8) {
-    left = viewportW - noteWidth - 8;
-  }
-  if (left < 8) {
-    left = 8;
-  }
-
-  note.element.style.top = `${top}px`;
-  note.element.style.left = `${left}px`;
-}
-
-function repositionAllOverviewInlineNotes(): void {
-  for (const [, note] of overviewInlineNotes) {
-    positionOverviewInlineNote(note);
-  }
-}
-
-function expandOverviewNote(annotationId: string): void {
-  const note = overviewInlineNotes.get(annotationId);
-  if (!note) return;
-
-  // Collapse previous if different
-  if (pinnedId && pinnedId !== annotationId) {
-    unpinOverviewNote();
-  }
-
-  pinnedId = annotationId;
-  expandedId = annotationId;
-  hostEl?.classList.add("has-pinned");
-  note.element.classList.add("expanded");
-
-  // Dim other overview notes
-  for (const [id, n] of overviewInlineNotes) {
-    if (id !== annotationId) {
-      n.element.classList.add("dimmed");
-    }
-  }
-
-  // Dim the page and emphasize the correlated highlight
-  dimPage(annotationId);
-  emphasizeAnnotation(annotationId);
-
-  // Reposition after expansion
-  requestAnimationFrame(() => positionOverviewInlineNote(note));
-}
-
-function unpinOverviewNote(): void {
-  const id = pinnedId;
-  pinnedId = null;
-  expandedId = null;
-  hostEl?.classList.remove("has-pinned");
-  justUnpinned = true;
-  setTimeout(() => { justUnpinned = false; }, 0);
-
-  if (id) {
-    const note = overviewInlineNotes.get(id);
-    if (note) {
-      note.element.classList.remove("expanded");
-      requestAnimationFrame(() => positionOverviewInlineNote(note));
-    }
-  }
-
-  // Undim all overview notes
-  for (const [, n] of overviewInlineNotes) {
-    n.element.classList.remove("dimmed");
-  }
-
-  undimPage();
-  deemphasizeAnnotation();
 }
 
 /**
@@ -787,15 +693,6 @@ function updateDimCutouts(): void {
 }
 
 export function removeMarginNote(annotationId: string): void {
-  // Check overview inline notes first
-  const overviewNote = overviewInlineNotes.get(annotationId);
-  if (overviewNote) {
-    overviewNote.element.remove();
-    overviewInlineNotes.delete(annotationId);
-    if (pinnedId === annotationId) unpinOverviewNote();
-    return;
-  }
-
   // Check inline popovers
   const popover = inlinePopovers.get(annotationId);
   if (popover) {
@@ -821,14 +718,6 @@ export function removeMarginNote(annotationId: string): void {
 
 /** Update the displayed text of a margin note (both traditional and inline). */
 export function updateMarginNoteText(annotationId: string, newNote: string): void {
-  // Check overview inline notes
-  const overviewNote = overviewInlineNotes.get(annotationId);
-  if (overviewNote) {
-    overviewNote.annotation.content.note = newNote;
-    const textEl = overviewNote.element.querySelector(".note-body-text") as HTMLElement | null;
-    if (textEl) textEl.textContent = newNote;
-    return;
-  }
   // Check inline popovers
   const popover = inlinePopovers.get(annotationId);
   if (popover) {
@@ -865,11 +754,6 @@ export function clearMarginNotes(): void {
   inlineHoveredId = null;
   mouseInInlinePopover = false;
 
-  // Also clear overview inline notes
-  for (const [, note] of overviewInlineNotes) {
-    note.element.remove();
-  }
-  overviewInlineNotes.clear();
   undimPage();
 }
 
@@ -898,13 +782,6 @@ export function filterMarginNotesByTypes(types: AnnotationType[]): void {
       popover.visible = false;
     }
     if (!isVisible) hiddenTypes.add(popover.annotation.type);
-  }
-
-  // Also filter overview inline notes
-  for (const [, note] of overviewInlineNotes) {
-    const isVisible = typeSet.has(note.annotation.type);
-    note.element.style.display = isVisible ? "" : "none";
-    if (!isVisible) hiddenTypes.add(note.annotation.type);
   }
 
   resolveOverlaps();
@@ -939,17 +816,7 @@ function forceCollapseAll(): void {
 }
 
 export function onAnchorClick(annotationId: string): void {
-  // Overview inline notes
-  if (currentAnnotationMode === "overview" && overviewInlineNotes.has(annotationId)) {
-    if (pinnedId === annotationId) {
-      unpinOverviewNote();
-    } else if (!justUnpinned) {
-      expandOverviewNote(annotationId);
-    }
-    return;
-  }
-
-  if (currentAnnotationMode !== "overview" && inlinePopovers.has(annotationId)) {
+  if (inlinePopovers.has(annotationId)) {
     if (pinnedId === annotationId) {
       unpinInlinePopover();
     } else if (pinnedId) {
@@ -975,11 +842,7 @@ export function onAnchorClick(annotationId: string): void {
 }
 
 function unpinAll(): void {
-  if (currentAnnotationMode === "overview" && pinnedId && overviewInlineNotes.has(pinnedId)) {
-    unpinOverviewNote();
-    return;
-  }
-  if (currentAnnotationMode !== "overview" && pinnedId && inlinePopovers.has(pinnedId)) {
+  if (pinnedId && inlinePopovers.has(pinnedId)) {
     unpinInlinePopover();
     return;
   }
@@ -1017,16 +880,7 @@ export function undimAllNotes(): void {
 }
 
 export function onAnchorHoverStart(annotationId: string): void {
-  // Overview inline notes: subtle hover feedback only (notes are always visible)
-  if (currentAnnotationMode === "overview" && overviewInlineNotes.has(annotationId)) {
-    if (pinnedId) return;
-    const note = overviewInlineNotes.get(annotationId);
-    note?.element.classList.add("anchor-hovered");
-    emphasizeAnnotation(annotationId);
-    return;
-  }
-
-  if (currentAnnotationMode !== "overview" && inlinePopovers.has(annotationId)) {
+  if (inlinePopovers.has(annotationId)) {
     mouseInAnchor = true;
     if (pinnedId && pinnedId !== annotationId) return;
     showInlinePopover(annotationId);
@@ -1050,20 +904,7 @@ export function onAnchorHoverStart(annotationId: string): void {
 }
 
 export function onAnchorHoverEnd(annotationId?: string): void {
-  // Overview inline notes: remove hover feedback
-  if (currentAnnotationMode === "overview" && (!annotationId || overviewInlineNotes.has(annotationId!))) {
-    if (pinnedId) return;
-    if (annotationId) {
-      const note = overviewInlineNotes.get(annotationId);
-      note?.element.classList.remove("anchor-hovered");
-    } else {
-      for (const [, n] of overviewInlineNotes) n.element.classList.remove("anchor-hovered");
-    }
-    deemphasizeAnnotation();
-    return;
-  }
-
-  if (currentAnnotationMode !== "overview" && (!annotationId || inlinePopovers.has(annotationId!))) {
+  if (!annotationId || inlinePopovers.has(annotationId)) {
     mouseInAnchor = false;
     if (pinnedId) return;
     deemphasizeAnnotation();
@@ -1922,11 +1763,7 @@ function scheduleRedraw(): void {
   if (!needsRedraw) {
     needsRedraw = true;
     requestAnimationFrame(() => {
-      if (currentAnnotationMode === "overview") {
-        repositionAllOverviewInlineNotes();
-      } else {
-        repositionVisibleInlinePopovers();
-      }
+      repositionVisibleInlinePopovers();
       updateDimCutouts();
       recomputePositions();
       needsRedraw = false;
@@ -2471,45 +2308,6 @@ const MARGIN_NOTES_CSS = `
       opacity: 1;
       transform: translateY(0) scale(1);
     }
-  }
-
-  /* ── Overview Inline Notes (always visible, under highlights) ── */
-  .oddity-note.oddity-note--overview-inline {
-    position: absolute;
-    width: 320px;
-    max-width: 90vw;
-    pointer-events: auto;
-    z-index: 5;
-    opacity: 1;
-    transition: box-shadow 0.3s cubic-bezier(0.4,0,0.2,1),
-                opacity 0.4s cubic-bezier(0.4,0,0.2,1),
-                filter 0.4s cubic-bezier(0.4,0,0.2,1),
-                width 0.3s cubic-bezier(0.4,0,0.2,1);
-  }
-
-  .oddity-note.oddity-note--overview-inline.anchor-hovered:not(.expanded) {
-    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
-  }
-
-  .oddity-note.oddity-note--overview-inline.expanded {
-    width: 360px;
-    max-width: 90vw;
-    z-index: 11;
-    box-shadow: 0 10px 36px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.35);
-  }
-
-  .oddity-note.oddity-note--overview-inline.dimmed {
-    opacity: 0.45;
-    filter: grayscale(0.6);
-  }
-
-  :host([data-theme="light"]) .oddity-note.oddity-note--overview-inline {
-    background: rgba(255, 255, 255, 0.85);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.08);
-  }
-
-  :host([data-theme="light"]) .oddity-note.oddity-note--overview-inline.expanded {
-    box-shadow: 0 8px 28px rgba(0,0,0,0.15), 0 3px 8px rgba(0,0,0,0.10);
   }
 
 `;
