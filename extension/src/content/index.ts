@@ -278,9 +278,9 @@ let manualRunTriggered = false;
 let blocked = false;
 
 let enabled = true;
-let currentMode: ViewMode = "all";
+let currentMode: ViewMode = "overview";
 let currentPersonality: DepthPersonality = "jerry";
-let visibleTypes: AnnotationType[] = [...ALL_ANNOTATION_TYPES, "user_written"];
+let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
 const longWaitManager = new LongWaitManager(
@@ -560,13 +560,13 @@ async function init(): Promise<void> {
   }
   const prefs = stored?.preferences;
 
-  // Restore personality from stored preferences (mode always resets to "all" on page load)
+  // Restore personality from stored preferences (mode always resets to "overview" on page load)
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
-  // Always reset stored mode to "all" on page load so popup/background stay in sync
-  if (prefs && prefs.annotation_mode !== "all") {
-    chrome.storage.local.set({ preferences: { ...prefs, annotation_mode: "all" } });
+  // Always reset stored mode to "overview" on page load so popup/background stay in sync
+  if (prefs && prefs.annotation_mode !== "overview") {
+    chrome.storage.local.set({ preferences: { ...prefs, annotation_mode: "overview" } });
   }
   visibleTypes = [
     ...(currentMode === "all" ? ALL_ANNOTATION_TYPES : currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),

@@ -1,6 +1,7 @@
 // ─── Annotation Modes ───
 
 export type AnnotationMode = 'overview' | 'depth';
+export type ViewMode = 'overview' | 'depth' | 'all';
 export type DepthPersonality = 'terry' | 'jerry' | 'sally';
 
 // ─── Overview Labels ───

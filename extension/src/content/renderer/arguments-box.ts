@@ -156,7 +156,6 @@ let btnDragUpHandler: (() => void) | null = null;
 
 let modeToggleHostEl: HTMLElement | null = null;
 let modeToggleShadowRoot: ShadowRoot | null = null;
-let modeToggleAllBtn: HTMLButtonElement | null = null;
 let modeToggleOverviewBtn: HTMLButtonElement | null = null;
 let modeToggleDepthBtn: HTMLButtonElement | null = null;
 let modeToggleResizeHandler: (() => void) | null = null;
@@ -967,7 +966,6 @@ export function destroyArgumentsBox(): void {
   modeToggleHostEl?.remove();
   modeToggleHostEl = null;
   modeToggleShadowRoot = null;
-  modeToggleAllBtn = null;
   modeToggleOverviewBtn = null;
   modeToggleDepthBtn = null;
   if (listDragMoveHandler) {
@@ -3400,18 +3398,13 @@ function initModeToggleOverlay(): void {
 
   const toggleEl = document.createElement("div");
   toggleEl.className = "mode-toggle";
-  toggleEl.dataset.active = "all";
+  toggleEl.dataset.active = "overview";
 
   const sliderEl = document.createElement("div");
   sliderEl.className = "mode-slider";
 
-  modeToggleAllBtn = document.createElement("button");
-  modeToggleAllBtn.className = "mode-btn mode-active";
-  modeToggleAllBtn.textContent = "All";
-  modeToggleAllBtn.dataset.mode = "all";
-
   modeToggleOverviewBtn = document.createElement("button");
-  modeToggleOverviewBtn.className = "mode-btn";
+  modeToggleOverviewBtn.className = "mode-btn mode-active";
   modeToggleOverviewBtn.textContent = "Overview";
   modeToggleOverviewBtn.dataset.mode = "overview";
 
@@ -3426,7 +3419,6 @@ function initModeToggleOverlay(): void {
     if (!target) return;
     const mode = target.dataset.mode as string;
     if (mode === toggleEl.dataset.active) return;
-    modeToggleAllBtn!.classList.toggle("mode-active", mode === "all");
     modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
     toggleEl.dataset.active = mode;
@@ -3438,7 +3430,6 @@ function initModeToggleOverlay(): void {
   toggleEl.addEventListener("click", handleBtnClick);
 
   toggleEl.appendChild(sliderEl);
-  toggleEl.appendChild(modeToggleAllBtn);
   toggleEl.appendChild(modeToggleOverviewBtn);
   toggleEl.appendChild(modeToggleDepthBtn);
   modeToggleShadowRoot.appendChild(toggleEl);
@@ -3459,7 +3450,7 @@ const TOGGLE_OVERLAY_CSS = `
 
   .mode-toggle {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     padding: 4px;
     background: #292929;
     border-radius: 12px;
@@ -3472,7 +3463,7 @@ const TOGGLE_OVERLAY_CSS = `
     position: absolute;
     top: 4px;
     left: 4px;
-    width: calc(33.333% - 2.67px);
+    width: calc(50% - 4px);
     height: calc(100% - 8px);
     background: #434343;
     border-radius: 9px;
@@ -3482,12 +3473,8 @@ const TOGGLE_OVERLAY_CSS = `
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08);
   }
 
-  .mode-toggle[data-active="overview"] .mode-slider {
-    transform: translateX(100%);
-  }
-
   .mode-toggle[data-active="depth"] .mode-slider {
-    transform: translateX(200%);
+    transform: translateX(100%);
   }
 
   .mode-btn {
@@ -4255,11 +4242,11 @@ const ARGUMENTS_BOX_CSS = `
     font-family: system-ui, -apple-system, sans-serif;
   }
 
-  /* ── Mode Toggle (All / Overview / Depth) ── */
+  /* ── Mode Toggle (Overview / Depth) ── */
 
   .args-mode-toggle {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     padding: 4px;
     margin: 8px 14px;
     flex-shrink: 0;
@@ -4273,7 +4260,7 @@ const ARGUMENTS_BOX_CSS = `
     position: absolute;
     top: 4px;
     left: 4px;
-    width: calc(33.333% - 2.67px);
+    width: calc(50% - 4px);
     height: calc(100% - 8px);
     background: #404040;
     border-radius: 9px;
@@ -4282,12 +4269,8 @@ const ARGUMENTS_BOX_CSS = `
     z-index: 0;
   }
 
-  .args-mode-toggle[data-active="overview"] .args-mode-slider {
-    transform: translateX(100%);
-  }
-
   .args-mode-toggle[data-active="depth"] .args-mode-slider {
-    transform: translateX(200%);
+    transform: translateX(100%);
   }
 
   .args-mode-btn {
