@@ -330,6 +330,13 @@ function addInlinePopover(
   const el = createNoteElement(annotation, "left", feedback, onDelete, resolvedHash);
   el.classList.add("oddity-note--inline");
 
+  // Let scroll events pass through to the page (or the site's scrollable container)
+  el.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const target = findScrollableParent(el);
+    target.scrollBy({ left: e.deltaX, top: e.deltaY });
+  }, { passive: false });
+
   // Overview: strip expanded content (buttons, thoughts, replies) and show full text
   if (currentAnnotationMode === "overview") {
     el.classList.add("oddity-note--overview");
@@ -418,6 +425,42 @@ function addInlinePopover(
 }
 
 /** Fade out an inline popover element, then remove it from the DOM. */
+/**
+ * Walk up from an element's viewport position to find the nearest scrollable
+ * container on the host page. Falls back to the window if none is found.
+ * The inline popover lives in a shadow DOM, so we use elementFromPoint to
+ * hit-test through to the underlying page element and walk its ancestors.
+ */
+function findScrollableParent(popoverEl: HTMLElement): Element | Window {
+  const rect = popoverEl.getBoundingClientRect();
+  // Temporarily hide the popover so elementFromPoint lands on the page behind it
+  const origPointerEvents = popoverEl.style.pointerEvents;
+  popoverEl.style.pointerEvents = "none";
+  // Also hide the host element (the shadow host sits on top)
+  const host = popoverEl.getRootNode() instanceof ShadowRoot
+    ? (popoverEl.getRootNode() as ShadowRoot).host as HTMLElement
+    : null;
+  if (host) host.style.pointerEvents = "none";
+
+  const underlying = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+
+  popoverEl.style.pointerEvents = origPointerEvents;
+  if (host) host.style.pointerEvents = "";
+
+  if (underlying) {
+    let node: Element | null = underlying;
+    while (node && node !== document.documentElement) {
+      const style = getComputedStyle(node);
+      const overflowY = style.overflowY;
+      if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+  }
+  return window;
+}
+
 function fadeOutAndRemove(el: HTMLElement): void {
   el.classList.add("fading-out");
   const cleanup = () => { if (el.parentElement) el.remove(); };
@@ -756,7 +799,7 @@ function dimPage(annotationId: string): void {
     pageDimOverlay.id = "oddity-page-dim";
     pageDimOverlay.style.cssText =
       "position:fixed;inset:0;z-index:2147483644;pointer-events:none;opacity:0;transition:opacity 0.4s cubic-bezier(0.4,0,0.2,1);";
-    const dimColor = getThemeMode() === "light" ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)";
+    const dimColor = getThemeMode() === "light" ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.5)";
     pageDimOverlay.innerHTML =
       `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" style="display:block">` +
       `<path d="${path}" fill="${dimColor}" fill-rule="evenodd"/>` +
@@ -2491,6 +2534,10 @@ const MARGIN_NOTES_CSS = `
     box-shadow: -8px 4px 28px rgba(0,0,0,0.22), -3px 2px 8px rgba(0,0,0,0.12);
   }
 
+  :host([data-theme="light"]) .oddity-note.oddity-note--inline {
+    box-shadow: 0 8px 28px rgba(0,0,0,0.18), 0 3px 10px rgba(0,0,0,0.12);
+  }
+
   /* ── Timeline line (Overview mode) ── */
   .oddity-timeline-line {
     position: fixed;
@@ -2512,6 +2559,7 @@ const MARGIN_NOTES_CSS = `
     position: fixed;
     width: 320px;
     max-width: 90vw;
+    padding: 16px 22px;
     pointer-events: auto;
     z-index: 10;
     box-shadow: 0 6px 24px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
