@@ -60,7 +60,6 @@ let expandedId: string | null = null;
 let pinnedId: string | null = null;
 let collapseTimer: ReturnType<typeof setTimeout> | null = null;
 let anchorHoverTimer: ReturnType<typeof setTimeout> | null = null;
-let needsRedraw = false;
 let fontLink: HTMLLinkElement | null = null;
 let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let docClickHandler: ((e: MouseEvent) => void) | null = null;
@@ -1894,6 +1893,11 @@ function updateTimelineLine(leftNotes: MarginNote[], sharedContentLeft: number):
 
 // ─── Scroll / Resize Tracking ───
 
+/**
+ * Full position recalculation — calls getClientRects() and offsetHeight for
+ * every note.  Only invoked on resize (or explicit layout changes), NEVER on
+ * scroll, because absolute page positions don't change during a scroll.
+ */
 function recomputePositions(): void {
   for (const note of notes) {
     const rects = note.range.getClientRects();
@@ -1912,14 +1916,34 @@ function recomputePositions(): void {
   applyPositions();
 }
 
-function scheduleRedraw(): void {
-  if (!needsRedraw) {
-    needsRedraw = true;
+// ─── Separate scroll vs resize handlers ───
+
+let needsScrollUpdate = false;
+let needsResizeUpdate = false;
+
+/** Lightweight scroll handler — only repositions fixed-position popovers and
+ *  the dim overlay.  Skips the expensive recomputePositions() entirely because
+ *  absolute page coordinates don't change during a scroll. */
+function scheduleScrollUpdate(): void {
+  if (!needsScrollUpdate) {
+    needsScrollUpdate = true;
+    requestAnimationFrame(() => {
+      repositionVisibleInlinePopovers();
+      updateDimCutouts();
+      needsScrollUpdate = false;
+    });
+  }
+}
+
+/** Resize handler — does the full recompute because positions may have shifted. */
+function scheduleResizeUpdate(): void {
+  if (!needsResizeUpdate) {
+    needsResizeUpdate = true;
     requestAnimationFrame(() => {
       repositionVisibleInlinePopovers();
       updateDimCutouts();
       recomputePositions();
-      needsRedraw = false;
+      needsResizeUpdate = false;
     });
   }
 }
@@ -1927,15 +1951,15 @@ function scheduleRedraw(): void {
 let cleanupTracking: (() => void) | null = null;
 
 function startTracking(): void {
-  window.addEventListener("scroll", scheduleRedraw, {
+  window.addEventListener("scroll", scheduleScrollUpdate, {
     passive: true,
     capture: true,
   });
-  window.addEventListener("resize", scheduleRedraw, { passive: true });
+  window.addEventListener("resize", scheduleResizeUpdate, { passive: true });
 
   cleanupTracking = () => {
-    window.removeEventListener("scroll", scheduleRedraw, { capture: true });
-    window.removeEventListener("resize", scheduleRedraw);
+    window.removeEventListener("scroll", scheduleScrollUpdate, { capture: true });
+    window.removeEventListener("resize", scheduleResizeUpdate);
   };
 }
 
