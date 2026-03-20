@@ -621,8 +621,8 @@ function positionInlinePopover(popover: InlinePopover): void {
     el.style.width = `${width}px`;
   }
 
-  // Flip above if not enough space below
-  if (lastRect.bottom + gap + popHeight > viewportH) {
+  // Flip above if not enough space below (depth only — overview always stays below)
+  if (currentAnnotationMode !== "overview" && lastRect.bottom + gap + popHeight > viewportH) {
     top = firstRect.top - popHeight - gap;
   }
 
