@@ -330,6 +330,13 @@ function addInlinePopover(
   const el = createNoteElement(annotation, "left", feedback, onDelete, resolvedHash);
   el.classList.add("oddity-note--inline");
 
+  // Overview: strip expanded content (buttons, thoughts, replies) and show full text
+  if (currentAnnotationMode === "overview") {
+    el.classList.add("oddity-note--overview");
+    const expandedContent = el.querySelector(".note-expanded-content");
+    if (expandedContent) expandedContent.remove();
+  }
+
   // Override the default margin-note hover/click handlers on the card element.
   // The card's built-in mouseenter/mouseleave/click (from createNoteElement) still
   // work for internal interactions (buttons, inputs), but we add inline-specific
@@ -337,8 +344,9 @@ function addInlinePopover(
   el.addEventListener("mouseenter", () => {
     mouseInInlinePopover = true;
     cancelInlineHide();
-    // Expand after a short delay on hover (if not already expanded/pinned)
-    if (!pinnedId && expandedId !== annotation.id) {
+    emphasizeAnnotation(annotation.id);
+    // Depth only: expand after a short delay on hover
+    if (currentAnnotationMode !== "overview" && !pinnedId && expandedId !== annotation.id) {
       if (inlineHoverExpandTimer) clearTimeout(inlineHoverExpandTimer);
       inlineHoverExpandTimer = setTimeout(() => {
         inlineHoverExpandTimer = null;
@@ -356,16 +364,21 @@ function addInlinePopover(
       inlineHoverExpandTimer = null;
     }
     if (!pinnedId) {
-      // Collapse if expanded via hover (not pinned)
-      const popover = inlinePopovers.get(annotation.id);
-      if (popover && expandedId === annotation.id) {
-        popover.element.classList.remove("expanded");
-        expandedId = null;
-        if (currentAnnotationMode === "overview") undimPage();
+      // Depth: collapse if expanded via hover (not pinned)
+      if (currentAnnotationMode !== "overview") {
+        const popover = inlinePopovers.get(annotation.id);
+        if (popover && expandedId === annotation.id) {
+          popover.element.classList.remove("expanded");
+          expandedId = null;
+          deemphasizeAnnotation();
+          requestAnimationFrame(() => positionInlinePopover(popover));
+        }
+        scheduleInlineHide();
+      } else {
+        // Overview: schedule hide-all
         deemphasizeAnnotation();
-        requestAnimationFrame(() => positionInlinePopover(popover));
+        scheduleInlineHideAll();
       }
-      scheduleInlineHide();
     }
   });
   // Click on the inline popover itself pins/unpins
@@ -378,8 +391,18 @@ function addInlinePopover(
     } else {
       justPinnedFromCard = true;
       setTimeout(() => { justPinnedFromCard = false; }, 0);
-      expandInlinePopover(annotation.id);
-      emphasizeAnnotation(annotation.id);
+      if (currentAnnotationMode === "overview") {
+        // Overview: pin + dim page, no card expansion
+        pinnedId = annotation.id;
+        hostEl?.classList.add("has-pinned");
+        dimPage(annotation.id);
+        emphasizeAnnotation(annotation.id);
+        // Keep all popovers visible
+        showAllInlinePopovers();
+      } else {
+        expandInlinePopover(annotation.id);
+        emphasizeAnnotation(annotation.id);
+      }
     }
   });
 
@@ -459,6 +482,16 @@ function scheduleInlineHide(annotationId?: string): void {
   }, 300);
 }
 
+/** Overview mode: hide ALL non-pinned popovers after a delay. */
+function scheduleInlineHideAll(): void {
+  cancelInlineHide();
+  inlineHideTimer = setTimeout(() => {
+    inlineHideTimer = null;
+    if (mouseInInlinePopover || mouseInAnchor || pinnedId) return;
+    hideAllInlinePopovers();
+  }, 300);
+}
+
 function cancelInlineShow(): void {
   if (inlineShowTimer !== null) {
     clearTimeout(inlineShowTimer);
@@ -486,11 +519,12 @@ function expandInlinePopover(annotationId: string, pin = true): void {
     positionInlinePopover(popover);
   }
 
-  // Collapse any other expanded inline popover
+  // Collapse any other expanded inline popover.
+  // In overview mode with pin, keep others visible but collapsed.
   for (const [id, p] of inlinePopovers) {
     if (id !== annotationId && p.visible) {
       p.element.classList.remove("expanded");
-      if (pin) {
+      if (pin && currentAnnotationMode !== "overview") {
         p.element.remove();
         p.visible = false;
       }
@@ -500,11 +534,18 @@ function expandInlinePopover(annotationId: string, pin = true): void {
   if (pin) {
     pinnedId = annotationId;
     hostEl?.classList.add("has-pinned");
+    // Overview: ensure all popovers are visible (collapsed) alongside the pinned one
+    if (currentAnnotationMode === "overview") {
+      showAllInlinePopovers();
+    }
   }
-  popover.element.classList.add("expanded");
-  expandedId = annotationId;
+  // Overview has no expanded state on the card — only depth expands
+  if (currentAnnotationMode !== "overview") {
+    popover.element.classList.add("expanded");
+    expandedId = annotationId;
+  }
 
-  // Overview: dim the page when expanded
+  // Overview: dim the page when pinned
   if (currentAnnotationMode === "overview") {
     dimPage(annotationId);
   }
@@ -525,15 +566,23 @@ function unpinInlinePopover(): void {
     const popover = inlinePopovers.get(id);
     if (popover && popover.visible) {
       popover.element.classList.remove("expanded");
-      // If still hovering the anchor, keep the collapsed card visible
-      if (!mouseInAnchor && !mouseInInlinePopover) {
-        scheduleInlineHide(id);
-      }
     }
   }
-  // Overview: remove page dim when unpinning
+
+  // Overview: remove page dim and hide ALL popovers (unless still hovering)
   if (currentAnnotationMode === "overview") {
     undimPage();
+    if (!mouseInAnchor && !mouseInInlinePopover) {
+      hideAllInlinePopovers();
+    } else {
+      // Still hovering – keep all visible in show-all mode
+      showAllInlinePopovers(inlineHoveredId ?? undefined);
+    }
+  } else {
+    // Depth: hide just the unpinned popover
+    if (id && !mouseInAnchor && !mouseInInlinePopover) {
+      scheduleInlineHide(id);
+    }
   }
   undimAllNotes();
   deemphasizeAnnotation();
@@ -564,9 +613,12 @@ function positionInlinePopover(popover: InlinePopover): void {
   // Get content bounds for alignment constraints
   const bounds = regionEl ? getContentBounds(regionEl, popover.range) : null;
 
-  // Overview: align with content column leading edge
+  // Overview: align with content column leading edge, target 640px width
   if (currentAnnotationMode === "overview" && bounds) {
     left = bounds.left;
+    const availableWidth = bounds.right - bounds.left;
+    const width = Math.max(110, Math.min(640, availableWidth));
+    el.style.width = `${width}px`;
   }
 
   // Flip above if not enough space below
@@ -602,14 +654,71 @@ function repositionVisibleInlinePopovers(): void {
 }
 
 /**
+ * Overview mode: show ALL inline popovers (collapsed) at once.
+ * The emphasizedId popover gets visual emphasis; others appear but stay collapsed.
+ */
+function showAllInlinePopovers(emphasizedId?: string): void {
+  if (!shadowRoot) return;
+  cancelInlineShow();
+  cancelInlineHide();
+
+  for (const [id, popover] of inlinePopovers) {
+    // Skip hidden types
+    if (hiddenTypes.has(popover.annotation.type)) continue;
+
+    if (!popover.visible) {
+      shadowRoot.appendChild(popover.element);
+      popover.visible = true;
+    }
+    positionInlinePopover(popover);
+
+    // All notes stay fully visible above the fade — no dimming
+    popover.element.classList.remove("dimmed");
+
+    if (id === pinnedId) continue;
+
+    // Emphasise the hovered one, keep others as-is
+    if (id === emphasizedId && !pinnedId) {
+      popover.element.classList.add("anchor-hovered");
+    } else {
+      popover.element.classList.remove("anchor-hovered");
+      popover.element.classList.remove("expanded");
+    }
+  }
+
+  inlineHoveredId = emphasizedId ?? null;
+}
+
+/**
+ * Overview mode: hide every non-pinned inline popover.
+ */
+function hideAllInlinePopovers(): void {
+  for (const [id, popover] of inlinePopovers) {
+    if (id === pinnedId) continue;
+    if (popover.visible) {
+      popover.element.classList.remove("expanded");
+      popover.element.classList.remove("anchor-hovered");
+      popover.element.classList.remove("dimmed");
+      popover.element.remove();
+      popover.visible = false;
+    }
+  }
+  inlineHoveredId = null;
+}
+
+/**
  * Build an SVG overlay that covers the entire viewport with a semi-transparent
  * fill, but punches out transparent rectangles where the highlighted text lives.
  * This avoids any z-index / stacking-context battles with the host page.
  */
 function dimPage(annotationId: string): void {
   dimmedAnnotationId = annotationId;
-  // Collect viewport-relative rects for every anchor span of this annotation
-  const anchors = document.querySelectorAll(`[data-oddity-id="${annotationId}"]`);
+  // Overview: all notes act as one system — cut out ALL highlights
+  // Depth: cut out only the pinned annotation's highlights
+  const selector = currentAnnotationMode === "overview"
+    ? "[data-oddity-id]"
+    : `[data-oddity-id="${annotationId}"]`;
+  const anchors = document.querySelectorAll(selector);
   const cutouts: DOMRect[] = [];
   for (const anchor of anchors) {
     const rects = anchor.getClientRects();
@@ -671,7 +780,10 @@ function undimPage(): void {
 /** Refresh the SVG cutout positions (called on scroll/resize while dimmed). */
 function updateDimCutouts(): void {
   if (!pageDimOverlay || !dimmedAnnotationId) return;
-  const anchors = document.querySelectorAll(`[data-oddity-id="${dimmedAnnotationId}"]`);
+  const selector = currentAnnotationMode === "overview"
+    ? "[data-oddity-id]"
+    : `[data-oddity-id="${dimmedAnnotationId}"]`;
+  const anchors = document.querySelectorAll(selector);
   const cutouts: DOMRect[] = [];
   for (const anchor of anchors) {
     const rects = anchor.getClientRects();
@@ -819,6 +931,16 @@ export function onAnchorClick(annotationId: string): void {
   if (inlinePopovers.has(annotationId)) {
     if (pinnedId === annotationId) {
       unpinInlinePopover();
+    } else if (currentAnnotationMode === "overview") {
+      // Overview: pin without expanding the card
+      if (pinnedId) unpinInlinePopover();
+      if (!justUnpinned) {
+        pinnedId = annotationId;
+        hostEl?.classList.add("has-pinned");
+        dimPage(annotationId);
+        emphasizeAnnotation(annotationId);
+        showAllInlinePopovers();
+      }
     } else if (pinnedId) {
       unpinInlinePopover();
       expandInlinePopover(annotationId);
@@ -882,6 +1004,18 @@ export function undimAllNotes(): void {
 export function onAnchorHoverStart(annotationId: string): void {
   if (inlinePopovers.has(annotationId)) {
     mouseInAnchor = true;
+    // Overview mode: show ALL popovers, emphasise the hovered one
+    if (currentAnnotationMode === "overview") {
+      if (pinnedId && pinnedId !== annotationId) {
+        // A different note is pinned – still show all, but don't touch the pinned one
+        showAllInlinePopovers(annotationId);
+      } else {
+        showAllInlinePopovers(annotationId);
+      }
+      emphasizeAnnotation(annotationId);
+      return;
+    }
+    // Depth mode: original single-popover behaviour
     if (pinnedId && pinnedId !== annotationId) return;
     showInlinePopover(annotationId);
     emphasizeAnnotation(annotationId);
@@ -906,9 +1040,24 @@ export function onAnchorHoverStart(annotationId: string): void {
 export function onAnchorHoverEnd(annotationId?: string): void {
   if (!annotationId || inlinePopovers.has(annotationId)) {
     mouseInAnchor = false;
-    if (pinnedId) return;
+    if (pinnedId) {
+      // While pinned in overview, keep all non-pinned popovers visible
+      if (currentAnnotationMode === "overview") {
+        deemphasizeAnnotation();
+        // Re-show all so the non-pinned ones stay visible (collapsed)
+        showAllInlinePopovers();
+        // Re-emphasise the pinned one
+        emphasizeAnnotation(pinnedId);
+      }
+      return;
+    }
     deemphasizeAnnotation();
-    scheduleInlineHide();
+    // Overview: hide ALL popovers; Depth: hide the single hovered one
+    if (currentAnnotationMode === "overview") {
+      scheduleInlineHideAll();
+    } else {
+      scheduleInlineHide();
+    }
     return;
   }
 
@@ -1338,8 +1487,10 @@ function createNoteElement(
   el.appendChild(textEl);
   el.appendChild(expandedContent);
 
-  // Hover expand/collapse + overlay emphasis
+  // Hover expand/collapse + overlay emphasis (traditional margin notes only;
+  // inline popovers add their own handlers in addInlinePopover).
   el.addEventListener("mouseenter", () => {
+    if (el.classList.contains("oddity-note--inline")) return;
     if (pinnedId && pinnedId !== annotation.id) return;
     if (anchorHoverTimer) {
       clearTimeout(anchorHoverTimer);
@@ -1355,6 +1506,7 @@ function createNoteElement(
   });
 
   el.addEventListener("click", (e) => {
+    if (el.classList.contains("oddity-note--inline")) return;
     e.stopPropagation();
     // Don't unpin when clicking interactive elements inside the card
     if ((e.target as HTMLElement).closest('button, input, textarea')) return;
@@ -1378,6 +1530,7 @@ function createNoteElement(
   });
 
   el.addEventListener("mouseleave", () => {
+    if (el.classList.contains("oddity-note--inline")) return;
     if (pinnedId) return;
     collapseTimer = setTimeout(() => {
       collapseTimer = null;
@@ -1824,8 +1977,10 @@ const MARGIN_NOTES_CSS = `
   }
 
   .oddity-note.dimmed {
-    opacity: 0.45;
-    filter: grayscale(0.6);
+    opacity: 0.3;
+    filter: grayscale(0.7) brightness(0.6);
+    box-shadow: none;
+    pointer-events: none;
   }
 
   /* Bracket hidden in new card design */
@@ -1861,6 +2016,18 @@ const MARGIN_NOTES_CSS = `
     font-weight: 370;
     line-height: 1.6;
     color: #FFFFFF;
+  }
+
+  /* Overview inline popovers: always show full text, no expand/collapse */
+  .oddity-note--overview {
+    min-width: 110px;
+    max-width: 640px;
+  }
+
+  .oddity-note--overview .note-text {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
   }
 
   /* Expanded state */

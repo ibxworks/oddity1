@@ -1158,22 +1158,75 @@ function attachAnchorHoverListeners(
  * Uses Selection/Range intersection: if the range contains (or is contained by)
  * any existing anchor span, they overlap.
  */
+/**
+ * Find the nearest block-level ancestor of a node.
+ */
+function nearestBlock(node: Node): Element {
+  let el: Element | null =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as Element)
+      : node.parentElement;
+  while (el && el !== document.body && el !== document.documentElement) {
+    try {
+      const display = getComputedStyle(el).display;
+      if (
+        display === "block" ||
+        display === "list-item" ||
+        display === "flex" ||
+        display === "grid" ||
+        display === "table-cell"
+      ) {
+        return el;
+      }
+    } catch {
+      // getComputedStyle can fail for detached nodes
+    }
+    el = el.parentElement;
+  }
+  return document.body;
+}
+
 function rangeOverlapsExistingAnchors(range: Range, root: Element): boolean {
   // Query all anchor spans anywhere in the document (handles cross-region overlap)
   const anchors = (root === document.body ? root : document.body).querySelectorAll("[data-oddity-id]");
+
+  // Get the new range's bounding rect and block ancestor for proximity check
+  const newRect = range.getBoundingClientRect();
+  const newBlock = nearestBlock(range.startContainer);
+
+  const seenIds = new Set<string>();
   for (const anchor of anchors) {
     try {
       if (!anchor.isConnected) continue;
       const anchorRange = document.createRange();
       anchorRange.selectNodeContents(anchor);
-      // Two ranges overlap iff: a.end > b.start AND b.end > a.start
+
+      // 1. Geometric overlap check
       const aEndVsBStart = range.compareBoundaryPoints(Range.END_TO_START, anchorRange);
       const bEndVsAStart = anchorRange.compareBoundaryPoints(Range.END_TO_START, range);
       if (aEndVsBStart > 0 && bEndVsAStart > 0) return true;
+
+      // 2. Same-sentence proximity check (one per annotation ID)
+      const id = anchor.getAttribute("data-oddity-id");
+      if (!id || seenIds.has(id)) continue;
+      seenIds.add(id);
+
+      // Skip if they're in different block containers (different paragraphs)
+      const anchorBlock = nearestBlock(anchor);
+      if (anchorBlock !== newBlock) continue;
+
+      // Same block — check if their vertical positions overlap (same line cluster)
+      const anchorRect = anchor.getBoundingClientRect();
+      if (anchorRect.height === 0 || newRect.height === 0) continue;
+      const verticalOverlap =
+        newRect.top < anchorRect.bottom + 4 &&
+        anchorRect.top < newRect.bottom + 4;
+      if (verticalOverlap) return true;
     } catch {
       // Skip detached or incomparable nodes
     }
   }
+
   return false;
 }
 
