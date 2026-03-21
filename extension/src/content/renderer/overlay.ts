@@ -160,8 +160,14 @@ export function emphasizeAnnotation(id: string): void {
   document.querySelectorAll<HTMLSpanElement>(`[data-oddity-id]`).forEach(span => {
     if (span.getAttribute('data-oddity-id') !== id) {
       span.style.filter = '';
-      span.dataset.oddityOrigBg = '';
-      span.dataset.oddityOrigBorder = '';
+      if (span.dataset.oddityOrigBg) {
+        span.style.backgroundColor = span.dataset.oddityOrigBg;
+        span.dataset.oddityOrigBg = '';
+      }
+      if (span.dataset.oddityOrigBorder) {
+        span.style.borderBottom = span.dataset.oddityOrigBorder;
+        span.dataset.oddityOrigBorder = '';
+      }
       return;
     }
     const type = span.getAttribute('data-oddity-type') ?? '';

@@ -587,6 +587,7 @@ async function init(): Promise<void> {
   // Load stored preferences before doing any work
   let stored: Record<string, unknown>;
   try {
+    if (!chrome?.storage?.local) return;
     stored = await chrome.storage.local.get("preferences");
   } catch {
     // Extension context invalidated mid-init (reload/update)
@@ -1900,7 +1901,7 @@ onMessage((message: ExtensionMessage) => {
         // init() returned early (unauthenticated), so re-check whitelist and start pipeline
         if (!pipelineInitialized) {
           (async () => {
-            const stored = await chrome.storage.local.get("preferences");
+            const stored = chrome?.storage?.local ? await chrome.storage.local.get("preferences") : {};
             const enabledSites: string[] = stored?.preferences?.enabled_sites ?? DEFAULT_ENABLED_SITES;
             const domain = extractDomain();
             const whitelisted = isDomainWhitelisted(domain, enabledSites);
@@ -1924,7 +1925,7 @@ onMessage((message: ExtensionMessage) => {
 document.addEventListener("oddity:localSignIn", () => {
   if (!pipelineInitialized) {
     (async () => {
-      const stored = await chrome.storage.local.get("preferences");
+      const stored = chrome?.storage?.local ? await chrome.storage.local.get("preferences") : {};
       const enabledSites: string[] = stored?.preferences?.enabled_sites ?? DEFAULT_ENABLED_SITES;
       const domain = extractDomain();
       if (isDomainWhitelisted(domain, enabledSites)) {
@@ -2036,6 +2037,11 @@ document.addEventListener("oddity:scroll-to-annotation", ((e: CustomEvent) => {
   const anchor = document.querySelector(`[data-oddity-id="${CSS.escape(annotationId)}"]`);
   if (anchor) {
     anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+  } else {
+    // Highlight not on page — likely from a different personality
+    document.dispatchEvent(
+      new CustomEvent("oddity:scroll-to-annotation-missing"),
+    );
   }
 }) as EventListener);
 
@@ -2085,12 +2091,14 @@ document.addEventListener("oddity:modeChange", (e) => {
   if (mode === currentMode) return;
 
   // Persist to storage so the service worker broadcasts settingsUpdated
-  chrome.storage.local.get("preferences", (result) => {
-    const prefs = (result["preferences"] ?? {}) as Record<string, unknown>;
-    chrome.storage.local.set({
-      preferences: { ...prefs, annotation_mode: mode },
+  if (chrome?.storage?.local) {
+    chrome.storage.local.get("preferences", (result) => {
+      const prefs = (result["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({
+        preferences: { ...prefs, annotation_mode: mode },
+      });
     });
-  });
+  }
 
   switchMode(mode);
 });

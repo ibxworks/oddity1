@@ -693,6 +693,33 @@ export function initArgumentsBox(): void {
       }
     })
     .catch(() => {});
+
+  // Listen for "Go to highlight" failures (annotation not on page)
+  document.addEventListener("oddity:scroll-to-annotation-missing", () => {
+    showArgToast("This highlight is from a different personality and isn't on the page right now.");
+  });
+}
+
+function showArgToast(message: string): void {
+  if (!shadowRoot || !outerWrapperEl) return;
+  // Remove any existing toast
+  const existing = shadowRoot.querySelector(".args-toast");
+  if (existing) existing.remove();
+
+  const toast = document.createElement("div");
+  toast.className = "args-toast";
+  toast.textContent = message;
+  outerWrapperEl.appendChild(toast);
+
+  // Force reflow then animate in
+  void toast.offsetHeight;
+  toast.classList.add("visible");
+
+  setTimeout(() => {
+    toast.classList.remove("visible");
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    setTimeout(() => toast.remove(), 400);
+  }, 3000);
 }
 
 export function updateArgumentsBox(
@@ -5979,5 +6006,40 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-onboarding-next:hover {
     background: #333;
+  }
+
+  /* ── Toast notification ── */
+  .args-toast {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    background: #262626;
+    color: #bbb;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #333;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 100;
+    margin-bottom: 8px;
+  }
+
+  .args-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  :host([data-theme="light"]) .args-toast {
+    background: #f5f5f5;
+    color: #444;
+    border-color: #ddd;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   }
 `;
