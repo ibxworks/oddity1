@@ -13,6 +13,7 @@ import {
   deleteFeedback as apiDeleteFeedback,
   updateFeedback as apiUpdateFeedback,
   requestAnnotationsStreaming,
+  requestProvocationStreaming,
   requestSketchStreaming,
   saveAnnotation,
   saveFeedback as apiSaveFeedback,
@@ -387,6 +388,32 @@ chrome.runtime.onMessage.addListener(
               payload: { text: errorText, done: true },
             }).catch(() => {});
             return { error: String(err) };
+          }
+          return { success: true };
+        }
+
+        case "requestProvocation": {
+          const { draftText, pageContext, pageUrl, alreadyShown } = message.payload;
+          const tabId = sender.tab?.id;
+          if (!tabId) return { error: "No tab" };
+
+          try {
+            await requestProvocationStreaming(
+              {
+                draft_text: draftText,
+                page_context: pageContext,
+                page_url: pageUrl,
+                already_shown: alreadyShown,
+              },
+              (text, done) => {
+                sendToTab(tabId, {
+                  action: "provocationChunk",
+                  payload: { text, done },
+                }).catch(() => {});
+              },
+            );
+          } catch {
+            // Provocation is non-critical; silently fail
           }
           return { success: true };
         }

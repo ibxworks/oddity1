@@ -12,6 +12,11 @@ import { ALL_ANNOTATION_TYPES, ALL_DEPTH_TYPES, ALL_OVERVIEW_TYPES, DEFAULT_ENAB
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
+import {
+  destroyAutoProvocation,
+  handleProvocationChunk,
+  initAutoProvocation,
+} from "./provocation/auto-provocation.js";
 import { createChatObserver, type ChatObserver } from "./chat-observer.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
 import { handleExportPdf } from "./export-pdf.js";
@@ -447,6 +452,7 @@ function resetAnnotationState(): void {
   destroyMarginNotes();
   destroyArgumentsBox();
   destroyManualAnnotations();
+  destroyAutoProvocation();
 }
 
 // ─── SPA Navigation: URL Change Watcher ───
@@ -633,6 +639,11 @@ async function init(): Promise<void> {
     setManualRunCallback(manualRun);
     setInputTextProvider(collectInputText);
     return;
+  }
+
+  // Auto-provocation works on ANY site (independent of annotation pipeline)
+  if ((prefs as Record<string, unknown>)?.auto_provocation_enabled !== false) {
+    initAutoProvocation();
   }
 
   // Whitelist check — only auto-run on enabled sites
@@ -1523,6 +1534,10 @@ onMessage((message: ExtensionMessage) => {
     case "sketchChunk": {
       const { text, done } = message.payload;
       appendSketchChunk(text, done);
+      break;
+    }
+    case "provocationChunk": {
+      handleProvocationChunk(message.payload);
       break;
     }
     case "annotationReady": {

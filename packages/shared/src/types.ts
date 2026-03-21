@@ -141,6 +141,7 @@ export type UserPreferences = {
   enabled_sites?: string[];
   annotation_font?: AnnotationFont;
   annotation_font_size?: AnnotationFontSize;
+  auto_provocation_enabled?: boolean;
 };
 
 // ─── API Request/Response ───
@@ -317,6 +318,19 @@ export type ExtensionMessage =
     }
   | {
       action: "sketchChunk";
+      payload: { text: string; done: boolean };
+    }
+  | {
+      action: "requestProvocation";
+      payload: {
+        draftText: string;
+        pageContext: string;
+        pageUrl: string;
+        alreadyShown: string[];
+      };
+    }
+  | {
+      action: "provocationChunk";
       payload: { text: string; done: boolean };
     }
   | { action: "injectNextNewTab"; payload: Record<string, never> }

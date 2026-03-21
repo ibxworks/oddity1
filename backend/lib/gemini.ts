@@ -224,6 +224,43 @@ export async function* generateAnnotationsStream(
   return allAnnotations;
 }
 
+// ─── Provocation Generation ───
+
+const provocationPrompt: string = promptsConfig.provocation_prompt ?? "";
+
+/**
+ * Streaming provocation generator. Yields plain-text chunks (max ~20 words).
+ */
+export async function* generateProvocationStream(
+  draftText: string,
+  pageContext: string,
+  pageUrl: string,
+  alreadyShown: string[],
+): AsyncGenerator<string, void, unknown> {
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: provocationPrompt,
+    generationConfig: {
+      responseMimeType: "text/plain" as const,
+      maxOutputTokens: 64,
+      temperature: 0.8,
+    },
+  });
+
+  let userMessage = `DRAFT:\n${draftText}`;
+  if (pageContext) userMessage += `\n\nPAGE CONTEXT:\n${pageContext}`;
+  if (alreadyShown.length > 0) userMessage += `\n\nALREADY_SHOWN:\n${alreadyShown.join("\n")}`;
+
+  const stream = await model.generateContentStream({
+    contents: [{ role: "user", parts: [{ text: userMessage }] }],
+  });
+
+  for await (const chunk of stream.stream) {
+    const delta = chunk.text();
+    if (delta) yield delta;
+  }
+}
+
 // ─── Sketch Generation ───
 
 const sketchPrompt: string = promptsConfig.sketch_prompt ?? "";

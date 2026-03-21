@@ -95,6 +95,7 @@ let currentPrefs: Required<UserPreferences> = {
   enabled_sites: [],
   annotation_font: "fraunces",
   annotation_font_size: "default",
+  auto_provocation_enabled: false,
 };
 
 let currentUser: {
@@ -141,6 +142,7 @@ async function init(): Promise<void> {
       enabled_sites: prefs.enabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "fraunces",
       annotation_font_size: prefs.annotation_font_size ?? "default",
+      auto_provocation_enabled: prefs.auto_provocation_enabled ?? false,
     };
   } else {
     // First launch — persist defaults so subsequent sessions always read from storage

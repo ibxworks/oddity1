@@ -305,6 +305,82 @@ export async function requestSketchStreaming(
   return fullText;
 }
 
+// ─── Provocation Streaming ───
+
+export async function requestProvocationStreaming(
+  payload: { draft_text: string; page_context: string; page_url: string; already_shown: string[] },
+  onChunk: (text: string, done: boolean) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return fetch(`${BACKEND_URL}/api/provoke`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal,
+    });
+  }
+
+  let res = await doFetch(await getAccessToken());
+
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) throw new AuthError();
+    res = await doFetch(retryToken);
+  }
+
+  if (res.status === 429) {
+    // Silently ignore rate limits for provocation (non-critical feature)
+    return '';
+  }
+
+  if (!res.ok) {
+    return '';
+  }
+  if (!res.body) return '';
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.error) break;
+          if (event.done) {
+            onChunk('', true);
+          } else if (event.text) {
+            fullText += event.text;
+            onChunk(event.text, false);
+          }
+        } catch {
+          // Skip malformed events
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullText;
+}
+
 export async function getAnnotations(
   url: string,
   contentHash: string,
