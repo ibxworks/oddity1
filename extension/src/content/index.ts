@@ -264,6 +264,40 @@ function syncUserWrittenToBothStores(regionId: string, annotations: Annotation[]
   otherStore.set(regionId, otherList);
 }
 
+/**
+ * Replace the annotation list for a region in the given store, but preserve
+ * any user_written annotations that aren't in the new list.  API responses
+ * never include user_written annotations, so a plain `.set()` would silently
+ * discard them.
+ */
+function setAnnotationsPreservingUserWritten(
+  store: Map<string, Annotation[]>,
+  regionId: string,
+  incoming: Annotation[],
+): void {
+  const prev = store.get(regionId) ?? [];
+  const incomingIds = new Set(incoming.map((a) => a.id));
+  const preserved = prev.filter((a) => a.type === "user_written" && !incomingIds.has(a.id));
+  store.set(regionId, [...incoming, ...preserved]);
+}
+
+/**
+ * Replace the feedback list for a region in the given store, but preserve
+ * any locally-added feedback entries (e.g. user replies) that aren't in the
+ * new list.  This prevents user-created feedback from being silently dropped
+ * when an API response replaces the store.
+ */
+function setFeedbackPreservingLocal(
+  store: Map<string, AnnotationFeedback[]>,
+  regionId: string,
+  incoming: AnnotationFeedback[],
+): void {
+  const prev = store.get(regionId) ?? [];
+  const incomingIds = new Set(incoming.map((f) => f.id));
+  const preserved = prev.filter((f) => !incomingIds.has(f.id));
+  store.set(regionId, [...incoming, ...preserved]);
+}
+
 const regionByHash = new Map<string, DetectedRegion>();
 /** Tracks current content hash per region element — used for stale response guards */
 const activeHashes = new Map<Element, string>();
@@ -278,9 +312,9 @@ let manualRunTriggered = false;
 let blocked = false;
 
 let enabled = true;
-let currentMode: ViewMode = "all";
+let currentMode: ViewMode = "overview";
 let currentPersonality: DepthPersonality = "jerry";
-let visibleTypes: AnnotationType[] = [...ALL_ANNOTATION_TYPES, "user_written"];
+let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
 const longWaitManager = new LongWaitManager(
@@ -553,6 +587,7 @@ async function init(): Promise<void> {
   // Load stored preferences before doing any work
   let stored: Record<string, unknown>;
   try {
+    if (!chrome?.storage?.local) return;
     stored = await chrome.storage.local.get("preferences");
   } catch {
     // Extension context invalidated mid-init (reload/update)
@@ -560,13 +595,13 @@ async function init(): Promise<void> {
   }
   const prefs = stored?.preferences;
 
-  // Restore personality from stored preferences (mode always resets to "all" on page load)
+  // Restore personality from stored preferences (mode always resets to "overview" on page load)
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
-  // Always reset stored mode to "all" on page load so popup/background stay in sync
-  if (prefs && prefs.annotation_mode !== "all") {
-    chrome.storage.local.set({ preferences: { ...prefs, annotation_mode: "all" } });
+  // Always reset stored mode to "overview" on page load so popup/background stay in sync
+  if (prefs && prefs.annotation_mode !== "overview") {
+    chrome.storage.local.set({ preferences: { ...prefs, annotation_mode: "overview" } });
   }
   visibleTypes = [
     ...(currentMode === "all" ? ALL_ANNOTATION_TYPES : currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
@@ -1085,8 +1120,8 @@ async function tryUrlPrediction(): Promise<void> {
   // Route to the correct mode store
   const predAnnStore = predMode === "overview" ? overviewAnnotations : depthAnnotations;
   const predFbStore = predMode === "overview" ? overviewFeedback : depthFeedback;
-  predAnnStore.set(regionId, prediction.annotations);
-  predFbStore.set(regionId, prediction.feedback ?? []);
+  setAnnotationsPreservingUserWritten(predAnnStore, regionId, prediction.annotations);
+  setFeedbackPreservingLocal(predFbStore, regionId, prediction.feedback ?? []);
   syncUserWrittenToBothStores(regionId, prediction.annotations, predMode);
   renderAnnotations(regionId, prediction.annotations);
   syncArgumentsBox();
@@ -1158,22 +1193,75 @@ function attachAnchorHoverListeners(
  * Uses Selection/Range intersection: if the range contains (or is contained by)
  * any existing anchor span, they overlap.
  */
+/**
+ * Find the nearest block-level ancestor of a node.
+ */
+function nearestBlock(node: Node): Element {
+  let el: Element | null =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as Element)
+      : node.parentElement;
+  while (el && el !== document.body && el !== document.documentElement) {
+    try {
+      const display = getComputedStyle(el).display;
+      if (
+        display === "block" ||
+        display === "list-item" ||
+        display === "flex" ||
+        display === "grid" ||
+        display === "table-cell"
+      ) {
+        return el;
+      }
+    } catch {
+      // getComputedStyle can fail for detached nodes
+    }
+    el = el.parentElement;
+  }
+  return document.body;
+}
+
 function rangeOverlapsExistingAnchors(range: Range, root: Element): boolean {
   // Query all anchor spans anywhere in the document (handles cross-region overlap)
   const anchors = (root === document.body ? root : document.body).querySelectorAll("[data-oddity-id]");
+
+  // Get the new range's bounding rect and block ancestor for proximity check
+  const newRect = range.getBoundingClientRect();
+  const newBlock = nearestBlock(range.startContainer);
+
+  const seenIds = new Set<string>();
   for (const anchor of anchors) {
     try {
       if (!anchor.isConnected) continue;
       const anchorRange = document.createRange();
       anchorRange.selectNodeContents(anchor);
-      // Two ranges overlap iff: a.end > b.start AND b.end > a.start
+
+      // 1. Geometric overlap check
       const aEndVsBStart = range.compareBoundaryPoints(Range.END_TO_START, anchorRange);
       const bEndVsAStart = anchorRange.compareBoundaryPoints(Range.END_TO_START, range);
       if (aEndVsBStart > 0 && bEndVsAStart > 0) return true;
+
+      // 2. Same-sentence proximity check (one per annotation ID)
+      const id = anchor.getAttribute("data-oddity-id");
+      if (!id || seenIds.has(id)) continue;
+      seenIds.add(id);
+
+      // Skip if they're in different block containers (different paragraphs)
+      const anchorBlock = nearestBlock(anchor);
+      if (anchorBlock !== newBlock) continue;
+
+      // Same block — check if their vertical positions overlap (same line cluster)
+      const anchorRect = anchor.getBoundingClientRect();
+      if (anchorRect.height === 0 || newRect.height === 0) continue;
+      const verticalOverlap =
+        newRect.top < anchorRect.bottom + 4 &&
+        anchorRect.top < newRect.bottom + 4;
+      if (verticalOverlap) return true;
     } catch {
       // Skip detached or incomparable nodes
     }
   }
+
   return false;
 }
 
@@ -1591,8 +1679,8 @@ onMessage((message: ExtensionMessage) => {
       if (responseGenerated.has(regionId) && !isPlainPending && !isModePending) {
         const prev = responseAnnStore.get(regionId) ?? [];
         const prevFb = responseFbStore.get(regionId) ?? [];
-        responseAnnStore.set(regionId, annotations);
-        responseFbStore.set(regionId, feedback);
+        setAnnotationsPreservingUserWritten(responseAnnStore, regionId, annotations);
+        setFeedbackPreservingLocal(responseFbStore, regionId, feedback);
         syncUserWrittenToBothStores(regionId, annotations, responseMode);
         syncArgumentsBox();
 
@@ -1624,11 +1712,11 @@ onMessage((message: ExtensionMessage) => {
       }
 
       responseGenerated.add(regionId);
-      responseFbStore.set(regionId, feedback);
+      setFeedbackPreservingLocal(responseFbStore, regionId, feedback);
 
       const hadStreaming = streamedRegions.has(regionId);
       streamedRegions.delete(regionId);
-      responseAnnStore.set(regionId, annotations);
+      setAnnotationsPreservingUserWritten(responseAnnStore, regionId, annotations);
       syncUserWrittenToBothStores(regionId, annotations, responseMode);
       syncArgumentsBox();
 
@@ -1813,7 +1901,7 @@ onMessage((message: ExtensionMessage) => {
         // init() returned early (unauthenticated), so re-check whitelist and start pipeline
         if (!pipelineInitialized) {
           (async () => {
-            const stored = await chrome.storage.local.get("preferences");
+            const stored = chrome?.storage?.local ? await chrome.storage.local.get("preferences") : {};
             const enabledSites: string[] = stored?.preferences?.enabled_sites ?? DEFAULT_ENABLED_SITES;
             const domain = extractDomain();
             const whitelisted = isDomainWhitelisted(domain, enabledSites);
@@ -1837,7 +1925,7 @@ onMessage((message: ExtensionMessage) => {
 document.addEventListener("oddity:localSignIn", () => {
   if (!pipelineInitialized) {
     (async () => {
-      const stored = await chrome.storage.local.get("preferences");
+      const stored = chrome?.storage?.local ? await chrome.storage.local.get("preferences") : {};
       const enabledSites: string[] = stored?.preferences?.enabled_sites ?? DEFAULT_ENABLED_SITES;
       const domain = extractDomain();
       if (isDomainWhitelisted(domain, enabledSites)) {
@@ -1949,6 +2037,11 @@ document.addEventListener("oddity:scroll-to-annotation", ((e: CustomEvent) => {
   const anchor = document.querySelector(`[data-oddity-id="${CSS.escape(annotationId)}"]`);
   if (anchor) {
     anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+  } else {
+    // Highlight not on page — likely from a different personality
+    document.dispatchEvent(
+      new CustomEvent("oddity:scroll-to-annotation-missing"),
+    );
   }
 }) as EventListener);
 
@@ -1998,12 +2091,14 @@ document.addEventListener("oddity:modeChange", (e) => {
   if (mode === currentMode) return;
 
   // Persist to storage so the service worker broadcasts settingsUpdated
-  chrome.storage.local.get("preferences", (result) => {
-    const prefs = (result["preferences"] ?? {}) as Record<string, unknown>;
-    chrome.storage.local.set({
-      preferences: { ...prefs, annotation_mode: mode },
+  if (chrome?.storage?.local) {
+    chrome.storage.local.get("preferences", (result) => {
+      const prefs = (result["preferences"] ?? {}) as Record<string, unknown>;
+      chrome.storage.local.set({
+        preferences: { ...prefs, annotation_mode: mode },
+      });
     });
-  });
+  }
 
   switchMode(mode);
 });

@@ -97,12 +97,35 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     const bgCss = bgColor ? `background-color: ${bgColor};` : '';
     const borderCss = underlineStyle ? `border-bottom: ${underlineStyle};` : '';
     span.style.cssText =
-      `all: unset; display: inline; pointer-events: auto; position: relative; transition: filter 0.15s; ${bgCss} ${borderCss}`;
+      `all: unset; display: inline; pointer-events: auto; position: relative; transition: filter 0.15s; box-decoration-break: clone; -webkit-box-decoration-break: clone; ${bgCss} ${borderCss}`;
 
     target.parentNode!.insertBefore(span, target);
     span.appendChild(target);
 
     spans.push(span);
+  }
+
+  // Propagate highlight background to any inline ancestor elements (e.g. <a>,
+  // <em>, <strong>) that sit between two highlighted spans.  Without this the
+  // ancestor's own inline box creates a visible gap in the highlight.
+  if (spans.length > 0) {
+    const bgColor = getVisual(annotation.type, getThemeMode(), annotation.label).backgroundColor;
+    if (bgColor) {
+      const tagged = new Set<Element>();
+      for (const span of spans) {
+        let el: Element | null = span.parentElement;
+        while (el && el !== document.body && el !== document.documentElement) {
+          // Only tag inline-level ancestors (links, em, strong, etc.)
+          const display = getComputedStyle(el).display;
+          if (display !== 'inline' && display !== 'inline-block') break;
+          if (tagged.has(el)) break;
+          tagged.add(el);
+          (el as HTMLElement).style.backgroundColor = bgColor;
+          (el as HTMLElement).dataset.oddityHighlightBg = annotation.id;
+          el = el.parentElement;
+        }
+      }
+    }
   }
 
   anchorMap.set(annotation.id, spans);
@@ -116,6 +139,13 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
 export function removeAnchors(annotationId: string): void {
   const spans = anchorMap.get(annotationId);
   if (!spans) return;
+
+  // Remove highlight background from tagged inline ancestors
+  const taggedEls = document.querySelectorAll(`[data-oddity-highlight-bg="${annotationId}"]`);
+  for (const el of taggedEls) {
+    (el as HTMLElement).style.backgroundColor = '';
+    delete (el as HTMLElement).dataset.oddityHighlightBg;
+  }
 
   for (const span of spans) {
     const parent = span.parentNode;

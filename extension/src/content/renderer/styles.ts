@@ -31,7 +31,7 @@ function makeVisual(
   return {
     type,
     backgroundColor: color + bgOpacity,
-    underlineStyle: isOverview ? null : `1.5px solid ${underlineColor}`,
+    underlineStyle: `1.5px solid ${underlineColor}`,
     gutterIcon: null,
     label: ANNOTATION_LABELS[type] ?? type.toUpperCase(),
     color,

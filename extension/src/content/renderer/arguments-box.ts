@@ -156,7 +156,6 @@ let btnDragUpHandler: (() => void) | null = null;
 
 let modeToggleHostEl: HTMLElement | null = null;
 let modeToggleShadowRoot: ShadowRoot | null = null;
-let modeToggleAllBtn: HTMLButtonElement | null = null;
 let modeToggleOverviewBtn: HTMLButtonElement | null = null;
 let modeToggleDepthBtn: HTMLButtonElement | null = null;
 let modeToggleResizeHandler: (() => void) | null = null;
@@ -694,6 +693,33 @@ export function initArgumentsBox(): void {
       }
     })
     .catch(() => {});
+
+  // Listen for "Go to highlight" failures (annotation not on page)
+  document.addEventListener("oddity:scroll-to-annotation-missing", () => {
+    showArgToast("This highlight is from a different personality and isn't on the page right now.");
+  });
+}
+
+function showArgToast(message: string): void {
+  if (!shadowRoot || !outerWrapperEl) return;
+  // Remove any existing toast
+  const existing = shadowRoot.querySelector(".args-toast");
+  if (existing) existing.remove();
+
+  const toast = document.createElement("div");
+  toast.className = "args-toast";
+  toast.textContent = message;
+  outerWrapperEl.appendChild(toast);
+
+  // Force reflow then animate in
+  void toast.offsetHeight;
+  toast.classList.add("visible");
+
+  setTimeout(() => {
+    toast.classList.remove("visible");
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    setTimeout(() => toast.remove(), 400);
+  }, 3000);
 }
 
 export function updateArgumentsBox(
@@ -706,10 +732,18 @@ export function updateArgumentsBox(
   debounceTimer = setTimeout(() => {
     cacheAnnotationNotes(annotations);
     canonicalItems = buildItems(annotations, feedback);
-    // Remove live items that are now in canonical data (matched by feedbackId),
-    // but keep ones still pending server confirmation to avoid glitching user replies.
+    // Remove live items that are now in canonical data:
+    // 1. Reply/reaction items: matched by feedbackId
     const canonicalFbIds = new Set(canonicalItems.map((i) => i.feedbackId).filter(Boolean));
-    liveItems = liveItems.filter((li) => !li.feedbackId || !canonicalFbIds.has(li.feedbackId));
+    // 2. Manual annotation items: matched by annotationId (they have no feedbackId)
+    const canonicalManualAnnIds = new Set(
+      canonicalItems.filter((i) => i.type === "manual").map((i) => i.annotationId).filter(Boolean),
+    );
+    liveItems = liveItems.filter((li) => {
+      if (li.feedbackId && canonicalFbIds.has(li.feedbackId)) return false;
+      if (li.type === "manual" && li.annotationId && canonicalManualAnnIds.has(li.annotationId)) return false;
+      return true;
+    });
     renderList();
   }, 150);
 }
@@ -967,7 +1001,6 @@ export function destroyArgumentsBox(): void {
   modeToggleHostEl?.remove();
   modeToggleHostEl = null;
   modeToggleShadowRoot = null;
-  modeToggleAllBtn = null;
   modeToggleOverviewBtn = null;
   modeToggleDepthBtn = null;
   if (listDragMoveHandler) {
@@ -2077,9 +2110,15 @@ function buildItems(
     }
   }
 
+  // Defensive dedup: track emitted feedbackIds to prevent duplicate cards
+  // even if the merged feedback map somehow contains the same entry twice.
+  const emittedFbIds = new Set<string>();
+
   for (const [hash, fbs] of feedback) {
     for (const fb of fbs) {
       if (deletedFeedbackIds.has(fb.id)) continue;
+      if (fb.id && emittedFbIds.has(fb.id)) continue;
+      if (fb.id) emittedFbIds.add(fb.id);
       const fbHash = annHashMap.get(fb.annotation_id) ?? hash;
       const srcAnnotationType = findAnnotationType(annotations, fb.annotation_id);
       if (fb.feedback_type === "thumbs_up") {
@@ -3400,18 +3439,13 @@ function initModeToggleOverlay(): void {
 
   const toggleEl = document.createElement("div");
   toggleEl.className = "mode-toggle";
-  toggleEl.dataset.active = "all";
+  toggleEl.dataset.active = "overview";
 
   const sliderEl = document.createElement("div");
   sliderEl.className = "mode-slider";
 
-  modeToggleAllBtn = document.createElement("button");
-  modeToggleAllBtn.className = "mode-btn mode-active";
-  modeToggleAllBtn.textContent = "All";
-  modeToggleAllBtn.dataset.mode = "all";
-
   modeToggleOverviewBtn = document.createElement("button");
-  modeToggleOverviewBtn.className = "mode-btn";
+  modeToggleOverviewBtn.className = "mode-btn mode-active";
   modeToggleOverviewBtn.textContent = "Overview";
   modeToggleOverviewBtn.dataset.mode = "overview";
 
@@ -3426,7 +3460,6 @@ function initModeToggleOverlay(): void {
     if (!target) return;
     const mode = target.dataset.mode as string;
     if (mode === toggleEl.dataset.active) return;
-    modeToggleAllBtn!.classList.toggle("mode-active", mode === "all");
     modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
     toggleEl.dataset.active = mode;
@@ -3438,7 +3471,6 @@ function initModeToggleOverlay(): void {
   toggleEl.addEventListener("click", handleBtnClick);
 
   toggleEl.appendChild(sliderEl);
-  toggleEl.appendChild(modeToggleAllBtn);
   toggleEl.appendChild(modeToggleOverviewBtn);
   toggleEl.appendChild(modeToggleDepthBtn);
   modeToggleShadowRoot.appendChild(toggleEl);
@@ -3459,7 +3491,7 @@ const TOGGLE_OVERLAY_CSS = `
 
   .mode-toggle {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     padding: 4px;
     background: #292929;
     border-radius: 12px;
@@ -3472,7 +3504,7 @@ const TOGGLE_OVERLAY_CSS = `
     position: absolute;
     top: 4px;
     left: 4px;
-    width: calc(33.333% - 2.67px);
+    width: calc(50% - 4px);
     height: calc(100% - 8px);
     background: #434343;
     border-radius: 9px;
@@ -3482,12 +3514,8 @@ const TOGGLE_OVERLAY_CSS = `
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08);
   }
 
-  .mode-toggle[data-active="overview"] .mode-slider {
-    transform: translateX(100%);
-  }
-
   .mode-toggle[data-active="depth"] .mode-slider {
-    transform: translateX(200%);
+    transform: translateX(100%);
   }
 
   .mode-btn {
@@ -4255,11 +4283,11 @@ const ARGUMENTS_BOX_CSS = `
     font-family: system-ui, -apple-system, sans-serif;
   }
 
-  /* ── Mode Toggle (All / Overview / Depth) ── */
+  /* ── Mode Toggle (Overview / Depth) ── */
 
   .args-mode-toggle {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     padding: 4px;
     margin: 8px 14px;
     flex-shrink: 0;
@@ -4273,7 +4301,7 @@ const ARGUMENTS_BOX_CSS = `
     position: absolute;
     top: 4px;
     left: 4px;
-    width: calc(33.333% - 2.67px);
+    width: calc(50% - 4px);
     height: calc(100% - 8px);
     background: #404040;
     border-radius: 9px;
@@ -4282,12 +4310,8 @@ const ARGUMENTS_BOX_CSS = `
     z-index: 0;
   }
 
-  .args-mode-toggle[data-active="overview"] .args-mode-slider {
-    transform: translateX(100%);
-  }
-
   .args-mode-toggle[data-active="depth"] .args-mode-slider {
-    transform: translateX(200%);
+    transform: translateX(100%);
   }
 
   .args-mode-btn {
@@ -5982,5 +6006,40 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-onboarding-next:hover {
     background: #333;
+  }
+
+  /* ── Toast notification ── */
+  .args-toast {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    background: #262626;
+    color: #bbb;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #333;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 100;
+    margin-bottom: 8px;
+  }
+
+  .args-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  :host([data-theme="light"]) .args-toast {
+    background: #f5f5f5;
+    color: #444;
+    border-color: #ddd;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   }
 `;

@@ -1,6 +1,7 @@
 import type { Annotation } from '@oddity/shared';
 import { POPOVER_SHOW_DELAY_MS, POPOVER_HIDE_DELAY_MS } from '@oddity/shared';
 import { getVisual } from './styles.js';
+import { renderMiniMarkdown } from './mini-markdown.js';
 
 // ─── State ───
 
@@ -88,7 +89,7 @@ function createPopover(annotation: Annotation, anchorEl: HTMLElement): void {
   // ── Note text ──
   const text = document.createElement('div');
   text.className = 'annotation-text';
-  text.textContent = annotation.content.note;
+  text.innerHTML = renderMiniMarkdown(annotation.content.note);
   container.appendChild(text);
 
   // ── Reactions ──
@@ -256,6 +257,35 @@ const POPOVER_CSS = `
     font-style: italic;
     line-height: 1.5;
     color: #e8e3d9;
+  }
+
+  .annotation-text p {
+    margin: 0 0 4px;
+  }
+
+  .annotation-text p:last-child {
+    margin-bottom: 0;
+  }
+
+  .annotation-text strong {
+    font-weight: 600;
+    color: #f0ece4;
+  }
+
+  .annotation-text ul {
+    margin: 4px 0;
+    padding-left: 16px;
+    list-style: disc;
+  }
+
+  .annotation-text li {
+    margin-bottom: 2px;
+  }
+
+  .annotation-text br {
+    display: block;
+    content: "";
+    margin-top: 4px;
   }
 
   .annotation-reactions {

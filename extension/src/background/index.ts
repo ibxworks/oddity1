@@ -742,7 +742,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
               action: "settingsUpdated",
               payload: {
                 enabled: prefs.enabled ?? true,
-                annotationMode: prefs.annotation_mode ?? "all",
+                annotationMode: prefs.annotation_mode ?? "overview",
                 depthPersonality: ((prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality) ?? "jerry",
                 visibleTypes: prefs.visible_types ?? [],
                 annotationFont: prefs.annotation_font,
