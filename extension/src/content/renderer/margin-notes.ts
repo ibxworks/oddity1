@@ -737,6 +737,8 @@ function positionInlinePopover(popover: InlinePopover): void {
 function showAllOverviewMarginNotes(emphasizedId?: string): void {
   for (const note of notes) {
     if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+    // User-written notes are always visible — don't alter their visibility classes
+    if (note.annotation.type === "user_written") continue;
     note.element.classList.remove("overview-hidden", "anchor-hovered", "overview-focused", "overview-dimmed");
     if (emphasizedId) {
       if (note.id === emphasizedId) {
@@ -758,6 +760,8 @@ function showAllOverviewMarginNotes(emphasizedId?: string): void {
 function hideAllOverviewMarginNotes(): void {
   for (const note of notes) {
     if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+    // User-written notes are always visible — never hide them
+    if (note.annotation.type === "user_written") continue;
     note.element.classList.add("overview-hidden");
     note.element.classList.remove("anchor-hovered", "overview-focused", "overview-dimmed");
   }
@@ -1313,6 +1317,7 @@ export function onAnchorHoverStart(annotationId: string): void {
       deemphasizeAnnotation();
       for (const note of notes) {
         if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+        if (note.annotation.type === "user_written") continue;
         const isTarget = note.id === annotationId;
         note.element.classList.toggle("anchor-hovered", isTarget);
         note.element.classList.toggle("overview-focused", isTarget);
