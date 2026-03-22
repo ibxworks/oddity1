@@ -311,6 +311,9 @@ const chatTrackedElements = new WeakSet<Element>();
 let siteWhitelisted = false;
 let manualRunTriggered = false;
 let blocked = false;
+/** Set to true after init() completes — prevents stale settingsUpdated broadcasts
+ *  from switching modes before the page has finished initializing. */
+let initComplete = false;
 
 let enabled = true;
 let currentMode: ViewMode = "overview";
@@ -697,9 +700,14 @@ async function init(): Promise<void> {
   // Always reset stored mode to "overview" on page load so popup/background stay in sync.
   // Also clear visible_types so the settingsUpdated broadcast uses the fallback
   // (mode-appropriate types) instead of stale depth types from the previous session.
+  // IMPORTANT: await the write so the background broadcasts the correct mode before
+  // we mark init complete — prevents stale depth broadcasts from switching mode.
   if (prefs && (prefs.annotation_mode !== "overview" || (prefs.visible_types as unknown[])?.length > 0)) {
-    chrome.storage.local.set({
-      preferences: { ...prefs, annotation_mode: "overview", visible_types: [] },
+    await new Promise<void>((resolve) => {
+      chrome.storage.local.set(
+        { preferences: { ...prefs, annotation_mode: "overview", visible_types: [] } },
+        resolve,
+      );
     });
   }
   visibleTypes = [
@@ -754,6 +762,8 @@ async function init(): Promise<void> {
     const isMac = navigator.platform.toUpperCase().includes("MAC");
     sendMessage({ action: "setBadge", payload: { text: isMac ? "\u2318O" : "^O", color: "#6B7280" } }).catch(() => {});
   }
+
+  initComplete = true;
 }
 
 async function startPipeline(): Promise<void> {
@@ -1904,8 +1914,15 @@ onMessage((message: ExtensionMessage) => {
         clearAllAnchors();
         longWaitManager.reset();
       } else if (modeChanged) {
-        // Mode changed: switch annotation display
-        switchMode(viewMode, newPersonality);
+        // Ignore stale mode broadcasts that arrive before init completes —
+        // init always resets mode to "overview" and awaits the storage write,
+        // but a broadcast from the old session could still be in flight.
+        if (!initComplete) {
+          console.log(`[Oddity 1] Ignoring stale settingsUpdated mode change to ${viewMode} — init not complete`);
+        } else {
+          // Mode changed: switch annotation display
+          switchMode(viewMode, newPersonality);
+        }
       } else if (personalityChanged) {
         // Personality only affects depth annotations — preserve user-written notes and their feedback
         currentPersonality = newPersonality;
