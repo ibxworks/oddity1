@@ -2156,18 +2156,47 @@ document.addEventListener("oddity:exportPdf", (e) => {
 document.addEventListener("oddity:scroll-to-annotation", ((e: CustomEvent) => {
   const { annotationId, itemType } = e.detail;
   if (!annotationId) return;
+
+  // 1. Fast path: anchor span exists in the DOM
   const anchor = document.querySelector(`[data-oddity-id="${CSS.escape(annotationId)}"]`);
   if (anchor) {
     anchor.scrollIntoView({ behavior: "smooth", block: "center" });
-  } else if (itemType === "reply") {
-    // Reply note — parent annotation is from a different mode/personality
+    return;
+  }
+
+  // 2. Fallback: resolve the annotation's selector against known regions
+  //    (anchor span may not exist if annotation is from the other mode,
+  //     failed overlap detection, or the page re-rendered its content)
+  let found: Annotation | undefined;
+  for (const store of [overviewAnnotations, depthAnnotations]) {
+    for (const [, anns] of store) {
+      const match = anns.find((a) => a.id === annotationId);
+      if (match) { found = match; break; }
+    }
+    if (found) break;
+  }
+  if (found) {
+    for (const region of regionByHash.values()) {
+      const range = resolveSelector(region.element, found.anchor);
+      if (range) {
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          const targetY = rects[0]!.top + window.scrollY - window.innerHeight / 2;
+          window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
+          return;
+        }
+      }
+    }
+  }
+
+  // 3. Could not resolve — show toast
+  if (itemType === "reply") {
     document.dispatchEvent(
       new CustomEvent("oddity:scroll-to-annotation-missing", {
         detail: { isReply: true },
       }),
     );
   } else {
-    // User-written note or other — highlight not found
     document.dispatchEvent(
       new CustomEvent("oddity:scroll-to-annotation-missing"),
     );
