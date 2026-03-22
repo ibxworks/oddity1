@@ -44,15 +44,14 @@ function colorSchemeSignal(value: string | null | undefined): ThemeMode | null {
 }
 
 function detectMode(): ThemeMode {
-  // 1. color-scheme CSS property on html/body (strongest signal — page declares
-  //    its theme intent, overriding any explicit background-color)
+  // 1. color-scheme CSS property on html/body — only trust unambiguous values
   for (const el of [document.documentElement, document.body]) {
     if (!el) continue;
     const result = colorSchemeSignal(getComputedStyle(el).colorScheme);
     if (result) return result;
   }
 
-  // 2. <meta name="color-scheme"> tag (arXiv, MDN, etc.)
+  // 2. <meta name="color-scheme"> tag — only trust unambiguous values
   const metaCS = document.querySelector('meta[name="color-scheme"]')?.getAttribute('content');
   const metaResult = colorSchemeSignal(metaCS);
   if (metaResult) return metaResult;
@@ -64,7 +63,24 @@ function detectMode(): ThemeMode {
     if (lum >= 0) return lum < 0.4 ? 'dark' : 'light';
   }
 
-  // 4. Last resort: OS preference
+  // 4. Probe deeper: body/html may be transparent (e.g. arxiv).
+  //    Walk down the first few children to find an element with a real background.
+  if (document.body) {
+    const candidates = document.body.querySelectorAll('main, article, [role="main"], body > div, body > main, body > section');
+    for (const el of candidates) {
+      const lum = luminance(getComputedStyle(el).backgroundColor);
+      if (lum >= 0) return lum < 0.4 ? 'dark' : 'light';
+    }
+    // Also try the first few direct children of body
+    for (let i = 0; i < Math.min(3, document.body.children.length); i++) {
+      const el = document.body.children[i]!;
+      if (el.id === 'oddity-margin-notes' || el.id === 'oddity-page-dim') continue;
+      const lum = luminance(getComputedStyle(el).backgroundColor);
+      if (lum >= 0) return lum < 0.4 ? 'dark' : 'light';
+    }
+  }
+
+  // 5. Last resort: OS preference
   if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
 
   return 'light';
