@@ -420,6 +420,14 @@ function startAnchorGuard(): void {
       const target = e.target as Element | null;
       if (!target) return;
 
+      // Skip clicks on Oddity's own UI elements — these never trigger React
+      // re-renders and must not interfere with mode switches or other controls.
+      if (
+        target.closest("oddity-arguments-box") ||
+        target.closest("#oddity-margin-notes") ||
+        target.closest("#oddity-page-dim")
+      ) return;
+
       // If the click is inside an annotated region, let it through — the user
       // is interacting with Oddity highlights, not triggering a layout change.
       const allRegionEls = new Set<Element>();
@@ -1483,6 +1491,12 @@ function rerenderAll(): void {
 // ─── Mode Switching ───
 
 function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void {
+  // Cancel any pending anchor guard re-render — switchMode handles its own rendering
+  if (anchorGuardRerenderTimer) {
+    clearTimeout(anchorGuardRerenderTimer);
+    anchorGuardRerenderTimer = null;
+  }
+
   // Clear current rendering
   clearOverlay();
   clearAllAnchors();
