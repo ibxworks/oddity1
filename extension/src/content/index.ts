@@ -455,6 +455,12 @@ function startAnchorGuard(): void {
     let resizeRerenderTimer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver(() => {
       if (!enabled) return;
+      // If the anchor guard scheduled a premature re-render, cancel it —
+      // we'll recover after the layout fully settles.
+      if (anchorGuardRerenderTimer) {
+        clearTimeout(anchorGuardRerenderTimer);
+        anchorGuardRerenderTimer = null;
+      }
       // Debounce — a sidebar toggle may trigger multiple resize entries
       if (resizeRerenderTimer) clearTimeout(resizeRerenderTimer);
       resizeRerenderTimer = setTimeout(() => {
