@@ -7,6 +7,11 @@ const ATTR = 'data-oddity-id';
 /** All injected anchor spans, keyed by annotation ID */
 const anchorMap = new Map<string, HTMLSpanElement[]>();
 
+/** Whether any anchor spans are currently injected in the DOM. */
+export function hasAnchors(): boolean {
+  return anchorMap.size > 0;
+}
+
 /**
  * Check whether a node lives inside a contenteditable subtree.
  */

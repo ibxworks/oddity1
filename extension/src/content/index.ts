@@ -48,6 +48,7 @@ import {
   clearAllAnchors,
   getAllAnchorsInOrder,
   getAnnotationId,
+  hasAnchors,
   injectAnchors,
   removeAnchors,
 } from "./renderer/anchors.js";
@@ -394,6 +395,86 @@ function syncArgumentsBox(): void {
   updateArgumentsBox(mergedAnnotations, mergedFeedback);
 }
 
+// ─── React-safe Anchor Guard ───
+// React-based sites (Claude.ai, ChatGPT, etc.) may re-render DOM regions that
+// contain our injected anchor <span> elements.  If React's reconciliation
+// encounters unexpected nodes it crashes (error boundary).
+//
+// Strategy: listen for clicks outside the annotated content region in the
+// capture phase (runs before React's synthetic event handlers).  Strip all
+// anchor spans so React re-renders against clean DOM.  After the layout
+// settles, re-inject anchors via rerenderAll().
+//
+// Also use a ResizeObserver on each region to detect layout shifts (sidebar
+// open, panel resize) and recover anchors that may have been destroyed.
+
+let anchorGuardRerenderTimer: ReturnType<typeof setTimeout> | null = null;
+
+function startAnchorGuard(): void {
+  // ── Capture-phase click guard ──
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (!enabled || !hasAnchors()) return;
+
+      const target = e.target as Element | null;
+      if (!target) return;
+
+      // If the click is inside an annotated region, let it through — the user
+      // is interacting with Oddity highlights, not triggering a layout change.
+      const allRegionEls = new Set<Element>();
+      for (const r of regions) allRegionEls.add(r.element);
+      for (const r of regionByHash.values()) allRegionEls.add(r.element);
+
+      for (const el of allRegionEls) {
+        if (el.contains(target)) return;
+      }
+
+      // Click is outside all content regions — pre-emptively strip anchors
+      // so a potential React re-render doesn't crash on unexpected DOM nodes.
+      clearAllAnchors();
+      clearOverlay();
+      clearMarginNotes();
+      for (const r of regions) invalidateTextNodeIndex(r.element);
+      for (const r of regionByHash.values()) invalidateTextNodeIndex(r.element);
+
+      // Schedule a re-render after the layout settles.
+      if (anchorGuardRerenderTimer) clearTimeout(anchorGuardRerenderTimer);
+      anchorGuardRerenderTimer = setTimeout(() => {
+        anchorGuardRerenderTimer = null;
+        if (enabled) rerenderAll();
+      }, 400);
+    },
+    { capture: true },
+  );
+
+  // ── ResizeObserver recovery ──
+  // When a region's container resizes (sidebar open, panel toggle) anchors may
+  // have been destroyed by the framework's re-render.  Detect this and recover.
+  if (typeof ResizeObserver !== "undefined") {
+    let resizeRerenderTimer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (!enabled) return;
+      // Debounce — a sidebar toggle may trigger multiple resize entries
+      if (resizeRerenderTimer) clearTimeout(resizeRerenderTimer);
+      resizeRerenderTimer = setTimeout(() => {
+        resizeRerenderTimer = null;
+        // Check if anchors survived.  If not, re-render to restore them.
+        const domAnchors = document.querySelectorAll("[data-oddity-id]");
+        if (domAnchors.length === 0 && (overviewAnnotations.size > 0 || depthAnnotations.size > 0)) {
+          for (const r of regions) invalidateTextNodeIndex(r.element);
+          for (const r of regionByHash.values()) invalidateTextNodeIndex(r.element);
+          rerenderAll();
+        }
+      }, 500);
+    });
+
+    // Observe all current regions
+    for (const r of regions) ro.observe(r.element);
+    for (const r of regionByHash.values()) ro.observe(r.element);
+  }
+}
+
 // ─── SPA Navigation: State Reset ───
 
 /**
@@ -599,9 +680,13 @@ async function init(): Promise<void> {
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
-  // Always reset stored mode to "overview" on page load so popup/background stay in sync
-  if (prefs && prefs.annotation_mode !== "overview") {
-    chrome.storage.local.set({ preferences: { ...prefs, annotation_mode: "overview" } });
+  // Always reset stored mode to "overview" on page load so popup/background stay in sync.
+  // Also clear visible_types so the settingsUpdated broadcast uses the fallback
+  // (mode-appropriate types) instead of stale depth types from the previous session.
+  if (prefs && (prefs.annotation_mode !== "overview" || (prefs.visible_types as unknown[])?.length > 0)) {
+    chrome.storage.local.set({
+      preferences: { ...prefs, annotation_mode: "overview", visible_types: [] },
+    });
   }
   visibleTypes = [
     ...(currentMode === "all" ? ALL_ANNOTATION_TYPES : currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
@@ -763,6 +848,14 @@ async function startPipeline(): Promise<void> {
 
   // Activate body-level detection (persistent watchers + body observer)
   activateBodyLevelDetection(adapters, matchedAdapter ?? null);
+
+  // ── React-safe anchor guard ──
+  // On React-based sites (Claude, ChatGPT, etc.) clicking UI controls outside the
+  // annotated content region can trigger React re-renders that crash when they
+  // encounter our injected anchor <span> elements.  Pre-emptively strip anchors
+  // in the capture phase (before React's event handlers run) and re-render after
+  // the layout settles.
+  startAnchorGuard();
 }
 
 // ─── Body-Level Detection ───
@@ -2116,8 +2209,13 @@ document.addEventListener("oddity:modeChange", (e) => {
   if (chrome?.storage?.local) {
     chrome.storage.local.get("preferences", (result) => {
       const prefs = (result["preferences"] ?? {}) as Record<string, unknown>;
+      // Include visible_types matching the new mode so the settingsUpdated
+      // broadcast doesn't overwrite visibleTypes with stale overview-only types.
+      const modeTypes = mode === "all"
+        ? ALL_ANNOTATION_TYPES
+        : mode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES;
       chrome.storage.local.set({
-        preferences: { ...prefs, annotation_mode: mode },
+        preferences: { ...prefs, annotation_mode: mode, visible_types: [...modeTypes, "user_written"] },
       });
     });
   }
