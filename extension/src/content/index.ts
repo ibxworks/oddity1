@@ -893,7 +893,8 @@ async function handleStableRegion(
   // Stale guard: if this region already had a different hash, the content changed.
   const previousHash = activeHashes.get(region.element);
   if (previousHash && previousHash !== contentHash) {
-    pendingRegions.delete(previousHash);
+    pendingRegions.delete(`overview:${previousHash}`);
+    pendingRegions.delete(`depth:${previousHash}`);
     annotatedRegions.delete(previousHash);
     overviewAnnotations.delete(previousHash);
     depthAnnotations.delete(previousHash);
@@ -905,7 +906,12 @@ async function handleStableRegion(
   }
   activeHashes.set(region.element, contentHash);
 
-  if (annotatedRegions.has(contentHash) || pendingRegions.has(contentHash))
+  // Use mode-prefixed pending key so that a stale-while-revalidate response
+  // from a DIFFERENT mode cannot steal this mode's pending state.
+  const reqMode = currentMode as AnnotationMode;
+  const pendingKey = `${reqMode}:${contentHash}`;
+
+  if (annotatedRegions.has(contentHash) || pendingRegions.has(pendingKey))
     return;
 
   // Store hash on the region element so manual annotations can reuse it
@@ -915,8 +921,7 @@ async function handleStableRegion(
   regionByHash.set(contentHash, region);
 
   // Request annotations from service worker
-  pendingRegions.add(contentHash);
-  const reqMode = currentMode as AnnotationMode;
+  pendingRegions.add(pendingKey);
   const modes = pendingModeByHash.get(contentHash) ?? new Set();
   modes.add(reqMode);
   pendingModeByHash.set(contentHash, modes);
@@ -957,7 +962,7 @@ async function handleStableRegion(
       } else {
         console.error(`[Oddity 1] Annotation request failed: ${result.error}`);
       }
-      pendingRegions.delete(contentHash);
+      pendingRegions.delete(pendingKey);
       if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
     }
   } catch (err) {
@@ -977,7 +982,7 @@ async function handleStableRegion(
     } else {
       console.error(`[Oddity 1] Annotation request error:`, err);
     }
-    pendingRegions.delete(contentHash);
+    pendingRegions.delete(pendingKey);
     if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
   }
 }
@@ -1311,8 +1316,14 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
 
       let anchors = injectAnchors(annotation, range);
 
-      // Retry once: prior injectAnchors calls mutate the DOM (split/wrap text nodes),
-      // which can invalidate the cached text-node index and produce stale Ranges.
+      // injectAnchors mutates the DOM (splits/wraps text nodes), so invalidate
+      // the text-node index immediately. This ensures the NEXT annotation's
+      // resolveSelector + overlap check operates on fresh DOM state.
+      if (anchors.length > 0) {
+        invalidateTextNodeIndex(root);
+      }
+
+      // Retry once if injection produced no spans (stale index before first call).
       if (anchors.length === 0) {
         invalidateTextNodeIndex(root);
         const retryRange = resolveSelector(root, annotation.anchor);
@@ -1320,6 +1331,9 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
           // Re-check overlap after index invalidation
           if (rangeOverlapsExistingAnchors(retryRange, root)) continue;
           anchors = injectAnchors(annotation, retryRange);
+          if (anchors.length > 0) {
+            invalidateTextNodeIndex(root);
+          }
         }
       }
 
@@ -1373,6 +1387,11 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   clearOverlay();
   clearAllAnchors();
   clearMarginNotes();
+
+  // Invalidate text-node index for all regions — clearAllAnchors mutates the
+  // DOM (unwraps spans, normalizes text nodes) which makes cached indices stale.
+  for (const region of regions) invalidateTextNodeIndex(region.element);
+  for (const region of regionByHash.values()) invalidateTextNodeIndex(region.element);
 
   // Update state
   currentMode = newMode;
@@ -1575,6 +1594,9 @@ onMessage((message: ExtensionMessage) => {
 
       // Render the single annotation immediately (with overlap check)
       try {
+        // Invalidate stale text-node index — prior anchor injections or
+        // clearAllAnchors during mode switch may have mutated the DOM.
+        invalidateTextNodeIndex(streamRoot);
         const range = resolveSelector(streamRoot, annotation.anchor);
         if (range) {
           // Check if this range overlaps with any existing anchor spans

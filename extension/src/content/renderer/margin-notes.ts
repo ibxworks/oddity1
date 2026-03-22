@@ -86,6 +86,7 @@ let mouseInAnchor = false;
 let inlineHoverExpandTimer: ReturnType<typeof setTimeout> | null = null;
 let staleStateTimer: ReturnType<typeof setTimeout> | null = null;
 let overviewShowTimer: ReturnType<typeof setTimeout> | null = null;
+let overviewHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
@@ -112,12 +113,21 @@ const SIZE_MAP: Record<AnnotationFontSize, string> = {
 export function initMarginNotes(region: Element): void {
   regionEl = region;
 
-  // Load Kalam font globally (font-face is always global, shadow DOM elements reference by name)
+  // Load custom fonts globally — skip on pages with strict CSP that blocks Google Fonts.
+  // Listen for a CSP violation and remove the link immediately to stop further font loads.
   if (!fontLink) {
     fontLink = document.createElement("link");
     fontLink.rel = "stylesheet";
     fontLink.href =
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=Kalam:wght@400&display=swap";
+    const cspHandler = (e: SecurityPolicyViolationEvent) => {
+      if (e.blockedURI?.includes("fonts.googleapis.com") || e.blockedURI?.includes("fonts.gstatic.com")) {
+        fontLink?.remove();
+        fontLink = null;
+        document.removeEventListener("securitypolicyviolation", cspHandler);
+      }
+    };
+    document.addEventListener("securitypolicyviolation", cspHandler);
     document.head.appendChild(fontLink);
   }
 
@@ -302,19 +312,16 @@ export function addMarginNote(
   // Overview margin notes start hidden — shown on hover/click engage
   const isOverviewNote = annotation.type !== "user_written" && currentAnnotationMode === "overview";
   if (isOverviewNote) {
-    el.classList.add("oddity-note--overview-margin");
-    el.style.display = "none";
+    el.classList.add("oddity-note--overview-margin", "overview-hidden");
   }
 
-  // Measure height in next frame, then resolve overlaps
+  // Measure height in next frame, then resolve overlaps.
+  // overview-hidden uses opacity/transform (not display:none) so offsetHeight works.
   requestAnimationFrame(() => {
-    // For hidden overview notes, temporarily show to measure
-    if (isOverviewNote) el.style.display = "";
     note.height = el.offsetHeight;
     note.collapsedHeight = el.offsetHeight;
     resolveOverlaps();
     applyPositions();
-    if (isOverviewNote) el.style.display = "none";
   });
 }
 
@@ -712,11 +719,20 @@ function positionInlinePopover(popover: InlinePopover): void {
 function showAllOverviewMarginNotes(emphasizedId?: string): void {
   for (const note of notes) {
     if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
-    note.element.style.display = "";
-    note.element.classList.remove("anchor-hovered");
-    if (note.id === emphasizedId) {
-      note.element.classList.add("anchor-hovered");
+    note.element.classList.remove("overview-hidden", "anchor-hovered", "overview-focused", "overview-dimmed");
+    if (emphasizedId) {
+      if (note.id === emphasizedId) {
+        note.element.classList.add("anchor-hovered", "overview-focused");
+      } else {
+        note.element.classList.add("overview-dimmed");
+      }
     }
+  }
+  // Re-measure heights now that notes are visible and laid out with correct width
+  for (const note of notes) {
+    if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+    const h = note.element.offsetHeight;
+    if (h > 0) note.height = h;
   }
   applyPositions();
 }
@@ -724,14 +740,19 @@ function showAllOverviewMarginNotes(emphasizedId?: string): void {
 function hideAllOverviewMarginNotes(): void {
   for (const note of notes) {
     if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
-    note.element.style.display = "none";
-    note.element.classList.remove("anchor-hovered");
+    note.element.classList.add("overview-hidden");
+    note.element.classList.remove("anchor-hovered", "overview-focused", "overview-dimmed");
   }
 }
 
 function isOverviewMarginNote(annotationId: string): boolean {
   return currentAnnotationMode === "overview" &&
     notes.some(n => n.id === annotationId && n.element.classList.contains("oddity-note--overview-margin"));
+}
+
+/** Check whether a margin note is currently visible (not hidden by class or display). */
+function isNoteVisible(n: MarginNote): boolean {
+  return n.element.style.display !== "none" && !n.element.classList.contains("overview-hidden");
 }
 
 function repositionVisibleInlinePopovers(): void {
@@ -967,6 +988,7 @@ export function clearMarginNotes(): void {
   if (anchorHoverTimer) { clearTimeout(anchorHoverTimer); anchorHoverTimer = null; }
   if (inlineHoverExpandTimer) { clearTimeout(inlineHoverExpandTimer); inlineHoverExpandTimer = null; }
   if (staleStateTimer) { clearTimeout(staleStateTimer); staleStateTimer = null; }
+  if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
 
   // Remove host element classes
   hostEl?.classList.remove("has-pinned", "has-dimmed");
@@ -1005,7 +1027,15 @@ export function filterMarginNotesByTypes(types: AnnotationType[]): void {
 
   for (const note of notes) {
     const isVisible = typeSet.has(note.annotation.type);
-    note.element.style.display = isVisible ? "" : "none";
+    // Overview margin notes use all-or-nothing visibility (shown only on hover/pin).
+    // Don't force them visible here — only hide them if their type is filtered out.
+    const isOverviewMargin = note.element.classList.contains("oddity-note--overview-margin");
+    if (isOverviewMargin) {
+      if (!isVisible) note.element.classList.add("overview-hidden");
+      // If visible type but note is currently hidden (no hover), leave it hidden
+    } else {
+      note.element.style.display = isVisible ? "" : "none";
+    }
     if (!isVisible) hiddenTypes.add(note.annotation.type);
   }
 
@@ -1258,12 +1288,17 @@ export function onAnchorHoverStart(annotationId: string): void {
   // Overview margin notes: show ALL on hover (with subtle delay)
   if (isOverviewMarginNote(annotationId)) {
     mouseInAnchor = true;
+    // Cancel any pending hide from crossing a line gap
+    if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
     // Already pinned — just switch emphasis, no animation/reposition
     if (pinnedId) {
       deemphasizeAnnotation();
       for (const note of notes) {
         if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
-        note.element.classList.toggle("anchor-hovered", note.id === annotationId);
+        const isTarget = note.id === annotationId;
+        note.element.classList.toggle("anchor-hovered", isTarget);
+        note.element.classList.toggle("overview-focused", isTarget);
+        note.element.classList.toggle("overview-dimmed", !isTarget);
       }
       emphasizeAnnotation(annotationId);
       return;
@@ -1327,8 +1362,15 @@ export function onAnchorHoverEnd(annotationId?: string): void {
       emphasizeAnnotation(pinnedId);
       return;
     }
-    deemphasizeAnnotation();
-    hideAllOverviewMarginNotes();
+    // Buffer before hiding — prevents flicker when crossing gaps between
+    // multi-line highlight spans of the same annotation.
+    if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
+    overviewHideTimer = setTimeout(() => {
+      overviewHideTimer = null;
+      if (mouseInAnchor || pinnedId) return;
+      deemphasizeAnnotation();
+      hideAllOverviewMarginNotes();
+    }, 150);
     return;
   }
 
@@ -1683,8 +1725,8 @@ function createNoteElement(
     thumbDown.className =
       "note-feedback-pill note-feedback-pill--negative" +
       (existingThumbDown ? " active" : "");
-    thumbDown.textContent = "Not helpful";
-    thumbDown.title = "Not helpful";
+    thumbDown.textContent = "I don't think so";
+    thumbDown.title = "I don't think so";
     thumbDown.addEventListener("click", (e) => {
       e.stopPropagation();
       if (thumbDown.classList.contains("active")) {
@@ -2082,7 +2124,7 @@ function getContentBounds(
 }
 
 function resolveOverlaps(): void {
-  const visibleNotes = notes.filter((n) => n.element.style.display !== "none");
+  const visibleNotes = notes.filter((n) => isNoteVisible(n));
   resolveOverlapsForSide(visibleNotes);
 }
 
@@ -2153,9 +2195,15 @@ function applyPositions(): void {
   // Overview margin notes: position from live anchor rects so they
   // always track their highlighted sentence during scroll.
   const overviewMargin = notes.filter(
-    (n) => n.element.classList.contains("oddity-note--overview-margin") && n.element.style.display !== "none",
+    (n) => n.element.classList.contains("oddity-note--overview-margin") && isNoteVisible(n),
   );
   if (overviewMargin.length > 0) {
+    // Re-measure heights — they may have changed due to font loading or width changes
+    for (const note of overviewMargin) {
+      const h = note.element.offsetHeight;
+      if (h > 0) note.height = h;
+    }
+
     const desired: { note: MarginNote; viewportTop: number }[] = [];
     for (const note of overviewMargin) {
       const rects = note.range.getClientRects();
@@ -2191,7 +2239,7 @@ function updateTimelineLine(leftNotes: MarginNote[], sharedContentLeft: number):
   if (!timelineLineEl) return;
 
   // Only show in overview mode with 2+ visible notes
-  const visibleNotes = leftNotes.filter((n) => n.element.style.display !== "none");
+  const visibleNotes = leftNotes.filter((n) => isNoteVisible(n));
   if (currentAnnotationMode === "depth" || visibleNotes.length < 2) {
     timelineLineEl.style.display = "none";
     return;
@@ -2416,8 +2464,16 @@ const MARGIN_NOTES_CSS = `
   .oddity-note--overview-margin {
     opacity: 1 !important;
     filter: none !important;
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 15px;
+    padding-right: 15px;
+    transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
+  }
+
+  /* Overview margin note: hidden state (animated in/out) */
+  .oddity-note--overview-margin.overview-hidden {
+    opacity: 0 !important;
+    transform: translateX(-8px);
+    pointer-events: none !important;
   }
 
   .oddity-note--overview-margin .note-text {
@@ -2429,6 +2485,17 @@ const MARGIN_NOTES_CSS = `
 
   .oddity-note--overview-margin .note-expanded-content {
     display: none;
+  }
+
+  /* Overview margin note: linked to the clicked highlight */
+  .oddity-note--overview-margin.overview-focused {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3) !important;
+    z-index: 10;
+  }
+
+  /* Overview margin note: NOT linked to the clicked highlight */
+  .oddity-note--overview-margin.overview-dimmed {
+    opacity: 0.35 !important;
   }
 
   /* Expanded state */
@@ -2795,6 +2862,10 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="light"]) .oddity-note.anchor-hovered:not(.expanded) {
     box-shadow: -5px 3px 20px rgba(0,0,0,0.2), -2px 1px 4px rgba(0,0,0,0.07);
+  }
+
+  :host([data-theme="light"]) .oddity-note--overview-margin.overview-focused {
+    box-shadow: -5px 3px 24px rgba(0,0,0,0.25), -2px 1px 6px rgba(0,0,0,0.1) !important;
   }
 
   :host([data-theme="light"]) .note-text,
