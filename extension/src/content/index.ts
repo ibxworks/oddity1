@@ -311,10 +311,6 @@ const chatTrackedElements = new WeakSet<Element>();
 let siteWhitelisted = false;
 let manualRunTriggered = false;
 let blocked = false;
-/** Set to true after init() completes — prevents stale settingsUpdated broadcasts
- *  from switching modes before the page has finished initializing. */
-let initComplete = false;
-
 let enabled = true;
 let currentMode: ViewMode = "overview";
 let currentPersonality: DepthPersonality = "jerry";
@@ -693,22 +689,15 @@ async function init(): Promise<void> {
   }
   const prefs = stored?.preferences;
 
-  // Restore personality from stored preferences (mode always resets to "overview" on page load)
+  // Restore personality and mode from stored preferences.
+  // We respect the user's chosen mode rather than force-resetting to "overview",
+  // because the reset caused cross-tab interference: one tab's init() would
+  // broadcast "overview" to all other tabs, overriding their depth mode.
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
-  // Always reset stored mode to "overview" on page load so popup/background stay in sync.
-  // Also clear visible_types so the settingsUpdated broadcast uses the fallback
-  // (mode-appropriate types) instead of stale depth types from the previous session.
-  // IMPORTANT: await the write so the background broadcasts the correct mode before
-  // we mark init complete — prevents stale depth broadcasts from switching mode.
-  if (prefs && (prefs.annotation_mode !== "overview" || (prefs.visible_types as unknown[])?.length > 0)) {
-    await new Promise<void>((resolve) => {
-      chrome.storage.local.set(
-        { preferences: { ...prefs, annotation_mode: "overview", visible_types: [] } },
-        resolve,
-      );
-    });
+  if (prefs?.annotation_mode) {
+    currentMode = prefs.annotation_mode as ViewMode;
   }
   visibleTypes = [
     ...(currentMode === "all" ? ALL_ANNOTATION_TYPES : currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
@@ -762,8 +751,6 @@ async function init(): Promise<void> {
     const isMac = navigator.platform.toUpperCase().includes("MAC");
     sendMessage({ action: "setBadge", payload: { text: isMac ? "\u2318O" : "^O", color: "#6B7280" } }).catch(() => {});
   }
-
-  initComplete = true;
 }
 
 async function startPipeline(): Promise<void> {
@@ -1914,15 +1901,8 @@ onMessage((message: ExtensionMessage) => {
         clearAllAnchors();
         longWaitManager.reset();
       } else if (modeChanged) {
-        // Ignore stale mode broadcasts that arrive before init completes —
-        // init always resets mode to "overview" and awaits the storage write,
-        // but a broadcast from the old session could still be in flight.
-        if (!initComplete) {
-          console.log(`[Oddity 1] Ignoring stale settingsUpdated mode change to ${viewMode} — init not complete`);
-        } else {
-          // Mode changed: switch annotation display
-          switchMode(viewMode, newPersonality);
-        }
+        // Mode changed: switch annotation display
+        switchMode(viewMode, newPersonality);
       } else if (personalityChanged) {
         // Personality only affects depth annotations — preserve user-written notes and their feedback
         currentPersonality = newPersonality;
