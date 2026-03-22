@@ -856,11 +856,9 @@ async function startPipeline(): Promise<void> {
   activateBodyLevelDetection(adapters, matchedAdapter ?? null);
 
   // ── React-safe anchor guard ──
-  // On React-based sites (Claude, ChatGPT, etc.) clicking UI controls outside the
-  // annotated content region can trigger React re-renders that crash when they
-  // encounter our injected anchor <span> elements.  Pre-emptively strip anchors
-  // in the capture phase (before React's event handlers run) and re-render after
-  // the layout settles.
+  // On React-based sites clicking UI controls outside the annotated content
+  // region can trigger React re-renders.  Pre-emptively strip anchors in the
+  // capture phase and re-render after the layout settles.
   startAnchorGuard();
 }
 
@@ -1385,10 +1383,12 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   // Filter visible types first
   const visible = annotations.filter((a) => visibleTypes.includes(a.type));
 
-  // Sort: background-type annotations first (core_claim, insight), line-type last
-  // This ensures underlines render on top in the DOM stacking order
+  // Sort: background-type annotations first (core_claim, insight), line-type next,
+  // user_written last (renders on top, bypasses overlap detection)
   const backgroundTypes = new Set<AnnotationType>(["core_claim", "insight"]);
   visible.sort((a, b) => {
+    if (a.type === "user_written" && b.type !== "user_written") return 1;
+    if (b.type === "user_written" && a.type !== "user_written") return -1;
     const aIsBg = backgroundTypes.has(a.type) ? 0 : 1;
     const bIsBg = backgroundTypes.has(b.type) ? 0 : 1;
     return aIsBg - bIsBg;
@@ -1411,7 +1411,8 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
       }
 
       // Skip if this range overlaps with any already-rendered anchor span
-      if (rangeOverlapsExistingAnchors(range, root)) continue;
+      // (user_written notes always render — the user explicitly created them)
+      if (annotation.type !== "user_written" && rangeOverlapsExistingAnchors(range, root)) continue;
 
       let anchors = injectAnchors(annotation, range);
 
@@ -1428,7 +1429,7 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
         const retryRange = resolveSelector(root, annotation.anchor);
         if (retryRange) {
           // Re-check overlap after index invalidation
-          if (rangeOverlapsExistingAnchors(retryRange, root)) continue;
+          if (annotation.type !== "user_written" && rangeOverlapsExistingAnchors(retryRange, root)) continue;
           anchors = injectAnchors(annotation, retryRange);
           if (anchors.length > 0) {
             invalidateTextNodeIndex(root);
@@ -2153,13 +2154,20 @@ document.addEventListener("oddity:exportPdf", (e) => {
 // ─── Mode Change Handler (from arguments-box toggle) ───
 
 document.addEventListener("oddity:scroll-to-annotation", ((e: CustomEvent) => {
-  const { annotationId } = e.detail;
+  const { annotationId, itemType } = e.detail;
   if (!annotationId) return;
   const anchor = document.querySelector(`[data-oddity-id="${CSS.escape(annotationId)}"]`);
   if (anchor) {
     anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+  } else if (itemType === "reply") {
+    // Reply note — parent annotation is from a different mode/personality
+    document.dispatchEvent(
+      new CustomEvent("oddity:scroll-to-annotation-missing", {
+        detail: { isReply: true },
+      }),
+    );
   } else {
-    // Highlight not on page — likely from a different personality
+    // User-written note or other — highlight not found
     document.dispatchEvent(
       new CustomEvent("oddity:scroll-to-annotation-missing"),
     );

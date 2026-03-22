@@ -14,6 +14,12 @@ export default defineManifest({
   content_scripts: [
     {
       matches: ["<all_urls>"],
+      js: ["src/content/dom-guard.ts"],
+      run_at: "document_start",
+      world: "MAIN" as any,
+    },
+    {
+      matches: ["<all_urls>"],
       js: ["src/content/index.ts"],
       run_at: "document_idle",
     },

@@ -680,9 +680,14 @@ export function initArgumentsBox(): void {
     .catch(() => {});
 
   // Listen for "Go to highlight" failures (annotation not on page)
-  document.addEventListener("oddity:scroll-to-annotation-missing", () => {
-    showArgToast("This highlight is from a different personality and isn't on the page right now.");
-  });
+  document.addEventListener("oddity:scroll-to-annotation-missing", ((e: CustomEvent) => {
+    const isReply = e?.detail?.isReply;
+    if (isReply) {
+      showArgToast("This note is from a different personality and isn't on the page right now.");
+    } else {
+      showArgToast("Could not find this highlight on the page.");
+    }
+  }) as EventListener);
 }
 
 function showArgToast(message: string): void {
@@ -2999,7 +3004,7 @@ function renderList(): void {
       if (item.annotationId) {
         document.dispatchEvent(
           new CustomEvent("oddity:scroll-to-annotation", {
-            detail: { annotationId: item.annotationId },
+            detail: { annotationId: item.annotationId, itemType: item.type },
           }),
         );
       }

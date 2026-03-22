@@ -501,7 +501,7 @@ async function handleSubmit(note: string): Promise<void> {
   removeTempHighlight();
 
   // Render immediately
-  renderManualAnnotation(annotation, root);
+  renderManualAnnotation(annotation, root, contentHash);
 
   // Notify index.ts to store the annotation so it survives mode switches
   document.dispatchEvent(new CustomEvent('oddity:manualAnnotationCreated', {
@@ -520,7 +520,7 @@ async function handleSubmit(note: string): Promise<void> {
   currentRange = null;
 }
 
-function renderManualAnnotation(annotation: Annotation, root: Element): void {
+function renderManualAnnotation(annotation: Annotation, root: Element, contentHash?: string): void {
   const range = resolveSelector(root, annotation.anchor);
   if (!range) return;
 
@@ -548,5 +548,5 @@ function renderManualAnnotation(annotation: Annotation, root: Element): void {
     }));
   };
 
-  addMarginNote(annotation, stableRange, [], handleDelete);
+  addMarginNote(annotation, stableRange, [], handleDelete, contentHash);
 }

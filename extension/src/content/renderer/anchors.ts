@@ -162,8 +162,11 @@ export function removeAnchors(annotationId: string): void {
     }
     parent.removeChild(span);
 
-    // Merge adjacent text nodes back together
-    parent.normalize();
+    // NOTE: We intentionally do NOT call parent.normalize() here.
+    // normalize() merges adjacent text nodes, which destroys text node
+    // references that React tracks internally.  When React later tries to
+    // update a destroyed text node, it crashes with an error boundary.
+    // Adjacent text nodes render identically and are harmless.
   }
 
   anchorMap.delete(annotationId);

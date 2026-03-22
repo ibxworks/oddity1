@@ -6,7 +6,7 @@ import type {
   AnnotationType,
   ViewMode,
 } from "@oddity/shared";
-import { ANNOTATION_LABELS, getAnnotationColor } from "@oddity/shared";
+import { ANNOTATION_LABELS, DEPTH_LABELS, getAnnotationColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
 import { getPageUrl } from "../page-url.js";
 import { renderMiniMarkdown } from "./mini-markdown.js";
@@ -29,6 +29,8 @@ type MarginNote = {
   id: string;
   annotation: Annotation;
   range: Range;
+  /** First anchor span in the main DOM — used for fast scroll positioning. */
+  anchorSpan: HTMLSpanElement | null;
   /** The content region this note was anchored to at creation time. */
   region: Element;
   side: "left" | "right";
@@ -37,6 +39,9 @@ type MarginNote = {
   height: number;
   collapsedHeight: number;
   element: HTMLDivElement;
+  /** Cached horizontal layout — recomputed only on resize, not scroll. */
+  cachedLeft: number;
+  cachedWidth: number;
 };
 
 type InlinePopover = {
@@ -294,10 +299,16 @@ export function addMarginNote(
   );
   shadowRoot.appendChild(el);
 
+  // Grab the first anchor span for fast scroll positioning
+  const anchorSpan = document.querySelector<HTMLSpanElement>(
+    `[data-oddity-id="${CSS.escape(annotation.id)}"]`,
+  );
+
   const note: MarginNote = {
     id: annotation.id,
     annotation,
     range,
+    anchorSpan,
     region: noteRegion,
     side,
     anchorTopPx,
@@ -305,6 +316,8 @@ export function addMarginNote(
     height: 0,
     collapsedHeight: 0,
     element: el,
+    cachedLeft: 0,
+    cachedWidth: 0,
   };
 
   notes.push(note);
@@ -313,6 +326,11 @@ export function addMarginNote(
   const isOverviewNote = annotation.type !== "user_written" && currentAnnotationMode === "overview";
   if (isOverviewNote) {
     el.classList.add("oddity-note--overview-margin", "overview-hidden");
+  }
+  // User-written notes always use live anchor tracking (like overview margin notes)
+  // but stay visible (no overview-hidden) since the user explicitly created them.
+  if (annotation.type === "user_written") {
+    el.classList.add("oddity-note--overview-margin");
   }
 
   // Measure height in next frame, then resolve overlaps.
@@ -1482,6 +1500,17 @@ function createNoteElement(
   bracket.className = "note-bracket";
   bracket.style.borderColor = labelColor;
 
+  // Skill tag (depth mode: shows the skill type when a custom label is present)
+  const DEPTH_TYPE_SET = new Set(Object.keys(DEPTH_LABELS));
+  const hasCustomLabel = !!annotation.label && DEPTH_TYPE_SET.has(annotation.type);
+  let skillTag: HTMLSpanElement | null = null;
+  if (hasCustomLabel) {
+    skillTag = document.createElement("span");
+    skillTag.className = "note-skill-tag";
+    skillTag.textContent = ANNOTATION_LABELS[annotation.type];
+    skillTag.style.setProperty("--skill-color", labelColor);
+  }
+
   // Label
   const labelEl = document.createElement("span");
   labelEl.className = "note-label";
@@ -1808,6 +1837,7 @@ function createNoteElement(
   expandedContent.appendChild(expandedInner);
 
   el.appendChild(bracket);
+  if (skillTag) el.appendChild(skillTag);
   el.appendChild(labelEl);
   el.appendChild(textEl);
   el.appendChild(expandedContent);
@@ -2206,6 +2236,14 @@ function applyPositions(): void {
 
     const desired: { note: MarginNote; viewportTop: number }[] = [];
     for (const note of overviewMargin) {
+      // Prefer anchor span (single getBoundingClientRect) over Range.getClientRects()
+      if (note.anchorSpan) {
+        const rect = note.anchorSpan.getBoundingClientRect();
+        if (rect.height > 0) {
+          desired.push({ note, viewportTop: rect.top });
+          continue;
+        }
+      }
       const rects = note.range.getClientRects();
       if (rects.length > 0) {
         desired.push({ note, viewportTop: rects[0]!.top });
@@ -2233,6 +2271,59 @@ function applyPositions(): void {
   updateTimelineLine(leftNotes, sharedContentLeft);
 
   document.dispatchEvent(new CustomEvent("oddity:layoutUpdated"));
+}
+
+/**
+ * Fast scroll-only positioning — skips all horizontal layout and height
+ * measurement.  Only updates vertical `top` values from anchor spans'
+ * live viewport rects.  This keeps scroll tracking at 60 fps even on
+ * pages with many annotations.
+ */
+function applyScrollPositions(): void {
+  const scrollY = window.scrollY;
+
+  // Depth / non-overview notes: static topPx converted to viewport
+  for (const note of notes) {
+    if (note.element.classList.contains("oddity-note--overview-margin")) continue;
+    note.element.style.top = `${note.topPx - scrollY}px`;
+  }
+
+  // Overview margin notes (including user_written): live anchor tracking
+  const overviewMargin = notes.filter(
+    (n) => n.element.classList.contains("oddity-note--overview-margin") && isNoteVisible(n),
+  );
+  if (overviewMargin.length === 0) return;
+
+  const desired: { note: MarginNote; viewportTop: number }[] = [];
+  for (const note of overviewMargin) {
+    // Prefer anchor span (single getBoundingClientRect) over Range.getClientRects()
+    if (note.anchorSpan) {
+      const rect = note.anchorSpan.getBoundingClientRect();
+      if (rect.height > 0) {
+        desired.push({ note, viewportTop: rect.top });
+        continue;
+      }
+    }
+    // Fallback to range rects
+    const rects = note.range.getClientRects();
+    if (rects.length > 0) {
+      desired.push({ note, viewportTop: rects[0]!.top });
+    }
+  }
+  desired.sort((a, b) => a.viewportTop - b.viewportTop);
+
+  for (let i = 1; i < desired.length; i++) {
+    const prev = desired[i - 1]!;
+    const curr = desired[i]!;
+    const minTop = prev.viewportTop + prev.note.height + NOTE_GAP;
+    if (curr.viewportTop < minTop) {
+      curr.viewportTop = minTop;
+    }
+  }
+
+  for (const { note, viewportTop } of desired) {
+    note.element.style.top = `${viewportTop}px`;
+  }
 }
 
 function updateTimelineLine(leftNotes: MarginNote[], sharedContentLeft: number): void {
@@ -2301,15 +2392,14 @@ function recomputePositions(): void {
 let needsScrollUpdate = false;
 let needsResizeUpdate = false;
 
-/** Lightweight scroll handler — only repositions fixed-position popovers and
- *  the dim overlay.  Skips the expensive recomputePositions() entirely because
- *  absolute page coordinates don't change during a scroll. */
+/** Lightweight scroll handler — only repositions vertical positions and
+ *  the dim overlay.  Skips horizontal layout and height measurement. */
 function scheduleScrollUpdate(): void {
   if (!needsScrollUpdate) {
     needsScrollUpdate = true;
     requestAnimationFrame(() => {
       try {
-        applyPositions();
+        applyScrollPositions();
         repositionVisibleInlinePopovers();
         updateDimCutouts();
       } finally {
@@ -2409,6 +2499,18 @@ const MARGIN_NOTES_CSS = `
 
   .note-label::first-letter {
     text-transform: uppercase;
+  }
+
+  .note-skill-tag {
+    display: inline-block;
+    font-family: var(--oddity-note-font);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--skill-color, rgba(255,255,255,0.5));
+    opacity: 0.7;
+    margin-bottom: 2px;
   }
 
   .note-text {
