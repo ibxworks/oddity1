@@ -63,20 +63,19 @@ function detectMode(): ThemeMode {
     if (lum >= 0) return lum < 0.4 ? 'dark' : 'light';
   }
 
-  // 4. Probe deeper: body/html may be transparent (e.g. arxiv).
-  //    Walk down the first few children to find an element with a real background.
+  // 4. Text color check — most reliable when backgrounds are transparent.
+  //    Light-colored text (high luminance) reliably indicates a dark theme,
+  //    regardless of how dark mode is implemented (CSS vars, media queries,
+  //    browser forced dark mode, extensions, etc.)
   if (document.body) {
-    const candidates = document.body.querySelectorAll('main, article, [role="main"], body > div, body > main, body > section');
-    for (const el of candidates) {
-      const lum = luminance(getComputedStyle(el).backgroundColor);
-      if (lum >= 0) return lum < 0.4 ? 'dark' : 'light';
-    }
-    // Also try the first few direct children of body
-    for (let i = 0; i < Math.min(3, document.body.children.length); i++) {
-      const el = document.body.children[i]!;
-      if (el.id === 'oddity-margin-notes' || el.id === 'oddity-page-dim') continue;
-      const lum = luminance(getComputedStyle(el).backgroundColor);
-      if (lum >= 0) return lum < 0.4 ? 'dark' : 'light';
+    const textLum = luminance(getComputedStyle(document.body).color);
+    if (textLum >= 0 && textLum > 0.5) return 'dark';
+
+    // Also sample a <p> or heading for text color — body color may be inherited
+    const prose = document.querySelector('p, h1, h2, h3, article, main');
+    if (prose) {
+      const proseLum = luminance(getComputedStyle(prose).color);
+      if (proseLum >= 0 && proseLum > 0.5) return 'dark';
     }
   }
 
