@@ -95,6 +95,7 @@ let blockedPanelEl: HTMLDivElement | null = null;
 let pdfDetected = false;
 let pdfPanelEl: HTMLDivElement | null = null;
 let pdfRunCb: (() => void) | null = null;
+let dashCloseBtnEl: HTMLButtonElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
 const deletedFeedbackIds = new Set<string>();
@@ -642,6 +643,37 @@ export function initArgumentsBox(): void {
   toggleBarEl.appendChild(panelToggleLabelEl);
   toggleBarEl.appendChild(panelToggleInput);
   toggleBarEl.appendChild(panelToggleSlider);
+
+  // ── Dashboard close button (floats above mid-sized panel) ──
+  dashCloseBtnEl = document.createElement("button");
+  dashCloseBtnEl.className = "dash-close-btn";
+  const dashCloseIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  dashCloseIcon.setAttribute("width", "11");
+  dashCloseIcon.setAttribute("height", "11");
+  dashCloseIcon.setAttribute("viewBox", "0 0 12 12");
+  dashCloseIcon.setAttribute("fill", "none");
+  const dashCloseLine1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  dashCloseLine1.setAttribute("x1", "1"); dashCloseLine1.setAttribute("y1", "1");
+  dashCloseLine1.setAttribute("x2", "11"); dashCloseLine1.setAttribute("y2", "11");
+  dashCloseLine1.setAttribute("stroke", "currentColor");
+  dashCloseLine1.setAttribute("stroke-width", "2");
+  dashCloseLine1.setAttribute("stroke-linecap", "round");
+  const dashCloseLine2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  dashCloseLine2.setAttribute("x1", "11"); dashCloseLine2.setAttribute("y1", "1");
+  dashCloseLine2.setAttribute("x2", "1"); dashCloseLine2.setAttribute("y2", "11");
+  dashCloseLine2.setAttribute("stroke", "currentColor");
+  dashCloseLine2.setAttribute("stroke-width", "2");
+  dashCloseLine2.setAttribute("stroke-linecap", "round");
+  dashCloseIcon.appendChild(dashCloseLine1);
+  dashCloseIcon.appendChild(dashCloseLine2);
+  dashCloseBtnEl.appendChild(dashCloseIcon);
+  dashCloseBtnEl.addEventListener("click", (e: MouseEvent) => {
+    e.stopPropagation();
+    if (expanded) {
+      toggle();
+    }
+  });
+  containerEl.appendChild(dashCloseBtnEl);
 
   // ── Outer wrapper (toggle bar + container) ──
   outerWrapperEl = document.createElement("div");
@@ -5178,6 +5210,37 @@ const ARGUMENTS_BOX_CSS = `
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: #fff;
+  }
+
+  /* ── Dashboard close button (floats above mid-sized panel) ── */
+
+  .dash-close-btn {
+    all: unset;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #858E97;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
+    position: absolute;
+    top: -36px;
+    right: 0;
+    z-index: 10;
+    pointer-events: auto;
+    transition: color 0.2s ease, background 0.2s ease, opacity 0.18s ease;
+  }
+
+  .dash-close-btn:hover {
+    color: #696F77;
+    background: rgba(255, 255, 255, 1);
+  }
+
+  .args-container.dashboard .dash-close-btn {
+    display: flex;
   }
 
   .args-container.dashboard .args-panel-face {
