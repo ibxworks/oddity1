@@ -1,210 +1,267 @@
+/* ── Account page ── */
+
 .account-page {
-  max-width: 640px;
+  max-width: 760px;
   margin: 0 auto;
-  padding: 40px 40px 60px;
 }
 
-.account-section {
-  margin-bottom: 36px;
+.account-body {
+  padding: 20px 32px 60px;
+  max-width: 640px;
 }
 
-.account-section-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
+/* ── Cards ── */
+.card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* ── Form elements ── */
+.field {
   margin-bottom: 16px;
 }
 
-.account-card {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-light);
-  border-radius: var(--r);
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.field:last-child {
+  margin-bottom: 0;
 }
 
-.account-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.account-label {
-  font-size: 13px;
+.field-label {
+  display: block;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
 }
 
-.account-input {
-  padding: 9px 14px;
-  border: 1.5px solid var(--border-light);
-  border-radius: var(--r-sm);
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--text-primary);
-  background: var(--bg-primary);
-  outline: none;
-  transition: border-color 0.2s;
-  flex: 1;
-}
-
-.account-input:focus {
-  border-color: var(--text-secondary);
-}
-
-.account-value {
-  font-size: 14px;
-  color: var(--text-primary);
-}
-
-.account-name-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.account-save-btn {
-  padding: 9px 18px;
-  background: var(--green-500);
-  color: #fff;
-  border: none;
-  border-radius: var(--r-sm);
-  font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.2s;
-}
-
-.account-save-btn:hover {
-  background: var(--green-600);
-}
-
-.account-tier-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.account-tier-badge {
+.field-hint {
   font-size: 12px;
-  font-weight: 700;
-  padding: 3px 12px;
-  border-radius: var(--r-pill);
-  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: 4px;
 }
 
-.account-tier-badge--free {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-}
-
-.account-tier-badge--pro {
-  background: #fef3c7;
-  color: #b8860b;
-}
-
-.account-upgrade-link {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--green-500);
-  text-decoration: none;
-}
-
-.account-upgrade-link:hover {
-  text-decoration: underline;
-}
-
-.account-select {
-  padding: 9px 14px;
-  border: 1.5px solid var(--border-light);
-  border-radius: var(--r-sm);
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--text-primary);
-  background: var(--bg-primary);
-  outline: none;
-  cursor: pointer;
-}
-
-/* ── PILL BUTTONS ─────────────────────────────── */
-.pill-group {
+/* ── Radio group (personality) ── */
+.radio-group {
   display: flex;
-  gap: 8px;
+  gap: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  overflow: hidden;
 }
 
-.pill {
-  padding: 7px 18px;
-  border: 1.5px solid var(--border-light);
-  border-radius: var(--r-pill);
+.radio-btn {
+  flex: 1;
+  padding: 7px 0;
+  text-align: center;
+  border: none;
+  border-right: 1px solid var(--border-light);
   background: var(--bg-primary);
-  color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  color: var(--text-secondary);
+  transition: background var(--transition), color var(--transition);
 }
 
-.pill:hover {
-  border-color: var(--text-muted);
+.radio-btn:last-child {
+  border-right: none;
 }
 
-.pill--active {
-  background: var(--green-500);
-  color: #fff;
-  border-color: var(--green-500);
+.radio-btn:hover {
+  background: var(--bg-secondary);
 }
 
-.pill--active:hover {
-  background: var(--green-600);
-  border-color: var(--green-600);
+.radio-btn.active {
+  background: var(--text-primary);
+  color: var(--bg-primary);
 }
 
-/* ── ENABLED SITES ────────────────────────────── */
-.sites-list {
+/* ── Checkbox grid (annotation types) ── */
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.checkbox-item {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.site-tag {
-  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-light);
-  border-radius: var(--r-pill);
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
   font-size: 13px;
   color: var(--text-primary);
 }
 
-.site-tag-remove {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 16px;
-  cursor: pointer;
-  line-height: 1;
-  padding: 0;
+.checkbox-item:hover {
+  background: var(--bg-secondary);
 }
 
-.site-tag-remove:hover {
+.checkbox-item input {
+  accent-color: var(--green-500);
+}
+
+.type-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Site list ── */
+.site-list {
+  list-style: none;
+  margin-bottom: 10px;
+}
+
+.site-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-sm);
+  margin-bottom: 5px;
+  font-size: 13px;
+  background: var(--bg-secondary);
   color: var(--text-primary);
 }
 
-.sites-add-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
+.site-remove {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-body);
+  transition: background var(--transition);
 }
 
-@media (max-width: 600px) {
-  .account-page { padding: 24px 16px 40px; }
+.site-remove:hover {
+  background: #fef2f2;
+}
+
+.site-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.site-input-row input {
+  flex: 1;
+  padding: 7px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  font-size: 13px;
+  outline: none;
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  transition: border-color var(--transition);
+}
+
+.site-input-row input:focus {
+  border-color: var(--border-hover);
+}
+
+.empty-state-text {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
+  padding: 6px 0;
+}
+
+/* ── Buttons ── */
+.account-page .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  background: var(--bg-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background var(--transition), border-color var(--transition);
+  font-family: var(--font-body);
+  text-decoration: none;
+}
+
+.account-page .btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--border-hover);
+}
+
+.account-page .btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.account-page .btn-primary {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border-color: var(--text-primary);
+}
+
+.account-page .btn-primary:hover {
+  opacity: 0.85;
+  background: var(--text-primary);
+}
+
+.account-page .btn-danger {
+  color: #ef4444;
+  border-color: #fecaca;
+}
+
+.account-page .btn-danger:hover {
+  background: #fef2f2;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Auth info ── */
+.auth-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.auth-detail {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.auth-email {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+@media (max-width: 768px) {
+  .account-body { padding: 16px 16px 40px; }
+  .checkbox-grid { grid-template-columns: repeat(2, 1fr); }
 }

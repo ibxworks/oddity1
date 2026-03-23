@@ -29,18 +29,27 @@ export function formatTimeAgo(date) {
 }
 
 export function groupByTime(docs) {
-  const today = new Date()
+  const now = new Date()
+  const today = new Date(now)
   today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const weekAgo = new Date(today)
+  weekAgo.setDate(weekAgo.getDate() - 7)
 
   return docs.reduce(
     (groups, doc) => {
       if (doc.editedAt >= today) {
         groups.today.push(doc)
+      } else if (doc.editedAt >= yesterday) {
+        groups.yesterday.push(doc)
+      } else if (doc.editedAt >= weekAgo) {
+        groups.thisWeek.push(doc)
       } else {
         groups.earlier.push(doc)
       }
       return groups
     },
-    { today: [], earlier: [] }
+    { today: [], yesterday: [], thisWeek: [], earlier: [] }
   )
 }

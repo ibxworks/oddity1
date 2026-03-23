@@ -1,111 +1,37 @@
 .docs-page {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 40px 40px 60px;
+  position: relative;
 }
 
-.docs-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.docs-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.docs-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.docs-btn {
-  padding: 9px 20px;
-  border-radius: var(--r-sm);
-  font-family: var(--font-body);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.2s, box-shadow 0.2s;
-}
-
-.docs-btn--primary {
-  background: var(--green-500);
-  color: #fff;
-  border: none;
-}
-
-.docs-btn--primary:hover {
-  background: var(--green-600);
-}
-
-.docs-btn--outlined {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: 1.5px solid var(--border-light);
-}
-
-.docs-btn--outlined:hover {
-  border-color: var(--text-muted);
-}
-
-.docs-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: var(--bg-primary);
-  border: 1.5px solid var(--border-light);
-  border-radius: var(--r-sm);
-  margin-bottom: 32px;
-  color: var(--text-muted);
-}
-
-.docs-search-input {
-  flex: 1;
-  border: none;
-  outline: none;
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--text-primary);
-  background: transparent;
-}
-
-.docs-search-input::placeholder {
-  color: var(--text-muted);
+.docs-body {
+  padding: 20px 32px 60px;
 }
 
 .docs-section {
-  margin-bottom: 32px;
-}
-
-.docs-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin-bottom: 14px;
+  margin-bottom: 28px;
 }
 
 .docs-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  gap: 14px;
 }
 
 @media (max-width: 1024px) {
+  .docs-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 768px) {
   .docs-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 500px) {
   .docs-grid { grid-template-columns: 1fr; }
-  .docs-page { padding: 24px 16px 40px; }
+  .docs-body { padding: 16px 16px 40px; }
 }
 
+/* ── Card ────────────────────────────────────── */
 .doc-card {
   display: flex;
   flex-direction: column;
@@ -114,53 +40,37 @@
   background: var(--bg-primary);
   border: 1px solid var(--border-light);
   border-radius: var(--r);
-  padding: 20px;
+  padding: 16px;
   cursor: pointer;
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition: box-shadow var(--transition), border-color var(--transition);
   font-family: var(--font-body);
+  min-height: 140px;
 }
 
 .doc-card:hover {
-  box-shadow: var(--shadow-card);
-  border-color: transparent;
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-hover);
 }
 
-.doc-card-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 100%;
-}
-
-.doc-card-preview {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-bottom: 12px;
-  flex: 1;
-}
-
-.doc-card-footer {
+.doc-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  margin-bottom: 8px;
 }
 
-.doc-card-time {
-  font-size: 12px;
+.doc-card-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-tertiary);
   color: var(--text-muted);
+  letter-spacing: 0.03em;
 }
 
-.doc-card-delete {
+.doc-card-menu {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -168,22 +78,57 @@
   height: 24px;
   border: none;
   background: none;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--text-muted);
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  transition: opacity var(--transition), color var(--transition), background var(--transition);
 }
 
-.doc-card:hover .doc-card-delete {
+.doc-card:hover .doc-card-menu {
   opacity: 1;
 }
 
-.doc-card-delete:hover {
+.doc-card-menu:hover {
   color: #dc2626;
   background: #fef2f2;
 }
 
+.doc-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.doc-card-preview {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 10px;
+  flex: 1;
+}
+
+.doc-card-footer {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.doc-card-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Drop/converting overlays ────────────────── */
 .docs-drop-overlay {
   position: fixed;
   top: 0;
@@ -256,7 +201,7 @@
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity var(--transition);
 }
 
 .docs-upload-wrapper:hover .docs-upload-tooltip {

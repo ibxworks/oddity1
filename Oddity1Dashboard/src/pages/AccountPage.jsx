@@ -1,205 +1,301 @@
-import { useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
-import { useProfile } from '../hooks/useProfile'
-import { useToast } from '../context/ToastContext'
-import './AccountPage.css'
+import { useState } from "react";
+import { useOutletContext } from "react-router-dom";
+import { useToast } from "../context/ToastContext";
+import { useProfile } from "../hooks/useProfile";
+import { supabase } from "../lib/supabase";
+import {
+  ALL_DEPTH_TYPES,
+  ALL_OVERVIEW_TYPES,
+  ANNOTATION_COLORS,
+  ANNOTATION_LABELS,
+} from "../utils/annotationConstants";
+import "./AccountPage.css";
 
-const BLOCKED_DOMAINS = ['app.oddity1.com']
-
-const FONT_OPTIONS = [
-  { value: 'system', label: 'System Default' },
-  { value: 'Fraunces', label: 'Fraunces' },
-  { value: 'Kalam', label: 'Kalam' },
-  { value: 'Helvetica Neue', label: 'Helvetica Neue' },
-  { value: 'Arial', label: 'Arial' },
-  { value: 'Georgia', label: 'Georgia' },
-]
+const BLOCKED_DOMAINS = ["app.oddity1.com"];
 
 export default function AccountPage() {
-  const { session } = useOutletContext()
-  const { profile, preferences, loading, updatePreferences, updateDisplayName } = useProfile(session)
-  const showToast = useToast()
+  const { session } = useOutletContext();
+  const {
+    profile,
+    preferences,
+    loading,
+    updatePreferences,
+    updateDisplayName,
+  } = useProfile(session);
+  const showToast = useToast();
 
-  const [nameInput, setNameInput] = useState('')
-  const [nameInitialized, setNameInitialized] = useState(false)
-  const [newSite, setNewSite] = useState('')
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [newSite, setNewSite] = useState("");
 
-  // Initialize name input when profile loads
-  if (profile?.display_name && !nameInitialized) {
-    setNameInput(profile.display_name)
-    setNameInitialized(true)
+  const tier = profile?.tier || "free";
+  const displayName =
+    profile?.display_name ||
+    session.user.email.split("@")[0] ||
+    session.user.email;
+  const depthPersonality = preferences.depth_personality || "jerry";
+  const visibleTypes = preferences.visible_types || [
+    ...ALL_OVERVIEW_TYPES,
+    "user_written",
+  ];
+  const enabledSites = preferences.enabled_sites || [];
+
+  function handleStartEditName() {
+    setNameInput(displayName);
+    setEditingName(true);
   }
 
-  const nameChanged = nameInitialized && nameInput !== (profile?.display_name || '')
-  const tier = profile?.tier || 'free'
-  const intensity = preferences.intensity || 'default'
-  const annotationFont = preferences.annotation_font || 'system'
-  const annotationFontSize = preferences.annotation_font_size || 'medium'
-  const enabledSites = preferences.enabled_sites || []
+  function handleCancelEditName() {
+    setEditingName(false);
+  }
 
   async function handleSaveName() {
-    await updateDisplayName(nameInput.trim())
-    showToast('Name updated')
+    const name = nameInput.trim();
+    if (!name) return;
+    await updateDisplayName(name);
+    setEditingName(false);
+    showToast("Name updated");
   }
 
-  async function handleIntensity(value) {
-    await updatePreferences({ intensity: value })
+  async function handlePersonality(value) {
+    await updatePreferences({ depth_personality: value });
   }
 
-  async function handleFont(e) {
-    await updatePreferences({ annotation_font: e.target.value })
-  }
-
-  async function handleFontSize(value) {
-    await updatePreferences({ annotation_font_size: value })
+  async function handleToggleType(type) {
+    const current = [...visibleTypes];
+    const idx = current.indexOf(type);
+    if (idx >= 0) {
+      current.splice(idx, 1);
+    } else {
+      current.push(type);
+    }
+    await updatePreferences({ visible_types: current });
   }
 
   async function handleAddSite() {
-    const site = newSite.trim().toLowerCase()
-    if (!site || enabledSites.includes(site)) return
-    if (BLOCKED_DOMAINS.includes(site)) {
-      showToast('Cannot enable — annotations are built into the dashboard')
-      return
+    const site = newSite.trim().toLowerCase();
+    if (!site) return;
+    if (
+      !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(
+        site,
+      )
+    ) {
+      showToast("Enter a valid domain (e.g. example.com)");
+      return;
     }
-    await updatePreferences({ enabled_sites: [...enabledSites, site] })
-    setNewSite('')
-    showToast('Site added')
+    if (enabledSites.includes(site)) {
+      showToast("Site already enabled");
+      return;
+    }
+    if (BLOCKED_DOMAINS.includes(site)) {
+      showToast("Cannot enable — annotations are built into the dashboard");
+      return;
+    }
+    await updatePreferences({ enabled_sites: [...enabledSites, site] });
+    setNewSite("");
+    showToast("Site added");
   }
 
   async function handleRemoveSite(site) {
-    await updatePreferences({ enabled_sites: enabledSites.filter((s) => s !== site) })
-    showToast('Site removed')
+    await updatePreferences({
+      enabled_sites: enabledSites.filter((s) => s !== site),
+    });
+    showToast("Site removed");
   }
 
-  if (loading) return null
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    window.location.href = "https://oddity1.com";
+  }
+
+  if (loading) return null;
+
+  const allTypes = [...ALL_OVERVIEW_TYPES, ...ALL_DEPTH_TYPES];
 
   return (
     <div className="account-page">
-      {/* Profile Section */}
-      <section className="account-section">
-        <h2 className="account-section-title">Profile</h2>
-        <div className="account-card">
-          <div className="account-field">
-            <label className="account-label">Display Name</label>
-            <div className="account-name-row">
-              <input
-                type="text"
-                className="account-input"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                placeholder="Your name"
-              />
-              {nameChanged && (
-                <button className="account-save-btn" onClick={handleSaveName}>
-                  Save
+      <div className="page-header">
+        <h1 className="page-title">Settings</h1>
+      </div>
+
+      <div className="account-body">
+        {/* Account Card */}
+        <div className="card">
+          <div className="card-title">Account</div>
+          <div className="field">
+            <span className="field-label">Name</span>
+            {!editingName ? (
+              <div className="auth-info">
+                <span className="auth-email">{displayName}</span>
+                <button className="btn btn-sm" onClick={handleStartEditName}>
+                  Change Name
                 </button>
-              )}
-            </div>
-          </div>
-
-          <div className="account-field">
-            <label className="account-label">Email</label>
-            <span className="account-value">{session.user.email}</span>
-          </div>
-
-          <div className="account-field">
-            <label className="account-label">Tier</label>
-            <div className="account-tier-row">
-              <span className={`account-tier-badge account-tier-badge--${tier}`}>
-                {tier.toUpperCase()}
-              </span>
-              {tier === 'free' && (
-                <a
-                  href="https://oddity1.com/plans"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="account-upgrade-link"
-                >
-                  Get Pro
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Annotation Settings Section */}
-      <section className="account-section">
-        <h2 className="account-section-title">Annotation Settings</h2>
-        <div className="account-card">
-          {/* Density */}
-          <div className="account-field">
-            <label className="account-label">Density</label>
-            <div className="pill-group">
-              {['light', 'default', 'heavy'].map((v) => (
-                <button
-                  key={v}
-                  className={`pill ${intensity === v ? 'pill--active' : ''}`}
-                  onClick={() => handleIntensity(v)}
-                >
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Font */}
-          <div className="account-field">
-            <label className="account-label">Font</label>
-            <select className="account-select" value={annotationFont} onChange={handleFont}>
-              {FONT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Font Size */}
-          <div className="account-field">
-            <label className="account-label">Font Size</label>
-            <div className="pill-group">
-              {['small', 'medium', 'large'].map((v) => (
-                <button
-                  key={v}
-                  className={`pill ${annotationFontSize === v ? 'pill--active' : ''}`}
-                  onClick={() => handleFontSize(v)}
-                >
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Enabled Sites */}
-          <div className="account-field">
-            <label className="account-label">Enabled Sites</label>
-            <div className="sites-list">
-              {enabledSites.map((site) => (
-                <span key={site} className="site-tag">
-                  {site}
-                  <button className="site-tag-remove" onClick={() => handleRemoveSite(site)}>
-                    &times;
+              </div>
+            ) : (
+              <>
+                <div className="auth-info">
+                  <span className="auth-email">{displayName}</span>
+                </div>
+                <div className="site-input-row" style={{ marginTop: 8 }}>
+                  <input
+                    type="text"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    placeholder="New display name"
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
+                  />
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={handleSaveName}
+                  >
+                    Save
                   </button>
-                </span>
+                  <button className="btn btn-sm" onClick={handleCancelEditName}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="field">
+            <span className="field-label">Email</span>
+            <div className="auth-detail">{session.user.email}</div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Tier</span>
+            <div className="auth-detail">
+              {tier === "pro" ? "Pro Plan" : "Free Plan"}
+            </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Annotations</span>
+            <div className="auth-detail">0</div>
+          </div>
+
+          <div className="btn-row" style={{ marginTop: 16 }}>
+            {tier === "free" && (
+              <a
+                href="https://oddity1.com/plans"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-sm"
+              >
+                Upgrade to Pro
+              </a>
+            )}
+            <button className="btn btn-sm btn-danger" onClick={handleSignOut}>
+              Log out
+            </button>
+          </div>
+        </div>
+
+        {/* Auto-Enabled Sites Card */}
+        <div className="card">
+          <div className="card-title">Auto-Enabled Sites</div>
+          <p className="field-hint" style={{ marginBottom: 12 }}>
+            Oddity 1 will automatically run on these domains.
+          </p>
+
+          {enabledSites.length > 0 ? (
+            <ul className="site-list">
+              {enabledSites.map((site) => (
+                <li key={site}>
+                  {site}
+                  <button
+                    className="site-remove"
+                    onClick={() => handleRemoveSite(site)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="empty-state-text">No sites enabled.</div>
+          )}
+
+          <div className="site-input-row">
+            <input
+              type="text"
+              value={newSite}
+              onChange={(e) => setNewSite(e.target.value)}
+              placeholder="example.com"
+              onKeyDown={(e) => e.key === "Enter" && handleAddSite()}
+            />
+            <button className="btn btn-sm btn-primary" onClick={handleAddSite}>
+              Add
+            </button>
+          </div>
+        </div>
+
+        {/* Default Preferences Card */}
+        <div className="card">
+          <div className="card-title">Default Preferences</div>
+
+          <div className="field">
+            <span className="field-label">Depth Personality</span>
+            <div className="radio-group">
+              {["terry", "jerry", "sally"].map((p) => (
+                <button
+                  key={p}
+                  className={`radio-btn ${depthPersonality === p ? "active" : ""}`}
+                  onClick={() => handlePersonality(p)}
+                >
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </button>
               ))}
             </div>
-            <div className="sites-add-row">
-              <input
-                type="text"
-                className="account-input"
-                value={newSite}
-                onChange={(e) => setNewSite(e.target.value)}
-                placeholder="example.com"
-                onKeyDown={(e) => e.key === 'Enter' && handleAddSite()}
-              />
-              <button className="account-save-btn" onClick={handleAddSite}>
-                Add
-              </button>
+            <p className="field-hint">
+              Controls the personality style for Depth mode annotations.
+            </p>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Enabled Annotation Types</span>
+            <div className="checkbox-grid">
+              {/* Overview types (yellow) */}
+              {ALL_OVERVIEW_TYPES.map((type) => (
+                <label key={type} className="checkbox-item">
+                  <input
+                    type="checkbox"
+                    checked={visibleTypes.includes(type)}
+                    onChange={() => handleToggleType(type)}
+                  />
+                  <span
+                    className="type-dot"
+                    style={{ background: ANNOTATION_COLORS[type] || "#FFDD69" }}
+                  />
+                  {(ANNOTATION_LABELS[type] || type)
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())
+                    .replace(/\bOf\b/g, "of")}
+                </label>
+              ))}
+              {/* Depth types */}
+              {ALL_DEPTH_TYPES.map((type) => (
+                <label key={type} className="checkbox-item">
+                  <input
+                    type="checkbox"
+                    checked={visibleTypes.includes(type)}
+                    onChange={() => handleToggleType(type)}
+                  />
+                  <span
+                    className="type-dot"
+                    style={{ background: ANNOTATION_COLORS[type] || "#888" }}
+                  />
+                  {(ANNOTATION_LABELS[type] || type)
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())
+                    .replace(/\bOf\b/g, "of")}
+                </label>
+              ))}
             </div>
           </div>
         </div>
-      </section>
+      </div>
     </div>
-  )
+  );
 }

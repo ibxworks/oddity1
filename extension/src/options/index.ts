@@ -15,8 +15,6 @@ const siteList = document.getElementById('site-list')!;
 const siteEmpty = document.getElementById('site-empty')!;
 const siteInput = document.getElementById('site-input') as HTMLInputElement;
 const addSiteBtn = document.getElementById('add-site-btn')!;
-const clearCacheBtn = document.getElementById('clear-cache-btn')!;
-const exportAllBtn = document.getElementById('export-all-btn')!;
 const authNotSignedIn = document.getElementById('auth-not-signed-in')!;
 const authSignedIn = document.getElementById('auth-signed-in')!;
 const authDisplayName = document.getElementById('auth-display-name')!;
@@ -278,35 +276,6 @@ siteInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     addSiteBtn.click();
   }
-});
-
-// Clear cache
-clearCacheBtn.addEventListener('click', async () => {
-  // Remove all annotation cache keys from storage
-  const allKeys = await chrome.storage.local.get(null);
-  const annotationKeys = Object.keys(allKeys).filter((k) =>
-    k.startsWith('annotations:'),
-  );
-  if (annotationKeys.length > 0) {
-    await chrome.storage.local.remove(annotationKeys);
-  }
-  showToast(`Cache cleared (${annotationKeys.length} entries)`);
-});
-
-// Export all data
-exportAllBtn.addEventListener('click', async () => {
-  const allData = await chrome.storage.local.get(null);
-  const json = JSON.stringify(allData, null, 2);
-  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `oddity-export-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('Data exported');
 });
 
 // Logout

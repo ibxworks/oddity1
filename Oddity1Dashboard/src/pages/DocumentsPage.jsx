@@ -44,7 +44,6 @@ export default function DocumentsPage() {
   function handleDragLeave(e) {
     e.preventDefault();
     e.stopPropagation();
-    // Only set to false if leaving the entire container
     if (e.currentTarget === e.target) {
       setIsDragging(false);
     }
@@ -58,14 +57,12 @@ export default function DocumentsPage() {
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
 
-    // Validate file type
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (!SUPPORTED_EXTENSIONS.includes(ext)) {
       showToast('Unsupported file type. Use PDF, DOCX, PPTX, TXT, or MD.');
       return;
     }
 
-    // Reuse existing file change handler
     const fakeEvent = { target: { files: [file], value: '' } };
     await handleFileChange(fakeEvent);
   }
@@ -77,7 +74,6 @@ export default function DocumentsPage() {
   async function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Reset input so same file can be re-selected
     e.target.value = '';
 
     setConverting(true);
@@ -85,7 +81,7 @@ export default function DocumentsPage() {
       const { content, title } = await importFile(file);
       const id = await createDocument({
         title,
-        content, // Store HTML directly — editor accepts HTML strings in content option
+        content,
         plain_text: content,
       });
       navigate(`/documents/${id}`);
@@ -105,17 +101,21 @@ export default function DocumentsPage() {
 
   function renderDocCard(doc) {
     const preview = doc.plain_text
-      ? doc.plain_text.slice(0, 120).replace(/<[^>]*>/g, '')
+      ? doc.plain_text.slice(0, 100).replace(/<[^>]*>/g, '')
       : 'Empty document';
+
+    const annotationCount = doc.annotations?.length || 0;
 
     return (
       <button key={doc.id} className="doc-card" onClick={() => navigate(`/documents/${doc.id}`)}>
-        <h3 className="doc-card-title">{doc.title || 'Untitled'}</h3>
-        <p className="doc-card-preview">{preview}</p>
-        <div className="doc-card-footer">
-          <span className="doc-card-time">{formatTimeAgo(new Date(doc.updated_at))}</span>
+        <div className="doc-card-header">
+          {annotationCount > 0 ? (
+            <span className="doc-card-badge">{annotationCount} annotations</span>
+          ) : (
+            <span />
+          )}
           <button
-            className="doc-card-delete"
+            className="doc-card-menu"
             onClick={(e) => handleDelete(e, doc.id)}
             title="Delete document"
           >
@@ -125,11 +125,26 @@ export default function DocumentsPage() {
             </svg>
           </button>
         </div>
+        <h3 className="doc-card-title">{doc.title || 'Untitled'}</h3>
+        <p className="doc-card-preview">{preview}</p>
+        <div className="doc-card-footer">
+          <span className="doc-card-time">Edited {formatTimeAgo(new Date(doc.updated_at))}</span>
+        </div>
       </button>
     );
   }
 
   const acceptExtensions = SUPPORTED_EXTENSIONS.map((e) => `.${e}`).join(',');
+
+  function renderSection(title, items) {
+    if (items.length === 0) return null;
+    return (
+      <section className="docs-section" key={title}>
+        <h2 className="section-title">{title}</h2>
+        <div className="docs-grid">{items.map(renderDocCard)}</div>
+      </section>
+    );
+  }
 
   return (
     <div
@@ -149,22 +164,44 @@ export default function DocumentsPage() {
           <div className="docs-converting-text">Converting document...</div>
         </div>
       )}
-      <div className="docs-header">
-        <h1 className="docs-title">Documents</h1>
-        <div className="docs-actions">
-          <button className="docs-btn docs-btn--primary" onClick={handleNewDoc}>
-            New doc
-          </button>
+
+      <div className="page-header">
+        <h1 className="page-title">Documents</h1>
+        <div className="page-actions">
+          <div className="search-bar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search docs..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           <div className="docs-upload-wrapper">
             <button
-              className="docs-btn docs-btn--outlined"
+              className="btn btn--secondary"
               onClick={handleUploadClick}
               disabled={converting}
             >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
               Upload
             </button>
             <div className="docs-upload-tooltip">PDF, DOCX, PPTX, TXT, MD</div>
           </div>
+          <button className="btn btn--primary" onClick={handleNewDoc}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            New doc
+          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -175,49 +212,29 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      <div className="docs-search">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          type="text"
-          placeholder="Search documents..."
-          className="docs-search-input"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="docs-body">
+        {loading && (
+          <div className="empty-state">Loading documents...</div>
+        )}
+
+        {!loading && documents.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            </div>
+            <div className="empty-state-title">No documents yet</div>
+            <p>Create a new document or upload a file to get started.</p>
+          </div>
+        )}
+
+        {renderSection('Today', groups.today)}
+        {renderSection('Yesterday', groups.yesterday)}
+        {renderSection('This Week', groups.thisWeek)}
+        {renderSection('Earlier', groups.earlier)}
       </div>
-
-      {loading && (
-        <p style={{ color: 'var(--text-muted)', fontSize: 14, textAlign: 'center', padding: 40 }}>
-          Loading documents...
-        </p>
-      )}
-
-      {!loading && documents.length === 0 && (
-        <p style={{ color: 'var(--text-muted)', fontSize: 14, textAlign: 'center', padding: 40 }}>
-          No documents yet. Create one to get started.
-        </p>
-      )}
-
-      {groups.today.length > 0 && (
-        <section className="docs-section">
-          <h2 className="docs-section-title">Today</h2>
-          <div className="docs-grid">
-            {groups.today.map(renderDocCard)}
-          </div>
-        </section>
-      )}
-
-      {groups.earlier.length > 0 && (
-        <section className="docs-section">
-          <h2 className="docs-section-title">Earlier</h2>
-          <div className="docs-grid">
-            {groups.earlier.map(renderDocCard)}
-          </div>
-        </section>
-      )}
     </div>
   );
 }

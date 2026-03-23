@@ -45,7 +45,7 @@ export function useAnnotation() {
           word_count: wordCount,
           url: `https://app.oddity1.com/documents/${docId || 'untitled'}`,
           content_hash: contentHash,
-          intensity: 'default',
+          mode: 'overview',
         }),
         signal: controller.signal,
       });
