@@ -111,8 +111,9 @@ let dashTierBadgeEl: HTMLElement | null = null;
 let dashDensityBtns: HTMLButtonElement[] = [];
 let dashFontSelect: HTMLSelectElement | null = null;
 let dashFontSizeSelect: HTMLSelectElement | null = null;
-let dashPersonaSelect: HTMLSelectElement | null = null;
+let dashPersonaSelect: HTMLElement | null = null;
 let dashPersonaAvatarImgEl: HTMLImageElement | null = null;
+let bubbleLogoImgEl: HTMLImageElement | null = null;
 let dashPersonaCircleEl: HTMLDivElement | null = null;
 let dashFeedbackViewEl: HTMLDivElement | null = null;
 let dashFeedbackEmailEl: HTMLDivElement | null = null;
@@ -276,11 +277,11 @@ export function initArgumentsBox(): void {
   // Button face (Terry.png, visible when collapsed)
   const buttonFace = document.createElement("div");
   buttonFace.className = "args-button-face";
-  const logoImg = document.createElement("img");
-  logoImg.src = chrome.runtime.getURL("Terry.png");
-  logoImg.alt = "My Arguments";
-  logoImg.className = "args-toggle-logo";
-  buttonFace.appendChild(logoImg);
+  bubbleLogoImgEl = document.createElement("img");
+  bubbleLogoImgEl.src = chrome.runtime.getURL("Terry.png");
+  bubbleLogoImgEl.alt = "My Arguments";
+  bubbleLogoImgEl.className = "args-toggle-logo";
+  buttonFace.appendChild(bubbleLogoImgEl);
   // Content clip wrapper — clips button/panel faces during morph, sits inside container
   const contentClip = document.createElement("div");
   contentClip.className = "args-content-clip";
@@ -386,12 +387,18 @@ export function initArgumentsBox(): void {
   notesTabBtn = document.createElement("button");
   notesTabBtn.className = "args-tab active";
   notesTabBtn.textContent = "Notes";
-  notesTabBtn.addEventListener("click", (e) => { e.stopPropagation(); switchTab("notes"); });
+  notesTabBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    switchTab("notes");
+  });
 
   sketchTabBtn = document.createElement("button");
   sketchTabBtn.className = "args-tab";
   sketchTabBtn.textContent = "Sketch";
-  sketchTabBtn.addEventListener("click", (e) => { e.stopPropagation(); switchTab("sketch"); });
+  sketchTabBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    switchTab("sketch");
+  });
 
   tabBarEl.appendChild(notesTabBtn);
   tabBarEl.appendChild(sketchTabBtn);
@@ -533,7 +540,8 @@ export function initArgumentsBox(): void {
 
   const emptyBubbleText = document.createElement("span");
   emptyBubbleText.className = "args-empty-bubble-text";
-  emptyBubbleText.textContent = "This text is too short or not annotatable for Oddity 1";
+  emptyBubbleText.textContent =
+    "This text is too short or not annotatable for Oddity 1";
 
   const emptyBubbleClose = document.createElement("button");
   emptyBubbleClose.className = "args-enable-bubble-close";
@@ -680,10 +688,14 @@ export function initArgumentsBox(): void {
     .catch(() => {});
 
   // Listen for "Go to highlight" failures (annotation not on page)
-  document.addEventListener("oddity:scroll-to-annotation-missing", ((e: CustomEvent) => {
+  document.addEventListener("oddity:scroll-to-annotation-missing", ((
+    e: CustomEvent,
+  ) => {
     const isReply = e?.detail?.isReply;
     if (isReply) {
-      showArgToast("This note is from a different personality and isn't on the page right now.");
+      showArgToast(
+        "This note is from a different personality and isn't on the page right now.",
+      );
     } else {
       showArgToast("Could not find this highlight on the page.");
     }
@@ -707,7 +719,9 @@ function showArgToast(message: string): void {
 
   setTimeout(() => {
     toast.classList.remove("visible");
-    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    toast.addEventListener("transitionend", () => toast.remove(), {
+      once: true,
+    });
     setTimeout(() => toast.remove(), 400);
   }, 3000);
 }
@@ -724,14 +738,24 @@ export function updateArgumentsBox(
     canonicalItems = buildItems(annotations, feedback);
     // Remove live items that are now in canonical data:
     // 1. Reply/reaction items: matched by feedbackId
-    const canonicalFbIds = new Set(canonicalItems.map((i) => i.feedbackId).filter(Boolean));
+    const canonicalFbIds = new Set(
+      canonicalItems.map((i) => i.feedbackId).filter(Boolean),
+    );
     // 2. Manual annotation items: matched by annotationId (they have no feedbackId)
     const canonicalManualAnnIds = new Set(
-      canonicalItems.filter((i) => i.type === "manual").map((i) => i.annotationId).filter(Boolean),
+      canonicalItems
+        .filter((i) => i.type === "manual")
+        .map((i) => i.annotationId)
+        .filter(Boolean),
     );
     liveItems = liveItems.filter((li) => {
       if (li.feedbackId && canonicalFbIds.has(li.feedbackId)) return false;
-      if (li.type === "manual" && li.annotationId && canonicalManualAnnIds.has(li.annotationId)) return false;
+      if (
+        li.type === "manual" &&
+        li.annotationId &&
+        canonicalManualAnnIds.has(li.annotationId)
+      )
+        return false;
       return true;
     });
     renderList();
@@ -739,14 +763,23 @@ export function updateArgumentsBox(
 }
 
 /** Pre-cache annotation types from any annotation map (call with both modes to persist colors across switches). */
-export function cacheAnnotationMeta(annotations: Map<string, Annotation[]>): void {
+export function cacheAnnotationMeta(
+  annotations: Map<string, Annotation[]>,
+): void {
   cacheAnnotationNotes(annotations);
 }
 
 export function addLiveFeedback(
   icon: string,
   text: string,
-  opts?: { quote?: string; type?: ArgumentItem["type"]; replyHeader?: string; annotationType?: AnnotationType; annotationId?: string; contentHash?: string },
+  opts?: {
+    quote?: string;
+    type?: ArgumentItem["type"];
+    replyHeader?: string;
+    annotationType?: AnnotationType;
+    annotationId?: string;
+    contentHash?: string;
+  },
 ): string {
   if (!hostEl) return "";
   const sortKey = `live-${Date.now()}`;
@@ -766,7 +799,10 @@ export function addLiveFeedback(
 }
 
 /** Update a live item's feedbackId once the server responds. */
-export function updateLiveFeedbackId(sortKey: string, feedbackId: string): void {
+export function updateLiveFeedbackId(
+  sortKey: string,
+  feedbackId: string,
+): void {
   const item = liveItems.find((i) => i.sortKey === sortKey);
   if (item) item.feedbackId = feedbackId;
 }
@@ -777,7 +813,10 @@ function updateModeToggleVisibility(): void {
   const wasHidden = modeToggleWrapperEl.style.display === "none";
   // Show when: box visible, signed in, not dimmed, AND (enabled OR expanded)
   const show =
-    boxVisible && !dimmed && localAuthState === true && (extensionEnabled || expanded);
+    boxVisible &&
+    !dimmed &&
+    localAuthState === true &&
+    (extensionEnabled || expanded);
   modeToggleWrapperEl.style.display = show ? "" : "none";
   // Mark disabled so click handler can ignore mode switches (but no visual dimming)
   modeToggleWrapperEl.classList.toggle("disabled", !extensionEnabled);
@@ -890,19 +929,27 @@ export function updateArgumentsBoxStyle(
 
 let signOutCb: (() => void) | null = null;
 
-/** Update the dashboard's personality display (avatar, select, buttons). */
+/** Update the dashboard's personality display (avatar, select, buttons, bubble). */
 export function updateDashboardPersonality(personality: string): void {
   const display = personality.charAt(0).toUpperCase() + personality.slice(1);
-  if (dashPersonaSelect) dashPersonaSelect.value = display;
+  if (dashPersonaSelect) dashPersonaSelect.textContent = display;
   if (dashPersonaAvatarImgEl) {
     dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${display}.png`);
     dashPersonaAvatarImgEl.alt = display;
   }
   if (dashPersonaCircleEl)
-    dashPersonaCircleEl.style.background = display === "Jerry" ? "#FDCB24" : "#fff";
+    dashPersonaCircleEl.style.background =
+      display === "Jerry" ? "#FDCB24" : "#fff";
   dashDensityBtns.forEach((b) =>
-    b.classList.toggle("args-dash-density-active", b.dataset.intensity === personality),
+    b.classList.toggle(
+      "args-dash-density-active",
+      b.dataset.intensity === personality,
+    ),
   );
+  if (bubbleLogoImgEl) {
+    bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
+    bubbleLogoImgEl.alt = display;
+  }
 }
 
 export function setSignOutCallback(cb: () => void): void {
@@ -1387,9 +1434,10 @@ function buildDashboardFace(): HTMLDivElement {
     }
   });
 
-  const logo = document.createElement("span");
-  logo.className = "args-dash-logo";
-  logo.textContent = "Oddity 1";
+  const logo = document.createElement("img");
+  logo.className = "args-dash-logo-img";
+  logo.src = chrome.runtime.getURL("Oddity1-Logo.png");
+  logo.alt = "Oddity 1";
 
   const toggleWrap = document.createElement("div");
   toggleWrap.className = "args-dash-toggle-wrap";
@@ -1445,35 +1493,9 @@ function buildDashboardFace(): HTMLDivElement {
     "width:100%;height:100%;object-fit:contain;border-radius:50%;";
   dashPersonaCircleEl.appendChild(dashPersonaAvatarImgEl);
 
-  dashPersonaSelect = document.createElement("select");
-  dashPersonaSelect.className = "args-dash-persona-select";
-  for (const name of ["Terry", "Jerry", "Sally"]) {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    dashPersonaSelect.appendChild(opt);
-  }
-  dashPersonaSelect.addEventListener("change", () => {
-    const name = dashPersonaSelect!.value;
-    if (dashPersonaAvatarImgEl) {
-      dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${name}.png`);
-      dashPersonaAvatarImgEl.alt = name;
-    }
-    if (dashPersonaCircleEl)
-      dashPersonaCircleEl.style.background =
-        name === "Jerry" ? "#FDCB24" : "#fff";
-
-    // Sync personality buttons with the dropdown
-    const personality = name.toLowerCase();
-    dashDensityBtns.forEach((b) =>
-      b.classList.toggle("args-dash-density-active", b.dataset.intensity === personality),
-    );
-
-    chrome.storage.local.get("preferences").then((stored) => {
-      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-      chrome.storage.local.set({ preferences: { ...prefs, depth_personality: personality } });
-    });
-  });
+  dashPersonaSelect = document.createElement("span");
+  dashPersonaSelect.className = "args-dash-persona-label";
+  dashPersonaSelect.textContent = "Jerry";
 
   avatarArea.appendChild(dashPersonaCircleEl);
   avatarArea.appendChild(dashPersonaSelect);
@@ -1485,7 +1507,7 @@ function buildDashboardFace(): HTMLDivElement {
   dashCountEl.textContent = "0";
   const countLabel = document.createElement("span");
   countLabel.className = "args-dash-count-label";
-  countLabel.textContent = " annotations created with Oddity 1";
+  countLabel.textContent = "annotations created with Oddity 1";
   countArea.appendChild(dashCountEl);
   countArea.appendChild(countLabel);
 
@@ -1509,6 +1531,11 @@ function buildDashboardFace(): HTMLDivElement {
   personalityLabel.textContent = "Personality";
   const personalityGroup = document.createElement("div");
   personalityGroup.className = "args-dash-density-group";
+  const personaDescs: Record<string, string> = {
+    terry: "Balanced & clear",
+    jerry: "Sharp & critical",
+    sally: "Warm & curious",
+  };
   dashDensityBtns = [];
   for (const [value, label] of [
     ["terry", "Terry"],
@@ -1521,20 +1548,29 @@ function buildDashboardFace(): HTMLDivElement {
       (value === "jerry" ? " args-dash-density-active" : "");
     btn.dataset.intensity = value;
     btn.textContent = label;
+    const tooltip = document.createElement("span");
+    tooltip.className = "args-dash-density-tooltip";
+    tooltip.textContent = personaDescs[value] ?? "";
+    btn.appendChild(tooltip);
     btn.addEventListener("click", () => {
       dashDensityBtns.forEach((b) =>
         b.classList.remove("args-dash-density-active"),
       );
       btn.classList.add("args-dash-density-active");
 
-      // Sync the top avatar and persona selector
-      if (dashPersonaSelect) dashPersonaSelect.value = label;
+      // Sync the top avatar, persona selector, and bubble logo
+      if (dashPersonaSelect) dashPersonaSelect.textContent = label;
       if (dashPersonaAvatarImgEl) {
         dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${label}.png`);
         dashPersonaAvatarImgEl.alt = label;
       }
       if (dashPersonaCircleEl)
-        dashPersonaCircleEl.style.background = label === "Jerry" ? "#FDCB24" : "#fff";
+        dashPersonaCircleEl.style.background =
+          label === "Jerry" ? "#FDCB24" : "#fff";
+      if (bubbleLogoImgEl) {
+        bubbleLogoImgEl.src = chrome.runtime.getURL(`${label}.png`);
+        bubbleLogoImgEl.alt = label;
+      }
 
       chrome.storage.local.get("preferences").then((stored) => {
         const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
@@ -1925,7 +1961,9 @@ function buildDashboardFace(): HTMLDivElement {
         const hostname = window.location.hostname.replace(/^www\./, "");
         const siteEnabled =
           Array.isArray(enabledSites) &&
-          enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
+          enabledSites.some(
+            (s) => hostname === s || hostname.endsWith("." + s),
+          );
         if (!siteEnabled) {
           showNotEnabledOverlay();
         } else {
@@ -1996,7 +2034,7 @@ async function loadDashboardPrefs(): Promise<void> {
   );
   // Derive display name from depth_personality (single source of truth)
   const persona = personality.charAt(0).toUpperCase() + personality.slice(1);
-  if (dashPersonaSelect) dashPersonaSelect.value = persona;
+  if (dashPersonaSelect) dashPersonaSelect.textContent = persona;
   if (dashPersonaAvatarImgEl) {
     dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
     dashPersonaAvatarImgEl.alt = persona;
@@ -2110,7 +2148,10 @@ function buildItems(
       if (fb.id && emittedFbIds.has(fb.id)) continue;
       if (fb.id) emittedFbIds.add(fb.id);
       const fbHash = annHashMap.get(fb.annotation_id) ?? hash;
-      const srcAnnotationType = findAnnotationType(annotations, fb.annotation_id);
+      const srcAnnotationType = findAnnotationType(
+        annotations,
+        fb.annotation_id,
+      );
       if (fb.feedback_type === "thumbs_up") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
         const anchor = findAnnotationQuote(annotations, fb.annotation_id);
@@ -2182,21 +2223,32 @@ function flushNoteCache(): void {
   for (const [k, v] of annotationNoteCache) obj[k] = v;
   const typeObj: Record<string, string> = {};
   for (const [k, v] of annotationTypeCache) typeObj[k] = v;
-  chrome.storage.local.set({ _oddity_note_cache: obj, _oddity_type_cache: typeObj }).catch(() => {});
+  chrome.storage.local
+    .set({ _oddity_note_cache: obj, _oddity_type_cache: typeObj })
+    .catch(() => {});
 }
 
 /** Load persisted note cache on init. */
 function loadNoteCache(): void {
-  chrome.storage.local.get(["_oddity_note_cache", "_oddity_type_cache"]).then((result) => {
-    const cached = result["_oddity_note_cache"] as Record<string, string> | undefined;
-    if (cached) {
-      for (const [k, v] of Object.entries(cached)) annotationNoteCache.set(k, v);
-    }
-    const typeCached = result["_oddity_type_cache"] as Record<string, string> | undefined;
-    if (typeCached) {
-      for (const [k, v] of Object.entries(typeCached)) annotationTypeCache.set(k, v);
-    }
-  }).catch(() => {});
+  chrome.storage.local
+    .get(["_oddity_note_cache", "_oddity_type_cache"])
+    .then((result) => {
+      const cached = result["_oddity_note_cache"] as
+        | Record<string, string>
+        | undefined;
+      if (cached) {
+        for (const [k, v] of Object.entries(cached))
+          annotationNoteCache.set(k, v);
+      }
+      const typeCached = result["_oddity_type_cache"] as
+        | Record<string, string>
+        | undefined;
+      if (typeCached) {
+        for (const [k, v] of Object.entries(typeCached))
+          annotationTypeCache.set(k, v);
+      }
+    })
+    .catch(() => {});
 }
 loadNoteCache();
 
@@ -2278,7 +2330,10 @@ function scheduleLayout(): void {
 
 function showOnboardingSlideshow(onComplete: () => void): void {
   const dashFace = shadowRoot?.querySelector(".args-dash-face");
-  if (!dashFace) { onComplete(); return; }
+  if (!dashFace) {
+    onComplete();
+    return;
+  }
 
   let currentSlide = -1;
   const TOTAL_SLIDES = 4;
@@ -2290,7 +2345,13 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   };
 
   // Utility: typewriter effect — types text into an element one char at a time
-  const typewriter = (el: HTMLElement, text: string, charMs: number, startMs: number, cb?: () => void) => {
+  const typewriter = (
+    el: HTMLElement,
+    text: string,
+    charMs: number,
+    startMs: number,
+    cb?: () => void,
+  ) => {
     let i = 0;
     delay(() => {
       const tick = () => {
@@ -2314,7 +2375,10 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   const skipBtn = document.createElement("button");
   skipBtn.className = "args-onboarding-skip";
   skipBtn.textContent = "Skip";
-  skipBtn.addEventListener("click", (e) => { e.stopPropagation(); dismiss(); });
+  skipBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismiss();
+  });
   overlay.appendChild(skipBtn);
 
   // Track
@@ -2338,9 +2402,30 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   // Each entry: before = plain text, hl = highlighted phrase, after = plain text
   // overview types get bg only, depth types get bg + underline
   const paraLines = [
-    { before: "The study found that ", hl: "renewable energy has accelerated", after: " rapidly.", color: "#DCAF16", label: "CORE CLAIM", isOverview: true },
-    { before: "However, ", hl: "infrastructure costs remain high", after: " in many regions.", color: "#F5574C", label: "COUNTERARGUMENT", isOverview: false },
-    { before: "This reflects ", hl: "broader shifts in developing nations", after: ".", color: "#578E6C", label: "INSIGHT", isOverview: false },
+    {
+      before: "The study found that ",
+      hl: "renewable energy has accelerated",
+      after: " rapidly.",
+      color: "#DCAF16",
+      label: "CORE CLAIM",
+      isOverview: true,
+    },
+    {
+      before: "However, ",
+      hl: "infrastructure costs remain high",
+      after: " in many regions.",
+      color: "#F5574C",
+      label: "COUNTERARGUMENT",
+      isOverview: false,
+    },
+    {
+      before: "This reflects ",
+      hl: "broader shifts in developing nations",
+      after: ".",
+      color: "#578E6C",
+      label: "INSIGHT",
+      isOverview: false,
+    },
   ];
   const highlightEls: HTMLElement[] = [];
   const labelEls: HTMLElement[] = [];
@@ -2383,7 +2468,8 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   title1.textContent = "Smart Annotations";
   const body1 = document.createElement("div");
   body1.className = "args-onboarding-slide-body";
-  body1.textContent = "AI reads what you read and highlights what matters \u2014 color-coded by type.";
+  body1.textContent =
+    "AI reads what you read and highlights what matters \u2014 color-coded by type.";
 
   slide1.appendChild(vis1);
   slide1.appendChild(title1);
@@ -2392,18 +2478,28 @@ function showOnboardingSlideshow(onComplete: () => void): void {
 
   function animateSlide1() {
     // Reset
-    highlightEls.forEach(h => h.classList.remove("active"));
-    labelEls.forEach(l => l.classList.remove("active"));
+    highlightEls.forEach((h) => h.classList.remove("active"));
+    labelEls.forEach((l) => l.classList.remove("active"));
     // Stagger highlights
     for (let i = 0; i < highlightEls.length; i++) {
-      delay(() => { highlightEls[i]!.classList.add("active"); }, 400 + i * 800);
-      delay(() => { labelEls[i]!.classList.add("active"); }, 900 + i * 800);
+      delay(
+        () => {
+          highlightEls[i]!.classList.add("active");
+        },
+        400 + i * 800,
+      );
+      delay(
+        () => {
+          labelEls[i]!.classList.add("active");
+        },
+        900 + i * 800,
+      );
     }
   }
 
   function resetSlide1() {
-    highlightEls.forEach(h => h.classList.remove("active"));
-    labelEls.forEach(l => l.classList.remove("active"));
+    highlightEls.forEach((h) => h.classList.remove("active"));
+    labelEls.forEach((l) => l.classList.remove("active"));
   }
 
   // ═══════════════════════════════════════════
@@ -2419,9 +2515,24 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   personas.className = "args-onboarding-personas";
 
   const personaData = [
-    { name: "Terry", desc: "Balanced & clear", img: "Terry.png", quote: "\u201cClear and well-supported.\u201d" },
-    { name: "Jerry", desc: "Sharp & critical", img: "Jerry.png", quote: "\u201cBut what about the counter-evidence?\u201d" },
-    { name: "Sally", desc: "Warm & curious", img: "Sally.png", quote: "\u201cThis reminds me of\u2026\u201d" },
+    {
+      name: "Terry",
+      desc: "Balanced & clear",
+      img: "Terry.png",
+      quote: "\u201cClear and well-supported.\u201d",
+    },
+    {
+      name: "Jerry",
+      desc: "Sharp & critical",
+      img: "Jerry.png",
+      quote: "\u201cBut what about the counter-evidence?\u201d",
+    },
+    {
+      name: "Sally",
+      desc: "Warm & curious",
+      img: "Sally.png",
+      quote: "\u201cThis reminds me of\u2026\u201d",
+    },
   ];
   const personaWraps: HTMLElement[] = [];
   const speechBubbles: HTMLElement[] = [];
@@ -2464,7 +2575,8 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   title2.textContent = "Meet Your Readers";
   const body2 = document.createElement("div");
   body2.className = "args-onboarding-slide-body";
-  body2.textContent = "Three AI personas, each with a unique perspective on what you read.";
+  body2.textContent =
+    "Three AI personas, each with a unique perspective on what you read.";
 
   slide2.appendChild(vis2);
   slide2.appendChild(title2);
@@ -2482,8 +2594,8 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   }
 
   function resetSlide2() {
-    personaWraps.forEach(w => w.classList.remove("entered"));
-    speechBubbles.forEach(s => s.classList.remove("active"));
+    personaWraps.forEach((w) => w.classList.remove("entered"));
+    speechBubbles.forEach((s) => s.classList.remove("active"));
   }
 
   // ═══════════════════════════════════════════
@@ -2504,7 +2616,8 @@ function showOnboardingSlideshow(onComplete: () => void): void {
 
   const mockText = document.createElement("div");
   mockText.className = "args-onboarding-mock-text";
-  mockText.textContent = "\u201cThe study reveals a significant shift in consumer behavior.\u201d";
+  mockText.textContent =
+    "\u201cThe study reveals a significant shift in consumer behavior.\u201d";
 
   const mockActions = document.createElement("div");
   mockActions.className = "args-onboarding-mock-actions";
@@ -2551,7 +2664,8 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   title3.textContent = "React & Reply";
   const body3 = document.createElement("div");
   body3.className = "args-onboarding-slide-body";
-  body3.textContent = "Agree, disagree, or add your own thoughts to any annotation.";
+  body3.textContent =
+    "Agree, disagree, or add your own thoughts to any annotation.";
 
   slide3.appendChild(vis3);
   slide3.appendChild(title3);
@@ -2573,15 +2687,21 @@ function showOnboardingSlideshow(onComplete: () => void): void {
       replyArea.classList.add("active");
       replyInputCursor.classList.add("active");
     }, 1400);
-    typewriter(replyInputText, "I agree, but the sample size is small...", 50, 1600, () => {
-      // After typing, cursor stops blinking and reply bubble appears
-      delay(() => {
-        replyInputCursor.classList.remove("active");
-        replyBubble.textContent = "I agree, but the sample size is small...";
-        replyBubble.classList.add("active");
-        replyInputText.textContent = "";
-      }, 300);
-    });
+    typewriter(
+      replyInputText,
+      "I agree, but the sample size is small...",
+      50,
+      1600,
+      () => {
+        // After typing, cursor stops blinking and reply bubble appears
+        delay(() => {
+          replyInputCursor.classList.remove("active");
+          replyBubble.textContent = "I agree, but the sample size is small...";
+          replyBubble.classList.add("active");
+          replyInputText.textContent = "";
+        }, 300);
+      },
+    );
   }
 
   function resetSlide3() {
@@ -2612,9 +2732,21 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   replyCards.className = "args-onboarding-reply-cards";
 
   const replyCardData = [
-    { icon: "\uD83D\uDC4D", text: "\u201cRenewable energy has accelerated\u201d", color: "#DCAF16" },
-    { icon: "\uD83D\uDC4E", text: "\u201cInfrastructure costs remain high\u201d", color: "#F5574C" },
-    { icon: "\uD83D\uDCAC", text: "Sample size is small\u2026", color: "#748DBF" },
+    {
+      icon: "\uD83D\uDC4D",
+      text: "\u201cRenewable energy has accelerated\u201d",
+      color: "#DCAF16",
+    },
+    {
+      icon: "\uD83D\uDC4E",
+      text: "\u201cInfrastructure costs remain high\u201d",
+      color: "#F5574C",
+    },
+    {
+      icon: "\uD83D\uDCAC",
+      text: "Sample size is small\u2026",
+      color: "#748DBF",
+    },
   ];
   const replyCardEls: HTMLElement[] = [];
   for (const rc of replyCardData) {
@@ -2671,7 +2803,8 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   title4.textContent = "Sketch Your Argument";
   const body4 = document.createElement("div");
   body4.className = "args-onboarding-slide-body";
-  body4.textContent = "Your reactions and replies compile into a coherent argument.";
+  body4.textContent =
+    "Your reactions and replies compile into a coherent argument.";
 
   slide4.appendChild(vis4);
   slide4.appendChild(title4);
@@ -2689,7 +2822,7 @@ function showOnboardingSlideshow(onComplete: () => void): void {
     delay(() => sketchBtn.classList.remove("pulse"), 1500);
     // 3. Reply cards collapse/fade out
     delay(() => {
-      replyCardEls.forEach(c => c.classList.add("collapsed"));
+      replyCardEls.forEach((c) => c.classList.add("collapsed"));
     }, 1600);
     // 4. Output area expands
     delay(() => sketchOutput.classList.add("active"), 2000);
@@ -2706,8 +2839,10 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   function resetSlide4() {
     sketchBtn.classList.remove("pulse");
     sketchOutput.classList.remove("active");
-    sketchLineEls.forEach(el => { el.textContent = ""; });
-    replyCardEls.forEach(c => c.classList.remove("entered", "collapsed"));
+    sketchLineEls.forEach((el) => {
+      el.textContent = "";
+    });
+    replyCardEls.forEach((c) => c.classList.remove("entered", "collapsed"));
   }
 
   overlay.appendChild(track);
@@ -2724,7 +2859,10 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   for (let i = 0; i < TOTAL_SLIDES; i++) {
     const dot = document.createElement("button");
     dot.className = `args-onboarding-dot${i === 0 ? " active" : ""}`;
-    dot.addEventListener("click", (e) => { e.stopPropagation(); goToSlide(i); });
+    dot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      goToSlide(i);
+    });
     dots.appendChild(dot);
     dotEls.push(dot);
   }
@@ -2745,11 +2883,16 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   overlay.appendChild(nav);
 
   // ── Animation lifecycle ──
-  const animStarters = [animateSlide1, animateSlide2, animateSlide3, animateSlide4];
+  const animStarters = [
+    animateSlide1,
+    animateSlide2,
+    animateSlide3,
+    animateSlide4,
+  ];
   const animResetters = [resetSlide1, resetSlide2, resetSlide3, resetSlide4];
 
   function clearAnimTimers() {
-    animTimers.forEach(t => clearTimeout(t));
+    animTimers.forEach((t) => clearTimeout(t));
     animTimers = [];
   }
 
@@ -2770,11 +2913,15 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   function dismiss(): void {
     clearAnimTimers();
     overlay.style.opacity = "0";
-    overlay.addEventListener("transitionend", () => {
-      overlay.remove();
-      onboardingOverlayEl = null;
-      onComplete();
-    }, { once: true });
+    overlay.addEventListener(
+      "transitionend",
+      () => {
+        overlay.remove();
+        onboardingOverlayEl = null;
+        onComplete();
+      },
+      { once: true },
+    );
   }
 
   // ── Keyboard nav ──
@@ -2852,7 +2999,9 @@ function renderList(): void {
   const allItems = [...canonicalItems, ...liveItems];
 
   // Skip rebuild if the item set hasn't changed (avoids glitchy DOM teardown/rebuild)
-  const itemKey = allItems.map((i) => i.sortKey + (i.feedbackId ?? "")).join("|");
+  const itemKey = allItems
+    .map((i) => i.sortKey + (i.feedbackId ?? ""))
+    .join("|");
   if (itemKey === lastRenderedKey) return;
   lastRenderedKey = itemKey;
 
@@ -2961,9 +3110,11 @@ function renderList(): void {
           .then((fb: any) => {
             if (fb?.id) {
               bubble.dataset.feedbackId = fb.id;
-              window.dispatchEvent(new CustomEvent("oddity:feedback-added", {
-                detail: { feedback: fb, contentHash: item.contentHash ?? "" },
-              }));
+              window.dispatchEvent(
+                new CustomEvent("oddity:feedback-added", {
+                  detail: { feedback: fb, contentHash: item.contentHash ?? "" },
+                }),
+              );
             }
           })
           .catch(() => {});
@@ -3044,7 +3195,12 @@ function renderList(): void {
           chrome.runtime
             .sendMessage({
               action: "updateFeedback",
-              payload: { feedbackId: item.feedbackId, replyText: newText, contentHash: item.contentHash, url: getPageUrl() },
+              payload: {
+                feedbackId: item.feedbackId,
+                replyText: newText,
+                contentHash: item.contentHash,
+                url: getPageUrl(),
+              },
             })
             .catch(() => {});
           item.text = newText;
@@ -3076,7 +3232,11 @@ function renderList(): void {
           body.textContent = newText;
           document.dispatchEvent(
             new CustomEvent("oddity:annotation-edited", {
-              detail: { annotationId: item.annotationId, note: newText, contentHash: item.contentHash },
+              detail: {
+                annotationId: item.annotationId,
+                note: newText,
+                contentHash: item.contentHash,
+              },
             }),
           );
         }
@@ -3106,7 +3266,9 @@ function renderList(): void {
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       const removeBySortKey = () => {
-        canonicalItems = canonicalItems.filter((i) => i.sortKey !== item.sortKey);
+        canonicalItems = canonicalItems.filter(
+          (i) => i.sortKey !== item.sortKey,
+        );
         liveItems = liveItems.filter((i) => i.sortKey !== item.sortKey);
       };
       if (item.feedbackId) {
@@ -3121,11 +3283,16 @@ function renderList(): void {
             },
           })
           .catch(() => {});
-        canonicalItems = canonicalItems.filter((i) => i.feedbackId !== item.feedbackId);
+        canonicalItems = canonicalItems.filter(
+          (i) => i.feedbackId !== item.feedbackId,
+        );
         liveItems = liveItems.filter((i) => i.feedbackId !== item.feedbackId);
         document.dispatchEvent(
           new CustomEvent("oddity:feedback-deleted", {
-            detail: { feedbackId: item.feedbackId, annotationId: item.annotationId },
+            detail: {
+              feedbackId: item.feedbackId,
+              annotationId: item.annotationId,
+            },
           }),
         );
       } else if (item.annotationId) {
@@ -3140,8 +3307,12 @@ function renderList(): void {
             },
           })
           .catch(() => {});
-        canonicalItems = canonicalItems.filter((i) => i.annotationId !== item.annotationId);
-        liveItems = liveItems.filter((i) => i.annotationId !== item.annotationId);
+        canonicalItems = canonicalItems.filter(
+          (i) => i.annotationId !== item.annotationId,
+        );
+        liveItems = liveItems.filter(
+          (i) => i.annotationId !== item.annotationId,
+        );
         document.dispatchEvent(
           new CustomEvent("oddity:annotation-deleted", {
             detail: { annotationId: item.annotationId },
@@ -3212,11 +3383,14 @@ function renderList(): void {
 
 function switchTab(tab: "notes" | "sketch"): void {
   activeTab = tab;
-  if (notesTabBtn) notesTabBtn.className = tab === "notes" ? "args-tab active" : "args-tab";
-  if (sketchTabBtn) sketchTabBtn.className = tab === "sketch" ? "args-tab active" : "args-tab";
+  if (notesTabBtn)
+    notesTabBtn.className = tab === "notes" ? "args-tab active" : "args-tab";
+  if (sketchTabBtn)
+    sketchTabBtn.className = tab === "sketch" ? "args-tab active" : "args-tab";
   if (listEl) listEl.style.display = tab === "notes" ? "" : "none";
   if (footerEl) footerEl.style.display = tab === "notes" ? "" : "none";
-  if (sketchContentEl) sketchContentEl.style.display = tab === "sketch" ? "" : "none";
+  if (sketchContentEl)
+    sketchContentEl.style.display = tab === "sketch" ? "" : "none";
 }
 
 // ─── Sketch Handler ───
@@ -3241,9 +3415,7 @@ function handleSketch(): void {
 
   // Compile user reactions with full context (same format as copy button)
   const allItems = [...canonicalItems, ...liveItems];
-  const userReactions = allItems
-    .map((i) => formatItemPlain(i))
-    .join("\n\n");
+  const userReactions = allItems.map((i) => formatItemPlain(i)).join("\n\n");
 
   // Disable button, switch to sketch tab, show loading
   sketchLoading = true;
@@ -3253,24 +3425,28 @@ function handleSketch(): void {
     sketchBtnEl.textContent = "Sketching...";
   }
   if (sketchContentEl) {
-    sketchContentEl.innerHTML = '<div class="args-sketch-loading"><span></span><span></span><span></span></div>';
+    sketchContentEl.innerHTML =
+      '<div class="args-sketch-loading"><span></span><span></span><span></span></div>';
   }
   switchTab("sketch");
 
   // Send request to background
-  chrome.runtime.sendMessage({
-    action: "requestSketch",
-    payload: { inputText, purpose, userReactions },
-  }).catch(() => {
-    sketchLoading = false;
-    if (sketchBtnEl) {
-      sketchBtnEl.disabled = false;
-      sketchBtnEl.textContent = "Sketch my Argument";
-    }
-    if (sketchContentEl) {
-      sketchContentEl.innerHTML = '<div class="args-sketch-error">Failed to generate sketch. Please try again.</div>';
-    }
-  });
+  chrome.runtime
+    .sendMessage({
+      action: "requestSketch",
+      payload: { inputText, purpose, userReactions },
+    })
+    .catch(() => {
+      sketchLoading = false;
+      if (sketchBtnEl) {
+        sketchBtnEl.disabled = false;
+        sketchBtnEl.textContent = "Sketch my Argument";
+      }
+      if (sketchContentEl) {
+        sketchContentEl.innerHTML =
+          '<div class="args-sketch-error">Failed to generate sketch. Please try again.</div>';
+      }
+    });
 }
 
 // ─── Copy & Label Helpers ───
@@ -3278,11 +3454,15 @@ function handleSketch(): void {
 /** Short display label for an argument item (used in the UI list). */
 function getLabel(item: ArgumentItem): string {
   if (item.type === "reply") {
-    return item.replyHeader ? `Reply to \u201c${item.replyHeader}\u201d` : "Reply";
+    return item.replyHeader
+      ? `Reply to \u201c${item.replyHeader}\u201d`
+      : "Reply";
   }
   const src = item.quote || item.text;
   const MAX = 60;
-  return src.length > MAX ? `\u201c${src.slice(0, MAX)}\u2026\u201d` : `\u201c${src}\u201d`;
+  return src.length > MAX
+    ? `\u201c${src.slice(0, MAX)}\u2026\u201d`
+    : `\u201c${src}\u201d`;
 }
 
 /**
@@ -3293,7 +3473,9 @@ function formatItemPlain(item: ArgumentItem): string {
   if (item.type === "reply") {
     const lines: string[] = [];
     // Header: what annotation the user replied to
-    lines.push(`Reply to annotation: \u201c${item.replyFullNote || item.replyHeader || ""}\u201d`);
+    lines.push(
+      `Reply to annotation: \u201c${item.replyFullNote || item.replyHeader || ""}\u201d`,
+    );
     if (item.replyAnchor) {
       lines.push(`Anchor (highlighted text): \u201c${item.replyAnchor}\u201d`);
     }
@@ -3316,7 +3498,9 @@ function formatItemPlain(item: ArgumentItem): string {
 function formatItemHtml(item: ArgumentItem): string {
   if (item.type === "reply") {
     const parts: string[] = [];
-    parts.push(`<b>Reply to annotation:</b> \u201c${escapeHtml(item.replyFullNote || item.replyHeader || "")}\u201d`);
+    parts.push(
+      `<b>Reply to annotation:</b> \u201c${escapeHtml(item.replyFullNote || item.replyHeader || "")}\u201d`,
+    );
     if (item.replyAnchor) {
       parts.push(`<i>Anchor:</i> \u201c${escapeHtml(item.replyAnchor)}\u201d`);
     }
@@ -3342,15 +3526,17 @@ function renderMarkdown(md: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  return escaped
-    // Bold: **text**
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    // Bullet lines: - item or * item
-    .replace(/^[\-\*]\s+(.+)$/gm, "<li>$1</li>")
-    // Wrap consecutive <li> in <ul>
-    .replace(/((?:<li>.*<\/li>\n?)+)/g, "<ul>$1</ul>")
-    // Line breaks
-    .replace(/\n/g, "<br>");
+  return (
+    escaped
+      // Bold: **text**
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      // Bullet lines: - item or * item
+      .replace(/^[\-\*]\s+(.+)$/gm, "<li>$1</li>")
+      // Wrap consecutive <li> in <ul>
+      .replace(/((?:<li>.*<\/li>\n?)+)/g, "<ul>$1</ul>")
+      // Line breaks
+      .replace(/\n/g, "<br>")
+  );
 }
 
 function handleCopy(btn: HTMLButtonElement): void {
@@ -3399,10 +3585,14 @@ function syncModeTogglePosition(): void {
     }
     modeToggleEl.classList.remove("with-close");
     modeToggleWrapperEl.style.position = "absolute";
-    const toggleH = modeToggleWrapperEl.offsetHeight > 0
-      ? modeToggleWrapperEl.offsetHeight : 34;
-    const toggleW = modeToggleWrapperEl.offsetWidth > 0
-      ? modeToggleWrapperEl.offsetWidth : 150;
+    const toggleH =
+      modeToggleWrapperEl.offsetHeight > 0
+        ? modeToggleWrapperEl.offsetHeight
+        : 34;
+    const toggleW =
+      modeToggleWrapperEl.offsetWidth > 0
+        ? modeToggleWrapperEl.offsetWidth
+        : 150;
     const fabH = 56;
     const topOffset = (fabH - toggleH) / 2 + 4;
     modeToggleWrapperEl.style.top = `${topOffset}px`;
@@ -3413,9 +3603,17 @@ function syncModeTogglePosition(): void {
 /** Size and position the slider highlight to match the active button.
  *  Uses offsetLeft/offsetWidth which are immune to CSS transforms. */
 function syncModeToggleSlider(): void {
-  if (!modeToggleEl || !modeToggleSliderEl || !modeToggleOverviewBtn || !modeToggleDepthBtn) return;
-  const activeBtn = modeToggleEl.dataset.active === "depth"
-    ? modeToggleDepthBtn : modeToggleOverviewBtn;
+  if (
+    !modeToggleEl ||
+    !modeToggleSliderEl ||
+    !modeToggleOverviewBtn ||
+    !modeToggleDepthBtn
+  )
+    return;
+  const activeBtn =
+    modeToggleEl.dataset.active === "depth"
+      ? modeToggleDepthBtn
+      : modeToggleOverviewBtn;
   if (activeBtn.offsetWidth === 0) return; // not laid out yet
   modeToggleSliderEl.style.left = `${activeBtn.offsetLeft}px`;
   modeToggleSliderEl.style.width = `${activeBtn.offsetWidth}px`;
@@ -3448,7 +3646,9 @@ function initModeToggleOverlay(): void {
   modeToggleEl.addEventListener("click", (e: MouseEvent) => {
     e.stopPropagation();
     if (!extensionEnabled) return; // Do nothing when Oddity 1 is off
-    const target = (e.target as HTMLElement).closest("[data-mode]") as HTMLElement | null;
+    const target = (e.target as HTMLElement).closest(
+      "[data-mode]",
+    ) as HTMLElement | null;
     if (!target || !modeToggleEl) return;
     const mode = target.dataset.mode as string;
     if (mode === modeToggleEl.dataset.active) return;
@@ -5037,13 +5237,13 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-dash-back:hover { color: #1a1a1a; }
 
-  .args-dash-logo {
-    font-family: "Fraunces", Georgia, serif;
-    font-size: 16px;
-    font-weight: 600;
-    color: #1a1a1a;
-    flex: 1;
-    letter-spacing: 0.3px;
+  .args-dash-logo-img {
+    width: 78px;
+    height: auto;
+    display: block;
+    flex-shrink: 0;
+    object-fit: contain;
+    margin-right: auto;
   }
 
   .args-dash-toggle-wrap {
@@ -5114,17 +5314,11 @@ const ARGUMENTS_BOX_CSS = `
     flex-shrink: 0;
   }
 
-  .args-dash-persona-select {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
+  .args-dash-persona-label {
     font-family: "Fraunces", Georgia, serif;
     font-size: 12px;
     font-weight: 500;
     color: #111;
-    outline: none;
-    appearance: auto;
     height: 20px;
     line-height: 20px;
   }
@@ -5188,6 +5382,7 @@ const ARGUMENTS_BOX_CSS = `
 
   .args-dash-density-btn {
     all: unset;
+    position: relative;
     flex: 1;
     height: 28px;
     border: 0.5px solid #e5e7eb;
@@ -5203,6 +5398,25 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-dash-density-btn:hover { background: #f9fafb; }
+
+  .args-dash-density-tooltip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a1a;
+    color: #fff;
+    font-size: 10px;
+    white-space: nowrap;
+    padding: 3px 7px;
+    border-radius: 4px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 10;
+  }
+
+  .args-dash-density-btn:hover .args-dash-density-tooltip { opacity: 1; }
 
   .args-dash-density-active {
     background: #1a1a1a !important;

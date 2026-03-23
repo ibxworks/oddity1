@@ -87,7 +87,8 @@
       "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1/backend --include=\"*.ts\" --include=\"*.sql\" 2>/dev/null | head -20)",
       "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1 --include=\"*.ts\" --include=\"*.js\" --include=\"*.md\" 2>/dev/null | head -30)",
       "Bash(git -C /Users/realtonypark/Developer/oddity1 diff HEAD backend/api/annotate.ts 2>/dev/null | head -100)",
-      "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1 --include=\"*.sql\" --include=\"*.ts\" --include=\"*.md\" 2>/dev/null | head -40)"
+      "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1 --include=\"*.sql\" --include=\"*.ts\" --include=\"*.md\" 2>/dev/null | head -40)",
+      "Bash(find /Users/realtonypark/Developer/oddity1/backend -type f -name *.json -o -name *.ts -o -name *.js)"
     ]
   },
   "enableAllProjectMcpServers": true,

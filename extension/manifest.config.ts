@@ -33,7 +33,7 @@ export default defineManifest({
   },
   web_accessible_resources: [
     {
-      resources: ["assets/logo-terry.svg", "Terry.png", "Jerry.png", "Sally.png"],
+      resources: ["Oddity1-Logo.png", "Terry.png", "Jerry.png", "Sally.png"],
       matches: ["<all_urls>"],
     },
   ],

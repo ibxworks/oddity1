@@ -48,7 +48,7 @@ const popupShortcutHint = document.getElementById("popup-shortcut-hint")!;
 // Persona picker refs (top section)
 const profilePersonaSelect = document.getElementById(
   "profile-persona-select",
-) as HTMLSelectElement;
+) as HTMLElement;
 
 // Auth bar refs (bottom)
 const profileBtn = document.getElementById("profile-btn")!;
@@ -171,7 +171,7 @@ function applyPrefsToUI(): void {
 
   // Sync top avatar with personality
   const displayName = (currentPrefs.depth_personality ?? "jerry").charAt(0).toUpperCase() + (currentPrefs.depth_personality ?? "jerry").slice(1);
-  profilePersonaSelect.value = displayName;
+  profilePersonaSelect.textContent = displayName;
   applyPersonaVisuals(displayName);
 
   // Font select
@@ -377,7 +377,7 @@ intensityGroup.addEventListener("click", (e) => {
 
   // Sync the top avatar and persona selector with the selected personality
   const displayName = personality.charAt(0).toUpperCase() + personality.slice(1);
-  profilePersonaSelect.value = displayName;
+  profilePersonaSelect.textContent = displayName;
   applyPersonaVisuals(displayName);
 
   savePrefs();
@@ -504,20 +504,6 @@ function applyPersonaVisuals(name: string): void {
   const bgMap: Record<string, string> = { Jerry: "#FDCB24", Terry: "#fff", Sally: "#fff" };
   profileCircleEl.style.background = bgMap[name] ?? "#fff";
 }
-
-profilePersonaSelect.addEventListener("change", () => {
-  applyPersonaVisuals(profilePersonaSelect.value);
-
-  // Sync personality buttons and preference with the dropdown
-  const personality = profilePersonaSelect.value.toLowerCase() as DepthPersonality;
-  currentPrefs.depth_personality = personality;
-  for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(
-    ".density-btn",
-  )) {
-    b.classList.toggle("active", b.dataset["intensity"] === personality);
-  }
-  savePrefs();
-});
 
 // ─── Profile Popover (bottom bar) ───
 

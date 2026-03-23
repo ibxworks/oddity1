@@ -35,12 +35,11 @@
         justify-content: space-between;
         padding: 16px 20px;
       }
-      .header-logo {
-        font-family: "Fraunces", Georgia, serif;
-        font-size: 17px;
-        font-weight: 600;
-        color: #111;
-        letter-spacing: 0.3px;
+      .header-logo-img {
+        width: 84px;
+        height: auto;
+        display: block;
+        object-fit: contain;
       }
       .toggle-wrap {
         display: flex;
@@ -117,17 +116,11 @@
       .profile-name-wrap {
         position: relative;
       }
-      .profile-persona-select {
-        background: none;
-        border: none;
-        cursor: pointer;
-        padding: 0;
+      .profile-persona-label {
         font-family: "Fraunces", Georgia, serif;
         font-size: 13px;
         font-weight: 500;
         color: #111;
-        outline: none;
-        appearance: auto;
       }
       .profile-count-area {
         flex: 1;
@@ -211,6 +204,7 @@
         flex: 1;
       }
       .density-btn {
+        position: relative;
         flex: 1;
         padding: 7px 0;
         border: 0.5px solid #e8e8e2;
@@ -230,6 +224,26 @@
         background: #111;
         color: #fff;
         border-color: #111;
+      }
+      .density-btn::after {
+        content: attr(data-desc);
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: #111;
+        color: #fff;
+        font-size: 10px;
+        white-space: nowrap;
+        padding: 3px 7px;
+        border-radius: 4px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+        z-index: 10;
+      }
+      .density-btn:hover::after {
+        opacity: 1;
       }
 
       /* ── Select dropdowns ── */
@@ -713,7 +727,7 @@
   <body>
     <!-- Header -->
     <div class="header">
-      <span class="header-logo">Oddity 1</span>
+      <img src="/Oddity1-Logo.png" class="header-logo-img" alt="Oddity 1" />
       <div class="toggle-wrap">
         <span class="toggle-label" id="toggle-label">On</span>
         <label class="toggle">
@@ -835,11 +849,7 @@
             />
           </div>
           <div class="profile-name-wrap">
-            <select id="profile-persona-select" class="profile-persona-select">
-              <option value="Terry">Terry</option>
-              <option value="Jerry">Jerry</option>
-              <option value="Sally">Sally</option>
-            </select>
+            <span id="profile-persona-select" class="profile-persona-label">Jerry</span>
           </div>
         </div>
         <div class="profile-count-area">
@@ -858,11 +868,9 @@
           <div class="style-row">
             <span class="style-label">Personality</span>
             <div class="density-group" id="intensity-group">
-              <button class="density-btn" data-intensity="terry">
-                Terry
-              </button>
-              <button class="density-btn active" data-intensity="jerry">Jerry</button>
-              <button class="density-btn" data-intensity="sally">Sally</button>
+              <button class="density-btn" data-intensity="terry" data-desc="Balanced &amp; clear">Terry</button>
+              <button class="density-btn active" data-intensity="jerry" data-desc="Sharp &amp; critical">Jerry</button>
+              <button class="density-btn" data-intensity="sally" data-desc="Warm &amp; curious">Sally</button>
             </div>
           </div>
           <!-- Font -->
