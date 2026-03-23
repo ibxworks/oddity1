@@ -7,7 +7,6 @@ import type {
 } from "@oddity/shared";
 import { getAnnotationColor } from "@oddity/shared";
 
-import { getMarginNotesContentLeft } from "./margin-notes.js";
 import { getPageUrl } from "../page-url.js";
 import {
   getThemeMode,
@@ -56,7 +55,7 @@ let shadowRoot: ShadowRoot | null = null;
 let outerWrapperEl: HTMLDivElement | null = null;
 let toggleBarEl: HTMLDivElement | null = null;
 let containerEl: HTMLDivElement | null = null;
-let closeBtnEl: HTMLButtonElement | null = null;
+let topBarEl: HTMLDivElement | null = null;
 let listEl: HTMLDivElement | null = null;
 let panelToggleInput: HTMLInputElement | null = null;
 let panelToggleLabelEl: HTMLSpanElement | null = null;
@@ -152,16 +151,13 @@ let btnCurrentBottom = BTN_DEFAULT_BOTTOM;
 let btnDragMoveHandler: ((e: MouseEvent) => void) | null = null;
 let btnDragUpHandler: (() => void) | null = null;
 
-// ─── Mode Toggle Overlay (fixed, left margin) ───
+// ─── Mode Toggle (inside FAB outer wrapper) ───
 
-let modeToggleHostEl: HTMLElement | null = null;
-let modeToggleShadowRoot: ShadowRoot | null = null;
+let modeToggleWrapperEl: HTMLDivElement | null = null;
 let modeToggleOverviewBtn: HTMLButtonElement | null = null;
 let modeToggleDepthBtn: HTMLButtonElement | null = null;
-let modeToggleResizeHandler: (() => void) | null = null;
-let modeToggleThemeHandler: ((mode: "light" | "dark") => void) | null = null;
-
-const TOGGLE_OVERLAY_WIDTH = 240; // px — approximate rendered width of the three buttons
+let modeToggleSliderEl: HTMLDivElement | null = null;
+let modeToggleEl: HTMLDivElement | null = null;
 
 // ─── Public API ───
 
@@ -264,6 +260,7 @@ export function initArgumentsBox(): void {
       outerWrapperEl.style.bottom = `${btnCurrentBottom}px`;
       btnDragStartX = ev.clientX;
       btnDragStartY = ev.clientY;
+      syncModeTogglePosition();
     };
 
     btnDragUpHandler = () => {
@@ -483,33 +480,21 @@ export function initArgumentsBox(): void {
   containerEl.addEventListener("mousemove", (e) => {
     if (!expanded) return;
     const rect = containerEl!.getBoundingClientRect();
-    const inTopHalf = e.clientY < rect.top + rect.height * 0.3;
-    if (inTopHalf) {
-      showCloseBtn();
+    const inTopZone = e.clientY < rect.top + rect.height * 0.3;
+    if (inTopZone) {
+      showTopBar();
     } else {
-      hideCloseBtn();
+      hideTopBar();
     }
   });
-  containerEl.addEventListener("mouseleave", () => hideCloseBtn());
+  containerEl.addEventListener("mouseleave", () => hideTopBar());
 
-  // ── Close button — slides down from top-center ──
-  closeBtnEl = document.createElement("button");
-  closeBtnEl.className = "args-close-btn";
-  closeBtnEl.title = "Close";
-  closeBtnEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
-  closeBtnEl.addEventListener("mouseenter", () => showCloseBtn());
-  closeBtnEl.addEventListener("mouseleave", () => hideCloseBtn());
-  closeBtnEl.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (expanded) {
-      if (dimmed) {
-        toggleDimmedPanel();
-      } else {
-        toggle();
-      }
-    }
-  });
-  containerEl.appendChild(closeBtnEl);
+  // ── Top bar — slides in above the box on hover (holds the mode toggle) ──
+  topBarEl = document.createElement("div");
+  topBarEl.className = "args-top-bar-hover";
+  topBarEl.addEventListener("mouseenter", () => showTopBar());
+  topBarEl.addEventListener("mouseleave", () => hideTopBar());
+  containerEl.appendChild(topBarEl);
 
   // ── Enable-site bubble (visible when collapsed & not-enabled) ──
   enableBubbleEl = document.createElement("div");
@@ -695,9 +680,14 @@ export function initArgumentsBox(): void {
     .catch(() => {});
 
   // Listen for "Go to highlight" failures (annotation not on page)
-  document.addEventListener("oddity:scroll-to-annotation-missing", () => {
-    showArgToast("This highlight is from a different personality and isn't on the page right now.");
-  });
+  document.addEventListener("oddity:scroll-to-annotation-missing", ((e: CustomEvent) => {
+    const isReply = e?.detail?.isReply;
+    if (isReply) {
+      showArgToast("This note is from a different personality and isn't on the page right now.");
+    } else {
+      showArgToast("Could not find this highlight on the page.");
+    }
+  }) as EventListener);
 }
 
 function showArgToast(message: string): void {
@@ -781,12 +771,22 @@ export function updateLiveFeedbackId(sortKey: string, feedbackId: string): void 
   if (item) item.feedbackId = feedbackId;
 }
 
-/** Mode toggle should only show when the user is signed in, the extension is enabled, and the site is not dimmed. */
+/** Mode toggle: always visible when expanded (even if off), hidden when collapsed + off. */
 function updateModeToggleVisibility(): void {
-  if (!modeToggleHostEl) return;
+  if (!modeToggleWrapperEl) return;
+  const wasHidden = modeToggleWrapperEl.style.display === "none";
+  // Show when: box visible, signed in, not dimmed, AND (enabled OR expanded)
   const show =
-    boxVisible && extensionEnabled && !dimmed && localAuthState === true;
-  modeToggleHostEl.style.display = show ? "" : "none";
+    boxVisible && !dimmed && localAuthState === true && (extensionEnabled || expanded);
+  modeToggleWrapperEl.style.display = show ? "" : "none";
+  // Mark disabled so click handler can ignore mode switches (but no visual dimming)
+  modeToggleWrapperEl.classList.toggle("disabled", !extensionEnabled);
+  if (show && wasHidden) {
+    requestAnimationFrame(() => {
+      syncModeToggleSlider();
+      syncModeTogglePosition();
+    });
+  }
 }
 
 export function setArgumentsBoxVisible(visible: boolean): void {
@@ -986,23 +986,11 @@ export function destroyArgumentsBox(): void {
     offThemeChange(themeHandler);
     themeHandler = null;
   }
-  if (modeToggleResizeHandler) {
-    window.removeEventListener("resize", modeToggleResizeHandler);
-    modeToggleResizeHandler = null;
-  }
-  if (modeToggleThemeHandler) {
-    offThemeChange(modeToggleThemeHandler);
-    modeToggleThemeHandler = null;
-  }
-  document.removeEventListener(
-    "oddity:layoutUpdated",
-    updateModeTogglePosition,
-  );
-  modeToggleHostEl?.remove();
-  modeToggleHostEl = null;
-  modeToggleShadowRoot = null;
+  modeToggleWrapperEl = null;
   modeToggleOverviewBtn = null;
   modeToggleDepthBtn = null;
+  modeToggleSliderEl = null;
+  modeToggleEl = null;
   if (listDragMoveHandler) {
     document.removeEventListener("mousemove", listDragMoveHandler);
     listDragMoveHandler = null;
@@ -1015,7 +1003,7 @@ export function destroyArgumentsBox(): void {
   hostEl = null;
   shadowRoot = null;
   containerEl = null;
-  closeBtnEl = null;
+  topBarEl = null;
   listEl = null;
   panelToggleInput = null;
   panelToggleLabelEl = null;
@@ -1062,7 +1050,7 @@ function showNotEnabledOverlay(): void {
   if (notEnabledPanelEl) return; // already showing
   dimmed = true;
   containerEl?.classList.add("oddity-not-enabled");
-  if (modeToggleHostEl) modeToggleHostEl.style.display = "none";
+  if (modeToggleWrapperEl) modeToggleWrapperEl.style.display = "none";
   containerEl?.classList.remove("dashboard");
   const contentClip = shadowRoot?.querySelector(".args-content-clip");
   if (!contentClip) return;
@@ -1235,14 +1223,14 @@ function toggleDimmedPanel(): void {
       containerEl.style.width = "";
     }
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
-    closeBtnEl?.classList.remove("hovered");
+    topBarEl?.classList.remove("hovered");
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
     pdfPanelEl?.remove();
     pdfPanelEl = null;
     return;
   } else if (containerEl?.matches(":hover")) {
-    showCloseBtn();
+    showTopBar();
   }
   if (pdfDetected) {
     showPdfOverlay();
@@ -1255,6 +1243,8 @@ function toggle(): void {
   expanded = !expanded;
   containerEl?.classList.toggle("expanded", expanded);
   toggleBarEl?.classList.toggle("visible", expanded);
+  updateModeToggleVisibility();
+  syncModeTogglePosition();
   if (!expanded) {
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
@@ -1266,7 +1256,7 @@ function toggle(): void {
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
-    closeBtnEl?.classList.remove("hovered");
+    topBarEl?.classList.remove("hovered");
   } else {
     const checkAuth = async (authenticated: boolean) => {
       if (!authenticated) {
@@ -1304,18 +1294,18 @@ function toggle(): void {
   }
 }
 
-function showCloseBtn(): void {
+function showTopBar(): void {
   if (!expanded) return;
   if (closeBtnHideTimer) {
     clearTimeout(closeBtnHideTimer);
     closeBtnHideTimer = null;
   }
-  closeBtnEl?.classList.add("hovered");
+  topBarEl?.classList.add("hovered");
 }
 
-function hideCloseBtn(): void {
+function hideTopBar(): void {
   closeBtnHideTimer = setTimeout(() => {
-    closeBtnEl?.classList.remove("hovered");
+    topBarEl?.classList.remove("hovered");
     closeBtnHideTimer = null;
   }, 80);
 }
@@ -3014,7 +3004,7 @@ function renderList(): void {
       if (item.annotationId) {
         document.dispatchEvent(
           new CustomEvent("oddity:scroll-to-annotation", {
-            detail: { annotationId: item.annotationId },
+            detail: { annotationId: item.annotationId, itemType: item.type },
           }),
         );
       }
@@ -3386,63 +3376,64 @@ function handleCopy(btn: HTMLButtonElement): void {
     });
 }
 
-// ─── Mode Toggle Overlay ───
+// ─── Mode Toggle (inside FAB) ───
 
-function updateModeTogglePosition(): void {
-  if (!modeToggleHostEl) return;
-  const contentLeft =
-    getMarginNotesContentLeft() ||
-    (() => {
-      const hashEl = document.querySelector(
-        "[data-oddity-hash]",
-      ) as HTMLElement | null;
-      return hashEl
-        ? hashEl.getBoundingClientRect().left
-        : window.innerWidth * 0.3;
-    })();
-  // The left margin column runs from ~8px to contentLeft - 16px (MARGIN_PADDING).
-  // Center the toggle within that column.
-  const marginLeft = 8;
-  const marginRight = contentLeft - 16;
-  const availableWidth = marginRight - marginLeft;
-  modeToggleHostEl.style.visibility = "";
-  if (availableWidth < 80) {
-    // Not enough room in the left margin — pin to left edge
-    modeToggleHostEl.style.left = `${marginLeft}px`;
-    return;
+/** Position the mode toggle: next to FAB when collapsed, inside the top bar when expanded. */
+function syncModeTogglePosition(): void {
+  if (!modeToggleWrapperEl || !containerEl || !modeToggleEl) return;
+  if (expanded && topBarEl) {
+    // Move toggle into the top bar
+    if (modeToggleWrapperEl.parentElement !== topBarEl) {
+      topBarEl.insertBefore(modeToggleWrapperEl, topBarEl.firstChild);
+    }
+    modeToggleEl.classList.add("with-close");
+    modeToggleWrapperEl.style.top = "";
+    modeToggleWrapperEl.style.left = "";
+    modeToggleWrapperEl.style.transform = "";
+    modeToggleWrapperEl.style.transformOrigin = "";
+    modeToggleWrapperEl.style.position = "static";
+  } else if (outerWrapperEl) {
+    // Move toggle back to outerWrapper (next to FAB)
+    if (modeToggleWrapperEl.parentElement !== outerWrapperEl) {
+      outerWrapperEl.insertBefore(modeToggleWrapperEl, containerEl);
+    }
+    modeToggleEl.classList.remove("with-close");
+    modeToggleWrapperEl.style.position = "absolute";
+    const toggleH = modeToggleWrapperEl.offsetHeight > 0
+      ? modeToggleWrapperEl.offsetHeight : 34;
+    const toggleW = modeToggleWrapperEl.offsetWidth > 0
+      ? modeToggleWrapperEl.offsetWidth : 150;
+    const fabH = 56;
+    const topOffset = (fabH - toggleH) / 2 + 4;
+    modeToggleWrapperEl.style.top = `${topOffset}px`;
+    modeToggleWrapperEl.style.left = `${-(toggleW + 10)}px`;
   }
-  const marginCenter = (marginLeft + marginRight) / 2;
-  const left = marginCenter - TOGGLE_OVERLAY_WIDTH / 2;
-  modeToggleHostEl.style.left = `${Math.max(marginLeft, left)}px`;
+}
+
+/** Size and position the slider highlight to match the active button.
+ *  Uses offsetLeft/offsetWidth which are immune to CSS transforms. */
+function syncModeToggleSlider(): void {
+  if (!modeToggleEl || !modeToggleSliderEl || !modeToggleOverviewBtn || !modeToggleDepthBtn) return;
+  const activeBtn = modeToggleEl.dataset.active === "depth"
+    ? modeToggleDepthBtn : modeToggleOverviewBtn;
+  if (activeBtn.offsetWidth === 0) return; // not laid out yet
+  modeToggleSliderEl.style.left = `${activeBtn.offsetLeft}px`;
+  modeToggleSliderEl.style.width = `${activeBtn.offsetWidth}px`;
 }
 
 function initModeToggleOverlay(): void {
-  if (modeToggleHostEl) return;
+  if (modeToggleWrapperEl || !outerWrapperEl || !shadowRoot) return;
 
-  modeToggleHostEl = document.createElement("div");
-  modeToggleHostEl.style.cssText =
-    "position: fixed; bottom: 20px; z-index: 2147483646; pointer-events: auto; display: none;";
-  document.body.appendChild(modeToggleHostEl);
+  modeToggleWrapperEl = document.createElement("div");
+  modeToggleWrapperEl.className = "args-mode-toggle-wrapper";
+  modeToggleWrapperEl.style.display = "none";
 
-  modeToggleShadowRoot = modeToggleHostEl.attachShadow({ mode: "closed" });
+  modeToggleEl = document.createElement("div");
+  modeToggleEl.className = "mode-toggle";
+  modeToggleEl.dataset.active = "overview";
 
-  const style = document.createElement("style");
-  style.textContent = TOGGLE_OVERLAY_CSS;
-  modeToggleShadowRoot.appendChild(style);
-
-  // Theme
-  modeToggleHostEl.dataset.theme = getThemeMode();
-  modeToggleThemeHandler = (mode) => {
-    if (modeToggleHostEl) modeToggleHostEl.dataset.theme = mode;
-  };
-  onThemeChange(modeToggleThemeHandler);
-
-  const toggleEl = document.createElement("div");
-  toggleEl.className = "mode-toggle";
-  toggleEl.dataset.active = "overview";
-
-  const sliderEl = document.createElement("div");
-  sliderEl.className = "mode-slider";
+  modeToggleSliderEl = document.createElement("div");
+  modeToggleSliderEl.className = "mode-slider";
 
   modeToggleOverviewBtn = document.createElement("button");
   modeToggleOverviewBtn.className = "mode-btn mode-active";
@@ -3454,102 +3445,48 @@ function initModeToggleOverlay(): void {
   modeToggleDepthBtn.textContent = "Depth";
   modeToggleDepthBtn.dataset.mode = "depth";
 
-  function handleBtnClick(e: MouseEvent): void {
+  modeToggleEl.addEventListener("click", (e: MouseEvent) => {
     e.stopPropagation();
+    if (!extensionEnabled) return; // Do nothing when Oddity 1 is off
     const target = (e.target as HTMLElement).closest("[data-mode]") as HTMLElement | null;
-    if (!target) return;
+    if (!target || !modeToggleEl) return;
     const mode = target.dataset.mode as string;
-    if (mode === toggleEl.dataset.active) return;
+    if (mode === modeToggleEl.dataset.active) return;
     modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
-    toggleEl.dataset.active = mode;
+    modeToggleEl.dataset.active = mode;
+    syncModeToggleSlider();
     document.dispatchEvent(
       new CustomEvent("oddity:modeChange", { detail: { mode } }),
     );
-  }
+  });
 
-  toggleEl.addEventListener("click", handleBtnClick);
+  // Close button lives inside the toggle as a third grid column (visible only when expanded)
+  const modeCloseBtnEl = document.createElement("button");
+  modeCloseBtnEl.className = "mode-close-btn";
+  modeCloseBtnEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  modeCloseBtnEl.addEventListener("click", (e: MouseEvent) => {
+    e.stopPropagation();
+    if (expanded) {
+      if (dimmed) {
+        toggleDimmedPanel();
+      } else {
+        toggle();
+      }
+    }
+  });
 
-  toggleEl.appendChild(sliderEl);
-  toggleEl.appendChild(modeToggleOverviewBtn);
-  toggleEl.appendChild(modeToggleDepthBtn);
-  modeToggleShadowRoot.appendChild(toggleEl);
+  modeToggleEl.appendChild(modeToggleSliderEl);
+  modeToggleEl.appendChild(modeToggleOverviewBtn);
+  modeToggleEl.appendChild(modeToggleDepthBtn);
+  modeToggleEl.appendChild(modeCloseBtnEl);
+  modeToggleWrapperEl.appendChild(modeToggleEl);
 
-  // Position — update immediately, on layout changes, and on resize
-  updateModeTogglePosition();
-  document.addEventListener("oddity:layoutUpdated", updateModeTogglePosition);
-
-  modeToggleResizeHandler = () => updateModeTogglePosition();
-  window.addEventListener("resize", modeToggleResizeHandler, { passive: true });
+  // Insert before containerEl so it appears to its left when collapsed
+  outerWrapperEl.insertBefore(modeToggleWrapperEl, containerEl);
 }
 
 // ─── CSS ───
-
-const TOGGLE_OVERLAY_CSS = `
-  :host { display: block; }
-  * { box-sizing: border-box; }
-
-  .mode-toggle {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 4px;
-    background: #292929;
-    border-radius: 12px;
-    position: relative;
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
-  }
-
-  .mode-slider {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    width: calc(50% - 4px);
-    height: calc(100% - 8px);
-    background: #434343;
-    border-radius: 9px;
-    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-    pointer-events: none;
-    z-index: 0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08);
-  }
-
-  .mode-toggle[data-active="depth"] .mode-slider {
-    transform: translateX(100%);
-  }
-
-  .mode-btn {
-    all: unset;
-    padding: 7px 18px;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 400;
-    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
-    color: #787A7D;
-    background: transparent;
-    border: none;
-    border-radius: 9px;
-    cursor: pointer;
-    transition: color 0.25s ease;
-    white-space: nowrap;
-    position: relative;
-    z-index: 1;
-  }
-
-  .mode-active {
-    color: #FFFFFF;
-  }
-
-  .mode-btn:hover:not(.mode-active) {
-    color: #FFFFFF;
-  }
-
-  :host([data-theme="light"]) .mode-toggle  { background: #E6E6E6; box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08); }
-  :host([data-theme="light"]) .mode-slider  { background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08); }
-  :host([data-theme="light"]) .mode-btn     { color: #858E97; }
-  :host([data-theme="light"]) .mode-active  { color: #696F77; }
-  :host([data-theme="light"]) .mode-btn:hover:not(.mode-active) { color: #696F77; }
-`;
 
 const ARGUMENTS_BOX_CSS = `
   :host {
@@ -3574,7 +3511,7 @@ const ARGUMENTS_BOX_CSS = `
     overflow: visible;
   }
 
-  /* ── Toggle bar (top-left, outside the panel) ── */
+  /* ── Toggle bar (top-right, outside the panel) ── */
 
   .args-toggle-bar {
     display: flex;
@@ -3585,10 +3522,10 @@ const ARGUMENTS_BOX_CSS = `
     transition: opacity 0.2s ease;
     position: absolute;
     top: 0px;
-    left: 20px;
+    right: 11px;
     z-index: 3;
     transform: scale(0.81);
-    transform-origin: left center;
+    transform-origin: right center;
   }
 
   .args-toggle-bar.visible {
@@ -3600,6 +3537,133 @@ const ARGUMENTS_BOX_CSS = `
     opacity: 0;
     pointer-events: none;
   }
+
+  /* ── Mode toggle (moves with the FAB) ── */
+
+  .args-mode-toggle-wrapper {
+    pointer-events: auto;
+    position: absolute;
+    z-index: 3;
+  }
+
+  .args-outer-wrapper:has(.args-container.dashboard) .args-mode-toggle-wrapper {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .args-mode-toggle-wrapper.disabled .mode-btn,
+  .args-mode-toggle-wrapper.disabled .mode-close-btn {
+    cursor: default;
+  }
+
+  .mode-toggle {
+    display: grid;
+    grid-template-columns: auto auto;
+    padding: 3px;
+    background: #E6E6E6;
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
+  }
+
+  .mode-toggle.with-close {
+    grid-template-columns: auto auto auto;
+  }
+
+  .mode-slider {
+    position: absolute;
+    top: 3px;
+    height: calc(100% - 6px);
+    background: #FFFFFF;
+    border-radius: 8px;
+    transition: left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+                width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+    z-index: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08);
+  }
+
+  .mode-btn {
+    all: unset;
+    padding: 5px 14px;
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 400;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+    color: #858E97;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 0.25s ease;
+    white-space: nowrap;
+    position: relative;
+    z-index: 1;
+  }
+
+  .mode-active {
+    color: #696F77;
+  }
+
+  .mode-btn:hover:not(.mode-active) {
+    color: #696F77;
+  }
+
+  .mode-close-btn {
+    all: unset;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #858E97;
+    background: transparent;
+    position: relative;
+    z-index: 1;
+    transition: color 0.2s ease, background 0.2s ease;
+  }
+
+  .mode-close-btn:hover {
+    color: #696F77;
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .mode-toggle.with-close .mode-close-btn {
+    display: flex;
+  }
+
+  /* Dark mode overrides when expanded (with-close) */
+  .mode-toggle.with-close {
+    background: #292929;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25), 0 0 1px rgba(0,0,0,0.15);
+  }
+  .mode-toggle.with-close .mode-slider {
+    background: #434343;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 0 1px rgba(0,0,0,0.15);
+  }
+  .mode-toggle.with-close .mode-btn { color: #787A7D; }
+  .mode-toggle.with-close .mode-active { color: #FFFFFF; }
+  .mode-toggle.with-close .mode-btn:hover:not(.mode-active) { color: #FFFFFF; }
+  .mode-toggle.with-close .mode-close-btn { color: #787A7D; }
+  .mode-toggle.with-close .mode-close-btn:hover { color: #FFFFFF; background: rgba(255,255,255,0.08); }
+
+  /* Light mode: expanded toggle uses light colors */
+  :host([data-theme="light"]) .mode-toggle.with-close {
+    background: #E6E6E6;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
+  }
+  :host([data-theme="light"]) .mode-toggle.with-close .mode-slider {
+    background: #FFFFFF;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08);
+  }
+  :host([data-theme="light"]) .mode-toggle.with-close .mode-btn { color: #858E97; }
+  :host([data-theme="light"]) .mode-toggle.with-close .mode-active { color: #696F77; }
+  :host([data-theme="light"]) .mode-toggle.with-close .mode-btn:hover:not(.mode-active) { color: #696F77; }
+  :host([data-theme="light"]) .mode-toggle.with-close .mode-close-btn { color: #858E97; }
+  :host([data-theme="light"]) .mode-toggle.with-close .mode-close-btn:hover { color: #696F77; background: rgba(0,0,0,0.06); }
 
   /* ── Morphing container ── */
 
@@ -4511,51 +4575,28 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(255, 255, 255, 0.7);
   }
 
-  /* ── Close button (top-center, slides in from above) ── */
+  /* ── Top bar (toggle + close, slides in on hover) ── */
 
-  .args-close-btn {
-    all: unset;
+  .args-top-bar-hover {
     position: absolute;
-    top: -40px;
-    left: 50%;
-    /* Hidden: pushed down so it sits behind the top of the box */
-    transform: translateX(-50%) translateY(32px);
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: rgba(120, 120, 120, 0.7);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    cursor: pointer;
+    top: -44px;
+    left: 0;
     pointer-events: none;
     opacity: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #ffffff;
+    transform: translateY(8px) scale(0.95);
+    transform-origin: left center;
     transition: opacity 0.18s ease, transform 0.22s ease;
     z-index: 3;
   }
 
-  .args-close-btn.hovered {
+  .args-top-bar-hover.hovered {
     opacity: 1;
     pointer-events: auto;
-    /* Shown: slides up to 8px above the box (top:-40px + translateY(0) → bottom edge at -8px) */
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0) scale(0.95);
   }
 
-  .args-close-btn:hover {
-    background: rgba(100, 100, 100, 0.85);
-  }
-
-  :host([data-theme="light"]) .args-close-btn {
-    color: #ffffff;
-    background: rgba(120, 120, 120, 0.7);
-  }
-
-  :host([data-theme="light"]) .args-close-btn:hover {
-    background: rgba(100, 100, 100, 0.85);
+  .args-container.dashboard .args-top-bar-hover {
+    display: none;
   }
 
   /* ── Light mode overrides ── */

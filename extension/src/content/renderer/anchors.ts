@@ -7,6 +7,11 @@ const ATTR = 'data-oddity-id';
 /** All injected anchor spans, keyed by annotation ID */
 const anchorMap = new Map<string, HTMLSpanElement[]>();
 
+/** Whether any anchor spans are currently injected in the DOM. */
+export function hasAnchors(): boolean {
+  return anchorMap.size > 0;
+}
+
 /**
  * Check whether a node lives inside a contenteditable subtree.
  */
@@ -157,8 +162,11 @@ export function removeAnchors(annotationId: string): void {
     }
     parent.removeChild(span);
 
-    // Merge adjacent text nodes back together
-    parent.normalize();
+    // NOTE: We intentionally do NOT call parent.normalize() here.
+    // normalize() merges adjacent text nodes, which destroys text node
+    // references that React tracks internally.  When React later tries to
+    // update a destroyed text node, it crashes with an error boundary.
+    // Adjacent text nodes render identically and are harmless.
   }
 
   anchorMap.delete(annotationId);

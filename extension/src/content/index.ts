@@ -48,6 +48,7 @@ import {
   clearAllAnchors,
   getAllAnchorsInOrder,
   getAnnotationId,
+  hasAnchors,
   injectAnchors,
   removeAnchors,
 } from "./renderer/anchors.js";
@@ -310,7 +311,6 @@ const chatTrackedElements = new WeakSet<Element>();
 let siteWhitelisted = false;
 let manualRunTriggered = false;
 let blocked = false;
-
 let enabled = true;
 let currentMode: ViewMode = "overview";
 let currentPersonality: DepthPersonality = "jerry";
@@ -392,6 +392,100 @@ function syncArgumentsBox(): void {
     }
   }
   updateArgumentsBox(mergedAnnotations, mergedFeedback);
+}
+
+// ─── React-safe Anchor Guard ───
+// React-based sites (Claude.ai, ChatGPT, etc.) may re-render DOM regions that
+// contain our injected anchor <span> elements.  If React's reconciliation
+// encounters unexpected nodes it crashes (error boundary).
+//
+// Strategy: listen for clicks outside the annotated content region in the
+// capture phase (runs before React's synthetic event handlers).  Strip all
+// anchor spans so React re-renders against clean DOM.  After the layout
+// settles, re-inject anchors via rerenderAll().
+//
+// Also use a ResizeObserver on each region to detect layout shifts (sidebar
+// open, panel resize) and recover anchors that may have been destroyed.
+
+let anchorGuardRerenderTimer: ReturnType<typeof setTimeout> | null = null;
+
+function startAnchorGuard(): void {
+  // ── Capture-phase click guard ──
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (!enabled || !hasAnchors()) return;
+
+      const target = e.target as Element | null;
+      if (!target) return;
+
+      // Skip clicks on Oddity's own UI elements — these never trigger React
+      // re-renders and must not interfere with mode switches or other controls.
+      if (
+        target.closest("oddity-arguments-box") ||
+        target.closest("#oddity-margin-notes") ||
+        target.closest("#oddity-page-dim")
+      ) return;
+
+      // If the click is inside an annotated region, let it through — the user
+      // is interacting with Oddity highlights, not triggering a layout change.
+      const allRegionEls = new Set<Element>();
+      for (const r of regions) allRegionEls.add(r.element);
+      for (const r of regionByHash.values()) allRegionEls.add(r.element);
+
+      for (const el of allRegionEls) {
+        if (el.contains(target)) return;
+      }
+
+      // Click is outside all content regions — pre-emptively strip anchors
+      // so a potential React re-render doesn't crash on unexpected DOM nodes.
+      clearAllAnchors();
+      clearOverlay();
+      clearMarginNotes();
+      for (const r of regions) invalidateTextNodeIndex(r.element);
+      for (const r of regionByHash.values()) invalidateTextNodeIndex(r.element);
+
+      // Schedule a re-render after the layout settles.
+      if (anchorGuardRerenderTimer) clearTimeout(anchorGuardRerenderTimer);
+      anchorGuardRerenderTimer = setTimeout(() => {
+        anchorGuardRerenderTimer = null;
+        if (enabled) rerenderAll();
+      }, 400);
+    },
+    { capture: true },
+  );
+
+  // ── ResizeObserver recovery ──
+  // When a region's container resizes (sidebar open, panel toggle) anchors may
+  // have been destroyed by the framework's re-render.  Detect this and recover.
+  if (typeof ResizeObserver !== "undefined") {
+    let resizeRerenderTimer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (!enabled) return;
+      // If the anchor guard scheduled a premature re-render, cancel it —
+      // we'll recover after the layout fully settles.
+      if (anchorGuardRerenderTimer) {
+        clearTimeout(anchorGuardRerenderTimer);
+        anchorGuardRerenderTimer = null;
+      }
+      // Debounce — a sidebar toggle may trigger multiple resize entries
+      if (resizeRerenderTimer) clearTimeout(resizeRerenderTimer);
+      resizeRerenderTimer = setTimeout(() => {
+        resizeRerenderTimer = null;
+        // Check if anchors survived.  If not, re-render to restore them.
+        const domAnchors = document.querySelectorAll("[data-oddity-id]");
+        if (domAnchors.length === 0 && (overviewAnnotations.size > 0 || depthAnnotations.size > 0)) {
+          for (const r of regions) invalidateTextNodeIndex(r.element);
+          for (const r of regionByHash.values()) invalidateTextNodeIndex(r.element);
+          rerenderAll();
+        }
+      }, 500);
+    });
+
+    // Observe all current regions
+    for (const r of regions) ro.observe(r.element);
+    for (const r of regionByHash.values()) ro.observe(r.element);
+  }
 }
 
 // ─── SPA Navigation: State Reset ───
@@ -595,13 +689,15 @@ async function init(): Promise<void> {
   }
   const prefs = stored?.preferences;
 
-  // Restore personality from stored preferences (mode always resets to "overview" on page load)
+  // Restore personality and mode from stored preferences.
+  // We respect the user's chosen mode rather than force-resetting to "overview",
+  // because the reset caused cross-tab interference: one tab's init() would
+  // broadcast "overview" to all other tabs, overriding their depth mode.
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
-  // Always reset stored mode to "overview" on page load so popup/background stay in sync
-  if (prefs && prefs.annotation_mode !== "overview") {
-    chrome.storage.local.set({ preferences: { ...prefs, annotation_mode: "overview" } });
+  if (prefs?.annotation_mode) {
+    currentMode = prefs.annotation_mode as ViewMode;
   }
   visibleTypes = [
     ...(currentMode === "all" ? ALL_ANNOTATION_TYPES : currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
@@ -763,6 +859,12 @@ async function startPipeline(): Promise<void> {
 
   // Activate body-level detection (persistent watchers + body observer)
   activateBodyLevelDetection(adapters, matchedAdapter ?? null);
+
+  // ── React-safe anchor guard ──
+  // On React-based sites clicking UI controls outside the annotated content
+  // region can trigger React re-renders.  Pre-emptively strip anchors in the
+  // capture phase and re-render after the layout settles.
+  startAnchorGuard();
 }
 
 // ─── Body-Level Detection ───
@@ -893,7 +995,8 @@ async function handleStableRegion(
   // Stale guard: if this region already had a different hash, the content changed.
   const previousHash = activeHashes.get(region.element);
   if (previousHash && previousHash !== contentHash) {
-    pendingRegions.delete(previousHash);
+    pendingRegions.delete(`overview:${previousHash}`);
+    pendingRegions.delete(`depth:${previousHash}`);
     annotatedRegions.delete(previousHash);
     overviewAnnotations.delete(previousHash);
     depthAnnotations.delete(previousHash);
@@ -905,7 +1008,12 @@ async function handleStableRegion(
   }
   activeHashes.set(region.element, contentHash);
 
-  if (annotatedRegions.has(contentHash) || pendingRegions.has(contentHash))
+  // Use mode-prefixed pending key so that a stale-while-revalidate response
+  // from a DIFFERENT mode cannot steal this mode's pending state.
+  const reqMode = currentMode as AnnotationMode;
+  const pendingKey = `${reqMode}:${contentHash}`;
+
+  if (annotatedRegions.has(contentHash) || pendingRegions.has(pendingKey))
     return;
 
   // Store hash on the region element so manual annotations can reuse it
@@ -915,8 +1023,7 @@ async function handleStableRegion(
   regionByHash.set(contentHash, region);
 
   // Request annotations from service worker
-  pendingRegions.add(contentHash);
-  const reqMode = currentMode as AnnotationMode;
+  pendingRegions.add(pendingKey);
   const modes = pendingModeByHash.get(contentHash) ?? new Set();
   modes.add(reqMode);
   pendingModeByHash.set(contentHash, modes);
@@ -957,7 +1064,7 @@ async function handleStableRegion(
       } else {
         console.error(`[Oddity 1] Annotation request failed: ${result.error}`);
       }
-      pendingRegions.delete(contentHash);
+      pendingRegions.delete(pendingKey);
       if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
     }
   } catch (err) {
@@ -977,7 +1084,7 @@ async function handleStableRegion(
     } else {
       console.error(`[Oddity 1] Annotation request error:`, err);
     }
-    pendingRegions.delete(contentHash);
+    pendingRegions.delete(pendingKey);
     if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
   }
 }
@@ -1281,10 +1388,12 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   // Filter visible types first
   const visible = annotations.filter((a) => visibleTypes.includes(a.type));
 
-  // Sort: background-type annotations first (core_claim, insight), line-type last
-  // This ensures underlines render on top in the DOM stacking order
+  // Sort: background-type annotations first (core_claim, insight), line-type next,
+  // user_written last (renders on top, bypasses overlap detection)
   const backgroundTypes = new Set<AnnotationType>(["core_claim", "insight"]);
   visible.sort((a, b) => {
+    if (a.type === "user_written" && b.type !== "user_written") return 1;
+    if (b.type === "user_written" && a.type !== "user_written") return -1;
     const aIsBg = backgroundTypes.has(a.type) ? 0 : 1;
     const bIsBg = backgroundTypes.has(b.type) ? 0 : 1;
     return aIsBg - bIsBg;
@@ -1307,19 +1416,29 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
       }
 
       // Skip if this range overlaps with any already-rendered anchor span
-      if (rangeOverlapsExistingAnchors(range, root)) continue;
+      // (user_written notes always render — the user explicitly created them)
+      if (annotation.type !== "user_written" && rangeOverlapsExistingAnchors(range, root)) continue;
 
       let anchors = injectAnchors(annotation, range);
 
-      // Retry once: prior injectAnchors calls mutate the DOM (split/wrap text nodes),
-      // which can invalidate the cached text-node index and produce stale Ranges.
+      // injectAnchors mutates the DOM (splits/wraps text nodes), so invalidate
+      // the text-node index immediately. This ensures the NEXT annotation's
+      // resolveSelector + overlap check operates on fresh DOM state.
+      if (anchors.length > 0) {
+        invalidateTextNodeIndex(root);
+      }
+
+      // Retry once if injection produced no spans (stale index before first call).
       if (anchors.length === 0) {
         invalidateTextNodeIndex(root);
         const retryRange = resolveSelector(root, annotation.anchor);
         if (retryRange) {
           // Re-check overlap after index invalidation
-          if (rangeOverlapsExistingAnchors(retryRange, root)) continue;
+          if (annotation.type !== "user_written" && rangeOverlapsExistingAnchors(retryRange, root)) continue;
           anchors = injectAnchors(annotation, retryRange);
+          if (anchors.length > 0) {
+            invalidateTextNodeIndex(root);
+          }
         }
       }
 
@@ -1369,10 +1488,21 @@ function rerenderAll(): void {
 // ─── Mode Switching ───
 
 function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void {
+  // Cancel any pending anchor guard re-render — switchMode handles its own rendering
+  if (anchorGuardRerenderTimer) {
+    clearTimeout(anchorGuardRerenderTimer);
+    anchorGuardRerenderTimer = null;
+  }
+
   // Clear current rendering
   clearOverlay();
   clearAllAnchors();
   clearMarginNotes();
+
+  // Invalidate text-node index for all regions — clearAllAnchors mutates the
+  // DOM (unwraps spans, normalizes text nodes) which makes cached indices stale.
+  for (const region of regions) invalidateTextNodeIndex(region.element);
+  for (const region of regionByHash.values()) invalidateTextNodeIndex(region.element);
 
   // Update state
   currentMode = newMode;
@@ -1575,6 +1705,9 @@ onMessage((message: ExtensionMessage) => {
 
       // Render the single annotation immediately (with overlap check)
       try {
+        // Invalidate stale text-node index — prior anchor injections or
+        // clearAllAnchors during mode switch may have mutated the DOM.
+        invalidateTextNodeIndex(streamRoot);
         const range = resolveSelector(streamRoot, annotation.anchor);
         if (range) {
           // Check if this range overlaps with any existing anchor spans
@@ -2032,13 +2165,49 @@ document.addEventListener("oddity:exportPdf", (e) => {
 // ─── Mode Change Handler (from arguments-box toggle) ───
 
 document.addEventListener("oddity:scroll-to-annotation", ((e: CustomEvent) => {
-  const { annotationId } = e.detail;
+  const { annotationId, itemType } = e.detail;
   if (!annotationId) return;
+
+  // 1. Fast path: anchor span exists in the DOM
   const anchor = document.querySelector(`[data-oddity-id="${CSS.escape(annotationId)}"]`);
   if (anchor) {
     anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+
+  // 2. Fallback: resolve the annotation's selector against known regions
+  //    (anchor span may not exist if annotation is from the other mode,
+  //     failed overlap detection, or the page re-rendered its content)
+  let found: Annotation | undefined;
+  for (const store of [overviewAnnotations, depthAnnotations]) {
+    for (const [, anns] of store) {
+      const match = anns.find((a) => a.id === annotationId);
+      if (match) { found = match; break; }
+    }
+    if (found) break;
+  }
+  if (found) {
+    for (const region of regionByHash.values()) {
+      const range = resolveSelector(region.element, found.anchor);
+      if (range) {
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          const targetY = rects[0]!.top + window.scrollY - window.innerHeight / 2;
+          window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
+          return;
+        }
+      }
+    }
+  }
+
+  // 3. Could not resolve — show toast
+  if (itemType === "reply") {
+    document.dispatchEvent(
+      new CustomEvent("oddity:scroll-to-annotation-missing", {
+        detail: { isReply: true },
+      }),
+    );
   } else {
-    // Highlight not on page — likely from a different personality
     document.dispatchEvent(
       new CustomEvent("oddity:scroll-to-annotation-missing"),
     );
@@ -2094,8 +2263,13 @@ document.addEventListener("oddity:modeChange", (e) => {
   if (chrome?.storage?.local) {
     chrome.storage.local.get("preferences", (result) => {
       const prefs = (result["preferences"] ?? {}) as Record<string, unknown>;
+      // Include visible_types matching the new mode so the settingsUpdated
+      // broadcast doesn't overwrite visibleTypes with stale overview-only types.
+      const modeTypes = mode === "all"
+        ? ALL_ANNOTATION_TYPES
+        : mode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES;
       chrome.storage.local.set({
-        preferences: { ...prefs, annotation_mode: mode },
+        preferences: { ...prefs, annotation_mode: mode, visible_types: [...modeTypes, "user_written"] },
       });
     });
   }

@@ -6,7 +6,7 @@ import type {
   AnnotationType,
   ViewMode,
 } from "@oddity/shared";
-import { ANNOTATION_LABELS, getAnnotationColor } from "@oddity/shared";
+import { ANNOTATION_LABELS, DEPTH_LABELS, getAnnotationColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
 import { getPageUrl } from "../page-url.js";
 import { renderMiniMarkdown } from "./mini-markdown.js";
@@ -29,6 +29,8 @@ type MarginNote = {
   id: string;
   annotation: Annotation;
   range: Range;
+  /** First anchor span in the main DOM — used for fast scroll positioning. */
+  anchorSpan: HTMLSpanElement | null;
   /** The content region this note was anchored to at creation time. */
   region: Element;
   side: "left" | "right";
@@ -37,6 +39,9 @@ type MarginNote = {
   height: number;
   collapsedHeight: number;
   element: HTMLDivElement;
+  /** Cached horizontal layout — recomputed only on resize, not scroll. */
+  cachedLeft: number;
+  cachedWidth: number;
 };
 
 type InlinePopover = {
@@ -85,6 +90,8 @@ let mouseInInlinePopover = false;
 let mouseInAnchor = false;
 let inlineHoverExpandTimer: ReturnType<typeof setTimeout> | null = null;
 let staleStateTimer: ReturnType<typeof setTimeout> | null = null;
+let overviewShowTimer: ReturnType<typeof setTimeout> | null = null;
+let overviewHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 const NOTE_EXPANDED_WIDTH = 286;
 const NOTE_GAP = 10;
@@ -111,12 +118,21 @@ const SIZE_MAP: Record<AnnotationFontSize, string> = {
 export function initMarginNotes(region: Element): void {
   regionEl = region;
 
-  // Load Kalam font globally (font-face is always global, shadow DOM elements reference by name)
+  // Load custom fonts globally — skip on pages with strict CSP that blocks Google Fonts.
+  // Listen for a CSP violation and remove the link immediately to stop further font loads.
   if (!fontLink) {
     fontLink = document.createElement("link");
     fontLink.rel = "stylesheet";
     fontLink.href =
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=Kalam:wght@400&display=swap";
+    const cspHandler = (e: SecurityPolicyViolationEvent) => {
+      if (e.blockedURI?.includes("fonts.googleapis.com") || e.blockedURI?.includes("fonts.gstatic.com")) {
+        fontLink?.remove();
+        fontLink = null;
+        document.removeEventListener("securitypolicyviolation", cspHandler);
+      }
+    };
+    document.addEventListener("securitypolicyviolation", cspHandler);
     document.head.appendChild(fontLink);
   }
 
@@ -227,11 +243,11 @@ export function addMarginNote(
 ): void {
   if (!shadowRoot || !regionEl) return;
 
-  // In overview/depth mode, use inline popovers (hover-to-show)
-  // In "all" mode, depth annotations also use inline popovers; overview annotations use margin notes
+  // Depth mode uses inline popovers (hover-to-show)
+  // Overview mode uses left margin notes (all-or-nothing visibility)
+  // "all" mode: depth annotations use inline popovers; overview annotations use margin notes
   const useInlinePopover = annotation.type !== "user_written" && (
     currentAnnotationMode === "depth" ||
-    currentAnnotationMode === "overview" ||
     (currentAnnotationMode === "all" && annotation.mode === "depth")
   );
   if (useInlinePopover) {
@@ -283,10 +299,16 @@ export function addMarginNote(
   );
   shadowRoot.appendChild(el);
 
+  // Grab the first anchor span for fast scroll positioning
+  const anchorSpan = document.querySelector<HTMLSpanElement>(
+    `[data-oddity-id="${CSS.escape(annotation.id)}"]`,
+  );
+
   const note: MarginNote = {
     id: annotation.id,
     annotation,
     range,
+    anchorSpan,
     region: noteRegion,
     side,
     anchorTopPx,
@@ -294,11 +316,25 @@ export function addMarginNote(
     height: 0,
     collapsedHeight: 0,
     element: el,
+    cachedLeft: 0,
+    cachedWidth: 0,
   };
 
   notes.push(note);
 
-  // Measure height in next frame, then resolve overlaps
+  // Overview margin notes start hidden — shown on hover/click engage
+  const isOverviewNote = annotation.type !== "user_written" && currentAnnotationMode === "overview";
+  if (isOverviewNote) {
+    el.classList.add("oddity-note--overview-margin", "overview-hidden");
+  }
+  // User-written notes always use live anchor tracking (like overview margin notes)
+  // but stay visible (no overview-hidden) since the user explicitly created them.
+  if (annotation.type === "user_written") {
+    el.classList.add("oddity-note--overview-margin");
+  }
+
+  // Measure height in next frame, then resolve overlaps.
+  // overview-hidden uses opacity/transform (not display:none) so offsetHeight works.
   requestAnimationFrame(() => {
     note.height = el.offsetHeight;
     note.collapsedHeight = el.offsetHeight;
@@ -696,6 +732,51 @@ function positionInlinePopover(popover: InlinePopover): void {
   el.style.top = `${top}px`;
 }
 
+// ─── Overview Margin Notes: All-or-Nothing Visibility ───
+
+function showAllOverviewMarginNotes(emphasizedId?: string): void {
+  for (const note of notes) {
+    if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+    // User-written notes are always visible — don't alter their visibility classes
+    if (note.annotation.type === "user_written") continue;
+    note.element.classList.remove("overview-hidden", "anchor-hovered", "overview-focused", "overview-dimmed");
+    if (emphasizedId) {
+      if (note.id === emphasizedId) {
+        note.element.classList.add("anchor-hovered", "overview-focused");
+      } else {
+        note.element.classList.add("overview-dimmed");
+      }
+    }
+  }
+  // Re-measure heights now that notes are visible and laid out with correct width
+  for (const note of notes) {
+    if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+    const h = note.element.offsetHeight;
+    if (h > 0) note.height = h;
+  }
+  applyPositions();
+}
+
+function hideAllOverviewMarginNotes(): void {
+  for (const note of notes) {
+    if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+    // User-written notes are always visible — never hide them
+    if (note.annotation.type === "user_written") continue;
+    note.element.classList.add("overview-hidden");
+    note.element.classList.remove("anchor-hovered", "overview-focused", "overview-dimmed");
+  }
+}
+
+function isOverviewMarginNote(annotationId: string): boolean {
+  return currentAnnotationMode === "overview" &&
+    notes.some(n => n.id === annotationId && n.element.classList.contains("oddity-note--overview-margin"));
+}
+
+/** Check whether a margin note is currently visible (not hidden by class or display). */
+function isNoteVisible(n: MarginNote): boolean {
+  return n.element.style.display !== "none" && !n.element.classList.contains("overview-hidden");
+}
+
 function repositionVisibleInlinePopovers(): void {
   for (const [, popover] of inlinePopovers) {
     if (popover.visible) {
@@ -778,38 +859,46 @@ function dimPage(annotationId: string): void {
     for (let i = 0; i < rects.length; i++) cutouts.push(rects[i]!);
   }
 
-  const pad = 4; // breathing room around each cutout
+  const pad = 14; // breathing room around each cutout
+  const blur = 18; // feather radius for soft edges
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // Build the SVG path: full-screen rect (clockwise) with cutout rects (counter-clockwise)
-  let path = `M0,0 H${vw} V${vh} H0 Z`;
+  // Build mask: white = dimmed area, black cutouts (blurred) = clear area
+  let maskRects = "";
   for (const r of cutouts) {
-    const x1 = Math.max(0, r.left - pad);
-    const y1 = Math.max(0, r.top - pad);
-    const x2 = Math.min(vw, r.right + pad);
-    const y2 = Math.min(vh, r.bottom + pad);
-    // Counter-clockwise rect creates a hole via even-odd fill
-    path += ` M${x1},${y1} V${y2} H${x2} V${y1} Z`;
+    const x = Math.max(0, r.left - pad);
+    const y = Math.max(0, r.top - pad);
+    const w = Math.min(vw, r.right + pad) - x;
+    const h = Math.min(vh, r.bottom + pad) - y;
+    if (w <= 0 || h <= 0) continue; // off-screen rect
+    maskRects += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5"/>`;
   }
+
+  const dimColor = getThemeMode() === "light" ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.3)";
+  const svgContent =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" style="display:block">` +
+    `<defs>` +
+    `<filter id="oddity-feather"><feGaussianBlur stdDeviation="${blur}"/></filter>` +
+    `<mask id="oddity-dim-mask">` +
+    `<rect width="100%" height="100%" fill="white"/>` +
+    `<g filter="url(#oddity-feather)" fill="black">${maskRects}</g>` +
+    `</mask>` +
+    `</defs>` +
+    `<rect width="100%" height="100%" fill="${dimColor}" mask="url(#oddity-dim-mask)"/>` +
+    `</svg>`;
 
   if (!pageDimOverlay) {
     pageDimOverlay = document.createElement("div");
     pageDimOverlay.id = "oddity-page-dim";
     pageDimOverlay.style.cssText =
       "position:fixed;inset:0;z-index:2147483644;pointer-events:none;opacity:0;transition:opacity 0.4s cubic-bezier(0.4,0,0.2,1);";
-    const dimColor = getThemeMode() === "light" ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.5)";
-    pageDimOverlay.innerHTML =
-      `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" style="display:block">` +
-      `<path d="${path}" fill="${dimColor}" fill-rule="evenodd"/>` +
-      `</svg>`;
+    pageDimOverlay.innerHTML = svgContent;
     document.body.appendChild(pageDimOverlay);
     void pageDimOverlay.offsetHeight;
     pageDimOverlay.style.opacity = "1";
   } else {
-    // Update the cutout path (in case of repositioning)
-    const svgPath = pageDimOverlay.querySelector("path");
-    if (svgPath) svgPath.setAttribute("d", path);
+    pageDimOverlay.innerHTML = svgContent;
     if (!pageDimOverlay.parentElement) {
       pageDimOverlay.style.opacity = "0";
       document.body.appendChild(pageDimOverlay);
@@ -842,19 +931,22 @@ function updateDimCutouts(): void {
     const rects = anchor.getClientRects();
     for (let i = 0; i < rects.length; i++) cutouts.push(rects[i]!);
   }
-  const pad = 4;
+  const pad = 14;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  let path = `M0,0 H${vw} V${vh} H0 Z`;
+
+  let maskRects = "";
   for (const r of cutouts) {
-    const x1 = Math.max(0, r.left - pad);
-    const y1 = Math.max(0, r.top - pad);
-    const x2 = Math.min(vw, r.right + pad);
-    const y2 = Math.min(vh, r.bottom + pad);
-    path += ` M${x1},${y1} V${y2} H${x2} V${y1} Z`;
+    const x = Math.max(0, r.left - pad);
+    const y = Math.max(0, r.top - pad);
+    const w = Math.min(vw, r.right + pad) - x;
+    const h = Math.min(vh, r.bottom + pad) - y;
+    if (w <= 0 || h <= 0) continue; // off-screen rect
+    maskRects += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5"/>`;
   }
-  const svgPath = pageDimOverlay.querySelector("path");
-  if (svgPath) svgPath.setAttribute("d", path);
+
+  const maskGroup = pageDimOverlay.querySelector("#oddity-dim-mask g");
+  if (maskGroup) maskGroup.innerHTML = maskRects;
 }
 
 export function removeMarginNote(annotationId: string): void {
@@ -918,6 +1010,7 @@ export function clearMarginNotes(): void {
   if (anchorHoverTimer) { clearTimeout(anchorHoverTimer); anchorHoverTimer = null; }
   if (inlineHoverExpandTimer) { clearTimeout(inlineHoverExpandTimer); inlineHoverExpandTimer = null; }
   if (staleStateTimer) { clearTimeout(staleStateTimer); staleStateTimer = null; }
+  if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
 
   // Remove host element classes
   hostEl?.classList.remove("has-pinned", "has-dimmed");
@@ -956,7 +1049,15 @@ export function filterMarginNotesByTypes(types: AnnotationType[]): void {
 
   for (const note of notes) {
     const isVisible = typeSet.has(note.annotation.type);
-    note.element.style.display = isVisible ? "" : "none";
+    // Overview margin notes use all-or-nothing visibility (shown only on hover/pin).
+    // Don't force them visible here — only hide them if their type is filtered out.
+    const isOverviewMargin = note.element.classList.contains("oddity-note--overview-margin");
+    if (isOverviewMargin) {
+      if (!isVisible) note.element.classList.add("overview-hidden");
+      // If visible type but note is currently hidden (no hover), leave it hidden
+    } else {
+      note.element.style.display = isVisible ? "" : "none";
+    }
     if (!isVisible) hiddenTypes.add(note.annotation.type);
   }
 
@@ -1040,6 +1141,35 @@ export function onAnchorClick(annotationId: string): void {
     return;
   }
 
+  // Overview margin notes: all-or-nothing visibility with page dim
+  if (isOverviewMarginNote(annotationId)) {
+    if (pinnedId === annotationId) {
+      // Unpin: hide all, undim
+      pinnedId = null;
+      hostEl?.classList.remove("has-pinned");
+      justUnpinned = true;
+      setTimeout(() => { justUnpinned = false; }, 0);
+      deemphasizeAnnotation();
+      undimPage();
+      hideAllOverviewMarginNotes();
+    } else if (pinnedId) {
+      // Switch emphasis to different note
+      showAllOverviewMarginNotes(annotationId);
+      deemphasizeAnnotation();
+      emphasizeAnnotation(annotationId);
+      dimPage(annotationId);
+      pinnedId = annotationId;
+    } else if (!justUnpinned) {
+      // Pin: show all, dim, emphasize clicked
+      pinnedId = annotationId;
+      hostEl?.classList.add("has-pinned");
+      showAllOverviewMarginNotes(annotationId);
+      emphasizeAnnotation(annotationId);
+      dimPage(annotationId);
+    }
+    return;
+  }
+
   if (pinnedId) {
     unpinAll();
   } else if (!justUnpinned) {
@@ -1054,6 +1184,17 @@ export function onAnchorClick(annotationId: string): void {
 function unpinAll(): void {
   if (pinnedId && inlinePopovers.has(pinnedId)) {
     unpinInlinePopover();
+    return;
+  }
+  // Overview margin notes: hide all + undim page
+  if (pinnedId && isOverviewMarginNote(pinnedId)) {
+    pinnedId = null;
+    hostEl?.classList.remove("has-pinned");
+    justUnpinned = true;
+    setTimeout(() => { justUnpinned = false; }, 0);
+    deemphasizeAnnotation();
+    undimPage();
+    hideAllOverviewMarginNotes();
     return;
   }
   pinnedId = null;
@@ -1074,6 +1215,8 @@ export function isAnyMarginNoteExpanded(): boolean {
 export function dimOtherNotes(annotationId: string): void {
   hostEl?.classList.add("has-dimmed");
   for (const note of notes) {
+    // Overview margin notes are never individually dimmed
+    if (note.element.classList.contains("oddity-note--overview-margin")) continue;
     if (note.id === annotationId) {
       note.element.classList.remove("dimmed");
     } else {
@@ -1164,6 +1307,35 @@ export function onAnchorHoverStart(annotationId: string): void {
     return;
   }
 
+  // Overview margin notes: show ALL on hover (with subtle delay)
+  if (isOverviewMarginNote(annotationId)) {
+    mouseInAnchor = true;
+    // Cancel any pending hide from crossing a line gap
+    if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
+    // Already pinned — just switch emphasis, no animation/reposition
+    if (pinnedId) {
+      deemphasizeAnnotation();
+      for (const note of notes) {
+        if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+        if (note.annotation.type === "user_written") continue;
+        const isTarget = note.id === annotationId;
+        note.element.classList.toggle("anchor-hovered", isTarget);
+        note.element.classList.toggle("overview-focused", isTarget);
+        note.element.classList.toggle("overview-dimmed", !isTarget);
+      }
+      emphasizeAnnotation(annotationId);
+      return;
+    }
+    if (overviewShowTimer) { clearTimeout(overviewShowTimer); overviewShowTimer = null; }
+    overviewShowTimer = setTimeout(() => {
+      overviewShowTimer = null;
+      if (!mouseInAnchor) return; // cursor already left
+      showAllOverviewMarginNotes(annotationId);
+      emphasizeAnnotation(annotationId);
+    }, 120);
+    return;
+  }
+
   if (pinnedId && pinnedId !== annotationId) return;
   if (anchorHoverTimer) {
     clearTimeout(anchorHoverTimer);
@@ -1199,6 +1371,29 @@ export function onAnchorHoverEnd(annotationId?: string): void {
     } else {
       scheduleInlineHide(annotationId);
     }
+    return;
+  }
+
+  // Overview margin notes: hide all on hover end (unless pinned)
+  if (annotationId && isOverviewMarginNote(annotationId)) {
+    mouseInAnchor = false;
+    if (overviewShowTimer) { clearTimeout(overviewShowTimer); overviewShowTimer = null; }
+    if (pinnedId) {
+      // Re-emphasize the pinned one
+      deemphasizeAnnotation();
+      showAllOverviewMarginNotes(pinnedId);
+      emphasizeAnnotation(pinnedId);
+      return;
+    }
+    // Buffer before hiding — prevents flicker when crossing gaps between
+    // multi-line highlight spans of the same annotation.
+    if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
+    overviewHideTimer = setTimeout(() => {
+      overviewHideTimer = null;
+      if (mouseInAnchor || pinnedId) return;
+      deemphasizeAnnotation();
+      hideAllOverviewMarginNotes();
+    }, 150);
     return;
   }
 
@@ -1309,6 +1504,17 @@ function createNoteElement(
   const bracket = document.createElement("div");
   bracket.className = "note-bracket";
   bracket.style.borderColor = labelColor;
+
+  // Skill tag (depth mode: shows the skill type when a custom label is present)
+  const DEPTH_TYPE_SET = new Set(Object.keys(DEPTH_LABELS));
+  const hasCustomLabel = !!annotation.label && DEPTH_TYPE_SET.has(annotation.type);
+  let skillTag: HTMLSpanElement | null = null;
+  if (hasCustomLabel) {
+    skillTag = document.createElement("span");
+    skillTag.className = "note-skill-tag";
+    skillTag.textContent = ANNOTATION_LABELS[annotation.type];
+    skillTag.style.setProperty("--skill-color", labelColor);
+  }
 
   // Label
   const labelEl = document.createElement("span");
@@ -1553,8 +1759,8 @@ function createNoteElement(
     thumbDown.className =
       "note-feedback-pill note-feedback-pill--negative" +
       (existingThumbDown ? " active" : "");
-    thumbDown.textContent = "Not helpful";
-    thumbDown.title = "Not helpful";
+    thumbDown.textContent = "I don't think so";
+    thumbDown.title = "I don't think so";
     thumbDown.addEventListener("click", (e) => {
       e.stopPropagation();
       if (thumbDown.classList.contains("active")) {
@@ -1636,6 +1842,7 @@ function createNoteElement(
   expandedContent.appendChild(expandedInner);
 
   el.appendChild(bracket);
+  if (skillTag) el.appendChild(skillTag);
   el.appendChild(labelEl);
   el.appendChild(textEl);
   el.appendChild(expandedContent);
@@ -1952,7 +2159,7 @@ function getContentBounds(
 }
 
 function resolveOverlaps(): void {
-  const visibleNotes = notes.filter((n) => n.element.style.display !== "none");
+  const visibleNotes = notes.filter((n) => isNoteVisible(n));
   resolveOverlapsForSide(visibleNotes);
 }
 
@@ -2013,9 +2220,56 @@ function applyPositions(): void {
     } else {
       note.element.style.left = `${contentRight + MARGIN_PADDING}px`;
     }
+
+    // Overview margin notes use live anchor rects — skip the topPx path
+    if (note.element.classList.contains("oddity-note--overview-margin")) continue;
     // topPx is in document coordinates; convert to viewport for fixed positioning
     note.element.style.top = `${note.topPx - scrollY}px`;
   }
+
+  // Overview margin notes: position from live anchor rects so they
+  // always track their highlighted sentence during scroll.
+  const overviewMargin = notes.filter(
+    (n) => n.element.classList.contains("oddity-note--overview-margin") && isNoteVisible(n),
+  );
+  if (overviewMargin.length > 0) {
+    // Re-measure heights — they may have changed due to font loading or width changes
+    for (const note of overviewMargin) {
+      const h = note.element.offsetHeight;
+      if (h > 0) note.height = h;
+    }
+
+    const desired: { note: MarginNote; viewportTop: number }[] = [];
+    for (const note of overviewMargin) {
+      // Prefer anchor span (single getBoundingClientRect) over Range.getClientRects()
+      if (note.anchorSpan) {
+        const rect = note.anchorSpan.getBoundingClientRect();
+        if (rect.height > 0) {
+          desired.push({ note, viewportTop: rect.top });
+          continue;
+        }
+      }
+      const rects = note.range.getClientRects();
+      if (rects.length > 0) {
+        desired.push({ note, viewportTop: rects[0]!.top });
+      }
+    }
+    desired.sort((a, b) => a.viewportTop - b.viewportTop);
+
+    for (let i = 1; i < desired.length; i++) {
+      const prev = desired[i - 1]!;
+      const curr = desired[i]!;
+      const minTop = prev.viewportTop + prev.note.height + NOTE_GAP;
+      if (curr.viewportTop < minTop) {
+        curr.viewportTop = minTop;
+      }
+    }
+
+    for (const { note, viewportTop } of desired) {
+      note.element.style.top = `${viewportTop}px`;
+    }
+  }
+
   sharedContentRight = maxContentRight;
 
   // Update the timeline line (overview mode only)
@@ -2024,11 +2278,64 @@ function applyPositions(): void {
   document.dispatchEvent(new CustomEvent("oddity:layoutUpdated"));
 }
 
+/**
+ * Fast scroll-only positioning — skips all horizontal layout and height
+ * measurement.  Only updates vertical `top` values from anchor spans'
+ * live viewport rects.  This keeps scroll tracking at 60 fps even on
+ * pages with many annotations.
+ */
+function applyScrollPositions(): void {
+  const scrollY = window.scrollY;
+
+  // Depth / non-overview notes: static topPx converted to viewport
+  for (const note of notes) {
+    if (note.element.classList.contains("oddity-note--overview-margin")) continue;
+    note.element.style.top = `${note.topPx - scrollY}px`;
+  }
+
+  // Overview margin notes (including user_written): live anchor tracking
+  const overviewMargin = notes.filter(
+    (n) => n.element.classList.contains("oddity-note--overview-margin") && isNoteVisible(n),
+  );
+  if (overviewMargin.length === 0) return;
+
+  const desired: { note: MarginNote; viewportTop: number }[] = [];
+  for (const note of overviewMargin) {
+    // Prefer anchor span (single getBoundingClientRect) over Range.getClientRects()
+    if (note.anchorSpan) {
+      const rect = note.anchorSpan.getBoundingClientRect();
+      if (rect.height > 0) {
+        desired.push({ note, viewportTop: rect.top });
+        continue;
+      }
+    }
+    // Fallback to range rects
+    const rects = note.range.getClientRects();
+    if (rects.length > 0) {
+      desired.push({ note, viewportTop: rects[0]!.top });
+    }
+  }
+  desired.sort((a, b) => a.viewportTop - b.viewportTop);
+
+  for (let i = 1; i < desired.length; i++) {
+    const prev = desired[i - 1]!;
+    const curr = desired[i]!;
+    const minTop = prev.viewportTop + prev.note.height + NOTE_GAP;
+    if (curr.viewportTop < minTop) {
+      curr.viewportTop = minTop;
+    }
+  }
+
+  for (const { note, viewportTop } of desired) {
+    note.element.style.top = `${viewportTop}px`;
+  }
+}
+
 function updateTimelineLine(leftNotes: MarginNote[], sharedContentLeft: number): void {
   if (!timelineLineEl) return;
 
   // Only show in overview mode with 2+ visible notes
-  const visibleNotes = leftNotes.filter((n) => n.element.style.display !== "none");
+  const visibleNotes = leftNotes.filter((n) => isNoteVisible(n));
   if (currentAnnotationMode === "depth" || visibleNotes.length < 2) {
     timelineLineEl.style.display = "none";
     return;
@@ -2090,17 +2397,19 @@ function recomputePositions(): void {
 let needsScrollUpdate = false;
 let needsResizeUpdate = false;
 
-/** Lightweight scroll handler — only repositions fixed-position popovers and
- *  the dim overlay.  Skips the expensive recomputePositions() entirely because
- *  absolute page coordinates don't change during a scroll. */
+/** Lightweight scroll handler — only repositions vertical positions and
+ *  the dim overlay.  Skips horizontal layout and height measurement. */
 function scheduleScrollUpdate(): void {
   if (!needsScrollUpdate) {
     needsScrollUpdate = true;
     requestAnimationFrame(() => {
-      applyPositions();
-      repositionVisibleInlinePopovers();
-      updateDimCutouts();
-      needsScrollUpdate = false;
+      try {
+        applyScrollPositions();
+        repositionVisibleInlinePopovers();
+        updateDimCutouts();
+      } finally {
+        needsScrollUpdate = false;
+      }
     });
   }
 }
@@ -2197,6 +2506,18 @@ const MARGIN_NOTES_CSS = `
     text-transform: uppercase;
   }
 
+  .note-skill-tag {
+    display: inline-block;
+    font-family: var(--oddity-note-font);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--skill-color, rgba(255,255,255,0.5));
+    opacity: 0.7;
+    margin-bottom: 2px;
+  }
+
   .note-text {
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -2244,6 +2565,44 @@ const MARGIN_NOTES_CSS = `
     -webkit-line-clamp: unset;
     overflow: visible;
     max-height: none;
+  }
+
+  /* Overview margin notes: always fully shown, no truncation, never dimmed */
+  .oddity-note--overview-margin {
+    opacity: 1 !important;
+    filter: none !important;
+    padding-left: 15px;
+    padding-right: 15px;
+    transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
+  }
+
+  /* Overview margin note: hidden state (animated in/out) */
+  .oddity-note--overview-margin.overview-hidden {
+    opacity: 0 !important;
+    transform: translateX(-8px);
+    pointer-events: none !important;
+  }
+
+  .oddity-note--overview-margin .note-text {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+    max-height: none;
+  }
+
+  .oddity-note--overview-margin .note-expanded-content {
+    display: none;
+  }
+
+  /* Overview margin note: linked to the clicked highlight */
+  .oddity-note--overview-margin.overview-focused {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3) !important;
+    z-index: 10;
+  }
+
+  /* Overview margin note: NOT linked to the clicked highlight */
+  .oddity-note--overview-margin.overview-dimmed {
+    opacity: 0.35 !important;
   }
 
   /* Expanded state */
@@ -2610,6 +2969,10 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="light"]) .oddity-note.anchor-hovered:not(.expanded) {
     box-shadow: -5px 3px 20px rgba(0,0,0,0.2), -2px 1px 4px rgba(0,0,0,0.07);
+  }
+
+  :host([data-theme="light"]) .oddity-note--overview-margin.overview-focused {
+    box-shadow: -5px 3px 24px rgba(0,0,0,0.25), -2px 1px 6px rgba(0,0,0,0.1) !important;
   }
 
   :host([data-theme="light"]) .note-text,
