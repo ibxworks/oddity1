@@ -68,6 +68,11 @@ export type Annotation = {
   label?: string;
   anchor: TextQuoteSelector;
   content: AnnotationContent;
+  /** Chunk boundaries for overview mode — marks the start and end of the text chunk this annotation covers. */
+  chunk?: {
+    start: TextQuoteSelector;
+    end: TextQuoteSelector;
+  };
 };
 
 export type AnnotationResponse = {

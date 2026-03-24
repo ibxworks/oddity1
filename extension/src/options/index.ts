@@ -35,7 +35,7 @@ const toast = document.getElementById('toast')!;
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   annotation_mode: 'overview',
-  depth_personality: 'jerry',
+  depth_personality: 'terry',
   visible_types: [...ALL_OVERVIEW_TYPES, 'user_written'],
   enabled_sites: [],
   annotation_font: 'fraunces',
@@ -50,7 +50,7 @@ async function init(): Promise<void> {
   if (stored['preferences']) {
     const prefs = stored['preferences'] as UserPreferences;
     // Migrate renamed personality: gary → sally
-    let personality = prefs.depth_personality ?? 'jerry';
+    let personality = prefs.depth_personality ?? 'terry';
     if (personality === ('gary' as DepthPersonality)) personality = 'sally';
     currentPrefs = {
       enabled: prefs.enabled ?? true,

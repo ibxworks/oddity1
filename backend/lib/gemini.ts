@@ -56,6 +56,12 @@ function mapOverviewOutput(raw: unknown[]): unknown[] {
       content: {
         note: item.summary ?? item.note ?? "",
       },
+      ...(item.chunk_start && item.chunk_end ? {
+        chunk: {
+          start: { type: "TextQuoteSelector", exact: item.chunk_start },
+          end: { type: "TextQuoteSelector", exact: item.chunk_end },
+        },
+      } : {}),
     };
   });
 }
@@ -70,8 +76,8 @@ function mapDepthOutput(raw: unknown[]): unknown[] {
     // Already in Annotation format
     if (item.mode && item.anchor?.type === "TextQuoteSelector" && item.content) return item;
 
-    // New prompts use "skill", old prompts used "type"
-    const rawType = (item.skill ?? item.type ?? "").replace(/\s+/g, "_").toLowerCase();
+    // New prompts use "skill", old prompts used "type"; default to "caveat" when absent
+    const rawType = (item.skill ?? item.type ?? "caveat").replace(/\s+/g, "_").toLowerCase();
 
     return {
       id: item.id ?? randomUUID(),
@@ -141,7 +147,7 @@ async function callGemini(
 
   try {
     const parsed = JSON.parse(content);
-    return parsed.annotations ?? parsed;
+    return Array.isArray(parsed) ? parsed : (parsed.annotations ?? []);
   } catch {
     return [];
   }
@@ -175,7 +181,7 @@ export async function generateAnnotations(
 
 /**
  * Streaming annotation generator. Yields individual annotation objects
- * as they are parsed from the incremental JSON stream.
+ * as they are parsed from the incremental JSON stream (flat array).
  */
 export async function* generateAnnotationsStream(
   text: string,

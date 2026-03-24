@@ -33,7 +33,7 @@ export default function AccountPage() {
     profile?.display_name ||
     session.user.email.split("@")[0] ||
     session.user.email;
-  const depthPersonality = preferences.depth_personality || "jerry";
+  const depthPersonality = preferences.depth_personality || "terry";
   const visibleTypes = preferences.visible_types || [
     ...ALL_OVERVIEW_TYPES,
     "user_written",
