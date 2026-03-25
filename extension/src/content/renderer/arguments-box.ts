@@ -1439,7 +1439,7 @@ function showAuthView(mode: "signin" | "signup"): void {
   }
   if (containerEl) {
     containerEl.style.width = "240px";
-    containerEl.style.height = mode === "signup" ? "280px" : "240px";
+    containerEl.style.height = "370px";
   }
 }
 
@@ -2146,12 +2146,12 @@ function buildDashboardFace(): HTMLDivElement {
   });
 
   dashSignInViewEl.appendChild(dashAuthTitleEl);
-  dashSignInViewEl.appendChild(dashAuthTermsEl);
   dashSignInViewEl.appendChild(dashGoogleBtnEl);
   dashSignInViewEl.appendChild(dashAuthDividerEl);
   dashSignInViewEl.appendChild(dashSignInNameEl);
   dashSignInViewEl.appendChild(dashSignInEmailEl);
   dashSignInViewEl.appendChild(dashSignInPasswordEl);
+  dashSignInViewEl.appendChild(dashAuthTermsEl);
   dashSignInViewEl.appendChild(dashAuthSubmitBtnEl);
   dashSignInViewEl.appendChild(dashSignInStatusEl);
   dashSignInViewEl.appendChild(dashAuthToggleLinkEl);
@@ -5892,6 +5892,7 @@ const ARGUMENTS_BOX_CSS = `
     flex-direction: column;
     padding: 14px 12px;
     gap: 7px;
+    overflow-y: auto;
   }
 
   .args-dash-signin-subtitle {

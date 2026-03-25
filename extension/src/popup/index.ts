@@ -26,7 +26,6 @@ const fontSizeSelect = document.getElementById(
 
 // Auth form refs
 const authForm = document.getElementById("auth-form")!;
-const authFormTitle = document.getElementById("auth-form-title")!;
 const authError = document.getElementById("auth-error")!;
 const authSuccess = document.getElementById("auth-success")!;
 const authName = document.getElementById("auth-name") as HTMLInputElement;
@@ -524,14 +523,12 @@ authToggleLink.addEventListener("click", (e) => {
   const authTerms = document.getElementById("auth-terms")!;
   if (isSignUpMode) {
     authForm.classList.remove("sign-in-mode");
-    authFormTitle.textContent = "Sign Up";
     authSubmitBtn.textContent = "Sign Up";
     authToggleText.textContent = "Already have an account? ";
     authToggleLink.textContent = "Sign In";
     authName.style.display = "";
     authTerms.style.display = "block";
   } else {
-    authFormTitle.textContent = "Sign In";
     authSubmitBtn.textContent = "Sign In";
     authToggleText.textContent = "Don't have an account? ";
     authToggleLink.textContent = "Sign Up";
@@ -582,7 +579,6 @@ authSubmitBtn.addEventListener("click", async () => {
         authSuccess.style.display = "block";
         authError.style.display = "none";
         isSignUpMode = false;
-        authFormTitle.textContent = "Sign In";
         authSubmitBtn.textContent = "Sign In";
         authToggleText.textContent = "Don't have an account? ";
         authToggleLink.textContent = "Sign Up";
