@@ -8,8 +8,35 @@ import { validateAnnotations } from "./schema-validator.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
+const apiKeys = [
+  process.env.GEMINI_API_KEY,
+  process.env.GEMINI_API_KEY_BACKUP1,
+  process.env.GEMINI_API_KEY_BACKUP2,
+].filter((k): k is string => !!k);
+
+const genAIClients = apiKeys.map((key) => new GoogleGenerativeAI(key));
 const modelName = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview";
+
+/**
+ * Try an async operation with each API key client in order.
+ * Only throws if all keys fail.
+ */
+async function withKeyRetry<T>(
+  fn: (client: GoogleGenerativeAI) => Promise<T>,
+): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < genAIClients.length; i++) {
+    try {
+      return await fn(genAIClients[i]!);
+    } catch (err) {
+      lastError = err;
+      if (i < genAIClients.length - 1) {
+        console.warn(`[gemini] API call failed with key ${i + 1}, trying next key...`, err);
+      }
+    }
+  }
+  throw lastError;
+}
 
 // Load prompt config once at startup
 const promptsConfig = JSON.parse(
@@ -116,7 +143,8 @@ function getGenerationConfig() {
   };
 }
 
-async function callGemini(
+async function callGeminiWithClient(
+  client: GoogleGenerativeAI,
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
@@ -125,7 +153,7 @@ async function callGemini(
   const systemPrompt = buildSystemPrompt(mode, personality);
   const generationConfig = getGenerationConfig();
 
-  const model = genAI.getGenerativeModel({
+  const model = client.getGenerativeModel({
     model: modelName,
     systemInstruction: systemPrompt,
     generationConfig,
@@ -145,6 +173,17 @@ async function callGemini(
   } catch {
     return [];
   }
+}
+
+async function callGemini(
+  text: string,
+  mode: AnnotationMode,
+  personality?: DepthPersonality,
+  correctionNote?: string,
+): Promise<unknown> {
+  return withKeyRetry((client) =>
+    callGeminiWithClient(client, text, mode, personality, correctionNote),
+  );
 }
 
 export async function generateAnnotations(
@@ -186,14 +225,15 @@ export async function* generateAnnotationsStream(
   const generationConfig = getGenerationConfig();
   const allAnnotations: Annotation[] = [];
 
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction: systemPrompt,
-    generationConfig,
-  });
-
-  const stream = await model.generateContentStream({
-    contents: [{ role: "user", parts: [{ text }] }],
+  const stream = await withKeyRetry(async (client) => {
+    const model = client.getGenerativeModel({
+      model: modelName,
+      systemInstruction: systemPrompt,
+      generationConfig,
+    });
+    return model.generateContentStream({
+      contents: [{ role: "user", parts: [{ text }] }],
+    });
   });
 
   let buffer = "";
@@ -236,20 +276,21 @@ export async function* generateSketchStream(
   purpose: string,
   userReactions: string,
 ): AsyncGenerator<string, void, unknown> {
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction: sketchPrompt,
-    generationConfig: {
-      responseMimeType: "text/plain" as const,
-      maxOutputTokens: 2048,
-      temperature: 0.3,
-    },
-  });
-
   const userMessage = `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${userReactions}`;
 
-  const stream = await model.generateContentStream({
-    contents: [{ role: "user", parts: [{ text: userMessage }] }],
+  const stream = await withKeyRetry(async (client) => {
+    const model = client.getGenerativeModel({
+      model: modelName,
+      systemInstruction: sketchPrompt,
+      generationConfig: {
+        responseMimeType: "text/plain" as const,
+        maxOutputTokens: 2048,
+        temperature: 0.3,
+      },
+    });
+    return model.generateContentStream({
+      contents: [{ role: "user", parts: [{ text: userMessage }] }],
+    });
   });
 
   for await (const chunk of stream.stream) {
