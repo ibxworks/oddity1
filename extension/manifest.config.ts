@@ -6,10 +6,10 @@ export default defineManifest({
   version: "0.1.0",
   description: "AI-powered in-place text annotations for any page",
   icons: {
-    16: "Terry.png",
-    32: "Terry.png",
-    48: "Terry.png",
-    128: "Terry.png",
+    16: "Terry-Icon.png",
+    32: "Terry-Icon.png",
+    48: "Terry-Icon.png",
+    128: "Terry-Icon.png",
   },
   permissions: [
     "activeTab",
@@ -40,10 +40,10 @@ export default defineManifest({
   action: {
     default_popup: "src/popup/index.html",
     default_icon: {
-      16: "Terry.png",
-      32: "Terry.png",
-      48: "Terry.png",
-      128: "Terry.png",
+      16: "Terry-Icon.png",
+      32: "Terry-Icon.png",
+      48: "Terry-Icon.png",
+      128: "Terry-Icon.png",
     },
   },
   options_ui: {

@@ -2019,14 +2019,6 @@ onMessage((message: ExtensionMessage) => {
       break;
     }
 
-    case "triggerManualRun": {
-      if (blocked) break;
-      if (!siteWhitelisted && !manualRunTriggered && enabled) {
-        manualRun();
-      }
-      break;
-    }
-
     case "enabledSitesUpdated": {
       if (blocked) break;
       const { sites } = message.payload;
