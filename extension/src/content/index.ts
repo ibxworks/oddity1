@@ -70,6 +70,7 @@ import {
   updateMarginNoteText,
   updateMarginNotesStyle,
 } from "./renderer/margin-notes.js";
+import type { ChunkRange } from "./renderer/margin-notes.js";
 import {
   clearOverlay,
   destroyOverlay,
@@ -689,20 +690,13 @@ async function init(): Promise<void> {
   }
   const prefs = stored?.preferences;
 
-  // Restore personality and mode from stored preferences.
-  // We respect the user's chosen mode rather than force-resetting to "overview",
-  // because the reset caused cross-tab interference: one tab's init() would
-  // broadcast "overview" to all other tabs, overriding their depth mode.
+  // Always start in overview mode on page load for stability.
+  // Mode is not restored from storage — the user switches manually after load.
+  // (Restoring caused cross-tab interference and unpredictable state on refresh.)
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
-  if (prefs?.annotation_mode) {
-    currentMode = prefs.annotation_mode as ViewMode;
-  }
-  visibleTypes = [
-    ...(currentMode === "all" ? ALL_ANNOTATION_TYPES : currentMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
-    "user_written",
-  ];
+  // currentMode defaults to "overview" (line 315), visibleTypes to overview types (line 317)
   setMarginNoteMode(currentMode);
 
   if (prefs?.enabled === false) {
@@ -1372,6 +1366,23 @@ function rangeOverlapsExistingAnchors(range: Range, root: Element): boolean {
   return false;
 }
 
+/** Resolve chunk boundary anchors to DOM ranges for brace rendering. */
+function resolveChunkRange(root: Element, annotation: Annotation): ChunkRange | null {
+  if (!annotation.chunk) return null;
+  const startRange = resolveSelector(root, annotation.chunk.start);
+  const endRange = resolveSelector(root, annotation.chunk.end);
+  if (!startRange || !endRange) return null;
+  // Build a full range spanning the entire chunk (start of first word → end of last word)
+  try {
+    const fullRange = document.createRange();
+    fullRange.setStart(startRange.startContainer, startRange.startOffset);
+    fullRange.setEnd(endRange.endContainer, endRange.endOffset);
+    return { startRange, endRange, fullRange };
+  } catch {
+    return { startRange, endRange, fullRange: null };
+  }
+}
+
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   const region =
     regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
@@ -1462,12 +1473,14 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
       const noteFeedback = feedback.filter(
         (f) => f.annotation_id === annotation.id,
       );
+      const chunkRng = resolveChunkRange(root, annotation);
       addMarginNote(
         annotation,
         stableRange,
         noteFeedback,
         handleAnnotationDeleted,
         regionId,
+        chunkRng,
       );
     } catch (err) {
       console.warn(`[Oddity 1] Render failed for annotation ${annotation.id}:`, err);
@@ -1743,12 +1756,17 @@ onMessage((message: ExtensionMessage) => {
           const noteFeedback = fb.filter(
             (f: AnnotationFeedback) => f.annotation_id === annotation.id,
           );
+          // Invalidate stale text-node index after anchor injection so
+          // chunk boundary selectors can resolve against current DOM.
+          invalidateTextNodeIndex(streamRoot);
+          const streamChunkRng = resolveChunkRange(streamRoot, annotation);
           addMarginNote(
             annotation,
             stableRange,
             noteFeedback,
             handleAnnotationDeleted,
             streamRegionId,
+            streamChunkRng,
           );
         }
       } catch (err) {

@@ -25,6 +25,12 @@ import {
 
 // ─── Types ───
 
+export type ChunkRange = {
+  startRange: Range;
+  endRange: Range;
+  fullRange: Range | null;
+};
+
 type MarginNote = {
   id: string;
   annotation: Annotation;
@@ -42,6 +48,8 @@ type MarginNote = {
   /** Cached horizontal layout — recomputed only on resize, not scroll. */
   cachedLeft: number;
   cachedWidth: number;
+  /** Chunk boundary ranges (overview mode). */
+  chunkRange: ChunkRange | null;
 };
 
 type InlinePopover = {
@@ -240,6 +248,7 @@ export function addMarginNote(
   feedback: AnnotationFeedback[] = [],
   onDelete?: (annotationId: string) => void,
   contentHash?: string,
+  chunkRange?: ChunkRange | null,
 ): void {
   if (!shadowRoot || !regionEl) return;
 
@@ -318,6 +327,7 @@ export function addMarginNote(
     element: el,
     cachedLeft: 0,
     cachedWidth: 0,
+    chunkRange: chunkRange ?? null,
   };
 
   notes.push(note);
@@ -332,6 +342,7 @@ export function addMarginNote(
   if (annotation.type === "user_written") {
     el.classList.add("oddity-note--overview-margin");
   }
+
 
   // Measure height in next frame, then resolve overlaps.
   // overview-hidden uses opacity/transform (not display:none) so offsetHeight works.
@@ -515,6 +526,8 @@ function showInlinePopover(annotationId: string): void {
   inlineShowTimer = setTimeout(() => {
     inlineShowTimer = null;
     if (!shadowRoot || !popover) return;
+    // Guard: popover may have been cleared (e.g. mode switch) while timer was pending
+    if (!inlinePopovers.has(annotationId)) return;
     // Guard: if hovered ID changed while timer was pending, abort
     if (inlineHoveredId !== annotationId) return;
 
@@ -550,6 +563,8 @@ function scheduleInlineHide(annotationId?: string): void {
   inlineHideTimer = setTimeout(() => {
     inlineHideTimer = null;
     if (mouseInInlinePopover || mouseInAnchor || pinnedId) return;
+    // Guard: popover state may have been cleared while timer was pending
+    if (targetId && !inlinePopovers.has(targetId)) return;
 
     if (targetId) {
       const popover = inlinePopovers.get(targetId);
@@ -841,23 +856,48 @@ function hideAllInlinePopovers(): void {
 }
 
 /**
+ * Collect the DOMRects to cut out from the dim overlay.
+ * Overview mode: use the focused note's chunk range (full chunk text).
+ * Depth mode: use the annotation's anchor highlight spans.
+ */
+function collectDimCutouts(annotationId: string): DOMRect[] {
+  const cutouts: DOMRect[] = [];
+
+  if (currentAnnotationMode === "overview") {
+    // Find the focused note and use its chunk fullRange
+    const note = notes.find((n) => n.id === annotationId);
+    if (note?.chunkRange?.fullRange) {
+      const rects = note.chunkRange.fullRange.getClientRects();
+      for (let i = 0; i < rects.length; i++) cutouts.push(rects[i]!);
+    }
+    // Fallback: if no chunk range, use the anchor highlights
+    if (cutouts.length === 0) {
+      const anchors = document.querySelectorAll(`[data-oddity-id="${annotationId}"]`);
+      for (const anchor of anchors) {
+        const rects = anchor.getClientRects();
+        for (let i = 0; i < rects.length; i++) cutouts.push(rects[i]!);
+      }
+    }
+  } else {
+    // Depth: cut out only the pinned annotation's highlights
+    const anchors = document.querySelectorAll(`[data-oddity-id="${annotationId}"]`);
+    for (const anchor of anchors) {
+      const rects = anchor.getClientRects();
+      for (let i = 0; i < rects.length; i++) cutouts.push(rects[i]!);
+    }
+  }
+
+  return cutouts;
+}
+
+/**
  * Build an SVG overlay that covers the entire viewport with a semi-transparent
  * fill, but punches out transparent rectangles where the highlighted text lives.
  * This avoids any z-index / stacking-context battles with the host page.
  */
 function dimPage(annotationId: string): void {
   dimmedAnnotationId = annotationId;
-  // Overview: all notes act as one system — cut out ALL highlights
-  // Depth: cut out only the pinned annotation's highlights
-  const selector = currentAnnotationMode === "overview"
-    ? "[data-oddity-id]"
-    : `[data-oddity-id="${annotationId}"]`;
-  const anchors = document.querySelectorAll(selector);
-  const cutouts: DOMRect[] = [];
-  for (const anchor of anchors) {
-    const rects = anchor.getClientRects();
-    for (let i = 0; i < rects.length; i++) cutouts.push(rects[i]!);
-  }
+  const cutouts: DOMRect[] = collectDimCutouts(annotationId);
 
   const pad = 14; // breathing room around each cutout
   const blur = 18; // feather radius for soft edges
@@ -922,15 +962,7 @@ function undimPage(): void {
 /** Refresh the SVG cutout positions (called on scroll/resize while dimmed). */
 function updateDimCutouts(): void {
   if (!pageDimOverlay || !dimmedAnnotationId) return;
-  const selector = currentAnnotationMode === "overview"
-    ? "[data-oddity-id]"
-    : `[data-oddity-id="${dimmedAnnotationId}"]`;
-  const anchors = document.querySelectorAll(selector);
-  const cutouts: DOMRect[] = [];
-  for (const anchor of anchors) {
-    const rects = anchor.getClientRects();
-    for (let i = 0; i < rects.length; i++) cutouts.push(rects[i]!);
-  }
+  const cutouts: DOMRect[] = collectDimCutouts(dimmedAnnotationId);
   const pad = 14;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
@@ -995,7 +1027,7 @@ export function updateMarginNoteText(annotationId: string, newNote: string): voi
 export function clearMarginNotes(): void {
   for (const note of notes) {
     note.element.remove();
-  }
+    }
   notes = [];
   noteIndex = 0;
   expandedId = null;
@@ -1011,6 +1043,7 @@ export function clearMarginNotes(): void {
   if (inlineHoverExpandTimer) { clearTimeout(inlineHoverExpandTimer); inlineHoverExpandTimer = null; }
   if (staleStateTimer) { clearTimeout(staleStateTimer); staleStateTimer = null; }
   if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
+  if (overviewShowTimer) { clearTimeout(overviewShowTimer); overviewShowTimer = null; }
 
   // Remove host element classes
   hostEl?.classList.remove("has-pinned", "has-dimmed");
@@ -1251,8 +1284,12 @@ function scheduleStaleStateCheck(): void {
     for (const el of hovered) {
       if ((el as HTMLElement).dataset?.oddityId) overAnchor = true;
     }
-    // Check shadow DOM popovers via mouseInInlinePopover flag
-    // (shadow DOM elements won't appear in :hover on document)
+    // Check shadow DOM popovers (document :hover can't see into shadow DOM)
+    if (shadowRoot) {
+      for (const el of shadowRoot.querySelectorAll(":hover")) {
+        if ((el as HTMLElement).classList?.contains("oddity-note--inline")) overPopover = true;
+      }
+    }
     // If no anchor is hovered and no inline popover claims hover, reset
     if (!overAnchor && !overPopover) {
       if (mouseInAnchor) {
@@ -1280,6 +1317,9 @@ function scheduleStaleStateCheck(): void {
 }
 
 export function onAnchorHoverStart(annotationId: string): void {
+  // Guard: during mode switch, notes/popovers are cleared before new ones render.
+  // Ignore hover events that fire from DOM mutations in the gap.
+  if (notes.length === 0 && inlinePopovers.size === 0) return;
   scheduleStaleStateCheck();
   if (inlinePopovers.has(annotationId)) {
     mouseInAnchor = true;
@@ -1330,6 +1370,7 @@ export function onAnchorHoverStart(annotationId: string): void {
     overviewShowTimer = setTimeout(() => {
       overviewShowTimer = null;
       if (!mouseInAnchor) return; // cursor already left
+      if (notes.length === 0 || !shadowRoot) return; // state cleared during delay
       showAllOverviewMarginNotes(annotationId);
       emphasizeAnnotation(annotationId);
     }, 120);
@@ -1443,6 +1484,8 @@ export function destroyMarginNotes(): void {
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
   if (anchorHoverTimer) { clearTimeout(anchorHoverTimer); anchorHoverTimer = null; }
   if (inlineHoverExpandTimer) { clearTimeout(inlineHoverExpandTimer); inlineHoverExpandTimer = null; }
+  if (overviewShowTimer) { clearTimeout(overviewShowTimer); overviewShowTimer = null; }
+  if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
 }
 
 export function getMarginNotesContentRight(): number {
@@ -2272,6 +2315,8 @@ function applyPositions(): void {
 
   sharedContentRight = maxContentRight;
 
+  // Update chunk braces (overview mode only)
+
   // Update the timeline line (overview mode only)
   updateTimelineLine(leftNotes, sharedContentLeft);
 
@@ -2329,6 +2374,8 @@ function applyScrollPositions(): void {
   for (const { note, viewportTop } of desired) {
     note.element.style.top = `${viewportTop}px`;
   }
+
+  // Update chunk highlights to follow the text during scroll
 }
 
 function updateTimelineLine(leftNotes: MarginNote[], sharedContentLeft: number): void {
@@ -2490,6 +2537,7 @@ const MARGIN_NOTES_CSS = `
   .note-bracket {
     display: none;
   }
+
 
   .note-label {
     display: block;

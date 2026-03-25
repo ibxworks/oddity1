@@ -2163,7 +2163,7 @@ function buildDashboardFace(): HTMLDivElement {
 async function loadDashboardPrefs(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-  const personality = (prefs.depth_personality as string) ?? "jerry";
+  const personality = (prefs.depth_personality as string) ?? "terry";
   dashDensityBtns.forEach((btn) => {
     btn.classList.toggle(
       "args-dash-density-active",

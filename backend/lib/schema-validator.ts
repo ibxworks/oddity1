@@ -53,6 +53,11 @@ const AllAnnotationTypes = z.enum([
   'vocabulary',
 ]);
 
+const ChunkBoundarySchema = z.object({
+  start: TextQuoteSelectorSchema,
+  end: TextQuoteSelectorSchema,
+});
+
 const AnnotationSchema = z.object({
   id: z.string().min(1),
   mode: AnnotationModeSchema,
@@ -60,6 +65,7 @@ const AnnotationSchema = z.object({
   label: z.string().optional(),
   anchor: TextQuoteSelectorSchema,
   content: AnnotationContentSchema,
+  chunk: ChunkBoundarySchema.optional(),
 });
 
 /**

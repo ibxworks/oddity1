@@ -56,7 +56,20 @@ function detectMode(): ThemeMode {
   const metaResult = colorSchemeSignal(metaCS);
   if (metaResult) return metaResult;
 
-  // 3. Background luminance on body/html
+  // 3. Background luminance — sample the actual content area, not just html/body
+  //    which often have transparent or inherited backgrounds.
+  //    Check content containers first (where the user is actually reading),
+  //    then fall back to body/html.
+  const contentSelectors = [
+    'main', 'article', '[role="main"]', '.content', '#content',
+    '.post', '.entry-content', '.article-body',
+  ];
+  for (const sel of contentSelectors) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    const lum = luminance(getComputedStyle(el).backgroundColor);
+    if (lum >= 0) return lum < 0.4 ? 'dark' : 'light';
+  }
   for (const el of [document.body, document.documentElement]) {
     if (!el) continue;
     const lum = luminance(getComputedStyle(el).backgroundColor);
@@ -67,16 +80,14 @@ function detectMode(): ThemeMode {
   //    Light-colored text (high luminance) reliably indicates a dark theme,
   //    regardless of how dark mode is implemented (CSS vars, media queries,
   //    browser forced dark mode, extensions, etc.)
+  const proseEl = document.querySelector('p, h1, h2, h3, article, main');
+  if (proseEl) {
+    const proseLum = luminance(getComputedStyle(proseEl).color);
+    if (proseLum >= 0 && proseLum > 0.5) return 'dark';
+  }
   if (document.body) {
     const textLum = luminance(getComputedStyle(document.body).color);
     if (textLum >= 0 && textLum > 0.5) return 'dark';
-
-    // Also sample a <p> or heading for text color — body color may be inherited
-    const prose = document.querySelector('p, h1, h2, h3, article, main');
-    if (prose) {
-      const proseLum = luminance(getComputedStyle(prose).color);
-      if (proseLum >= 0 && proseLum > 0.5) return 'dark';
-    }
   }
 
   // 5. Last resort: OS preference

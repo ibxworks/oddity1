@@ -1,4 +1,4 @@
-import type { Annotation } from '@oddity/shared';
+import type { Annotation, TextQuoteSelector } from '@oddity/shared';
 
 /**
  * Post-process AI-generated annotations to ensure `exact` strings
@@ -91,6 +91,23 @@ export function filterAndFixAnnotations(
     );
   }
 
+  // Fix chunk boundary anchors (overview mode only)
+  for (const ann of results) {
+    if (ann.chunk) {
+      const fixedStart = fixChunkAnchor(ann.chunk.start, normalizedSource, sourceText);
+      const fixedEnd = fixChunkAnchor(ann.chunk.end, normalizedSource, sourceText);
+      // If either boundary couldn't be resolved, discard chunk data
+      if (fixedStart && fixedEnd) {
+        ann.chunk = { start: fixedStart, end: fixedEnd };
+      } else {
+        ann.chunk = undefined;
+      }
+    }
+  }
+
+  // Snap adjacent chunk boundaries so they're contiguous (no overlaps/gaps)
+  snapAdjacentChunks(results, normalizedSource);
+
   return deduplicateOverlapping(results, normalizedSource);
 }
 
@@ -105,6 +122,92 @@ export function fixSingleAnnotation(
 ): Annotation | null {
   const result = filterAndFixAnnotations([ann], sourceText);
   return result.length > 0 ? result[0]! : null;
+}
+
+// ─── Chunk Anchor Helpers ───
+
+/**
+ * Fix a single chunk boundary anchor against the source text.
+ * Uses the same matching cascade as main anchors but simpler —
+ * returns the fixed selector or null if unresolvable.
+ */
+function fixChunkAnchor(
+  selector: TextQuoteSelector,
+  normalizedSource: string,
+  originalSource: string,
+): TextQuoteSelector | null {
+  const exact = selector.exact;
+  if (!exact || exact.trim().length === 0) return null;
+
+  const normalizedExact = normalizeWs(exact);
+
+  // 1. Exact match
+  if (normalizedSource.includes(normalizedExact)) {
+    const snapped = snapToSource(normalizedSource, normalizedExact, originalSource);
+    if (snapped) return { type: 'TextQuoteSelector', exact: snapped.exact, prefix: snapped.prefix, suffix: snapped.suffix };
+  }
+
+  // 2. Case-insensitive
+  const lowerSource = normalizedSource.toLowerCase();
+  const lowerExact = normalizedExact.toLowerCase();
+  const ciPos = lowerSource.indexOf(lowerExact);
+  if (ciPos !== -1) {
+    const actualExact = normalizedSource.slice(ciPos, ciPos + lowerExact.length);
+    const snapped = snapToSource(normalizedSource, actualExact, originalSource);
+    if (snapped) return { type: 'TextQuoteSelector', exact: snapped.exact, prefix: snapped.prefix, suffix: snapped.suffix };
+  }
+
+  // 3. Fuzzy
+  const fuzzyMatch = fuzzySubstringSearch(normalizedSource, normalizedExact);
+  if (fuzzyMatch) {
+    const snapped = snapToSource(normalizedSource, fuzzyMatch.text, originalSource);
+    if (snapped) return { type: 'TextQuoteSelector', exact: snapped.exact, prefix: snapped.prefix, suffix: snapped.suffix };
+  }
+
+  return null;
+}
+
+// ─── Chunk Contiguity ───
+
+/**
+ * Ensure adjacent chunks are contiguous: chunk N's end should meet chunk N+1's start
+ * with no overlap and no gap. If chunk N's end overlaps or has a gap with chunk N+1's
+ * start, adjust chunk N's end to end right before chunk N+1's start.
+ */
+function snapAdjacentChunks(annotations: Annotation[], normalizedSource: string): void {
+  // Only process annotations that have chunk data, in source order
+  const withChunks = annotations.filter((a) => a.chunk);
+  if (withChunks.length < 2) return;
+
+  // Sort by chunk start position in the source text
+  const positioned = withChunks.map((ann) => {
+    const startExact = normalizeWs(ann.chunk!.start.exact);
+    const endExact = normalizeWs(ann.chunk!.end.exact);
+    const startPos = normalizedSource.indexOf(startExact);
+    const endPos = normalizedSource.indexOf(endExact);
+    return { ann, startPos, endPos: endPos !== -1 ? endPos + endExact.length : -1 };
+  }).filter((p) => p.startPos !== -1 && p.endPos !== -1);
+
+  positioned.sort((a, b) => a.startPos - b.startPos);
+
+  for (let i = 0; i < positioned.length - 1; i++) {
+    const curr = positioned[i]!;
+    const next = positioned[i + 1]!;
+
+    // If current chunk's end extends past (or into) the next chunk's start, snap it
+    if (curr.endPos > next.startPos) {
+      // Overlap: shrink current chunk's end to stop right at next chunk's start
+      const newEndText = normalizedSource.slice(Math.max(curr.startPos, next.startPos - 60), next.startPos).trim();
+      if (newEndText.length > 0) {
+        // Take the last ~10 words as the new chunk_end anchor
+        const words = newEndText.split(' ');
+        const endPhrase = words.slice(-Math.min(12, words.length)).join(' ');
+        curr.ann.chunk!.end = { type: 'TextQuoteSelector', exact: endPhrase };
+        curr.endPos = next.startPos;
+        console.log(`[annotation-filter] Snapped chunk ${curr.ann.id} end to remove overlap`);
+      }
+    }
+  }
 }
 
 // ─── Helpers ───
