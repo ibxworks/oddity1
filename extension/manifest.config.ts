@@ -6,10 +6,10 @@ export default defineManifest({
   version: "0.1.0",
   description: "AI-powered in-place text annotations for any page",
   icons: {
-    16: "Terry-Icon.png",
-    32: "Terry-Icon.png",
-    48: "Terry-Icon.png",
-    128: "Terry-Icon.png",
+    16: "icons/terry-icon-16.png",
+    32: "icons/terry-icon-32.png",
+    48: "icons/terry-icon-48.png",
+    128: "icons/terry-icon-128.png",
   },
   permissions: [
     "activeTab",
@@ -40,10 +40,10 @@ export default defineManifest({
   action: {
     default_popup: "src/popup/index.html",
     default_icon: {
-      16: "Terry-Icon.png",
-      32: "Terry-Icon.png",
-      48: "Terry-Icon.png",
-      128: "Terry-Icon.png",
+      16: "icons/terry-icon-16.png",
+      32: "icons/terry-icon-32.png",
+      48: "icons/terry-icon-48.png",
+      128: "icons/terry-icon-128.png",
     },
   },
   options_ui: {
@@ -52,7 +52,14 @@ export default defineManifest({
   },
   web_accessible_resources: [
     {
-      resources: ["Oddity1-Logo.png", "Terry.png", "Jerry.png", "Sally.png"],
+      resources: [
+        "Oddity1-Logo.png",
+        "Terry.png",
+        "Terry-Icon.png",
+        "Jerry.png",
+        "Sally.png",
+        "Terry-svg.svg",
+      ],
       matches: ["<all_urls>"],
     },
   ],
