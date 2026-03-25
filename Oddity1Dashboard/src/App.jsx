@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import AuthForm from "./components/AuthForm";
 import Layout from "./components/Layout";
+import ResetPassword from "./components/ResetPassword";
 import { supabase } from "./lib/supabase";
 import AccountPage from "./pages/AccountPage";
 import ArchivePage from "./pages/ArchivePage";
@@ -12,6 +13,7 @@ import { clearAuthCookie, setAuthCookie } from "./utils/authCookie";
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -26,6 +28,9 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (_event === 'PASSWORD_RECOVERY') {
+        setRecoveryMode(true);
+      }
       if (session) {
         setAuthCookie();
 
@@ -84,6 +89,8 @@ export default function App() {
   if (loading) return null;
 
   if (!session) return <AuthForm />;
+
+  if (recoveryMode) return <ResetPassword onComplete={() => setRecoveryMode(false)} />;
 
   return (
     <Routes>

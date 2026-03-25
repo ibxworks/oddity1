@@ -35,6 +35,7 @@ const authPassword = document.getElementById(
 ) as HTMLInputElement;
 const authSubmitBtn = document.getElementById("auth-submit-btn")!;
 const authGoogleBtn = document.getElementById("auth-google-btn")! as HTMLButtonElement;
+const authForgotLink = document.getElementById("auth-forgot-link")!;
 const authToggleLink = document.getElementById("auth-toggle-link")!;
 const authToggleText = document.getElementById("auth-toggle-text")!;
 const mainContent = document.getElementById("main-content")!;
@@ -528,6 +529,7 @@ authToggleLink.addEventListener("click", (e) => {
     authToggleLink.textContent = "Sign In";
     authName.style.display = "";
     authTerms.style.display = "block";
+    authForgotLink.style.display = "none";
   } else {
     authSubmitBtn.textContent = "Sign In";
     authToggleText.textContent = "Don't have an account? ";
@@ -535,7 +537,34 @@ authToggleLink.addEventListener("click", (e) => {
     authName.style.display = "none";
     authName.value = "";
     authTerms.style.display = "none";
+    authForgotLink.style.display = "block";
     authForm.classList.add("sign-in-mode");
+  }
+});
+
+authForgotLink.addEventListener("click", async (e) => {
+  e.preventDefault();
+  const email = authEmail.value.trim();
+  if (!email) {
+    hideAuthMessages();
+    authError.textContent = "Enter your email first.";
+    authError.style.display = "block";
+    return;
+  }
+  authForgotLink.style.pointerEvents = "none";
+  authForgotLink.textContent = "Sending...";
+  hideAuthMessages();
+  try {
+    await sendMessage({ action: "resetPassword", payload: { email } });
+    authSuccess.textContent = "Check your email for a reset link.";
+    authSuccess.style.display = "block";
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to send reset email.";
+    authError.textContent = msg;
+    authError.style.display = "block";
+  } finally {
+    authForgotLink.textContent = "Forgot password?";
+    authForgotLink.style.pointerEvents = "";
   }
 });
 

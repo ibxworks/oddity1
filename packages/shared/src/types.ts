@@ -252,6 +252,8 @@ export type ExtensionMessage =
     }
   | { action: "signOut"; payload: Record<string, never> }
   | { action: "signInWithGoogle"; payload: Record<string, never> }
+  | { action: "resetPassword"; payload: { email: string } }
+  | { action: "deleteAccount"; payload: Record<string, never> }
   | { action: "getProfile"; payload: Record<string, never> }
   | { action: "updateProfile"; payload: { display_name: string } }
   | { action: "exportPdf"; payload: { title: string; subtitle: string } }

@@ -261,6 +261,16 @@
   color: var(--text-primary);
 }
 
+.danger-zone {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #f0efe9;
+}
+
+.danger-label {
+  color: #ef4444 !important;
+}
+
 @media (max-width: 768px) {
   .account-body { padding: 16px 16px 40px; }
   .checkbox-grid { grid-template-columns: repeat(2, 1fr); }

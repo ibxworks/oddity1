@@ -18,8 +18,9 @@ import {
   saveFeedback as apiSaveFeedback,
   sendUserFeedback as apiSendUserFeedback,
   updateAnnotation as apiUpdateAnnotation,
+  deleteAccount,
 } from "./api-client.js";
-import { ensureProfile, getEnabledSites, getProfile, getSession, getUserTier, signIn, signInWithGoogle, signOut, signUp, updateEnabledSites, updateProfile } from "./auth.js";
+import { ensureProfile, getEnabledSites, getProfile, getSession, getUserTier, resetPassword, signIn, signInWithGoogle, signOut, signUp, updateEnabledSites, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 import { getFromSessionCache, setInSessionCache } from "./sw-cache.js";
 import { getUrlCache, setUrlCache } from "./url-cache.js";
@@ -412,6 +413,27 @@ chrome.runtime.onMessage.addListener(
           chrome.tabs.query({}, (tabs) => {
             for (const tab of tabs) {
               if (tab.id && tab.id !== signOutTabId) {
+                sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: false } }).catch(() => {});
+              }
+            }
+          });
+          return { success: true };
+        }
+
+        case "resetPassword": {
+          const { email } = message.payload;
+          await resetPassword(email);
+          return { success: true };
+        }
+
+        case "deleteAccount": {
+          await deleteAccount();
+          await signOut();
+          // Broadcast sign-out to all tabs
+          const delTabId = sender.tab?.id;
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id && tab.id !== delTabId) {
                 sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: false } }).catch(() => {});
               }
             }

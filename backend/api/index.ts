@@ -8,6 +8,7 @@ import annotationsRouter from "./annotations.js";
 import sketchRouter from "./sketch.js";
 import feedbackRouter from "./feedback.js";
 import userFeedbackRouter from "./user-feedback.js";
+import accountRouter from "./user/account.js";
 import preferencesRouter from "./user/preferences.js";
 
 const app = express();
@@ -29,6 +30,7 @@ app.use("/api/annotate", authMiddleware, createRateLimiter(), annotateRouter);
 app.use("/api/sketch", authMiddleware, createRateLimiter(), sketchRouter);
 app.use("/api/annotations/feedback", authMiddleware, feedbackRouter);
 app.use("/api/annotations", authMiddleware, annotationsRouter);
+app.use("/api/user/account", authMiddleware, accountRouter);
 app.use("/api/user/preferences", authMiddleware, preferencesRouter);
 app.use("/api/user-feedback", authMiddleware, userFeedbackRouter);
 

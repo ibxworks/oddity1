@@ -411,6 +411,26 @@ body {
   text-underline-offset: 2px;
 }
 
+.auth-forgot-link {
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: #8a8a80;
+  cursor: pointer;
+  text-align: right;
+  align-self: flex-end;
+  margin-top: -8px;
+  font-family: inherit;
+  padding: 0;
+}
+.auth-forgot-link:hover {
+  color: #111;
+}
+.auth-forgot-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ── SHARED: Page header ─────────────────────── */
 .page-header {
   display: flex;

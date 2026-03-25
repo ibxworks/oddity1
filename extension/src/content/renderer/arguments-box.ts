@@ -135,6 +135,8 @@ let dashSignInNameEl: HTMLInputElement | null = null;
 let dashAuthTitleEl: HTMLDivElement | null = null;
 let dashAuthSubmitBtnEl: HTMLButtonElement | null = null;
 let dashAuthToggleLinkEl: HTMLSpanElement | null = null;
+let dashForgotLinkEl: HTMLSpanElement | null = null;
+let dashAuthTermsEl: HTMLDivElement | null = null;
 let dashSignInMode: "signin" | "signup" = "signup";
 let dashFaceEl: HTMLDivElement | null = null;
 let footerTextEl: HTMLSpanElement | null = null;
@@ -1430,6 +1432,10 @@ function showAuthView(mode: "signin" | "signup"): void {
         : "New user? Create account";
   if (dashSignInNameEl)
     dashSignInNameEl.style.display = mode === "signup" ? "block" : "none";
+  if (dashForgotLinkEl)
+    dashForgotLinkEl.style.display = mode === "signin" ? "block" : "none";
+  if (dashAuthTermsEl)
+    dashAuthTermsEl.style.display = mode === "signup" ? "block" : "none";
   if (dashSignInStatusEl) {
     dashSignInStatusEl.style.display = "none";
     dashSignInStatusEl.className = "args-dash-feedback-status";
@@ -2024,7 +2030,7 @@ function buildDashboardFace(): HTMLDivElement {
   dashAuthDividerEl.appendChild(dashAuthDividerSpan);
 
   // Terms text
-  const dashAuthTermsEl = document.createElement("div");
+  dashAuthTermsEl = document.createElement("div");
   dashAuthTermsEl.className = "args-dash-auth-terms";
   dashAuthTermsEl.appendChild(document.createTextNode("By continuing, you agree to our "));
   const dashAuthTermsLink = document.createElement("a");
@@ -2138,6 +2144,44 @@ function buildDashboardFace(): HTMLDivElement {
     if (e.key === "Enter") dashAuthSubmitBtnEl!.click();
   });
 
+  dashForgotLinkEl = document.createElement("span");
+  dashForgotLinkEl.className = "args-dash-forgot-link";
+  dashForgotLinkEl.textContent = "Forgot password?";
+  dashForgotLinkEl.style.display = "none";
+  dashForgotLinkEl.addEventListener("click", () => {
+    const email = dashSignInEmailEl!.value.trim();
+    if (!email) {
+      if (dashSignInStatusEl) {
+        dashSignInStatusEl.textContent = "Enter your email first.";
+        dashSignInStatusEl.className = "args-dash-feedback-status error";
+        dashSignInStatusEl.style.display = "block";
+      }
+      return;
+    }
+    dashForgotLinkEl!.textContent = "Sending...";
+    dashForgotLinkEl!.style.pointerEvents = "none";
+    chrome.runtime.sendMessage(
+      { action: "resetPassword", payload: { email } },
+      (response) => {
+        if (response?.error) {
+          if (dashSignInStatusEl) {
+            dashSignInStatusEl.textContent = response.error;
+            dashSignInStatusEl.className = "args-dash-feedback-status error";
+            dashSignInStatusEl.style.display = "block";
+          }
+        } else {
+          if (dashSignInStatusEl) {
+            dashSignInStatusEl.textContent = "Check your email for a reset link.";
+            dashSignInStatusEl.style.color = "#22c55e";
+            dashSignInStatusEl.style.display = "block";
+          }
+        }
+        dashForgotLinkEl!.textContent = "Forgot password?";
+        dashForgotLinkEl!.style.pointerEvents = "";
+      },
+    );
+  });
+
   dashAuthToggleLinkEl = document.createElement("span");
   dashAuthToggleLinkEl.className = "args-dash-signin-toggle";
   dashAuthToggleLinkEl.textContent = "Already have an account? Sign in";
@@ -2151,6 +2195,7 @@ function buildDashboardFace(): HTMLDivElement {
   dashSignInViewEl.appendChild(dashSignInNameEl);
   dashSignInViewEl.appendChild(dashSignInEmailEl);
   dashSignInViewEl.appendChild(dashSignInPasswordEl);
+  dashSignInViewEl.appendChild(dashForgotLinkEl);
   dashSignInViewEl.appendChild(dashAuthTermsEl);
   dashSignInViewEl.appendChild(dashAuthSubmitBtnEl);
   dashSignInViewEl.appendChild(dashSignInStatusEl);
@@ -5930,6 +5975,15 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-dash-signin-toggle:hover { color: #111; }
+
+  .args-dash-forgot-link {
+    font-size: 11px;
+    color: #8a8a80;
+    cursor: pointer;
+    text-align: right;
+    margin-top: -2px;
+  }
+  .args-dash-forgot-link:hover { color: #111; }
 
   .args-dash-google-btn {
     display: flex;

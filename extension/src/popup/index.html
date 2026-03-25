@@ -513,6 +513,19 @@
       .auth-terms a:hover {
         color: #111;
       }
+      .auth-forgot-link {
+        display: block;
+        font-size: 12px;
+        color: #8a8a80;
+        text-align: right;
+        cursor: pointer;
+        margin-top: -4px;
+        margin-bottom: 8px;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      }
+      .auth-forgot-link:hover {
+        color: #111;
+      }
       .auth-toggle a {
         color: #111;
         text-decoration: none;
@@ -804,6 +817,7 @@
         placeholder="Password"
         autocomplete="current-password"
       />
+      <a class="auth-forgot-link" id="auth-forgot-link" style="display: none">Forgot password?</a>
       <div class="auth-terms" id="auth-terms" style="display: block">
         By continuing, you agree to our
         <a href="https://www.oddity1.com/terms" target="_blank">Terms</a> and

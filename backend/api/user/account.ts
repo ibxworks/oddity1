@@ -1,0 +1,46 @@
+import { Router } from 'express';
+import { serviceClient } from '../../lib/supabase.js';
+
+const router = Router();
+
+// DELETE /api/user/account
+router.delete('/', async (req, res) => {
+  try {
+    const userId = req.user!.id;
+
+    // 1. Delete user_annotations (FK: user_id → profiles.id)
+    const { error: annErr } = await serviceClient
+      .from('user_annotations')
+      .delete()
+      .eq('user_id', userId);
+    if (annErr) console.error('[account DELETE] user_annotations:', annErr.message);
+
+    // 2. Delete annotation_feedback (FK: user_id → profiles.id)
+    const { error: fbErr } = await serviceClient
+      .from('annotation_feedback')
+      .delete()
+      .eq('user_id', userId);
+    if (fbErr) console.error('[account DELETE] annotation_feedback:', fbErr.message);
+
+    // 3. Delete profiles (FK: id → auth.users)
+    const { error: profErr } = await serviceClient
+      .from('profiles')
+      .delete()
+      .eq('id', userId);
+    if (profErr) console.error('[account DELETE] profiles:', profErr.message);
+
+    // 4. Delete auth user (requires service_role)
+    const { error: authErr } = await serviceClient.auth.admin.deleteUser(userId);
+    if (authErr) {
+      res.status(500).json({ error: 'Failed to delete account' });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[account DELETE] Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+export default router;

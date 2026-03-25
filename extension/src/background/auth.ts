@@ -105,6 +105,13 @@ export async function signOut() {
   if (error) throw error;
 }
 
+export async function resetPassword(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: "https://app.oddity1.com",
+  });
+  if (error) throw error;
+}
+
 export async function signInWithGoogle() {
   console.log("[Oddity 1] signInWithGoogle: starting OAuth flow");
   console.log("[Oddity 1] signInWithGoogle: redirect URL =", EXTENSION_REDIRECT_URL);

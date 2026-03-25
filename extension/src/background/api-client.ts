@@ -82,6 +82,15 @@ async function authFetch(
 
 // ─── Exported API Functions ───
 
+/** Delete the current user's account and all associated data. */
+export async function deleteAccount(): Promise<void> {
+  const response = await authFetch('/api/user/account', { method: 'DELETE' });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || 'Failed to delete account');
+  }
+}
+
 /**
  * Request annotations for a content region.
  * Accepts an optional AbortSignal for cancellation of stale requests.

@@ -320,6 +320,19 @@
               Log out
             </button>
           </div>
+          <div id="delete-account-section" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #f0efe9;">
+            <span class="field-label" style="color: #ef4444;">Danger Zone</span>
+            <p class="field-hint" style="margin-bottom: 10px;">
+              Permanently delete your account and all data. This cannot be undone.
+            </p>
+            <div id="delete-confirm-row" style="display: none; margin-bottom: 10px;">
+              <p style="font-size: 13px; margin-bottom: 8px;">Type <strong>delete</strong> to confirm:</p>
+              <div class="site-input-row">
+                <input type="text" id="delete-confirm-input" placeholder="Type &quot;delete&quot;" />
+              </div>
+            </div>
+            <button class="btn btn-sm btn-danger" id="delete-account-btn">Delete Account</button>
+          </div>
         </div>
       </div>
     </div>

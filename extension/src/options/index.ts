@@ -28,9 +28,14 @@ const nameSaveBtn = document.getElementById('name-save-btn')!;
 const nameCancelBtn = document.getElementById('name-cancel-btn')!;
 const upgradeBtn = document.getElementById('upgrade-btn')!;
 const logoutBtn = document.getElementById('logout-btn')!;
+const deleteAccountBtn = document.getElementById('delete-account-btn')!;
+const deleteConfirmRow = document.getElementById('delete-confirm-row')!;
+const deleteConfirmInput = document.getElementById('delete-confirm-input') as HTMLInputElement;
 const toast = document.getElementById('toast')!;
 
 // ─── State ───
+
+let deleteConfirmShown = false;
 
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
@@ -320,6 +325,40 @@ nameSaveBtn.addEventListener('click', async () => {
     nameSaveBtn.textContent = 'Save';
     nameSaveBtn.removeAttribute('disabled');
   }
+});
+
+// Delete account
+deleteAccountBtn.addEventListener('click', async () => {
+  if (!deleteConfirmShown) {
+    deleteConfirmShown = true;
+    deleteConfirmRow.style.display = '';
+    deleteAccountBtn.textContent = 'Confirm Deletion';
+    deleteConfirmInput.focus();
+    return;
+  }
+
+  if (deleteConfirmInput.value.toLowerCase() !== 'delete') {
+    showToast('Type "delete" to confirm');
+    return;
+  }
+
+  deleteAccountBtn.textContent = 'Deleting...';
+  deleteAccountBtn.setAttribute('disabled', '');
+  try {
+    await sendMessage({ action: 'deleteAccount', payload: {} });
+    showToast('Account deleted');
+    authNotSignedIn.style.display = '';
+    authSignedIn.style.display = 'none';
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to delete account';
+    showToast(msg);
+    deleteAccountBtn.textContent = 'Confirm Deletion';
+    deleteAccountBtn.removeAttribute('disabled');
+  }
+});
+
+deleteConfirmInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') deleteAccountBtn.click();
 });
 
 // Upgrade to Pro

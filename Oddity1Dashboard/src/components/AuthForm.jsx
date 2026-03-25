@@ -13,6 +13,23 @@ export default function AuthForm() {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
 
+  async function handleForgotPassword() {
+    if (!email) {
+      setError('Enter your email first.')
+      return
+    }
+    setError('')
+    setMessage('')
+    setLoading(true)
+    const redirectTo = window.location.hostname === 'localhost'
+      ? window.location.origin
+      : 'https://app.oddity1.com'
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+    if (error) setError(error.message)
+    else setMessage('Check your email for a password reset link.')
+    setLoading(false)
+  }
+
   async function handleGoogleSignIn() {
     setError('')
     setMessage('')
@@ -164,6 +181,17 @@ export default function AuthForm() {
               autoComplete={isSignUp ? 'new-password' : 'current-password'}
             />
           </div>
+
+          {!isSignUp && (
+            <button
+              type="button"
+              className="auth-forgot-link"
+              onClick={handleForgotPassword}
+              disabled={loading}
+            >
+              Forgot password?
+            </button>
+          )}
 
           {error && <p className="auth-error">{error}</p>}
           {message && <p className="auth-message">{message}</p>}

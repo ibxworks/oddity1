@@ -90,7 +90,13 @@
       "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1 --include=\"*.sql\" --include=\"*.ts\" --include=\"*.md\" 2>/dev/null | head -40)",
       "Bash(find /Users/realtonypark/Developer/oddity1/backend -type f -name *.json -o -name *.ts -o -name *.js)",
       "mcp__plugin_supabase_supabase__execute_sql",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find /Users/realtonypark/Developer/oddity1 -maxdepth 3 -type f \\\\\\(-name .env* -o -name supabase.json -o -name *.config.* \\\\\\) ! -path */node_modules/*)",
+      "Bash(find /Users/realtonypark/Developer/oddity1 -name supabase.json -o -name *supabase*config*)",
+      "Bash(grep -r \"redirectTo\\\\|app\\\\.oddity1\" /Users/realtonypark/Developer/oddity1 --include=*.ts --include=*.tsx --include=*.js --include=*.jsx)",
+      "mcp__supabase__get_logs",
+      "mcp__supabase__search_docs",
+      "mcp__plugin_supabase_supabase__search_docs"
     ]
   },
   "enableAllProjectMcpServers": true,
