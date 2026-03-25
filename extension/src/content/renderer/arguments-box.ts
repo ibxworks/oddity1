@@ -1926,6 +1926,122 @@ function buildDashboardFace(): HTMLDivElement {
   dashSignInStatusEl = document.createElement("div");
   dashSignInStatusEl.className = "args-dash-feedback-status";
 
+  // Google sign-in button (SVG + label built via DOM to avoid innerHTML)
+  const dashGoogleBtnEl = document.createElement("button");
+  dashGoogleBtnEl.className = "args-dash-google-btn";
+  const buildGoogleBtnContent = (): DocumentFragment => {
+    const frag = document.createDocumentFragment();
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("width", "16");
+    svg.setAttribute("height", "16");
+    svg.setAttribute("viewBox", "0 0 48 48");
+    svg.style.flexShrink = "0";
+    const paths: [string, string][] = [
+      ["#EA4335", "M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"],
+      ["#4285F4", "M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"],
+      ["#FBBC05", "M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"],
+      ["#34A853", "M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"],
+    ];
+    for (const [fill, d] of paths) {
+      const path = document.createElementNS(svgNS, "path");
+      path.setAttribute("fill", fill);
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    }
+    frag.appendChild(svg);
+    frag.appendChild(document.createTextNode("Continue with Google"));
+    return frag;
+  };
+  dashGoogleBtnEl.appendChild(buildGoogleBtnContent());
+  dashGoogleBtnEl.addEventListener("click", async () => {
+    dashGoogleBtnEl.textContent = "Signing in...";
+    dashGoogleBtnEl.setAttribute("disabled", "");
+    if (dashSignInStatusEl) dashSignInStatusEl.style.display = "none";
+
+    try {
+      const result = (await chrome.runtime.sendMessage({
+        action: "signInWithGoogle",
+        payload: {},
+      })) as { success?: boolean; error?: string; user?: unknown };
+
+      if (result?.error) throw new Error(result.error);
+
+      localAuthState = true;
+      await chrome.storage.local.set({ hadAccount: true });
+      if (dashSignInViewEl) dashSignInViewEl.style.display = "none";
+
+      // Show onboarding slideshow, then continue with normal post-auth flow
+      if (containerEl) {
+        containerEl.style.width = "340px";
+        containerEl.style.height = "520px";
+      }
+      showOnboardingSlideshow(async () => {
+        if (containerEl) {
+          containerEl.style.height = "";
+          containerEl.style.width = "";
+        }
+        if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
+        const prefsStored = await chrome.storage.local.get("preferences");
+        const enabledSites = (
+          prefsStored["preferences"] as Record<string, unknown>
+        )?.["enabled_sites"] as string[] | undefined;
+        const hostname = window.location.hostname.replace(/^www\./, "");
+        const siteEnabled =
+          Array.isArray(enabledSites) &&
+          enabledSites.some(
+            (s) => hostname === s || hostname.endsWith("." + s),
+          );
+        if (!siteEnabled) {
+          showNotEnabledOverlay();
+        } else {
+          await loadDashboardData();
+        }
+        updateModeToggleVisibility();
+        document.dispatchEvent(new CustomEvent("oddity:localSignIn"));
+      });
+    } catch (err) {
+      const msg = String(err instanceof Error ? err.message : "Something went wrong");
+      if (!msg.includes("cancelled") && !msg.includes("canceled") && !msg.includes("User interaction required")) {
+        if (dashSignInStatusEl) {
+          dashSignInStatusEl.textContent = msg;
+          dashSignInStatusEl.className = "args-dash-feedback-status error";
+          dashSignInStatusEl.style.display = "block";
+        }
+      }
+    } finally {
+      while (dashGoogleBtnEl.firstChild) dashGoogleBtnEl.removeChild(dashGoogleBtnEl.firstChild);
+      dashGoogleBtnEl.appendChild(buildGoogleBtnContent());
+      dashGoogleBtnEl.removeAttribute("disabled");
+    }
+  });
+
+  // Auth divider
+  const dashAuthDividerEl = document.createElement("div");
+  dashAuthDividerEl.className = "args-dash-auth-divider";
+  const dashAuthDividerSpan = document.createElement("span");
+  dashAuthDividerSpan.textContent = "or";
+  dashAuthDividerEl.appendChild(dashAuthDividerSpan);
+
+  // Terms text
+  const dashAuthTermsEl = document.createElement("div");
+  dashAuthTermsEl.className = "args-dash-auth-terms";
+  dashAuthTermsEl.appendChild(document.createTextNode("By continuing, you agree to our "));
+  const dashAuthTermsLink = document.createElement("a");
+  dashAuthTermsLink.href = "https://www.oddity1.com/terms";
+  dashAuthTermsLink.target = "_blank";
+  dashAuthTermsLink.rel = "noopener noreferrer";
+  dashAuthTermsLink.textContent = "Terms";
+  dashAuthTermsEl.appendChild(dashAuthTermsLink);
+  dashAuthTermsEl.appendChild(document.createTextNode(" and "));
+  const dashAuthPrivacyLink = document.createElement("a");
+  dashAuthPrivacyLink.href = "https://www.oddity1.com/privacy";
+  dashAuthPrivacyLink.target = "_blank";
+  dashAuthPrivacyLink.rel = "noopener noreferrer";
+  dashAuthPrivacyLink.textContent = "Privacy Policy";
+  dashAuthTermsEl.appendChild(dashAuthPrivacyLink);
+  dashAuthTermsEl.appendChild(document.createTextNode("."));
+
   dashAuthSubmitBtnEl = document.createElement("button");
   dashAuthSubmitBtnEl.className = "args-dash-feedback-send-btn";
   dashAuthSubmitBtnEl.style.width = "100%";
@@ -2030,6 +2146,9 @@ function buildDashboardFace(): HTMLDivElement {
   });
 
   dashSignInViewEl.appendChild(dashAuthTitleEl);
+  dashSignInViewEl.appendChild(dashAuthTermsEl);
+  dashSignInViewEl.appendChild(dashGoogleBtnEl);
+  dashSignInViewEl.appendChild(dashAuthDividerEl);
   dashSignInViewEl.appendChild(dashSignInNameEl);
   dashSignInViewEl.appendChild(dashSignInEmailEl);
   dashSignInViewEl.appendChild(dashSignInPasswordEl);
@@ -5810,6 +5929,61 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .args-dash-signin-toggle:hover { color: #111; }
+
+  .args-dash-google-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 0.5px solid #e8e8e2;
+    border-radius: 100px;
+    background: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #3a3a36;
+    font-family: -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+    transition: all 0.15s;
+  }
+  .args-dash-google-btn:hover {
+    background: #f5f4f0;
+    border-color: #d4d4ca;
+  }
+  .args-dash-google-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .args-dash-auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 2px 0;
+    font-size: 11px;
+    color: #8a8a80;
+    font-family: -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+  }
+  .args-dash-auth-divider::before,
+  .args-dash-auth-divider::after {
+    content: "";
+    flex: 1;
+    border-top: 0.5px solid #e8e8e2;
+  }
+  .args-dash-auth-terms {
+    font-size: 11px;
+    color: #8a8a80;
+    text-align: center;
+    line-height: 1.4;
+    font-family: -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+  }
+  .args-dash-auth-terms a {
+    color: #6b6b63;
+    text-decoration: underline;
+  }
+  .args-dash-auth-terms a:hover {
+    color: #111;
+  }
 
   /* ── Onboarding slideshow ── */
 

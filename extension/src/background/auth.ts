@@ -12,6 +12,7 @@ import { DEFAULT_ENABLED_SITES } from "@oddity/shared";
 const SUPABASE_URL = "https://gmmektzvvrtttszdgiai.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtbWVrdHp2dnJ0dHRzemRnaWFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MzQyNzYsImV4cCI6MjA4NzMxMDI3Nn0.aFzJcKC4dHgSz7TuQFR-4ZjnVMNQZAycWYkXg1UHKKY";
+const EXTENSION_REDIRECT_URL = `https://${chrome.runtime.id}.chromiumapp.org/`;
 
 // ─── Chrome Storage Adapter for Service Workers ───
 // Service workers have NO localStorage. We use chrome.storage.session
@@ -53,6 +54,7 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     storage: chromeStorageAdapter,
     autoRefreshToken: true,
     persistSession: true,
+    flowType: 'pkce',
   },
 });
 
@@ -101,6 +103,101 @@ export async function signUp(email: string, password: string, displayName: strin
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+}
+
+export async function signInWithGoogle() {
+  console.log("[Oddity 1] signInWithGoogle: starting OAuth flow");
+  console.log("[Oddity 1] signInWithGoogle: redirect URL =", EXTENSION_REDIRECT_URL);
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: EXTENSION_REDIRECT_URL,
+      skipBrowserRedirect: true,
+    },
+  });
+
+  if (error || !data.url) {
+    console.error("[Oddity 1] signInWithGoogle: OAuth URL error:", error?.message);
+    throw error ?? new Error("Failed to get OAuth URL");
+  }
+
+  console.log("[Oddity 1] signInWithGoogle: got OAuth URL, launching web auth flow");
+
+  const redirectUrl = await chrome.identity.launchWebAuthFlow({
+    url: data.url,
+    interactive: true,
+  });
+
+  if (!redirectUrl) throw new Error("OAuth flow was cancelled");
+
+  console.log("[Oddity 1] signInWithGoogle: redirect URL received:", redirectUrl.substring(0, 200));
+
+  const url = new URL(redirectUrl);
+  let sessionData;
+
+  // Try PKCE flow first (code in query params)
+  const code = url.searchParams.get("code");
+  console.log("[Oddity 1] signInWithGoogle: code =", code ? `${code.substring(0, 20)}...` : "null");
+
+  if (code) {
+    console.log("[Oddity 1] signInWithGoogle: exchanging code for session (PKCE)");
+    const { data: d, error: e } =
+      await supabase.auth.exchangeCodeForSession(code);
+    if (e) {
+      console.error("[Oddity 1] signInWithGoogle: code exchange error:", e.message);
+      throw e;
+    }
+    console.log("[Oddity 1] signInWithGoogle: code exchange successful, user:", d.user?.email);
+    sessionData = d;
+  } else {
+    // Fall back to implicit flow (tokens in hash fragment)
+    console.log("[Oddity 1] signInWithGoogle: no code, trying implicit flow (hash)");
+    const hashParams = new URLSearchParams(url.hash.substring(1));
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
+    if (accessToken && refreshToken) {
+      const { data: d, error: e } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (e) throw e;
+      sessionData = d;
+    } else {
+      console.error("[Oddity 1] signInWithGoogle: no code or tokens in redirect URL");
+      throw new Error(
+        "No auth code or tokens in redirect URL: " + redirectUrl,
+      );
+    }
+  }
+
+  if (sessionData.user) {
+    console.log("[Oddity 1] signInWithGoogle: ensuring profile for", sessionData.user.email);
+    await ensureProfile(sessionData.user);
+  }
+
+  console.log("[Oddity 1] signInWithGoogle: complete, session established");
+  return sessionData;
+}
+
+async function ensureProfile(user: { id: string; user_metadata?: Record<string, unknown> }) {
+  const displayName =
+    (user.user_metadata?.full_name as string) ??
+    (user.user_metadata?.name as string) ??
+    null;
+
+  const { error: profileError } = await supabase.from("profiles").upsert(
+    {
+      id: user.id,
+      display_name: displayName,
+      preferences: { enabled_sites: DEFAULT_ENABLED_SITES },
+    },
+    { onConflict: "id", ignoreDuplicates: true },
+  );
+
+  if (profileError) {
+    console.error("[Oddity 1] Failed to create profile for Google user:", profileError.message);
+  }
 }
 
 export async function getProfile(): Promise<{ display_name: string | null; tier: 'free' | 'pro'; annotation_count: number } | null> {

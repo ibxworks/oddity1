@@ -5,7 +5,7 @@ export default defineManifest({
   name: "Oddity",
   version: "0.1.0",
   description: "AI-powered in-place text annotations for any page",
-  permissions: ["activeTab", "storage", "contextMenus", "scripting", "alarms"],
+  permissions: ["activeTab", "storage", "contextMenus", "scripting", "alarms", "identity"],
   host_permissions: ["<all_urls>"],
   background: {
     service_worker: "src/background/index.ts",

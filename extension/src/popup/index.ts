@@ -35,6 +35,7 @@ const authPassword = document.getElementById(
   "auth-password",
 ) as HTMLInputElement;
 const authSubmitBtn = document.getElementById("auth-submit-btn")!;
+const authGoogleBtn = document.getElementById("auth-google-btn")! as HTMLButtonElement;
 const authToggleLink = document.getElementById("auth-toggle-link")!;
 const authToggleText = document.getElementById("auth-toggle-text")!;
 const mainContent = document.getElementById("main-content")!;
@@ -655,6 +656,57 @@ authSubmitBtn.addEventListener("click", async () => {
   } finally {
     authSubmitBtn.textContent = isSignUpMode ? "Sign Up" : "Sign In";
     authSubmitBtn.removeAttribute("disabled");
+  }
+});
+
+authGoogleBtn.addEventListener("click", async () => {
+  authError.style.display = "none";
+  authSuccess.style.display = "none";
+
+  // Snapshot child nodes so the SVG + label can be restored without innerHTML
+  const originalChildren = Array.from(authGoogleBtn.childNodes).map((n) => n.cloneNode(true));
+  authGoogleBtn.textContent = "Signing in...";
+  authGoogleBtn.disabled = true;
+
+  const restoreBtn = (): void => {
+    authGoogleBtn.textContent = "";
+    for (const node of originalChildren) authGoogleBtn.appendChild(node.cloneNode(true));
+    authGoogleBtn.disabled = false;
+  };
+
+  try {
+    const result = await sendMessage<{
+      success?: boolean;
+      user?: {
+        id: string;
+        email: string;
+        display_name: string | null;
+        tier: string;
+      };
+      error?: string;
+    }>({ action: "signInWithGoogle", payload: {} });
+
+    if (result?.error) {
+      authError.textContent = result.error;
+      authError.style.display = "block";
+      return;
+    }
+
+    if (result?.user) {
+      currentUser = result.user as typeof currentUser;
+      showAuthenticatedUI(result.user as Parameters<typeof showAuthenticatedUI>[0]);
+      chrome.action.setBadgeText({ text: "" });
+      refreshActiveTab();
+    }
+  } catch (err: unknown) {
+    const msg = String(err instanceof Error ? err.message : err);
+    // Don't show error if user simply closed the consent popup
+    if (!msg.includes("cancelled") && !msg.includes("canceled") && !msg.includes("User interaction required")) {
+      authError.textContent = msg;
+      authError.style.display = "block";
+    }
+  } finally {
+    restoreBtn();
   }
 });
 

@@ -19,7 +19,7 @@ import {
   sendUserFeedback as apiSendUserFeedback,
   updateAnnotation as apiUpdateAnnotation,
 } from "./api-client.js";
-import { getEnabledSites, getProfile, getSession, getUserTier, signIn, signOut, signUp, updateEnabledSites, updateProfile } from "./auth.js";
+import { getEnabledSites, getProfile, getSession, getUserTier, signIn, signInWithGoogle, signOut, signUp, updateEnabledSites, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 import { getFromSessionCache, setInSessionCache } from "./sw-cache.js";
 import { getUrlCache, setUrlCache } from "./url-cache.js";
@@ -308,6 +308,48 @@ chrome.runtime.onMessage.addListener(
               email: data.user?.email ?? "",
               display_name: signInProfile?.display_name ?? null,
               tier: signInProfile?.tier ?? "free",
+            },
+          };
+        }
+
+        case "signInWithGoogle": {
+          const data = await signInWithGoogle();
+          const googleProfile = await getProfile();
+
+          // Cache enabled sites locally after Google sign-in
+          const googleSites = (await getEnabledSites()) ?? DEFAULT_ENABLED_SITES;
+          const googleStored = await chrome.storage.local.get("preferences");
+          const googlePrefs = (googleStored["preferences"] ?? {}) as Record<string, unknown>;
+          await chrome.storage.local.set({
+            preferences: { ...googlePrefs, enabled_sites: googleSites },
+          });
+
+          // Broadcast auth change to all other tabs
+          const googleTabId = sender.tab?.id;
+          const googleUser = {
+            email: data.user?.email ?? "",
+            display_name: googleProfile?.display_name ?? null,
+            tier: googleProfile?.tier ?? "free",
+            annotation_count: googleProfile?.annotation_count ?? 0,
+          };
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id && tab.id !== googleTabId) {
+                sendToTab(tab.id, {
+                  action: "authStateChanged",
+                  payload: { authenticated: true, user: googleUser },
+                }).catch(() => {});
+              }
+            }
+          });
+
+          return {
+            success: true,
+            user: {
+              id: data.user?.id ?? "",
+              email: data.user?.email ?? "",
+              display_name: googleProfile?.display_name ?? null,
+              tier: googleProfile?.tier ?? "free",
             },
           };
         }

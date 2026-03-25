@@ -21,11 +21,40 @@ export default function App() {
       setLoading(false);
     });
 
+    const DEFAULT_ENABLED_SITES = ['chatgpt.com', 'chat.openai.com', 'claude.ai'];
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) setAuthCookie();
-      else clearAuthCookie();
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        setAuthCookie();
+
+        // Ensure profile exists for Google OAuth users
+        if (_event === 'SIGNED_IN') {
+          const { data: existing } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', session.user.id)
+            .single();
+
+          if (!existing) {
+            const displayName =
+              session.user.user_metadata?.full_name ??
+              session.user.user_metadata?.name ??
+              null;
+            await supabase.from('profiles').upsert(
+              {
+                id: session.user.id,
+                display_name: displayName,
+                preferences: { enabled_sites: DEFAULT_ENABLED_SITES },
+              },
+              { onConflict: 'id' },
+            );
+          }
+        }
+      } else {
+        clearAuthCookie();
+      }
       setSession(session);
     });
 

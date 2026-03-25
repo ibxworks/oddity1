@@ -320,6 +320,67 @@ body {
 .auth-button:hover { opacity: 0.85; }
 .auth-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.auth-google-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--r);
+  background: var(--bg-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition);
+  margin-bottom: 4px;
+}
+
+.auth-google-button:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-secondary);
+}
+
+.auth-google-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border-light);
+}
+
+.auth-terms {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 12px;
+}
+
+.auth-terms a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+
+.auth-terms a:hover {
+  color: var(--text-primary);
+}
+
 .auth-error {
   color: #dc2626;
   font-size: 13px;
