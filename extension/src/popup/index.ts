@@ -204,7 +204,7 @@ function showAuthenticatedUI(user: {
 
   // Auth bar (bottom)
   profileAvatar.textContent = initial;
-  profileName.textContent = user.email.split("@")[0] ?? user.email;
+  profileName.textContent = displayName;
 
   // Tier badge
   tierBadge.textContent = user.tier === "pro" ? "PRO" : "FREE";

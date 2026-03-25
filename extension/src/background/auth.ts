@@ -180,23 +180,46 @@ export async function signInWithGoogle() {
   return sessionData;
 }
 
-async function ensureProfile(user: { id: string; user_metadata?: Record<string, unknown> }) {
+export async function ensureProfile(user: { id: string; user_metadata?: Record<string, unknown> }) {
   const displayName =
+    (user.user_metadata?.display_name as string) ??
     (user.user_metadata?.full_name as string) ??
     (user.user_metadata?.name as string) ??
     null;
 
+  // First, ensure the profile row exists (trigger should have created it,
+  // but this handles edge cases like old users or trigger failures).
   const { error: profileError } = await supabase.from("profiles").upsert(
     {
       id: user.id,
-      display_name: displayName,
       preferences: { enabled_sites: DEFAULT_ENABLED_SITES },
     },
     { onConflict: "id", ignoreDuplicates: true },
   );
 
   if (profileError) {
-    console.error("[Oddity 1] Failed to create profile for Google user:", profileError.message);
+    console.error("[Oddity 1] Failed to ensure profile:", profileError.message);
+  }
+
+  // If we have a display_name from metadata (e.g. Google OAuth) and the
+  // profile doesn't have one yet, update it.
+  if (displayName) {
+    const { data: existing } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .single();
+
+    if (existing && !existing.display_name) {
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ display_name: displayName })
+        .eq("id", user.id);
+
+      if (updateError) {
+        console.error("[Oddity 1] Failed to update display_name:", updateError.message);
+      }
+    }
   }
 }
 

@@ -51,9 +51,20 @@ export default function AuthForm() {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            data: { display_name: name.trim() },
+          },
         })
 
         if (signUpError) throw signUpError
+
+        // Cache displayName so it survives until sign-in.
+        // The profile upsert below may fail (no session if email
+        // confirmation required → RLS blocks it), and the DB trigger
+        // creates the row with NULL display_name.
+        if (name.trim()) {
+          localStorage.setItem('pending_display_name', JSON.stringify({ email, displayName: name.trim() }))
+        }
 
         if (data.user) {
           await supabase.from('profiles').upsert({

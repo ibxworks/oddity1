@@ -19,7 +19,7 @@ import {
   sendUserFeedback as apiSendUserFeedback,
   updateAnnotation as apiUpdateAnnotation,
 } from "./api-client.js";
-import { getEnabledSites, getProfile, getSession, getUserTier, signIn, signInWithGoogle, signOut, signUp, updateEnabledSites, updateProfile } from "./auth.js";
+import { ensureProfile, getEnabledSites, getProfile, getSession, getUserTier, signIn, signInWithGoogle, signOut, signUp, updateEnabledSites, updateProfile } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 import { getFromSessionCache, setInSessionCache } from "./sw-cache.js";
 import { getUrlCache, setUrlCache } from "./url-cache.js";
@@ -277,7 +277,29 @@ chrome.runtime.onMessage.addListener(
         case "signIn": {
           const { email, password } = message.payload;
           const data = await signIn(email, password);
-          const signInProfile = await getProfile();
+
+          // Ensure profile exists (handles case where signup profile creation
+          // failed due to no session before email confirmation)
+          if (data.user) {
+            await ensureProfile(data.user);
+          }
+
+          let signInProfile = await getProfile();
+
+          // If display_name is still null, check for a cached value from signup.
+          // This handles the flow: signup (no session, RLS blocks profile insert)
+          // → email confirmation → first sign-in.
+          if (!signInProfile?.display_name) {
+            const pending = await chrome.storage.local.get("pending_display_name");
+            const cached = pending["pending_display_name"] as { email: string; displayName: string } | undefined;
+            if (cached && cached.email === email && cached.displayName) {
+              await updateProfile(cached.displayName).catch((err) =>
+                console.error("[Oddity 1] Failed to set cached display_name:", err)
+              );
+              await chrome.storage.local.remove("pending_display_name");
+              signInProfile = await getProfile();
+            }
+          }
 
           // Cache enabled sites locally after sign-in
           const signInSites = await getEnabledSites() ?? DEFAULT_ENABLED_SITES;
@@ -358,6 +380,14 @@ chrome.runtime.onMessage.addListener(
           const { email, password, displayName } = message.payload;
           const data = await signUp(email, password, displayName);
           const needsConfirmation = data.session === null;
+
+          // Cache displayName locally so it survives until sign-in.
+          // The profile upsert during signup fails when email confirmation
+          // is required (no session → RLS blocks INSERT), so we need this
+          // cached value to set display_name on first sign-in.
+          if (displayName && email) {
+            await chrome.storage.local.set({ "pending_display_name": { email, displayName } });
+          }
 
           // Cache default enabled sites locally after sign-up
           if (!needsConfirmation) {

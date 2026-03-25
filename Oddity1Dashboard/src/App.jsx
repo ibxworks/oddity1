@@ -29,19 +29,33 @@ export default function App() {
       if (session) {
         setAuthCookie();
 
-        // Ensure profile exists for Google OAuth users
+        // Ensure profile has display_name and default preferences
         if (_event === 'SIGNED_IN') {
           const { data: existing } = await supabase
             .from('profiles')
-            .select('id')
+            .select('id, display_name, preferences')
             .eq('id', session.user.id)
             .single();
 
+          // Resolve display_name: auth metadata → localStorage cache → null
+          let displayName =
+            session.user.user_metadata?.display_name ??
+            session.user.user_metadata?.full_name ??
+            session.user.user_metadata?.name ??
+            null;
+
+          if (!displayName) {
+            try {
+              const cached = JSON.parse(localStorage.getItem('pending_display_name') || 'null');
+              if (cached && cached.email === session.user.email && cached.displayName) {
+                displayName = cached.displayName;
+                localStorage.removeItem('pending_display_name');
+              }
+            } catch { /* ignore */ }
+          }
+
           if (!existing) {
-            const displayName =
-              session.user.user_metadata?.full_name ??
-              session.user.user_metadata?.name ??
-              null;
+            // Profile row missing (trigger didn't fire) — create it
             await supabase.from('profiles').upsert(
               {
                 id: session.user.id,
@@ -50,6 +64,12 @@ export default function App() {
               },
               { onConflict: 'id' },
             );
+          } else if (!existing.display_name && displayName) {
+            // Profile exists but display_name is null — update it
+            await supabase
+              .from('profiles')
+              .update({ display_name: displayName })
+              .eq('id', session.user.id);
           }
         }
       } else {

@@ -2,10 +2,23 @@ import { defineManifest } from "@crxjs/vite-plugin";
 
 export default defineManifest({
   manifest_version: 3,
-  name: "Oddity",
+  name: "Oddity1",
   version: "0.1.0",
   description: "AI-powered in-place text annotations for any page",
-  permissions: ["activeTab", "storage", "contextMenus", "scripting", "alarms", "identity"],
+  icons: {
+    16: "Terry.png",
+    32: "Terry.png",
+    48: "Terry.png",
+    128: "Terry.png",
+  },
+  permissions: [
+    "activeTab",
+    "storage",
+    "contextMenus",
+    "scripting",
+    "alarms",
+    "identity",
+  ],
   host_permissions: ["<all_urls>"],
   background: {
     service_worker: "src/background/index.ts",
@@ -26,6 +39,12 @@ export default defineManifest({
   ],
   action: {
     default_popup: "src/popup/index.html",
+    default_icon: {
+      16: "Terry.png",
+      32: "Terry.png",
+      48: "Terry.png",
+      128: "Terry.png",
+    },
   },
   options_ui: {
     page: "src/options/index.html",

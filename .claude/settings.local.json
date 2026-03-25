@@ -88,7 +88,8 @@
       "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1 --include=\"*.ts\" --include=\"*.js\" --include=\"*.md\" 2>/dev/null | head -30)",
       "Bash(git -C /Users/realtonypark/Developer/oddity1 diff HEAD backend/api/annotate.ts 2>/dev/null | head -100)",
       "Bash(grep -r \"annotation_cache\" /Users/realtonypark/Developer/oddity1 --include=\"*.sql\" --include=\"*.ts\" --include=\"*.md\" 2>/dev/null | head -40)",
-      "Bash(find /Users/realtonypark/Developer/oddity1/backend -type f -name *.json -o -name *.ts -o -name *.js)"
+      "Bash(find /Users/realtonypark/Developer/oddity1/backend -type f -name *.json -o -name *.ts -o -name *.js)",
+      "mcp__plugin_supabase_supabase__execute_sql"
     ]
   },
   "enableAllProjectMcpServers": true,
