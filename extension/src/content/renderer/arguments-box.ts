@@ -1203,6 +1203,38 @@ function showNotEnabledOverlay(): void {
   btnRow.appendChild(alwaysEnableBtn);
   btnRow.appendChild(runOnceBtn);
 
+  // Dismiss close button (floats above box, like dash-close-btn)
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "args-not-enabled-close";
+  const closeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  closeIcon.setAttribute("width", "11");
+  closeIcon.setAttribute("height", "11");
+  closeIcon.setAttribute("viewBox", "0 0 12 12");
+  closeIcon.setAttribute("fill", "none");
+  const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line1.setAttribute("x1", "1"); line1.setAttribute("y1", "1");
+  line1.setAttribute("x2", "11"); line1.setAttribute("y2", "11");
+  line1.setAttribute("stroke", "currentColor");
+  line1.setAttribute("stroke-width", "2");
+  line1.setAttribute("stroke-linecap", "round");
+  const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line2.setAttribute("x1", "11"); line2.setAttribute("y1", "1");
+  line2.setAttribute("x2", "1"); line2.setAttribute("y2", "11");
+  line2.setAttribute("stroke", "currentColor");
+  line2.setAttribute("stroke-width", "2");
+  line2.setAttribute("stroke-linecap", "round");
+  closeIcon.appendChild(line1);
+  closeIcon.appendChild(line2);
+  closeBtn.appendChild(closeIcon);
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    containerEl?.classList.remove("oddity-not-enabled");
+    dimmed = false;
+    closeBtn.remove();
+    if (expanded) toggle();
+  });
+  containerEl?.appendChild(closeBtn);
+
   notEnabledPanelEl.appendChild(msg);
   notEnabledPanelEl.appendChild(btnRow);
   notEnabledPanelEl.appendChild(shortcutHint);
@@ -1336,6 +1368,9 @@ function toggle(): void {
     }
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
+    containerEl?.querySelector(".args-not-enabled-close")?.remove();
+    containerEl?.classList.remove("oddity-not-enabled");
+    dimmed = false;
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
     topBarEl?.classList.remove("hovered");
   } else {
@@ -3929,7 +3964,8 @@ const ARGUMENTS_BOX_CSS = `
     pointer-events: auto;
   }
 
-  .args-outer-wrapper:has(.args-container.dashboard) .args-toggle-bar {
+  .args-outer-wrapper:has(.args-container.dashboard) .args-toggle-bar,
+  .args-outer-wrapper:has(.args-container.oddity-not-enabled) .args-toggle-bar {
     opacity: 0;
     pointer-events: none;
   }
@@ -5335,6 +5371,32 @@ const ARGUMENTS_BOX_CSS = `
     font-family: system-ui, -apple-system, sans-serif;
   }
 
+  .args-not-enabled-close {
+    all: unset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #858E97;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
+    position: absolute;
+    top: -36px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    pointer-events: auto;
+    transition: color 0.2s ease, background 0.2s ease;
+  }
+
+  .args-not-enabled-close:hover {
+    color: #696F77;
+    background: rgba(255, 255, 255, 1);
+  }
+
   :host([data-theme="light"]) .args-not-enabled-overlay {
     background: rgba(255, 255, 255, 0.9);
   }
@@ -5392,7 +5454,8 @@ const ARGUMENTS_BOX_CSS = `
     box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
     position: absolute;
     top: -36px;
-    right: 0;
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 10;
     pointer-events: auto;
     transition: color 0.2s ease, background 0.2s ease, opacity 0.18s ease;

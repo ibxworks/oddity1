@@ -2864,12 +2864,20 @@ const MARGIN_NOTES_CSS = `
   :host(:not([data-theme="light"])) [data-annotation-type="recall"] .arrow-light,
   :host(:not([data-theme="light"])) [data-annotation-type="study"] .arrow-light,
   :host(:not([data-theme="light"])) [data-annotation-type="translation"] .arrow-light,
-  :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"] .arrow-light { display: none; }
+  :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"] .arrow-light,
+  :host(:not([data-theme="light"])) [data-annotation-type="incomplete_move"] .arrow-light,
+  :host(:not([data-theme="light"])) [data-annotation-type="personal_hook"] .arrow-light,
+  :host(:not([data-theme="light"])) [data-annotation-type="role_assignment"] .arrow-light,
+  :host(:not([data-theme="light"])) [data-annotation-type="exaggeration"] .arrow-light { display: none; }
   :host(:not([data-theme="light"])) [data-annotation-type="insight"] .arrow-dark,
   :host(:not([data-theme="light"])) [data-annotation-type="recall"] .arrow-dark,
   :host(:not([data-theme="light"])) [data-annotation-type="study"] .arrow-dark,
   :host(:not([data-theme="light"])) [data-annotation-type="translation"] .arrow-dark,
-  :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"] .arrow-dark { display: inline-flex; }
+  :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"] .arrow-dark,
+  :host(:not([data-theme="light"])) [data-annotation-type="incomplete_move"] .arrow-dark,
+  :host(:not([data-theme="light"])) [data-annotation-type="personal_hook"] .arrow-dark,
+  :host(:not([data-theme="light"])) [data-annotation-type="role_assignment"] .arrow-dark,
+  :host(:not([data-theme="light"])) [data-annotation-type="exaggeration"] .arrow-dark { display: inline-flex; }
 
   /* ── Dark text for yellow feedback pills (both modes) ── */
   [data-annotation-type="core_claim"] .note-feedback-pill,
@@ -2885,7 +2893,11 @@ const MARGIN_NOTES_CSS = `
   :host(:not([data-theme="light"])) [data-annotation-type="recall"] .note-feedback-pill,
   :host(:not([data-theme="light"])) [data-annotation-type="study"] .note-feedback-pill,
   :host(:not([data-theme="light"])) [data-annotation-type="translation"] .note-feedback-pill,
-  :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"] .note-feedback-pill {
+  :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"] .note-feedback-pill,
+  :host(:not([data-theme="light"])) [data-annotation-type="incomplete_move"] .note-feedback-pill,
+  :host(:not([data-theme="light"])) [data-annotation-type="personal_hook"] .note-feedback-pill,
+  :host(:not([data-theme="light"])) [data-annotation-type="role_assignment"] .note-feedback-pill,
+  :host(:not([data-theme="light"])) [data-annotation-type="exaggeration"] .note-feedback-pill {
     color: #293038;
   }
 
@@ -2894,7 +2906,11 @@ const MARGIN_NOTES_CSS = `
   :host(:not([data-theme="light"])) [data-annotation-type="recall"],
   :host(:not([data-theme="light"])) [data-annotation-type="study"],
   :host(:not([data-theme="light"])) [data-annotation-type="translation"],
-  :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"] {
+  :host(:not([data-theme="light"])) [data-annotation-type="vocabulary"],
+  :host(:not([data-theme="light"])) [data-annotation-type="incomplete_move"],
+  :host(:not([data-theme="light"])) [data-annotation-type="personal_hook"],
+  :host(:not([data-theme="light"])) [data-annotation-type="role_assignment"],
+  :host(:not([data-theme="light"])) [data-annotation-type="exaggeration"] {
     --note-color: #BFF3D3;
   }
 
