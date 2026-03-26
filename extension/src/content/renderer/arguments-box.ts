@@ -143,6 +143,18 @@ let footerTextEl: HTMLSpanElement | null = null;
 let sessionSiteEnabled = false;
 let localAuthState: boolean | null = null; // cached auth state — avoids re-querying background on every toggle
 
+// ── Sync bubble logo when preferences change externally (e.g. from popup) ──
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.preferences) return;
+  const prefs = (changes.preferences.newValue ?? {}) as Record<string, unknown>;
+  const personality = (prefs.depth_personality as string) ?? "terry";
+  const display = personality.charAt(0).toUpperCase() + personality.slice(1);
+  if (bubbleLogoImgEl) {
+    bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
+    bubbleLogoImgEl.alt = display;
+  }
+});
+
 // ── Button drag state ──
 const BTN_DEFAULT_RIGHT = 20;
 const BTN_DEFAULT_BOTTOM = 20;
@@ -189,7 +201,7 @@ export function initArgumentsBox(): void {
   style.textContent = ARGUMENTS_BOX_CSS;
   shadowRoot.appendChild(style);
 
-  // Apply stored font/size prefs immediately on init (same as margin-notes)
+  // Apply stored font/size prefs and persona immediately on init
   chrome.storage.local.get("preferences", (result) => {
     const prefs = result["preferences"] as Record<string, unknown> | undefined;
     if (prefs) {
@@ -197,6 +209,13 @@ export function initArgumentsBox(): void {
         prefs.annotation_font as AnnotationFont | undefined,
         prefs.annotation_font_size as AnnotationFontSize | undefined,
       );
+      // Sync bubble logo to stored persona
+      const personality = (prefs.depth_personality as string) ?? "terry";
+      const display = personality.charAt(0).toUpperCase() + personality.slice(1);
+      if (bubbleLogoImgEl) {
+        bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
+        bubbleLogoImgEl.alt = display;
+      }
     }
   });
 
@@ -2269,6 +2288,10 @@ async function loadDashboardPrefs(): Promise<void> {
   if (dashPersonaAvatarImgEl) {
     dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
     dashPersonaAvatarImgEl.alt = persona;
+  }
+  if (bubbleLogoImgEl) {
+    bubbleLogoImgEl.src = chrome.runtime.getURL(`${persona}.png`);
+    bubbleLogoImgEl.alt = persona;
   }
   if (dashPersonaCircleEl)
     dashPersonaCircleEl.style.background =
