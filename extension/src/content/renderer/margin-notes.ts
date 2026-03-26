@@ -772,6 +772,25 @@ function showAllOverviewMarginNotes(emphasizedId?: string): void {
   applyPositions();
 }
 
+/** Switch focus to a specific overview margin note (expand it, fold others). */
+function focusOverviewMarginNote(focusedId: string): void {
+  for (const note of notes) {
+    if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+    if (note.annotation.type === "user_written") continue;
+    const isTarget = note.id === focusedId;
+    note.element.classList.toggle("anchor-hovered", isTarget);
+    note.element.classList.toggle("overview-focused", isTarget);
+    note.element.classList.toggle("overview-dimmed", !isTarget);
+  }
+  // Re-measure heights (focused note is taller, dimmed ones are folded)
+  for (const note of notes) {
+    if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
+    const h = note.element.offsetHeight;
+    if (h > 0) note.height = h;
+  }
+  applyPositions();
+}
+
 function hideAllOverviewMarginNotes(): void {
   for (const note of notes) {
     if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
@@ -1352,17 +1371,10 @@ export function onAnchorHoverStart(annotationId: string): void {
     mouseInAnchor = true;
     // Cancel any pending hide from crossing a line gap
     if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
-    // Already pinned — just switch emphasis, no animation/reposition
+    // Already pinned — just switch emphasis and reposition for new heights
     if (pinnedId) {
       deemphasizeAnnotation();
-      for (const note of notes) {
-        if (!note.element.classList.contains("oddity-note--overview-margin")) continue;
-        if (note.annotation.type === "user_written") continue;
-        const isTarget = note.id === annotationId;
-        note.element.classList.toggle("anchor-hovered", isTarget);
-        note.element.classList.toggle("overview-focused", isTarget);
-        note.element.classList.toggle("overview-dimmed", !isTarget);
-      }
+      focusOverviewMarginNote(annotationId);
       emphasizeAnnotation(annotationId);
       return;
     }
@@ -1894,6 +1906,15 @@ function createNoteElement(
   // inline popovers add their own handlers in addInlinePopover).
   el.addEventListener("mouseenter", () => {
     if (el.classList.contains("oddity-note--inline")) return;
+    // Overview margin notes: switch focus to hovered card
+    if (el.classList.contains("oddity-note--overview-margin") && annotation.type !== "user_written") {
+      if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
+      mouseInAnchor = true; // treat card hover like anchor hover to prevent hide
+      deemphasizeAnnotation();
+      focusOverviewMarginNote(annotation.id);
+      emphasizeAnnotation(annotation.id);
+      return;
+    }
     if (pinnedId && pinnedId !== annotation.id) return;
     if (anchorHoverTimer) {
       clearTimeout(anchorHoverTimer);
@@ -1923,6 +1944,26 @@ function createNoteElement(
     e.stopPropagation();
     // Don't unpin when clicking interactive elements inside the card
     if ((e.target as HTMLElement).closest('button, input, textarea')) return;
+    // Overview margin notes: pin/unpin via overview flow
+    if (el.classList.contains("oddity-note--overview-margin") && annotation.type !== "user_written") {
+      if (pinnedId === annotation.id) {
+        unpinAll();
+      } else if (pinnedId) {
+        // Switch pin to this note
+        focusOverviewMarginNote(annotation.id);
+        deemphasizeAnnotation();
+        emphasizeAnnotation(annotation.id);
+        dimPage(annotation.id);
+        pinnedId = annotation.id;
+      } else if (!justUnpinned) {
+        pinnedId = annotation.id;
+        hostEl?.classList.add("has-pinned");
+        focusOverviewMarginNote(annotation.id);
+        emphasizeAnnotation(annotation.id);
+        dimPage(annotation.id);
+      }
+      return;
+    }
     if (pinnedId === annotation.id) {
       unpinAll();
     } else if (pinnedId) {
@@ -1944,6 +1985,19 @@ function createNoteElement(
 
   el.addEventListener("mouseleave", () => {
     if (el.classList.contains("oddity-note--inline")) return;
+    // Overview margin notes: schedule hide (unless pinned)
+    if (el.classList.contains("oddity-note--overview-margin") && annotation.type !== "user_written") {
+      mouseInAnchor = false;
+      if (pinnedId) return;
+      if (overviewHideTimer) { clearTimeout(overviewHideTimer); overviewHideTimer = null; }
+      overviewHideTimer = setTimeout(() => {
+        overviewHideTimer = null;
+        if (mouseInAnchor || pinnedId) return;
+        deemphasizeAnnotation();
+        hideAllOverviewMarginNotes();
+      }, 150);
+      return;
+    }
     if (pinnedId) return;
     collapseTimer = setTimeout(() => {
       collapseTimer = null;
@@ -2631,21 +2685,32 @@ const MARGIN_NOTES_CSS = `
     pointer-events: none !important;
   }
 
+  /* Overview margin note: folded state (default — label + 2 lines) */
   .oddity-note--overview-margin .note-text {
-    display: block;
-    -webkit-line-clamp: unset;
-    overflow: visible;
-    max-height: none;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-height: calc(var(--oddity-note-size) * 1.6 * 2 + 8px);
+    transition: max-height 0.2s ease, -webkit-line-clamp 0s;
   }
 
   .oddity-note--overview-margin .note-expanded-content {
     display: none;
   }
 
-  /* Overview margin note: linked to the clicked highlight */
+  /* Overview margin note: linked to the clicked highlight — fully expanded */
   .oddity-note--overview-margin.overview-focused {
     box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3) !important;
     z-index: 10;
+  }
+
+  .oddity-note--overview-margin.overview-focused .note-text {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+    max-height: none;
   }
 
   /* Overview margin note: NOT linked to the clicked highlight */
@@ -3021,6 +3086,13 @@ const MARGIN_NOTES_CSS = `
 
   :host([data-theme="light"]) .oddity-note--overview-margin.overview-focused {
     box-shadow: -5px 3px 24px rgba(0,0,0,0.25), -2px 1px 6px rgba(0,0,0,0.1) !important;
+  }
+
+  :host([data-theme="light"]) .oddity-note--overview-margin.overview-focused .note-text {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+    max-height: none;
   }
 
   :host([data-theme="light"]) .note-text,
