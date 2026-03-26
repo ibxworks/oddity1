@@ -2053,16 +2053,20 @@ function buildDashboardFace(): HTMLDivElement {
   dashSignInNameEl.className = "args-dash-signin-input";
   dashSignInNameEl.type = "text";
   dashSignInNameEl.placeholder = "Name";
+  dashSignInNameEl.autocomplete = "off";
 
   dashSignInEmailEl = document.createElement("input");
   dashSignInEmailEl.className = "args-dash-signin-input";
-  dashSignInEmailEl.type = "email";
+  dashSignInEmailEl.type = "text";
   dashSignInEmailEl.placeholder = "Email";
+  dashSignInEmailEl.autocomplete = "off";
 
   dashSignInPasswordEl = document.createElement("input");
   dashSignInPasswordEl.className = "args-dash-signin-input";
-  dashSignInPasswordEl.type = "password";
+  dashSignInPasswordEl.type = "text";
   dashSignInPasswordEl.placeholder = "Password";
+  dashSignInPasswordEl.autocomplete = "off";
+  (dashSignInPasswordEl.style as any).webkitTextSecurity = "disc";
 
   dashSignInStatusEl = document.createElement("div");
   dashSignInStatusEl.className = "args-dash-feedback-status";
@@ -3269,7 +3273,7 @@ function showOnboardingSlideshow(onComplete: () => void): void {
     currentSlide = index;
     track.style.setProperty("--slide-index", String(index));
     dotEls.forEach((d, i) => d.classList.toggle("active", i === index));
-    nextBtn.textContent = index === TOTAL_SLIDES - 1 ? "Start Reading" : "Next";
+    nextBtn.textContent = index === TOTAL_SLIDES - 1 ? "Start Thinking" : "Next";
     // Start animation for new slide (slight delay to let slide transition finish)
     delay(() => animStarters[index]!(), 350);
   }
