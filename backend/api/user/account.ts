@@ -22,14 +22,21 @@ router.delete('/', async (req, res) => {
       .eq('user_id', userId);
     if (fbErr) console.error('[account DELETE] annotation_feedback:', fbErr.message);
 
-    // 3. Delete profiles (FK: id → auth.users)
+    // 3. Delete user_feedback (FK: user_id → auth.users)
+    const { error: ufErr } = await serviceClient
+      .from('user_feedback')
+      .delete()
+      .eq('user_id', userId);
+    if (ufErr) console.error('[account DELETE] user_feedback:', ufErr.message);
+
+    // 4. Delete profiles (FK: id → auth.users)
     const { error: profErr } = await serviceClient
       .from('profiles')
       .delete()
       .eq('id', userId);
     if (profErr) console.error('[account DELETE] profiles:', profErr.message);
 
-    // 4. Delete auth user (requires service_role)
+    // 5. Delete auth user (requires service_role)
     const { error: authErr } = await serviceClient.auth.admin.deleteUser(userId);
     if (authErr) {
       res.status(500).json({ error: 'Failed to delete account' });
