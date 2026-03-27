@@ -286,7 +286,7 @@ export type ExtensionMessage =
         pageTitle?: string;
       };
     }
-  | { action: "sendUserFeedback"; payload: { message: string } }
+  | { action: "sendUserFeedback"; payload: { message: string; role?: string } }
   | {
       action: "annotationReady";
       payload: { regionId: string; annotation: Annotation };

@@ -1,0 +1,83 @@
+.feedback-page {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.feedback-body {
+  padding: 20px 32px 60px;
+  max-width: 640px;
+}
+
+.feedback-email-display {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.feedback-select {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  font-size: 14px;
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%239aa0a6' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+  transition: border-color var(--transition);
+}
+
+.feedback-select:focus {
+  border-color: var(--green-500);
+}
+
+.feedback-other-input {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  font-size: 14px;
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  margin-top: 8px;
+  transition: border-color var(--transition);
+  box-sizing: border-box;
+}
+
+.feedback-other-input:focus {
+  border-color: var(--green-500);
+}
+
+.feedback-textarea {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  font-size: 14px;
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+  min-height: 120px;
+  transition: border-color var(--transition);
+  box-sizing: border-box;
+}
+
+.feedback-textarea:focus {
+  border-color: var(--green-500);
+}
+
+.feedback-send-btn {
+  margin-top: 4px;
+}

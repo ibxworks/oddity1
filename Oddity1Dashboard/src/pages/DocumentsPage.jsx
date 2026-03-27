@@ -6,7 +6,49 @@ import { importFile, SUPPORTED_EXTENSIONS } from '../utils/fileImport';
 import { formatTimeAgo, groupByTime } from '../utils/mockDocuments';
 import './DocumentsPage.css';
 
+const COMING_SOON = true;
+
+const PLACEHOLDER_DOCS = [
+  { id: '1', title: 'Meeting Notes', preview: 'Discussion points from the weekly team sync...', time: '2 days ago' },
+  { id: '2', title: 'Research Paper', preview: 'An analysis of current market trends and...', time: '3 days ago' },
+  { id: '3', title: 'Project Proposal', preview: 'Outline for the Q2 product roadmap including...', time: '5 days ago' },
+  { id: '4', title: 'Design Review', preview: 'Feedback on the latest UI mockups for the...', time: '1 week ago' },
+  { id: '5', title: 'API Documentation', preview: 'Endpoint reference for the v2 integration...', time: '1 week ago' },
+  { id: '6', title: 'Sprint Retrospective', preview: 'What went well, what could improve, and...', time: '2 weeks ago' },
+];
+
 export default function DocumentsPage() {
+  if (COMING_SOON) {
+    return (
+      <div className="docs-page">
+        <div className="page-header">
+          <h1 className="page-title">Documents</h1>
+        </div>
+        <div className="docs-body">
+          <div className="docs-coming-soon-wrapper">
+            <div className="docs-coming-soon-overlay">
+              <span className="docs-coming-soon-text">Coming Soon!</span>
+            </div>
+            <div className="docs-coming-soon-blur">
+              <div className="docs-grid">
+                {PLACEHOLDER_DOCS.map((doc) => (
+                  <div key={doc.id} className="doc-card">
+                    <div className="doc-card-header"><span /></div>
+                    <h3 className="doc-card-title">{doc.title}</h3>
+                    <p className="doc-card-preview">{doc.preview}</p>
+                    <div className="doc-card-footer">
+                      <span className="doc-card-time">Edited {doc.time}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const showToast = useToast();
   const navigate = useNavigate();
   const { documents, loading, createDocument, deleteDocument } = useDocuments();

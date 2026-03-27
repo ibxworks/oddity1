@@ -61,6 +61,8 @@ const popoverSignOut = document.getElementById("popover-sign-out")!;
 // Feedback dialog refs
 const feedbackDialog = document.getElementById("feedback-dialog")!;
 const feedbackEmail = document.getElementById("feedback-email")!;
+const feedbackRoleSelect = document.getElementById("feedback-role") as HTMLSelectElement;
+const feedbackRoleOther = document.getElementById("feedback-role-other") as HTMLInputElement;
 const feedbackTextarea = document.getElementById(
   "feedback-textarea",
 ) as HTMLTextAreaElement;
@@ -759,11 +761,20 @@ authEmail.addEventListener("keydown", (e) => {
 feedbackLink.addEventListener("click", (e) => {
   e.preventDefault();
   feedbackEmail.textContent = currentUser?.email ?? "";
+  feedbackRoleSelect.value = "";
+  feedbackRoleOther.value = "";
+  feedbackRoleOther.style.display = "none";
   feedbackTextarea.value = "";
   feedbackStatusEl.style.display = "none";
   feedbackStatusEl.className = "feedback-status";
   mainContent.style.display = "none";
   feedbackDialog.style.display = "block";
+});
+
+feedbackRoleSelect.addEventListener("change", () => {
+  feedbackRoleOther.style.display =
+    feedbackRoleSelect.value === "Other" ? "block" : "none";
+  if (feedbackRoleSelect.value !== "Other") feedbackRoleOther.value = "";
 });
 
 feedbackCancelBtn.addEventListener("click", () => {
@@ -775,6 +786,11 @@ feedbackSendBtn.addEventListener("click", async () => {
   const message = feedbackTextarea.value.trim();
   if (!message) return;
 
+  const role =
+    feedbackRoleSelect.value === "Other"
+      ? feedbackRoleOther.value.trim()
+      : feedbackRoleSelect.value;
+
   feedbackSendBtn.textContent = "Sending...";
   feedbackSendBtn.setAttribute("disabled", "");
   feedbackStatusEl.style.display = "none";
@@ -782,7 +798,7 @@ feedbackSendBtn.addEventListener("click", async () => {
   try {
     const result = await sendMessage<{ success: boolean; error?: string }>({
       action: "sendUserFeedback",
-      payload: { message },
+      payload: { message, role: role || undefined },
     });
 
     if (result.error) throw new Error(result.error);

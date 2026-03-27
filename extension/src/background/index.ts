@@ -642,6 +642,7 @@ chrome.runtime.onMessage.addListener(
         case "sendUserFeedback": {
           const feedbackResult = await apiSendUserFeedback(
             message.payload.message,
+            message.payload.role,
           );
           return feedbackResult;
         }

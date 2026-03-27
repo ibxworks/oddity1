@@ -98,7 +98,8 @@
       "mcp__supabase__search_docs",
       "mcp__plugin_supabase_supabase__search_docs",
       "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard -maxdepth 1 -name .env* -o -name *.env*)",
-      "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard/api -name *.py)"
+      "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard/api -name *.py)",
+      "Bash(find /Users/realtonypark/Developer/oddity1 -name *.sql -o -name schema.sql)"
     ]
   },
   "enableAllProjectMcpServers": true,

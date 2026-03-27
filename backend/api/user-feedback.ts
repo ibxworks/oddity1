@@ -6,7 +6,7 @@ const router = Router();
 // POST /api/user-feedback
 router.post('/', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, role } = req.body;
     if (!message || typeof message !== 'string' || !message.trim()) {
       res.status(400).json({ error: 'message is required' });
       return;
@@ -15,13 +15,18 @@ router.post('/', async (req, res) => {
     const token = req.headers.authorization?.slice(7) ?? '';
     const userClient = createUserClient(token);
 
+    const row: Record<string, unknown> = {
+      user_id: req.user!.id,
+      email: req.user!.email,
+      message: message.trim(),
+    };
+    if (role && typeof role === 'string' && role.trim()) {
+      row.role = role.trim();
+    }
+
     const { error } = await userClient
       .from('user_feedback')
-      .insert({
-        user_id: req.user!.id,
-        email: req.user!.email,
-        message: message.trim(),
-      });
+      .insert(row);
 
     if (error) {
       res.status(400).json({ error: error.message });

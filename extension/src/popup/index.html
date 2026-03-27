@@ -41,6 +41,9 @@
         display: block;
         object-fit: contain;
       }
+      .header-logo-link {
+        display: block;
+      }
       .toggle-wrap {
         display: flex;
         align-items: center;
@@ -683,6 +686,46 @@
         color: #8a8a80;
         margin-bottom: 10px;
       }
+      .feedback-role-select {
+        display: block;
+        width: 100%;
+        padding: 9px 12px;
+        border: 0.5px solid #e8e8e2;
+        border-radius: 12px;
+        font-size: 13px;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+        outline: none;
+        transition: border-color 0.15s;
+        background: #fff;
+        color: #111;
+        margin-bottom: 8px;
+        cursor: pointer;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238a8a80' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 32px;
+      }
+      .feedback-role-select:focus {
+        border-color: #111;
+      }
+      .feedback-role-other {
+        display: none;
+        width: 100%;
+        padding: 9px 12px;
+        border: 0.5px solid #e8e8e2;
+        border-radius: 12px;
+        font-size: 13px;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+        outline: none;
+        transition: border-color 0.15s;
+        background: #fff;
+        color: #111;
+        margin-bottom: 8px;
+      }
+      .feedback-role-other:focus {
+        border-color: #111;
+      }
       .feedback-textarea {
         display: block;
         width: 100%;
@@ -772,7 +815,14 @@
   <body>
     <!-- Header -->
     <div class="header">
-      <img src="/Oddity1-Logo.png" class="header-logo-img" alt="Oddity 1" />
+      <a
+        href="https://app.oddity1.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="header-logo-link"
+      >
+        <img src="/Oddity1-Logo.png" class="header-logo-img" alt="Oddity 1" />
+      </a>
       <div class="toggle-wrap">
         <span class="toggle-label" id="toggle-label">On</span>
         <label class="toggle">
@@ -1047,6 +1097,18 @@
     <div class="feedback-dialog" id="feedback-dialog">
       <div class="feedback-title">Send Feedback</div>
       <div class="feedback-email" id="feedback-email"></div>
+      <select class="feedback-role-select" id="feedback-role">
+        <option value="">What's your role? (optional)</option>
+        <option value="Student">Student</option>
+        <option value="Researcher">Researcher</option>
+        <option value="Teacher/Professor">Teacher/Professor</option>
+        <option value="Engineer">Engineer</option>
+        <option value="Designer">Designer</option>
+        <option value="Writer">Writer</option>
+        <option value="Product Manager">Product Manager</option>
+        <option value="Other">Other</option>
+      </select>
+      <input type="text" class="feedback-role-other" id="feedback-role-other" placeholder="Your role..." />
       <textarea
         class="feedback-textarea"
         id="feedback-textarea"

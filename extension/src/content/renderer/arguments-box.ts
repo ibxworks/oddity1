@@ -1551,6 +1551,11 @@ function buildDashboardFace(): HTMLDivElement {
   logo.className = "args-dash-logo-img";
   logo.src = chrome.runtime.getURL("Oddity1-Logo.png");
   logo.alt = "Oddity 1";
+  logo.style.cursor = "pointer";
+  logo.addEventListener("click", (e) => {
+    e.stopPropagation();
+    window.open("https://app.oddity1.com", "_blank");
+  });
 
   const toggleWrap = document.createElement("div");
   toggleWrap.className = "args-dash-toggle-wrap";
@@ -1886,11 +1891,14 @@ function buildDashboardFace(): HTMLDivElement {
     )
       return;
     dashFeedbackEmailEl.textContent = dashUserEmail;
+    fbRoleSelect.value = "";
+    fbRoleOther.value = "";
+    fbRoleOther.style.display = "none";
     dashFeedbackTextareaEl.value = "";
     dashFeedbackStatusEl.style.display = "none";
     dashFeedbackStatusEl.className = "args-dash-feedback-status";
     dashFeedbackViewEl.style.display = "flex";
-    if (containerEl) containerEl.style.height = "290px";
+    if (containerEl) containerEl.style.height = "330px";
   });
   const sep2 = document.createElement("span");
   sep2.className = "args-dash-footer-sep";
@@ -1919,6 +1927,36 @@ function buildDashboardFace(): HTMLDivElement {
   dashFeedbackEmailEl = document.createElement("div");
   dashFeedbackEmailEl.className = "args-dash-feedback-email";
 
+  const fbRoleSelect = document.createElement("select");
+  fbRoleSelect.className = "args-dash-feedback-role-select";
+  const roleOptions = [
+    ["", "What's your role? (optional)"],
+    ["Student", "Student"],
+    ["Researcher", "Researcher"],
+    ["Teacher/Professor", "Teacher/Professor"],
+    ["Engineer", "Engineer"],
+    ["Designer", "Designer"],
+    ["Writer", "Writer"],
+    ["Product Manager", "Product Manager"],
+    ["Other", "Other"],
+  ];
+  for (const [val, label] of roleOptions) {
+    const opt = document.createElement("option");
+    opt.value = val;
+    opt.textContent = label;
+    fbRoleSelect.appendChild(opt);
+  }
+
+  const fbRoleOther = document.createElement("input");
+  fbRoleOther.className = "args-dash-feedback-role-other";
+  fbRoleOther.type = "text";
+  fbRoleOther.placeholder = "Your role...";
+
+  fbRoleSelect.addEventListener("change", () => {
+    fbRoleOther.style.display = fbRoleSelect.value === "Other" ? "block" : "none";
+    if (fbRoleSelect.value !== "Other") fbRoleOther.value = "";
+  });
+
   dashFeedbackTextareaEl = document.createElement("textarea");
   dashFeedbackTextareaEl.className = "args-dash-feedback-textarea";
   dashFeedbackTextareaEl.placeholder = "Enter your feedback...";
@@ -1941,13 +1979,17 @@ function buildDashboardFace(): HTMLDivElement {
   dashFeedbackSendBtnEl.addEventListener("click", async () => {
     const message = dashFeedbackTextareaEl!.value.trim();
     if (!message) return;
+    const role =
+      fbRoleSelect.value === "Other"
+        ? fbRoleOther.value.trim()
+        : fbRoleSelect.value;
     dashFeedbackSendBtnEl!.textContent = "Sending...";
     dashFeedbackSendBtnEl!.setAttribute("disabled", "");
     dashFeedbackStatusEl!.style.display = "none";
     try {
       const result = (await chrome.runtime.sendMessage({
         action: "sendUserFeedback",
-        payload: { message },
+        payload: { message, role: role || undefined },
       })) as { success?: boolean; error?: string };
       if (result?.error) throw new Error(result.error);
       dashFeedbackStatusEl!.textContent = "Feedback sent! Thank you.";
@@ -1976,6 +2018,8 @@ function buildDashboardFace(): HTMLDivElement {
   fbBtnRow.appendChild(dashFeedbackSendBtnEl);
   dashFeedbackViewEl.appendChild(fbTitle);
   dashFeedbackViewEl.appendChild(dashFeedbackEmailEl);
+  dashFeedbackViewEl.appendChild(fbRoleSelect);
+  dashFeedbackViewEl.appendChild(fbRoleOther);
   dashFeedbackViewEl.appendChild(dashFeedbackTextareaEl);
   dashFeedbackViewEl.appendChild(fbBtnRow);
   dashFeedbackViewEl.appendChild(dashFeedbackStatusEl);
@@ -5977,6 +6021,46 @@ const ARGUMENTS_BOX_CSS = `
     margin-bottom: 10px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   }
+
+  .args-dash-feedback-role-select {
+    display: block;
+    width: 100%;
+    padding: 9px 12px;
+    border: 0.5px solid #e8e8e2;
+    border-radius: 6.5px;
+    font-size: 13px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    outline: none;
+    transition: border-color 0.15s;
+    background: #fff;
+    color: #111;
+    margin-bottom: 8px;
+    box-sizing: border-box;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238a8a80' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  .args-dash-feedback-role-select:focus { border-color: #111; }
+
+  .args-dash-feedback-role-other {
+    display: none;
+    width: 100%;
+    padding: 9px 12px;
+    border: 0.5px solid #e8e8e2;
+    border-radius: 6.5px;
+    font-size: 13px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    outline: none;
+    transition: border-color 0.15s;
+    background: #fff;
+    color: #111;
+    margin-bottom: 8px;
+    box-sizing: border-box;
+  }
+  .args-dash-feedback-role-other:focus { border-color: #111; }
 
   .args-dash-feedback-textarea {
     display: block;
