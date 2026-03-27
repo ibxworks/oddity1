@@ -1,12 +1,11 @@
 import type {
   AnnotationFont,
   AnnotationFontSize,
-  AnnotationMode,
   DepthPersonality,
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
-import { ALL_OVERVIEW_TYPES, ALL_DEPTH_TYPES, isBlockedDomain } from "@oddity/shared";
+import { isBlockedDomain } from "@oddity/shared";
 import { sendMessage } from "../shared/messaging.js";
 
 // ─── DOM refs ───
@@ -34,7 +33,9 @@ const authPassword = document.getElementById(
   "auth-password",
 ) as HTMLInputElement;
 const authSubmitBtn = document.getElementById("auth-submit-btn")!;
-const authGoogleBtn = document.getElementById("auth-google-btn")! as HTMLButtonElement;
+const authGoogleBtn = document.getElementById(
+  "auth-google-btn",
+)! as HTMLButtonElement;
 const authForgotLink = document.getElementById("auth-forgot-link")!;
 const authToggleLink = document.getElementById("auth-toggle-link")!;
 const authToggleText = document.getElementById("auth-toggle-text")!;
@@ -166,7 +167,9 @@ function applyPrefsToUI(): void {
   }
 
   // Sync top avatar with personality
-  const displayName = (currentPrefs.depth_personality ?? "terry").charAt(0).toUpperCase() + (currentPrefs.depth_personality ?? "terry").slice(1);
+  const displayName =
+    (currentPrefs.depth_personality ?? "terry").charAt(0).toUpperCase() +
+    (currentPrefs.depth_personality ?? "terry").slice(1);
   profilePersonaSelect.textContent = displayName;
   applyPersonaVisuals(displayName);
 
@@ -208,7 +211,7 @@ function showAuthenticatedUI(user: {
   // Popover data
   popoverName.textContent = user.display_name ?? displayName;
   popoverEmail.textContent = user.email;
-  popoverTier.textContent = user.tier === "pro" ? "Pro Plan" : "Free Plan";
+  popoverTier.textContent = user.tier === "pro" ? "Standard Plan" : "Free Plan";
 
   // Total annotation count
   totalCountNumber.textContent = String(user.annotation_count ?? 0);
@@ -305,14 +308,17 @@ async function loadAuthStatus(): Promise<void> {
 
 // ─── Active Tab Domain ───
 
-let activeTabDomain = '';
+let activeTabDomain = "";
 
 async function resolveActiveTabDomain(): Promise<void> {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     if (!tab?.url) return;
     const url = new URL(tab.url);
-    activeTabDomain = url.hostname.replace(/^www\./, '');
+    activeTabDomain = url.hostname.replace(/^www\./, "");
   } catch {
     // Can't determine domain
   }
@@ -354,7 +360,8 @@ intensityGroup.addEventListener("click", (e) => {
   }
 
   // Sync the top avatar and persona selector with the selected personality
-  const displayName = personality.charAt(0).toUpperCase() + personality.slice(1);
+  const displayName =
+    personality.charAt(0).toUpperCase() + personality.slice(1);
   profilePersonaSelect.textContent = displayName;
   applyPersonaVisuals(displayName);
 
@@ -479,7 +486,11 @@ const profileCircleEl = profileAvatarImg.closest(
 function applyPersonaVisuals(name: string): void {
   profileAvatarImg.src = `/${name}.png`;
   profileAvatarImg.alt = name;
-  const bgMap: Record<string, string> = { Jerry: "#FDCB24", Terry: "#fff", Sally: "#fff" };
+  const bgMap: Record<string, string> = {
+    Jerry: "#FDCB24",
+    Terry: "#fff",
+    Sally: "#fff",
+  };
   profileCircleEl.style.background = bgMap[name] ?? "#fff";
 }
 
@@ -559,7 +570,8 @@ authForgotLink.addEventListener("click", async (e) => {
     authSuccess.textContent = "Check your email for a reset link.";
     authSuccess.style.display = "block";
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Failed to send reset email.";
+    const msg =
+      err instanceof Error ? err.message : "Failed to send reset email.";
     authError.textContent = msg;
     authError.style.display = "block";
   } finally {
@@ -666,13 +678,16 @@ authGoogleBtn.addEventListener("click", async () => {
   authSuccess.style.display = "none";
 
   // Snapshot child nodes so the SVG + label can be restored without innerHTML
-  const originalChildren = Array.from(authGoogleBtn.childNodes).map((n) => n.cloneNode(true));
+  const originalChildren = Array.from(authGoogleBtn.childNodes).map((n) =>
+    n.cloneNode(true),
+  );
   authGoogleBtn.textContent = "Signing in...";
   authGoogleBtn.disabled = true;
 
   const restoreBtn = (): void => {
     authGoogleBtn.textContent = "";
-    for (const node of originalChildren) authGoogleBtn.appendChild(node.cloneNode(true));
+    for (const node of originalChildren)
+      authGoogleBtn.appendChild(node.cloneNode(true));
     authGoogleBtn.disabled = false;
   };
 
@@ -696,14 +711,20 @@ authGoogleBtn.addEventListener("click", async () => {
 
     if (result?.user) {
       currentUser = result.user as typeof currentUser;
-      showAuthenticatedUI(result.user as Parameters<typeof showAuthenticatedUI>[0]);
+      showAuthenticatedUI(
+        result.user as Parameters<typeof showAuthenticatedUI>[0],
+      );
       chrome.action.setBadgeText({ text: "" });
       refreshActiveTab();
     }
   } catch (err: unknown) {
     const msg = String(err instanceof Error ? err.message : err);
     // Don't show error if user simply closed the consent popup
-    if (!msg.includes("cancelled") && !msg.includes("canceled") && !msg.includes("User interaction required")) {
+    if (
+      !msg.includes("cancelled") &&
+      !msg.includes("canceled") &&
+      !msg.includes("User interaction required")
+    ) {
       authError.textContent = msg;
       authError.style.display = "block";
     }

@@ -29,7 +29,7 @@ export default function AccountPage() {
   const [nameInput, setNameInput] = useState("");
   const [newSite, setNewSite] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [deleteInput, setDeleteInput] = useState('');
+  const [deleteInput, setDeleteInput] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   const tier = profile?.tier || "free";
@@ -112,23 +112,25 @@ export default function AccountPage() {
       setDeleteConfirm(true);
       return;
     }
-    if (deleteInput.toLowerCase() !== 'delete') {
+    if (deleteInput.toLowerCase() !== "delete") {
       showToast('Type "delete" to confirm');
       return;
     }
     setDeleting(true);
     try {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const {
+        data: { session: currentSession },
+      } = await supabase.auth.getSession();
       const res = await fetch(`${BACKEND_URL}/api/user/account`, {
-        method: 'DELETE',
+        method: "DELETE",
         headers: { Authorization: `Bearer ${currentSession.access_token}` },
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Failed to delete account');
+        throw new Error(body.error || "Failed to delete account");
       }
       await supabase.auth.signOut();
-      window.location.href = 'https://oddity1.com';
+      window.location.href = "https://oddity1.com";
     } catch (err) {
       showToast(err.message);
       setDeleting(false);
@@ -198,7 +200,7 @@ export default function AccountPage() {
           <div className="field">
             <span className="field-label">Tier</span>
             <div className="auth-detail">
-              {tier === "pro" ? "Pro Plan" : "Free Plan"}
+              {tier === "pro" ? "Standard Plan" : "Free Plan"}
             </div>
           </div>
 
@@ -215,27 +217,31 @@ export default function AccountPage() {
                 rel="noopener noreferrer"
                 className="btn btn-sm"
               >
-                Upgrade to Pro
+                Upgrade to Standard
               </a>
             )}
             <button className="btn btn-sm btn-danger" onClick={handleSignOut}>
-              Log out
+              Sign out
             </button>
           </div>
 
           <div className="danger-zone">
             <span className="field-label danger-label">Danger Zone</span>
             <p className="field-hint" style={{ marginBottom: 10 }}>
-              Permanently delete your account and all data. This cannot be undone.
+              Permanently delete your account and all data. This cannot be
+              undone.
             </p>
             {deleteConfirm && (
-              <div className="site-input-row" style={{ marginTop: 8, marginBottom: 8 }}>
+              <div
+                className="site-input-row"
+                style={{ marginTop: 8, marginBottom: 8 }}
+              >
                 <input
                   type="text"
                   value={deleteInput}
                   onChange={(e) => setDeleteInput(e.target.value)}
                   placeholder='Type "delete" to confirm'
-                  onKeyDown={(e) => e.key === 'Enter' && handleDeleteAccount()}
+                  onKeyDown={(e) => e.key === "Enter" && handleDeleteAccount()}
                 />
               </div>
             )}
@@ -244,7 +250,11 @@ export default function AccountPage() {
               onClick={handleDeleteAccount}
               disabled={deleting}
             >
-              {deleting ? 'Deleting...' : deleteConfirm ? 'Confirm Deletion' : 'Delete Account'}
+              {deleting
+                ? "Deleting..."
+                : deleteConfirm
+                  ? "Confirm Deletion"
+                  : "Delete Account"}
             </button>
           </div>
         </div>
