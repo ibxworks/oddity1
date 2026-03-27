@@ -11,21 +11,41 @@
   --green-50: #f0fdf4;
   --border-light: #e8eaed;
   --border-hover: #dadce0;
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-body: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
   --r: 8px;
   --r-sm: 6px;
   --r-lg: 12px;
   --r-pill: 100px;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-hover: 0 4px 12px rgba(0,0,0,0.1);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.1);
   --sidebar-width: 200px;
   --transition: 0.15s ease;
 }
 
+/* ── APP LOADING ──────────────────────────────── */
+.app-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+}
+
+.app-loading-logo-img {
+  height: 36px;
+  width: auto;
+}
+
 /* ── RESET / BASE ─────────────────────────────── */
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
 body {
   background: var(--bg-primary);
@@ -71,22 +91,17 @@ body {
   align-items: center;
   gap: 8px;
   margin-bottom: 24px;
-  padding: 0 8px;
+  padding: 0 12px;
 }
 
-.sidebar-logo {
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
+.sidebar-logo-link {
+  display: flex;
+  align-items: center;
 }
 
-.sidebar-logo sup {
-  font-size: 9px;
-  vertical-align: super;
-  font-weight: 400;
-  opacity: 0.4;
+.sidebar-logo-img {
+  height: 32px;
+  width: auto;
 }
 
 .sidebar-tier {
@@ -124,7 +139,9 @@ body {
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
-  transition: background var(--transition), color var(--transition);
+  transition:
+    background var(--transition),
+    color var(--transition);
 }
 
 .sidebar-link:hover {
@@ -243,19 +260,9 @@ body {
   margin-bottom: 28px;
 }
 
-.auth-logo {
-  font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
-}
-
-.auth-logo sup {
-  font-size: 12px;
-  vertical-align: super;
-  font-weight: 400;
-  opacity: 0.4;
+.auth-logo-img {
+  height: 40px;
+  width: auto;
 }
 
 .auth-subtitle {
@@ -317,8 +324,13 @@ body {
   transition: opacity var(--transition);
 }
 
-.auth-button:hover { opacity: 0.85; }
-.auth-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.auth-button:hover {
+  opacity: 0.85;
+}
+.auth-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .auth-google-button {
   display: flex;
@@ -461,7 +473,9 @@ body {
   border: 1.5px solid transparent;
   border-radius: var(--r);
   color: var(--text-muted);
-  transition: border-color var(--transition), background var(--transition);
+  transition:
+    border-color var(--transition),
+    background var(--transition);
   max-width: 320px;
 }
 
@@ -496,7 +510,9 @@ body {
   font-weight: 600;
   cursor: pointer;
   border: none;
-  transition: background var(--transition), opacity var(--transition);
+  transition:
+    background var(--transition),
+    opacity var(--transition);
 }
 
 .btn--primary {
@@ -546,7 +562,9 @@ body {
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background var(--transition), color var(--transition);
+  transition:
+    background var(--transition),
+    color var(--transition);
   border-right: 1px solid var(--border-light);
 }
 

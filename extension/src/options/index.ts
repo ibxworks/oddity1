@@ -3,35 +3,39 @@ import type {
   DepthPersonality,
   UserPreferences,
   UserTier,
-} from '@oddity/shared';
-import { ALL_OVERVIEW_TYPES, ALL_DEPTH_TYPES, isBlockedDomain } from '@oddity/shared';
-import { sendMessage } from '../shared/messaging.js';
+} from "@oddity/shared";
+import { ALL_OVERVIEW_TYPES, isBlockedDomain } from "@oddity/shared";
+import { sendMessage } from "../shared/messaging.js";
 
 // ─── DOM refs ───
 
-const intensityGroup = document.getElementById('intensity-group')!;
-const typeCheckboxes = document.getElementById('type-checkboxes')!;
-const siteList = document.getElementById('site-list')!;
-const siteEmpty = document.getElementById('site-empty')!;
-const siteInput = document.getElementById('site-input') as HTMLInputElement;
-const addSiteBtn = document.getElementById('add-site-btn')!;
-const authNotSignedIn = document.getElementById('auth-not-signed-in')!;
-const authSignedIn = document.getElementById('auth-signed-in')!;
-const authDisplayName = document.getElementById('auth-display-name')!;
-const authEmailDisplay = document.getElementById('auth-email-display')!;
-const authTierDisplay = document.getElementById('auth-tier-display')!;
-const authAnnotationCount = document.getElementById('auth-annotation-count')!;
-const changeNameBtn = document.getElementById('change-name-btn')!;
-const nameEditRow = document.getElementById('name-edit-row')!;
-const nameEditInput = document.getElementById('name-edit-input') as HTMLInputElement;
-const nameSaveBtn = document.getElementById('name-save-btn')!;
-const nameCancelBtn = document.getElementById('name-cancel-btn')!;
-const upgradeBtn = document.getElementById('upgrade-btn')!;
-const logoutBtn = document.getElementById('logout-btn')!;
-const deleteAccountBtn = document.getElementById('delete-account-btn')!;
-const deleteConfirmRow = document.getElementById('delete-confirm-row')!;
-const deleteConfirmInput = document.getElementById('delete-confirm-input') as HTMLInputElement;
-const toast = document.getElementById('toast')!;
+const intensityGroup = document.getElementById("intensity-group")!;
+const typeCheckboxes = document.getElementById("type-checkboxes")!;
+const siteList = document.getElementById("site-list")!;
+const siteEmpty = document.getElementById("site-empty")!;
+const siteInput = document.getElementById("site-input") as HTMLInputElement;
+const addSiteBtn = document.getElementById("add-site-btn")!;
+const authNotSignedIn = document.getElementById("auth-not-signed-in")!;
+const authSignedIn = document.getElementById("auth-signed-in")!;
+const authDisplayName = document.getElementById("auth-display-name")!;
+const authEmailDisplay = document.getElementById("auth-email-display")!;
+const authTierDisplay = document.getElementById("auth-tier-display")!;
+const authAnnotationCount = document.getElementById("auth-annotation-count")!;
+const changeNameBtn = document.getElementById("change-name-btn")!;
+const nameEditRow = document.getElementById("name-edit-row")!;
+const nameEditInput = document.getElementById(
+  "name-edit-input",
+) as HTMLInputElement;
+const nameSaveBtn = document.getElementById("name-save-btn")!;
+const nameCancelBtn = document.getElementById("name-cancel-btn")!;
+const upgradeBtn = document.getElementById("upgrade-btn")!;
+const logoutBtn = document.getElementById("logout-btn")!;
+const deleteAccountBtn = document.getElementById("delete-account-btn")!;
+const deleteConfirmRow = document.getElementById("delete-confirm-row")!;
+const deleteConfirmInput = document.getElementById(
+  "delete-confirm-input",
+) as HTMLInputElement;
+const toast = document.getElementById("toast")!;
 
 // ─── State ───
 
@@ -39,32 +43,35 @@ let deleteConfirmShown = false;
 
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
-  annotation_mode: 'overview',
-  depth_personality: 'terry',
-  visible_types: [...ALL_OVERVIEW_TYPES, 'user_written'],
+  annotation_mode: "overview",
+  depth_personality: "terry",
+  visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
   enabled_sites: [],
-  annotation_font: 'fraunces',
-  annotation_font_size: 'default',
+  annotation_font: "fraunces",
+  annotation_font_size: "default",
 };
 
 // ─── Init ───
 
 async function init(): Promise<void> {
   // Load preferences
-  const stored = await chrome.storage.local.get('preferences');
-  if (stored['preferences']) {
-    const prefs = stored['preferences'] as UserPreferences;
+  const stored = await chrome.storage.local.get("preferences");
+  if (stored["preferences"]) {
+    const prefs = stored["preferences"] as UserPreferences;
     // Migrate renamed personality: gary → sally
-    let personality = prefs.depth_personality ?? 'terry';
-    if (personality === ('gary' as DepthPersonality)) personality = 'sally';
+    let personality = prefs.depth_personality ?? "terry";
+    if (personality === ("gary" as DepthPersonality)) personality = "sally";
     currentPrefs = {
       enabled: prefs.enabled ?? true,
-      annotation_mode: prefs.annotation_mode ?? 'overview',
+      annotation_mode: prefs.annotation_mode ?? "overview",
       depth_personality: personality,
-      visible_types: prefs.visible_types ?? [...ALL_OVERVIEW_TYPES, 'user_written'],
+      visible_types: prefs.visible_types ?? [
+        ...ALL_OVERVIEW_TYPES,
+        "user_written",
+      ],
       enabled_sites: prefs.enabled_sites ?? [],
-      annotation_font: prefs.annotation_font ?? 'fraunces',
-      annotation_font_size: prefs.annotation_font_size ?? 'default',
+      annotation_font: prefs.annotation_font ?? "fraunces",
+      annotation_font_size: prefs.annotation_font_size ?? "default",
     };
   }
 
@@ -74,7 +81,7 @@ async function init(): Promise<void> {
   // Fetch enabled sites from background (synced with Supabase)
   try {
     const result = await sendMessage<{ sites: string[] }>({
-      action: 'getEnabledSites',
+      action: "getEnabledSites",
       payload: {},
     });
     if (result?.sites) {
@@ -89,11 +96,11 @@ async function init(): Promise<void> {
 function applyPrefsToUI(): void {
   // Personality buttons
   for (const btn of intensityGroup.querySelectorAll<HTMLButtonElement>(
-    '.radio-btn',
+    ".radio-btn",
   )) {
     btn.classList.toggle(
-      'active',
-      btn.dataset['intensity'] === currentPrefs.depth_personality,
+      "active",
+      btn.dataset["intensity"] === currentPrefs.depth_personality,
     );
   }
 
@@ -101,7 +108,7 @@ function applyPrefsToUI(): void {
   for (const cb of typeCheckboxes.querySelectorAll<HTMLInputElement>(
     'input[type="checkbox"]',
   )) {
-    const t = cb.dataset['type'] as AnnotationType;
+    const t = cb.dataset["type"] as AnnotationType;
     cb.checked = currentPrefs.visible_types.includes(t);
   }
 
@@ -111,7 +118,7 @@ function applyPrefsToUI(): void {
 
 async function savePrefs(): Promise<void> {
   await chrome.storage.local.set({ preferences: currentPrefs });
-  showToast('Settings saved');
+  showToast("Settings saved");
 }
 
 // ─── Auth ───
@@ -128,25 +135,32 @@ async function loadAuthStatus(): Promise<void> {
         annotation_count?: number;
       } | null;
     }>({
-      action: 'getAuthStatus',
+      action: "getAuthStatus",
       payload: {},
     });
 
     if (result.authenticated && result.user) {
-      authNotSignedIn.style.display = 'none';
-      authSignedIn.style.display = '';
-      authDisplayName.textContent = result.user.display_name || result.user.email.split('@')[0] || result.user.email;
+      authNotSignedIn.style.display = "none";
+      authSignedIn.style.display = "";
+      authDisplayName.textContent =
+        result.user.display_name ||
+        result.user.email.split("@")[0] ||
+        result.user.email;
       authEmailDisplay.textContent = result.user.email;
-      authTierDisplay.textContent = result.user.tier === 'pro' ? 'Pro Plan' : 'Free Plan';
-      authAnnotationCount.textContent = String(result.user.annotation_count ?? 0);
-      upgradeBtn.style.display = result.user.tier === 'pro' ? 'none' : 'inline-flex';
+      authTierDisplay.textContent =
+        result.user.tier === "pro" ? "Standard Plan" : "Free Plan";
+      authAnnotationCount.textContent = String(
+        result.user.annotation_count ?? 0,
+      );
+      upgradeBtn.style.display =
+        result.user.tier === "pro" ? "none" : "inline-flex";
     } else {
-      authNotSignedIn.style.display = '';
-      authSignedIn.style.display = 'none';
+      authNotSignedIn.style.display = "";
+      authSignedIn.style.display = "none";
     }
   } catch {
-    authNotSignedIn.style.display = '';
-    authSignedIn.style.display = 'none';
+    authNotSignedIn.style.display = "";
+    authSignedIn.style.display = "none";
   }
 }
 
@@ -157,23 +171,23 @@ function renderSiteList(): void {
   const sites = currentPrefs.enabled_sites;
 
   if (sites.length === 0) {
-    siteEmpty.style.display = 'block';
+    siteEmpty.style.display = "block";
     return;
   }
 
-  siteEmpty.style.display = 'none';
+  siteEmpty.style.display = "none";
 
   for (const site of sites) {
-    const li = document.createElement('li');
+    const li = document.createElement("li");
     li.textContent = site;
 
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'site-remove';
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', async () => {
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "site-remove";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", async () => {
       try {
         const result = await sendMessage<{ sites: string[] }>({
-          action: 'removeEnabledSite',
+          action: "removeEnabledSite",
           payload: { domain: site },
         });
         if (result?.sites) {
@@ -189,7 +203,7 @@ function renderSiteList(): void {
         );
       }
       renderSiteList();
-      showToast('Site removed');
+      showToast("Site removed");
     });
 
     li.appendChild(removeBtn);
@@ -200,28 +214,30 @@ function renderSiteList(): void {
 // ─── Event Handlers ───
 
 // Personality buttons
-intensityGroup.addEventListener('click', (e) => {
-  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.radio-btn');
+intensityGroup.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
+    ".radio-btn",
+  );
   if (!btn) return;
 
-  const personality = btn.dataset['intensity'] as DepthPersonality | undefined;
+  const personality = btn.dataset["intensity"] as DepthPersonality | undefined;
   if (!personality) return;
 
   currentPrefs.depth_personality = personality;
 
   for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(
-    '.radio-btn',
+    ".radio-btn",
   )) {
-    b.classList.toggle('active', b === btn);
+    b.classList.toggle("active", b === btn);
   }
 
   savePrefs();
 });
 
 // Type checkboxes
-typeCheckboxes.addEventListener('change', (e) => {
+typeCheckboxes.addEventListener("change", (e) => {
   const cb = e.target as HTMLInputElement;
-  const type = cb.dataset['type'] as AnnotationType | undefined;
+  const type = cb.dataset["type"] as AnnotationType | undefined;
   if (!type) return;
 
   if (cb.checked) {
@@ -238,29 +254,33 @@ typeCheckboxes.addEventListener('change', (e) => {
 });
 
 // Add enabled site
-addSiteBtn.addEventListener('click', async () => {
+addSiteBtn.addEventListener("click", async () => {
   const site = siteInput.value.trim().toLowerCase();
   if (!site) return;
 
   // Basic domain validation
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(site)) {
-    showToast('Enter a valid domain (e.g. example.com)');
+  if (
+    !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(
+      site,
+    )
+  ) {
+    showToast("Enter a valid domain (e.g. example.com)");
     return;
   }
 
   if (currentPrefs.enabled_sites.includes(site)) {
-    showToast('Site already enabled');
+    showToast("Site already enabled");
     return;
   }
 
   if (isBlockedDomain(site)) {
-    showToast('Cannot enable — annotations are built into the dashboard');
+    showToast("Cannot enable — annotations are built into the dashboard");
     return;
   }
 
   try {
     const result = await sendMessage<{ sites: string[] }>({
-      action: 'addEnabledSite',
+      action: "addEnabledSite",
       payload: { domain: site },
     });
     if (result?.sites) {
@@ -271,99 +291,102 @@ addSiteBtn.addEventListener('click', async () => {
   } catch {
     currentPrefs.enabled_sites.push(site);
   }
-  siteInput.value = '';
+  siteInput.value = "";
   renderSiteList();
-  showToast('Site added');
+  showToast("Site added");
 });
 
 // Enter key on site input
-siteInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
+siteInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
     addSiteBtn.click();
   }
 });
 
 // Logout
-logoutBtn.addEventListener('click', async () => {
+logoutBtn.addEventListener("click", async () => {
   try {
-    await sendMessage({ action: 'signOut', payload: {} });
+    await sendMessage({ action: "signOut", payload: {} });
   } catch {
     // Sign out failed; still show not-signed-in UI
   }
-  authNotSignedIn.style.display = '';
-  authSignedIn.style.display = 'none';
-  showToast('Logged out');
+  authNotSignedIn.style.display = "";
+  authSignedIn.style.display = "none";
+  showToast("Logged out");
 });
 
 // Change name
-changeNameBtn.addEventListener('click', () => {
-  nameEditInput.value = authDisplayName.textContent ?? '';
-  nameEditRow.style.display = '';
-  changeNameBtn.style.display = 'none';
+changeNameBtn.addEventListener("click", () => {
+  nameEditInput.value = authDisplayName.textContent ?? "";
+  nameEditRow.style.display = "";
+  changeNameBtn.style.display = "none";
 });
 
-nameCancelBtn.addEventListener('click', () => {
-  nameEditRow.style.display = 'none';
-  changeNameBtn.style.display = '';
+nameCancelBtn.addEventListener("click", () => {
+  nameEditRow.style.display = "none";
+  changeNameBtn.style.display = "";
 });
 
-nameSaveBtn.addEventListener('click', async () => {
+nameSaveBtn.addEventListener("click", async () => {
   const newName = nameEditInput.value.trim();
   if (!newName) return;
 
-  nameSaveBtn.textContent = 'Saving...';
-  nameSaveBtn.setAttribute('disabled', '');
+  nameSaveBtn.textContent = "Saving...";
+  nameSaveBtn.setAttribute("disabled", "");
   try {
-    await sendMessage({ action: 'updateProfile', payload: { display_name: newName } });
+    await sendMessage({
+      action: "updateProfile",
+      payload: { display_name: newName },
+    });
     authDisplayName.textContent = newName;
-    nameEditRow.style.display = 'none';
-    changeNameBtn.style.display = '';
-    showToast('Name updated');
+    nameEditRow.style.display = "none";
+    changeNameBtn.style.display = "";
+    showToast("Name updated");
   } catch {
-    showToast('Failed to update name');
+    showToast("Failed to update name");
   } finally {
-    nameSaveBtn.textContent = 'Save';
-    nameSaveBtn.removeAttribute('disabled');
+    nameSaveBtn.textContent = "Save";
+    nameSaveBtn.removeAttribute("disabled");
   }
 });
 
 // Delete account
-deleteAccountBtn.addEventListener('click', async () => {
+deleteAccountBtn.addEventListener("click", async () => {
   if (!deleteConfirmShown) {
     deleteConfirmShown = true;
-    deleteConfirmRow.style.display = '';
-    deleteAccountBtn.textContent = 'Confirm Deletion';
+    deleteConfirmRow.style.display = "";
+    deleteAccountBtn.textContent = "Confirm Deletion";
     deleteConfirmInput.focus();
     return;
   }
 
-  if (deleteConfirmInput.value.toLowerCase() !== 'delete') {
+  if (deleteConfirmInput.value.toLowerCase() !== "delete") {
     showToast('Type "delete" to confirm');
     return;
   }
 
-  deleteAccountBtn.textContent = 'Deleting...';
-  deleteAccountBtn.setAttribute('disabled', '');
+  deleteAccountBtn.textContent = "Deleting...";
+  deleteAccountBtn.setAttribute("disabled", "");
   try {
-    await sendMessage({ action: 'deleteAccount', payload: {} });
-    showToast('Account deleted');
-    authNotSignedIn.style.display = '';
-    authSignedIn.style.display = 'none';
+    await sendMessage({ action: "deleteAccount", payload: {} });
+    showToast("Account deleted");
+    authNotSignedIn.style.display = "";
+    authSignedIn.style.display = "none";
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Failed to delete account';
+    const msg = err instanceof Error ? err.message : "Failed to delete account";
     showToast(msg);
-    deleteAccountBtn.textContent = 'Confirm Deletion';
-    deleteAccountBtn.removeAttribute('disabled');
+    deleteAccountBtn.textContent = "Confirm Deletion";
+    deleteAccountBtn.removeAttribute("disabled");
   }
 });
 
-deleteConfirmInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') deleteAccountBtn.click();
+deleteConfirmInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") deleteAccountBtn.click();
 });
 
-// Upgrade to Pro
-upgradeBtn.addEventListener('click', () => {
-  window.open('https://oddity1.com/pricing', '_blank');
+// Upgrade to Standard
+upgradeBtn.addEventListener("click", () => {
+  window.open("https://oddity1.com/pricing", "_blank");
 });
 
 // ─── Helpers ───
@@ -372,11 +395,11 @@ let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 function showToast(message: string): void {
   toast.textContent = message;
-  toast.classList.add('visible');
+  toast.classList.add("visible");
 
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
-    toast.classList.remove('visible');
+    toast.classList.remove("visible");
   }, 2000);
 }
 

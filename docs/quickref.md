@@ -67,20 +67,20 @@ npm run lint
 
 ## API endpoints at a glance
 
-| Method | Path                         | Auth | Description                                    |
-| ------ | ---------------------------- | ---- | ---------------------------------------------- |
-| GET    | `/api/health`                | No   | Server status check                            |
-| POST   | `/api/annotate`              | Yes  | Generate AI annotations (cached)               |
-| GET    | `/api/annotations`           | Yes  | Fetch cached + user annotations for a URL      |
-| POST   | `/api/annotations`           | Yes  | Save a manual annotation                       |
-| PUT    | `/api/annotations/:id`       | Yes  | Update a user annotation (edit mode)           |
-| DELETE | `/api/annotations/:id`       | Yes  | Delete a user annotation                       |
-| GET    | `/api/annotations/feedback`  | Yes  | Fetch feedback on annotations for a URL        |
-| POST   | `/api/annotations/feedback`  | Yes  | Save feedback (thumbs up/down, replies)        |
-| DELETE | `/api/annotations/feedback/:id` | Yes  | Delete a feedback entry                        |
-| GET    | `/api/adapters`              | No   | Get site adapter registry                      |
-| GET    | `/api/user/preferences`      | Yes  | Get user preferences                           |
-| PUT    | `/api/user/preferences`      | Yes  | Update preferences (partial JSONB merge)       |
+| Method | Path                            | Auth | Description                               |
+| ------ | ------------------------------- | ---- | ----------------------------------------- |
+| GET    | `/api/health`                   | No   | Server status check                       |
+| POST   | `/api/annotate`                 | Yes  | Generate AI annotations (cached)          |
+| GET    | `/api/annotations`              | Yes  | Fetch cached + user annotations for a URL |
+| POST   | `/api/annotations`              | Yes  | Save a manual annotation                  |
+| PUT    | `/api/annotations/:id`          | Yes  | Update a user annotation (edit mode)      |
+| DELETE | `/api/annotations/:id`          | Yes  | Delete a user annotation                  |
+| GET    | `/api/annotations/feedback`     | Yes  | Fetch feedback on annotations for a URL   |
+| POST   | `/api/annotations/feedback`     | Yes  | Save feedback (thumbs up/down, replies)   |
+| DELETE | `/api/annotations/feedback/:id` | Yes  | Delete a feedback entry                   |
+| GET    | `/api/adapters`                 | No   | Get site adapter registry                 |
+| GET    | `/api/user/preferences`         | Yes  | Get user preferences                      |
+| PUT    | `/api/user/preferences`         | Yes  | Update preferences (partial JSONB merge)  |
 
 Auth = `Authorization: Bearer <supabase_access_token>`
 
@@ -92,13 +92,13 @@ Full docs: [docs/api.md](./api.md)
 
 ## Database tables at a glance
 
-| Table                   | Purpose                                              | RLS               |
-| ----------------------- | ---------------------------------------------------- | ----------------- |
-| `profiles`              | User metadata + preferences                          | Own row only      |
-| `annotation_cache`      | AI annotations, keyed by `(content_hash, intensity)` | Service-role only |
-| `user_annotations`      | Manual annotations per user                          | Own rows only     |
-| `annotation_feedback`   | User feedback on annotations (thumbs, replies)      | Own rows only     |
-| `site_adapters`         | Site extraction config (6 seeded)                    | Service-role only |
+| Table                 | Purpose                                              | RLS               |
+| --------------------- | ---------------------------------------------------- | ----------------- |
+| `profiles`            | User metadata + preferences                          | Own row only      |
+| `annotation_cache`    | AI annotations, keyed by `(content_hash, intensity)` | Service-role only |
+| `user_annotations`    | Manual annotations per user                          | Own rows only     |
+| `annotation_feedback` | User feedback on annotations (thumbs, replies)       | Own rows only     |
+| `site_adapters`       | Site extraction config (6 seeded)                    | Service-role only |
 
 Cache key is `content_hash + intensity` — same text on different URLs shares cache.
 Cache TTL: 30 days (`expires_at` column).
@@ -111,22 +111,24 @@ Full schema: [docs/database.md](./database.md)
 
 | Type         | Visual                      | Use                     | Margin Note |
 | ------------ | --------------------------- | ----------------------- | ----------- |
-| `highlight`  | Yellow background           | Key phrase              | ✓ |
-| `underline`  | Teal underline              | Important statement     | ✓ |
-| `question`   | Purple dotted underline + ? | Probing question        | ✓ |
-| `insight`    | Blue background             | "Why this matters"      | ✓ |
-| `caveat`     | Violet wavy underline       | Counterpoint/limitation | ✓ |
-| `vocabulary` | Teal dotted underline       | Term definition         | ✓ |
+| `highlight`  | Yellow background           | Key phrase              | ✓           |
+| `underline`  | Teal underline              | Important statement     | ✓           |
+| `question`   | Purple dotted underline + ? | Probing question        | ✓           |
+| `insight`    | Blue background             | "Why this matters"      | ✓           |
+| `caveat`     | Violet wavy underline       | Counterpoint/limitation | ✓           |
+| `vocabulary` | Teal dotted underline       | Term definition         | ✓           |
 
 **Margin notes**: Annotations appear in the right margin as expandable cards.
 
 **User annotations (manual)**:
+
 - Type label + **user name badge** (first name, gray background)
 - Preview text (truncated to 2 lines, collapsed)
 - Expanded view: full text, Edit button (inline textarea), Delete button
 - Delete removes the annotation immediately and persists in backend
 
 **AI annotations**:
+
 - Type label + reaction badge (👍 or 👎 if feedback given)
 - Preview text (truncated to 2 lines, collapsed)
 - Expanded view includes: full text, "Why it matters", "Question", suggestions, reply thread, feedback buttons, Edit/Delete buttons
@@ -157,12 +159,14 @@ Margin notes also adapt to the detected theme for seamless integration.
 The popup dashboard features a professional, refined aesthetic inspired by Supabase:
 
 **Colors**:
+
 - **Primary accent**: Purple (`#7c3aed`) — toggle switches, buttons, focus rings, avatar background, tier badge
 - **Gradient theme**: "Oddity 1" title and Export PDF button feature a purple-to-amber gradient (`linear-gradient(135deg, #c4b5fd, #7c3aed, #f59e0b)`)
 - **Background**: Warm light (`#f8f9fa`)
 - **Borders**: Subtle (`#dfe3e8`)
 
 **Typography**:
+
 - Smaller, tighter spacing
 - Section titles: uppercase, muted color
 - Professional, non-toy aesthetic
@@ -187,7 +191,7 @@ The popup dashboard features a professional, refined aesthetic inspired by Supab
 - Includes original content + all AI-generated annotations
 - User annotations appear in context where they were added
 - Works for any page with extracted text (articles, chat responses, etc.)
-- PDF subtitle customizable in Pro tier (free tier has fixed subtitle)
+- PDF subtitle customizable in Standard tier (free tier has fixed subtitle)
 
 **Manual annotations**: Add custom notes anywhere on the page via:
 
@@ -199,14 +203,14 @@ The popup dashboard features a professional, refined aesthetic inspired by Supab
 
 ## Supported sites (seeded adapters)
 
-| Site                  | Pattern           | Mode              | Features |
-| --------------------- | ----------------- | ----------------- | -------- |
-| ChatGPT               | `chatgpt.com`     | adapter (stream)  | Real-time annotations, streaming detection |
-| ChatGPT (old URL)     | `chat.openai.com` | adapter (stream)  | Real-time annotations, streaming detection |
-| Claude                | `claude.ai`       | adapter (stream)  | Real-time annotations, streaming detection |
-| Medium                | `medium.com`      | readability       | Article extraction, margin notes |
-| Medium custom domains | `*.medium.com`    | readability       | Article extraction, margin notes |
-| Substack              | `*.substack.com`  | readability       | Newsletter extraction, margin notes |
+| Site                  | Pattern           | Mode             | Features                                   |
+| --------------------- | ----------------- | ---------------- | ------------------------------------------ |
+| ChatGPT               | `chatgpt.com`     | adapter (stream) | Real-time annotations, streaming detection |
+| ChatGPT (old URL)     | `chat.openai.com` | adapter (stream) | Real-time annotations, streaming detection |
+| Claude                | `claude.ai`       | adapter (stream) | Real-time annotations, streaming detection |
+| Medium                | `medium.com`      | readability      | Article extraction, margin notes           |
+| Medium custom domains | `*.medium.com`    | readability      | Article extraction, margin notes           |
+| Substack              | `*.substack.com`  | readability      | Newsletter extraction, margin notes        |
 
 **Streaming adapters**: ChatGPT and Claude have streaming-aware stability signals that detect when AI responses are complete, enabling real-time annotation of streamed text.
 
@@ -230,26 +234,26 @@ If none of the three tiers finds a reading region, no annotations are requested.
 
 **Extension icon badge:**
 
-| Badge              | Meaning                      | Action                                              |
-| ------------------ | ---------------------------- | --------------------------------------------------- |
-| Red "!"            | Not signed in                | Click to open popup and sign in/sign up             |
-| Gray "OFF"         | Extension disabled           | Toggle "On" in popup to re-enable                   |
-| (none)             | Signed in and enabled        | Extension is working normally                       |
+| Badge      | Meaning               | Action                                  |
+| ---------- | --------------------- | --------------------------------------- |
+| Red "!"    | Not signed in         | Click to open popup and sign in/sign up |
+| Gray "OFF" | Extension disabled    | Toggle "On" in popup to re-enable       |
+| (none)     | Signed in and enabled | Extension is working normally           |
 
 **Popup dashboard (when signed in):**
 
-| Element            | Where             | Shows                                                           |
-| ------------------ | ----------------- | -------------------------------------------------------------- |
-| Rotating greeting  | Header            | "Welcome, {FirstName}" with random variation each popup open   |
-| Profile button     | Bottom-left       | Avatar (first initial) + display name. Click to open popover. |
-| Tier badge         | Bottom-right      | "FREE" (gray) or "PRO" (green)                                 |
-| Profile popover    | Above profile btn | Full name, email, subscription tier, sign-out button           |
+| Element           | Where             | Shows                                                         |
+| ----------------- | ----------------- | ------------------------------------------------------------- |
+| Rotating greeting | Header            | "Welcome, {FirstName}" with random variation each popup open  |
+| Profile button    | Bottom-left       | Avatar (first initial) + display name. Click to open popover. |
+| Tier badge        | Bottom-right      | "FREE" (gray) or "PRO" (green)                                |
+| Profile popover   | Above profile btn | Full name, email, subscription tier, sign-out button          |
 
 **In-page toast (when not signed in):**
 
-| Element           | Where             | Behavior                                                                                                                        |
-| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Auth toast        | Top-right of page | "Sign in to Oddity 1 to see annotations — click the extension icon". Auto-dismisses after 8 seconds or on click. Shows once. |
+| Element    | Where             | Behavior                                                                                                                     |
+| ---------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Auth toast | Top-right of page | "Sign in to Oddity 1 to see annotations — click the extension icon". Auto-dismisses after 8 seconds or on click. Shows once. |
 
 ---
 

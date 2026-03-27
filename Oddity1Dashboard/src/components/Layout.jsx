@@ -8,16 +8,24 @@ export default function Layout({ session }) {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    window.location.href = "https://oddity1.com";
   }
 
   return (
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-top">
-          <h1 className="sidebar-logo">
-            Oddity<sup>1</sup>
-          </h1>
+          <a
+            href="https://oddity1.com"
+            className="sidebar-logo-link"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <img
+              src="/Oddity1-Logo.png"
+              alt="Oddity1"
+              className="sidebar-logo-img"
+            />
+          </a>
           <span className={`sidebar-tier sidebar-tier--${tier}`}>
             {tier.toUpperCase()}
           </span>
@@ -121,7 +129,7 @@ export default function Layout({ session }) {
               rel="noopener noreferrer"
               className="sidebar-upgrade"
             >
-              Get Pro
+              Upgrade to Standard
             </a>
           )}
           <div className="sidebar-user-section">

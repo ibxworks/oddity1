@@ -189,6 +189,7 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 ## Key Features
 
 ### Core Annotation Engine
+
 - **Smart text extraction** via Readability, site-specific adapters, or custom heuristics
 - **Streaming support** for real-time chatbot pages (ChatGPT, Claude) with stability detection
 - **In-place overlays**: highlights, underlines, and margin-note annotations with type-specific visuals
@@ -202,6 +203,7 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 - **User name badges**: Manual annotations show user's first name next to the type label
 
 ### User Control
+
 - **Per-page stats**: See count of each annotation type for current page
 - **Intensity levels**: Light / Default / Heavy — controls annotation density
 - **Type filtering**: Toggle specific annotation types on/off
@@ -209,11 +211,13 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 - **Manual annotations**: Add custom notes anywhere with context menu or floating action button
 
 ### Export & Sharing
+
 - **PDF export**: Download page with annotations, preserving original content + AI insights
 - **User preferences**: Intensity, visible types, and site-specific settings saved
-- **Subscription tiers**: Free (basic features) and Pro (custom export subtitles, advanced analytics)
+- **Subscription tiers**: Free (basic features) and Standard (custom export subtitles, advanced analytics)
 
 ### User Experience
+
 - **Rotating greetings**: Personalized welcome in dashboard (name-based)
 - **Profile management**: Clickable profile popover showing account info and tier
 - **Auth feedback**: Red "!" badge when not signed in, gray "OFF" badge when disabled
@@ -226,16 +230,19 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 ## Troubleshooting Auth Issues
 
 **Badge states on the extension icon:**
+
 - **Red "!" badge**: Not signed in — click to open popup and sign in
 - **Gray "OFF" badge**: Extension is disabled — toggle "On" in popup to enable
 - **No badge**: Signed in and enabled — extension is working normally
 
 If you see a red "!" badge or the extension is disabled:
+
 - Click the extension icon to open the popup
 - Sign in/sign up via the form, or toggle the "On" switch
 - The badge will clear automatically, and the page will reload with annotations
 
 If you see an in-page toast saying "Sign in to Oddity to see annotations":
+
 - Click the extension icon and sign in
 - The toast auto-dismisses after 8 seconds or when you click it
 
@@ -273,20 +280,20 @@ The prompts in `backend/config/prompts.json` are placeholders. Write real system
 
 ## API endpoints at a glance
 
-| Method | Path                         | Auth | Description                                    |
-| ------ | ---------------------------- | ---- | ---------------------------------------------- |
-| GET    | `/api/health`                | No   | Server status check                            |
-| POST   | `/api/annotate`              | Yes  | Generate AI annotations (cached)               |
-| GET    | `/api/annotations`           | Yes  | Fetch cached + user annotations for a URL      |
-| POST   | `/api/annotations`           | Yes  | Save a manual annotation                       |
-| PUT    | `/api/annotations/:id`       | Yes  | Update a user annotation (edit mode)           |
-| DELETE | `/api/annotations/:id`       | Yes  | Delete a user annotation                       |
-| GET    | `/api/annotations/feedback`  | Yes  | Get feedback on annotations for a URL          |
-| POST   | `/api/annotations/feedback`  | Yes  | Save feedback (thumbs up/down/reply)           |
-| DELETE | `/api/annotations/feedback/:id` | Yes  | Delete feedback entry                          |
-| GET    | `/api/adapters`              | No   | Get site adapter registry                      |
-| GET    | `/api/user/preferences`      | Yes  | Get user preferences                           |
-| PUT    | `/api/user/preferences`      | Yes  | Update preferences (partial JSONB merge)       |
+| Method | Path                            | Auth | Description                               |
+| ------ | ------------------------------- | ---- | ----------------------------------------- |
+| GET    | `/api/health`                   | No   | Server status check                       |
+| POST   | `/api/annotate`                 | Yes  | Generate AI annotations (cached)          |
+| GET    | `/api/annotations`              | Yes  | Fetch cached + user annotations for a URL |
+| POST   | `/api/annotations`              | Yes  | Save a manual annotation                  |
+| PUT    | `/api/annotations/:id`          | Yes  | Update a user annotation (edit mode)      |
+| DELETE | `/api/annotations/:id`          | Yes  | Delete a user annotation                  |
+| GET    | `/api/annotations/feedback`     | Yes  | Get feedback on annotations for a URL     |
+| POST   | `/api/annotations/feedback`     | Yes  | Save feedback (thumbs up/down/reply)      |
+| DELETE | `/api/annotations/feedback/:id` | Yes  | Delete feedback entry                     |
+| GET    | `/api/adapters`                 | No   | Get site adapter registry                 |
+| GET    | `/api/user/preferences`         | Yes  | Get user preferences                      |
+| PUT    | `/api/user/preferences`         | Yes  | Update preferences (partial JSONB merge)  |
 
 Auth = `Authorization: Bearer <supabase_access_token>`
 
@@ -298,13 +305,13 @@ Full docs: [docs/api.md](./api.md)
 
 ## Database tables at a glance
 
-| Table                   | Purpose                                              | RLS               |
-| ----------------------- | ---------------------------------------------------- | ----------------- |
-| `profiles`              | User metadata + preferences                          | Own row only      |
-| `annotation_cache`      | AI annotations, keyed by `(content_hash, intensity)` | Service-role only |
-| `user_annotations`      | Manual annotations per user                          | Own rows only     |
-| `annotation_feedback`   | User feedback on annotations (thumbs, replies)      | Own rows only     |
-| `site_adapters`         | Site extraction config (6 seeded)                    | Service-role only |
+| Table                 | Purpose                                              | RLS               |
+| --------------------- | ---------------------------------------------------- | ----------------- |
+| `profiles`            | User metadata + preferences                          | Own row only      |
+| `annotation_cache`    | AI annotations, keyed by `(content_hash, intensity)` | Service-role only |
+| `user_annotations`    | Manual annotations per user                          | Own rows only     |
+| `annotation_feedback` | User feedback on annotations (thumbs, replies)       | Own rows only     |
+| `site_adapters`       | Site extraction config (6 seeded)                    | Service-role only |
 
 Cache key is `content_hash + intensity` — same text on different URLs shares cache.
 Cache TTL: 30 days (`expires_at` column).

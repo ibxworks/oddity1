@@ -211,7 +211,8 @@ export function initArgumentsBox(): void {
       );
       // Sync bubble logo to stored persona
       const personality = (prefs.depth_personality as string) ?? "terry";
-      const display = personality.charAt(0).toUpperCase() + personality.slice(1);
+      const display =
+        personality.charAt(0).toUpperCase() + personality.slice(1);
       if (bubbleLogoImgEl) {
         bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
         bubbleLogoImgEl.alt = display;
@@ -670,20 +671,33 @@ export function initArgumentsBox(): void {
   // ── Dashboard close button (floats above mid-sized panel) ──
   dashCloseBtnEl = document.createElement("button");
   dashCloseBtnEl.className = "dash-close-btn";
-  const dashCloseIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const dashCloseIcon = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "svg",
+  );
   dashCloseIcon.setAttribute("width", "11");
   dashCloseIcon.setAttribute("height", "11");
   dashCloseIcon.setAttribute("viewBox", "0 0 12 12");
   dashCloseIcon.setAttribute("fill", "none");
-  const dashCloseLine1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  dashCloseLine1.setAttribute("x1", "1"); dashCloseLine1.setAttribute("y1", "1");
-  dashCloseLine1.setAttribute("x2", "11"); dashCloseLine1.setAttribute("y2", "11");
+  const dashCloseLine1 = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "line",
+  );
+  dashCloseLine1.setAttribute("x1", "1");
+  dashCloseLine1.setAttribute("y1", "1");
+  dashCloseLine1.setAttribute("x2", "11");
+  dashCloseLine1.setAttribute("y2", "11");
   dashCloseLine1.setAttribute("stroke", "currentColor");
   dashCloseLine1.setAttribute("stroke-width", "2");
   dashCloseLine1.setAttribute("stroke-linecap", "round");
-  const dashCloseLine2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  dashCloseLine2.setAttribute("x1", "11"); dashCloseLine2.setAttribute("y1", "1");
-  dashCloseLine2.setAttribute("x2", "1"); dashCloseLine2.setAttribute("y2", "11");
+  const dashCloseLine2 = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "line",
+  );
+  dashCloseLine2.setAttribute("x1", "11");
+  dashCloseLine2.setAttribute("y1", "1");
+  dashCloseLine2.setAttribute("x2", "1");
+  dashCloseLine2.setAttribute("y2", "11");
   dashCloseLine2.setAttribute("stroke", "currentColor");
   dashCloseLine2.setAttribute("stroke-width", "2");
   dashCloseLine2.setAttribute("stroke-linecap", "round");
@@ -1061,7 +1075,7 @@ export async function handleRemoteSignIn(user: {
     dashSignOutPopoverEmailEl.textContent = user.email;
   if (dashSignOutPopoverPlanEl)
     dashSignOutPopoverPlanEl.textContent =
-      user.tier === "pro" ? "Pro Plan" : "Free Plan";
+      user.tier === "pro" ? "Standard Plan" : "Free Plan";
   await chrome.storage.local.set({ hadAccount: true });
   // Check site whitelist to show dashboard or not-enabled overlay
   const prefsStored = await chrome.storage.local.get("preferences");
@@ -1239,20 +1253,27 @@ function showNotEnabledOverlay(): void {
   // Dismiss close button (floats above box, like dash-close-btn)
   const closeBtn = document.createElement("button");
   closeBtn.className = "args-not-enabled-close";
-  const closeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const closeIcon = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "svg",
+  );
   closeIcon.setAttribute("width", "11");
   closeIcon.setAttribute("height", "11");
   closeIcon.setAttribute("viewBox", "0 0 12 12");
   closeIcon.setAttribute("fill", "none");
   const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line1.setAttribute("x1", "1"); line1.setAttribute("y1", "1");
-  line1.setAttribute("x2", "11"); line1.setAttribute("y2", "11");
+  line1.setAttribute("x1", "1");
+  line1.setAttribute("y1", "1");
+  line1.setAttribute("x2", "11");
+  line1.setAttribute("y2", "11");
   line1.setAttribute("stroke", "currentColor");
   line1.setAttribute("stroke-width", "2");
   line1.setAttribute("stroke-linecap", "round");
   const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line2.setAttribute("x1", "11"); line2.setAttribute("y1", "1");
-  line2.setAttribute("x2", "1"); line2.setAttribute("y2", "11");
+  line2.setAttribute("x1", "11");
+  line2.setAttribute("y1", "1");
+  line2.setAttribute("x2", "1");
+  line2.setAttribute("y2", "11");
   line2.setAttribute("stroke", "currentColor");
   line2.setAttribute("stroke-width", "2");
   line2.setAttribute("stroke-linecap", "round");
@@ -2016,10 +2037,22 @@ function buildDashboardFace(): HTMLDivElement {
     svg.setAttribute("viewBox", "0 0 48 48");
     svg.style.flexShrink = "0";
     const paths: [string, string][] = [
-      ["#EA4335", "M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"],
-      ["#4285F4", "M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"],
-      ["#FBBC05", "M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"],
-      ["#34A853", "M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"],
+      [
+        "#EA4335",
+        "M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z",
+      ],
+      [
+        "#4285F4",
+        "M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z",
+      ],
+      [
+        "#FBBC05",
+        "M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z",
+      ],
+      [
+        "#34A853",
+        "M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z",
+      ],
     ];
     for (const [fill, d] of paths) {
       const path = document.createElementNS(svgNS, "path");
@@ -2079,8 +2112,14 @@ function buildDashboardFace(): HTMLDivElement {
         document.dispatchEvent(new CustomEvent("oddity:localSignIn"));
       });
     } catch (err) {
-      const msg = String(err instanceof Error ? err.message : "Something went wrong");
-      if (!msg.includes("cancelled") && !msg.includes("canceled") && !msg.includes("User interaction required")) {
+      const msg = String(
+        err instanceof Error ? err.message : "Something went wrong",
+      );
+      if (
+        !msg.includes("cancelled") &&
+        !msg.includes("canceled") &&
+        !msg.includes("User interaction required")
+      ) {
         if (dashSignInStatusEl) {
           dashSignInStatusEl.textContent = msg;
           dashSignInStatusEl.className = "args-dash-feedback-status error";
@@ -2088,7 +2127,8 @@ function buildDashboardFace(): HTMLDivElement {
         }
       }
     } finally {
-      while (dashGoogleBtnEl.firstChild) dashGoogleBtnEl.removeChild(dashGoogleBtnEl.firstChild);
+      while (dashGoogleBtnEl.firstChild)
+        dashGoogleBtnEl.removeChild(dashGoogleBtnEl.firstChild);
       dashGoogleBtnEl.appendChild(buildGoogleBtnContent());
       dashGoogleBtnEl.removeAttribute("disabled");
     }
@@ -2104,7 +2144,9 @@ function buildDashboardFace(): HTMLDivElement {
   // Terms text
   dashAuthTermsEl = document.createElement("div");
   dashAuthTermsEl.className = "args-dash-auth-terms";
-  dashAuthTermsEl.appendChild(document.createTextNode("By continuing, you agree to our "));
+  dashAuthTermsEl.appendChild(
+    document.createTextNode("By continuing, you agree to our "),
+  );
   const dashAuthTermsLink = document.createElement("a");
   dashAuthTermsLink.href = "https://www.oddity1.com/terms";
   dashAuthTermsLink.target = "_blank";
@@ -2243,7 +2285,8 @@ function buildDashboardFace(): HTMLDivElement {
           }
         } else {
           if (dashSignInStatusEl) {
-            dashSignInStatusEl.textContent = "Check your email for a reset link.";
+            dashSignInStatusEl.textContent =
+              "Check your email for a reset link.";
             dashSignInStatusEl.style.color = "#22c55e";
             dashSignInStatusEl.style.display = "block";
           }
@@ -2365,7 +2408,7 @@ async function loadDashboardData(): Promise<void> {
         dashSignOutPopoverEmailEl.textContent = dashUserEmail;
       if (dashSignOutPopoverPlanEl)
         dashSignOutPopoverPlanEl.textContent =
-          dashUserTier === "pro" ? "Pro Plan" : "Free Plan";
+          dashUserTier === "pro" ? "Standard Plan" : "Free Plan";
     } else {
       if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
       if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";

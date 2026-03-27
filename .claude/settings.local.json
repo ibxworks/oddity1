@@ -96,7 +96,9 @@
       "Bash(grep -r \"redirectTo\\\\|app\\\\.oddity1\" /Users/realtonypark/Developer/oddity1 --include=*.ts --include=*.tsx --include=*.js --include=*.jsx)",
       "mcp__supabase__get_logs",
       "mcp__supabase__search_docs",
-      "mcp__plugin_supabase_supabase__search_docs"
+      "mcp__plugin_supabase_supabase__search_docs",
+      "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard -maxdepth 1 -name .env* -o -name *.env*)",
+      "Bash(find /Users/realtonypark/Developer/oddity1/Oddity1Dashboard/api -name *.py)"
     ]
   },
   "enableAllProjectMcpServers": true,
