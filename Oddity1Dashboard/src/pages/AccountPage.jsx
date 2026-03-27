@@ -139,7 +139,6 @@ export default function AccountPage() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    window.location.href = "https://oddity1.com";
   }
 
   if (loading) return null;

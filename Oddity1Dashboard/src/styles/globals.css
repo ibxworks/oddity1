@@ -173,6 +173,7 @@ body {
   justify-content: center;
   gap: 6px;
   padding: 8px 12px;
+  margin-bottom: 16px;
   background: var(--green-500);
   color: #fff;
   border-radius: var(--r);

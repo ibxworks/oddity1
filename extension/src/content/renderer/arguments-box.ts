@@ -1953,7 +1953,8 @@ function buildDashboardFace(): HTMLDivElement {
   fbRoleOther.placeholder = "Your role...";
 
   fbRoleSelect.addEventListener("change", () => {
-    fbRoleOther.style.display = fbRoleSelect.value === "Other" ? "block" : "none";
+    fbRoleOther.style.display =
+      fbRoleSelect.value === "Other" ? "block" : "none";
     if (fbRoleSelect.value !== "Other") fbRoleOther.value = "";
   });
 
