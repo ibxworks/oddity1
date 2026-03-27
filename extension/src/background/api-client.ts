@@ -416,10 +416,12 @@ export async function getPreferences(): Promise<UserPreferences> {
   return res.json() as Promise<UserPreferences>;
 }
 
-export async function sendUserFeedback(message: string): Promise<{ success: boolean }> {
+export async function sendUserFeedback(message: string, role?: string): Promise<{ success: boolean }> {
+  const body: Record<string, string> = { message };
+  if (role) body.role = role;
   const res = await authFetch('/api/user-feedback', {
     method: 'POST',
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`sendUserFeedback failed: ${res.status}`);
   return res.json() as Promise<{ success: boolean }>;

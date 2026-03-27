@@ -207,3 +207,29 @@
 .docs-upload-wrapper:hover .docs-upload-tooltip {
   opacity: 1;
 }
+
+/* ── Coming Soon overlay ─────────────────────── */
+.docs-coming-soon-wrapper {
+  position: relative;
+}
+
+.docs-coming-soon-blur {
+  filter: blur(6px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.docs-coming-soon-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.docs-coming-soon-text {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}

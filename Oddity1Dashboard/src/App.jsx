@@ -8,6 +8,7 @@ import AccountPage from "./pages/AccountPage";
 import ArchivePage from "./pages/ArchivePage";
 import DocumentsPage from "./pages/DocumentsPage";
 import EditorPage from "./pages/EditorPage";
+import FeedbackPage from "./pages/FeedbackPage";
 import { clearAuthCookie, setAuthCookie } from "./utils/authCookie";
 
 const DEFAULT_ENABLED_SITES = ['chatgpt.com', 'chat.openai.com', 'claude.ai'];
@@ -120,6 +121,7 @@ export default function App() {
       <Route element={<Layout session={session} />}>
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/settings" element={<AccountPage />} />
+        <Route path="/feedback" element={<FeedbackPage />} />
         <Route path="/archive" element={<ArchivePage />} />
         <Route path="/" element={<Navigate to="/archive" replace />} />
         <Route path="*" element={<Navigate to="/archive" replace />} />
