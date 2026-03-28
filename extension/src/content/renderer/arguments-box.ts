@@ -549,6 +549,8 @@ export function initArgumentsBox(): void {
   bubbleClose.addEventListener("click", (e) => {
     e.stopPropagation();
     enableBubbleEl?.remove();
+    // Snooze the bubble for the next 3 non-listed sites
+    chrome.storage.local.set({ enableBubbleSnoozeRemaining: 3 });
   });
 
   enableBubbleEl.appendChild(bubbleTextWrapper);
@@ -829,6 +831,8 @@ export function addLiveFeedback(
     quote?: string;
     type?: ArgumentItem["type"];
     replyHeader?: string;
+    replyFullNote?: string;
+    replyAnchor?: string;
     annotationType?: AnnotationType;
     annotationId?: string;
     contentHash?: string;
@@ -841,6 +845,8 @@ export function addLiveFeedback(
     text,
     quote: opts?.quote,
     replyHeader: opts?.replyHeader,
+    replyFullNote: opts?.replyFullNote,
+    replyAnchor: opts?.replyAnchor,
     sortKey,
     type: opts?.type ?? "reaction",
     annotationType: opts?.annotationType,
@@ -910,6 +916,14 @@ export function setArgumentsBoxDimmed(isDimmed: boolean): void {
     if (panelToggleLabelEl) panelToggleLabelEl.textContent = "Off";
     if (dashToggleInput) dashToggleInput.checked = false;
     if (dashToggleLabelEl) dashToggleLabelEl.textContent = "Off";
+    // Hide the enable bubble if snoozed (dismissed within last 3 non-listed sites)
+    chrome.storage.local.get("enableBubbleSnoozeRemaining").then((result) => {
+      const remaining = result.enableBubbleSnoozeRemaining;
+      if (typeof remaining === "number" && remaining > 0) {
+        enableBubbleEl?.remove();
+        chrome.storage.local.set({ enableBubbleSnoozeRemaining: remaining - 1 });
+      }
+    });
   }
   updateModeToggleVisibility();
 }
