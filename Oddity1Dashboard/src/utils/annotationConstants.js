@@ -93,9 +93,9 @@ export const ALL_DEPTH_TYPES = [
 
 // ─── Personality descriptions ───
 export const PERSONALITIES = {
-  terry: { name: "Terry", description: "Analytical & structured" },
-  jerry: { name: "Jerry", description: "Creative & provocative" },
-  sally: { name: "Sally", description: "Practical & thorough" },
+  terry: { name: "Terry", description: "Sharp & critical" },
+  jerry: { name: "Jerry", description: "Creative & curious" },
+  sally: { name: "Sally", description: "Engaging & guiding" },
 };
 
 export const BACKEND_URL =

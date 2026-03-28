@@ -1650,9 +1650,9 @@ function buildDashboardFace(): HTMLDivElement {
   const personalityGroup = document.createElement("div");
   personalityGroup.className = "args-dash-density-group";
   const personaDescs: Record<string, string> = {
-    terry: "Balanced & clear",
-    jerry: "Sharp & critical",
-    sally: "Warm & curious",
+    terry: "Sharp & critical",
+    jerry: "Creative & curious",
+    sally: "Engaging & guiding",
   };
   dashDensityBtns = [];
   for (const [value, label] of [
@@ -2885,19 +2885,19 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   const personaData = [
     {
       name: "Terry",
-      desc: "Balanced & clear",
+      desc: "Sharp & critical",
       img: "Terry.png",
       quote: "\u201cClear and well-supported.\u201d",
     },
     {
       name: "Jerry",
-      desc: "Sharp & critical",
+      desc: "Creative & curious",
       img: "Jerry.png",
       quote: "\u201cBut what about the counter-evidence?\u201d",
     },
     {
       name: "Sally",
-      desc: "Warm & curious",
+      desc: "Engaging & guiding",
       img: "Sally.png",
       quote: "\u201cThis reminds me of\u2026\u201d",
     },
