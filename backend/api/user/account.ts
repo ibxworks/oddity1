@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { serviceClient } from '../../lib/supabase.js';
+import { stripe } from '../../lib/stripe.js';
 
 const router = Router();
 
@@ -7,6 +8,22 @@ const router = Router();
 router.delete('/', async (req, res) => {
   try {
     const userId = req.user!.id;
+
+    // 0. Cancel Stripe subscription if exists
+    const { data: profile } = await serviceClient
+      .from('profiles')
+      .select('stripe_subscription_id')
+      .eq('id', userId)
+      .single();
+
+    if (profile?.stripe_subscription_id) {
+      try {
+        await stripe.subscriptions.cancel(profile.stripe_subscription_id);
+      } catch (stripeErr) {
+        console.error('[account DELETE] Stripe cancel error:', stripeErr);
+        // Continue with deletion even if Stripe cancel fails
+      }
+    }
 
     // 1. Delete user_annotations (FK: user_id → profiles.id)
     const { error: annErr } = await serviceClient

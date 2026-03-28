@@ -1061,7 +1061,7 @@ export async function handleRemoteSignIn(user: {
     dashSignOutPopoverEmailEl.textContent = user.email;
   if (dashSignOutPopoverPlanEl)
     dashSignOutPopoverPlanEl.textContent =
-      user.tier === "pro" ? "Standard Plan" : "Free Plan";
+      user.tier === "standard" ? "Standard Plan" : "Free Plan";
   await chrome.storage.local.set({ hadAccount: true });
   // Check site whitelist to show dashboard or not-enabled overlay
   const prefsStored = await chrome.storage.local.get("preferences");
@@ -1671,6 +1671,12 @@ function buildDashboardFace(): HTMLDivElement {
     tooltip.textContent = personaDescs[value] ?? "";
     btn.appendChild(tooltip);
     btn.addEventListener("click", () => {
+      // Gate: Sally personality requires Standard plan
+      if (value === "sally" && dashUserTier !== "standard") {
+        showArgToast("Sally personality requires a Standard plan");
+        return;
+      }
+
       dashDensityBtns.forEach((b) =>
         b.classList.remove("args-dash-density-active"),
       );
@@ -1804,7 +1810,13 @@ function buildDashboardFace(): HTMLDivElement {
   profileBtnEl.appendChild(dashProfileNameEl);
   dashTierBadgeEl = document.createElement("span");
   dashTierBadgeEl.className = "args-dash-tier-badge";
-  dashTierBadgeEl.textContent = "FREE";
+  dashTierBadgeEl.textContent = "Get Standard";
+  dashTierBadgeEl.style.cursor = "pointer";
+  dashTierBadgeEl.addEventListener("click", () => {
+    if (dashUserTier !== "standard") {
+      window.open("https://app.oddity1.com/plans", "_blank");
+    }
+  });
 
   // ── Sign-out popover ──
   dashSignOutPopoverEl = document.createElement("div");
@@ -1830,7 +1842,10 @@ function buildDashboardFace(): HTMLDivElement {
     if (dashSignOutPopoverEl) dashSignOutPopoverEl.style.display = "none";
     if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
     if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
-    if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
+    if (dashTierBadgeEl) {
+      dashTierBadgeEl.textContent = "Get Standard";
+      dashTierBadgeEl.style.cursor = "pointer";
+    }
     if (dashCountEl) dashCountEl.textContent = "0";
     dashUserEmail = "";
     dashUserTier = "free";
@@ -2428,18 +2443,25 @@ async function loadDashboardData(): Promise<void> {
           auth.user.display_name || auth.user.email || "?";
       if (dashProfileAvatarEl)
         dashProfileAvatarEl.textContent = (name[0] ?? "?").toUpperCase();
-      if (dashTierBadgeEl)
-        dashTierBadgeEl.textContent = dashUserTier.toUpperCase();
+      if (dashTierBadgeEl) {
+        dashTierBadgeEl.textContent =
+          dashUserTier === "standard" ? "Standard" : "Get Standard";
+        dashTierBadgeEl.style.cursor =
+          dashUserTier !== "standard" ? "pointer" : "";
+      }
       if (dashSignOutPopoverNameEl) dashSignOutPopoverNameEl.textContent = name;
       if (dashSignOutPopoverEmailEl)
         dashSignOutPopoverEmailEl.textContent = dashUserEmail;
       if (dashSignOutPopoverPlanEl)
         dashSignOutPopoverPlanEl.textContent =
-          dashUserTier === "pro" ? "Standard Plan" : "Free Plan";
+          dashUserTier === "standard" ? "Standard Plan" : "Free Plan";
     } else {
       if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
       if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
-      if (dashTierBadgeEl) dashTierBadgeEl.textContent = "FREE";
+      if (dashTierBadgeEl) {
+        dashTierBadgeEl.textContent = "Get Standard";
+        dashTierBadgeEl.style.cursor = "pointer";
+      }
       const stored = await chrome.storage.local.get("hadAccount");
       showAuthView(stored["hadAccount"] ? "signin" : "signup");
     }
@@ -3739,6 +3761,28 @@ function switchTab(tab: "notes" | "sketch"): void {
 
 function handleSketch(): void {
   if (sketchLoading) return;
+
+  // Gate: Sketch Pad requires Standard plan
+  if (dashUserTier !== "standard") {
+    if (sketchContentEl) {
+      switchTab("sketch");
+      const errorDiv = document.createElement("div");
+      errorDiv.className = "args-sketch-error";
+      const msg = document.createTextNode(
+        "Sketch Pad requires a Standard plan. ",
+      );
+      const link = document.createElement("a");
+      link.href = "https://app.oddity1.com/plans";
+      link.target = "_blank";
+      link.style.color = "#22c55e";
+      link.style.textDecoration = "underline";
+      link.textContent = "Get Standard";
+      errorDiv.appendChild(msg);
+      errorDiv.appendChild(link);
+      sketchContentEl.replaceChildren(errorDiv);
+    }
+    return;
+  }
 
   // Validate purpose
   const purpose = purposeInputEl?.value.trim() ?? "";

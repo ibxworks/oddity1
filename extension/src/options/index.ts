@@ -148,12 +148,12 @@ async function loadAuthStatus(): Promise<void> {
         result.user.email;
       authEmailDisplay.textContent = result.user.email;
       authTierDisplay.textContent =
-        result.user.tier === "pro" ? "Standard Plan" : "Free Plan";
+        result.user.tier === "standard" ? "Standard Plan" : "Free Plan";
       authAnnotationCount.textContent = String(
         result.user.annotation_count ?? 0,
       );
       upgradeBtn.style.display =
-        result.user.tier === "pro" ? "none" : "inline-flex";
+        result.user.tier === "standard" ? "none" : "inline-flex";
     } else {
       authNotSignedIn.style.display = "";
       authSignedIn.style.display = "none";
@@ -384,7 +384,7 @@ deleteConfirmInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") deleteAccountBtn.click();
 });
 
-// Upgrade to Standard
+// Get Standard
 upgradeBtn.addEventListener("click", () => {
   window.open("https://oddity1.com/pricing", "_blank");
 });

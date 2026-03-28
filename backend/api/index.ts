@@ -1,7 +1,6 @@
 import cors from "cors";
 import express from "express";
 import { authMiddleware } from "../lib/auth-middleware.js";
-import { createRateLimiter } from "../lib/rate-limiter.js";
 import adaptersRouter from "./adapters.js";
 import annotateRouter from "./annotate.js";
 import annotationsRouter from "./annotations.js";
@@ -10,11 +9,19 @@ import feedbackRouter from "./feedback.js";
 import userFeedbackRouter from "./user-feedback.js";
 import accountRouter from "./user/account.js";
 import preferencesRouter from "./user/preferences.js";
+import webhookStripeRouter from "./webhook-stripe.js";
+import checkoutRouter from "./checkout.js";
+import subscriptionRouter from "./subscription.js";
+import portalRouter from "./portal.js";
 
 const app = express();
 
 // Global middleware
 app.use(cors());
+
+// Stripe webhook must receive raw body BEFORE express.json() parses it
+app.use("/api/webhook/stripe", express.raw({ type: "application/json" }), webhookStripeRouter);
+
 app.use(express.json({ limit: "2mb" }));
 
 // Health check (no auth)
@@ -26,13 +33,16 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/adapters", adaptersRouter);
 
 // Protected routes
-app.use("/api/annotate", authMiddleware, createRateLimiter(), annotateRouter);
-app.use("/api/sketch", authMiddleware, createRateLimiter(), sketchRouter);
+app.use("/api/annotate", authMiddleware, annotateRouter);
+app.use("/api/sketch", authMiddleware, sketchRouter);
 app.use("/api/annotations/feedback", authMiddleware, feedbackRouter);
 app.use("/api/annotations", authMiddleware, annotationsRouter);
 app.use("/api/user/account", authMiddleware, accountRouter);
 app.use("/api/user/preferences", authMiddleware, preferencesRouter);
 app.use("/api/user-feedback", authMiddleware, userFeedbackRouter);
+app.use("/api/checkout", authMiddleware, checkoutRouter);
+app.use("/api/subscription", authMiddleware, subscriptionRouter);
+app.use("/api/portal", authMiddleware, portalRouter);
 
 // Global error handler
 app.use(

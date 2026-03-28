@@ -3,7 +3,8 @@ import type {
   AnnotationMode,
   DepthPersonality,
 } from "@oddity/shared";
-import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH } from "@oddity/shared";
+import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
+import type { UserTier } from "@oddity/shared";
 import { Router } from "express";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -56,6 +57,56 @@ router.post("/", async (req, res) => {
         .status(400)
         .json({ error: "Invalid request", details: parsed.error.issues });
       return;
+    }
+
+    const userTier = (req.user?.tier ?? "free") as UserTier;
+
+    // ── Feature gate: Sally personality requires Standard ──
+    if (
+      parsed.data.personality === "sally" &&
+      !canUseFeature(userTier, "sallyPersonality")
+    ) {
+      res.status(403).json({
+        error: "Sally personality requires a Standard plan",
+        upgrade: true,
+      });
+      return;
+    }
+
+    // ── Feature gate: PDF URLs require Standard ──
+    if (
+      /\.pdf($|\?)/i.test(parsed.data.url) &&
+      !canUseFeature(userTier, "pdfAnnotation")
+    ) {
+      res.status(403).json({
+        error: "PDF annotation requires a Standard plan",
+        upgrade: true,
+      });
+      return;
+    }
+
+    // ── Usage limit check ──
+    if (req.user?.id) {
+      const limit =
+        userTier !== "free"
+          ? Number(process.env.STANDARD_PLAN_LIMIT_PER_MONTH ?? 2000)
+          : Number(process.env.FREE_PLAN_LIMIT_PER_MONTH ?? 100);
+
+      const { data: usageResult, error: usageErr } = await serviceClient.rpc(
+        "check_and_record_usage",
+        { p_user_id: req.user.id, p_url: parsed.data.url, p_limit: limit },
+      );
+
+      if (usageErr) {
+        console.error("[annotate] Usage check failed:", usageErr.message);
+      } else if (usageResult && !usageResult.allowed) {
+        res.status(403).json({
+          error: "Monthly annotation limit reached",
+          usage: { count: usageResult.count, limit },
+          upgrade: userTier === "free",
+        });
+        return;
+      }
     }
 
     // SSE streaming path: client requests progressive delivery
@@ -128,14 +179,6 @@ router.post("/", async (req, res) => {
       );
     if (cacheWriteError) {
       console.error("[annotate] Cache write failed:", cacheWriteError.message);
-    }
-
-    // Increment user's annotation count (fresh generation only)
-    if (req.user?.id) {
-      await serviceClient.rpc("increment_annotation_count", {
-        p_user_id: req.user.id,
-        p_count: aiAnnotations.length,
-      });
     }
 
     const merged = await mergeAnnotationsAndFeedback(
@@ -245,13 +288,6 @@ async function handleStreamingAnnotation(
         "[annotate/stream] Cache write failed:",
         cacheWriteError.message,
       );
-    }
-
-    if (req.user?.id) {
-      await serviceClient.rpc("increment_annotation_count", {
-        p_user_id: req.user.id,
-        p_count: allAnnotations.length,
-      });
     }
 
     const merged = await mergeAnnotationsAndFeedback(

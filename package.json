@@ -7,12 +7,14 @@
     "backend"
   ],
   "scripts": {
+    "dev": "concurrently --names 'dashboard,backend' --prefix-colors 'cyan,yellow' 'npm run dev --prefix Oddity1Dashboard' 'npm run dev --prefix backend'",
     "type-check": "npm run type-check --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint ."
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "eslint": "^9.0.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.0.0"

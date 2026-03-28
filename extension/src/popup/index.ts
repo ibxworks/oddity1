@@ -61,8 +61,12 @@ const popoverSignOut = document.getElementById("popover-sign-out")!;
 // Feedback dialog refs
 const feedbackDialog = document.getElementById("feedback-dialog")!;
 const feedbackEmail = document.getElementById("feedback-email")!;
-const feedbackRoleSelect = document.getElementById("feedback-role") as HTMLSelectElement;
-const feedbackRoleOther = document.getElementById("feedback-role-other") as HTMLInputElement;
+const feedbackRoleSelect = document.getElementById(
+  "feedback-role",
+) as HTMLSelectElement;
+const feedbackRoleOther = document.getElementById(
+  "feedback-role-other",
+) as HTMLInputElement;
 const feedbackTextarea = document.getElementById(
   "feedback-textarea",
 ) as HTMLTextAreaElement;
@@ -77,7 +81,7 @@ const exportTitle = document.getElementById("export-title") as HTMLInputElement;
 const exportSubtitle = document.getElementById(
   "export-subtitle",
 ) as HTMLInputElement;
-const exportProBadge = document.getElementById("export-pro-badge")!;
+const exportStandardBadge = document.getElementById("export-standard-badge")!;
 const exportCancelBtn = document.getElementById("export-cancel-btn")!;
 const exportDownloadBtn = document.getElementById("export-download-btn")!;
 const exportStatusEl = document.getElementById("export-status")!;
@@ -103,6 +107,9 @@ let currentUser: {
   tier: UserTier;
   annotation_count?: number;
 } | null = null;
+
+let upgradeToastEl: HTMLDivElement | null = null;
+let upgradeToastTimer: number | null = null;
 
 // ─── Font appearance ───
 
@@ -207,16 +214,32 @@ function showAuthenticatedUI(user: {
   profileName.textContent = displayName;
 
   // Tier badge
-  tierBadge.textContent = user.tier === "pro" ? "PRO" : "FREE";
-  tierBadge.classList.toggle("pro", user.tier === "pro");
+  tierBadge.textContent =
+    user.tier === "standard" ? "Standard" : "Get Standard";
+  tierBadge.classList.toggle("standard", user.tier === "standard");
+  tierBadge.style.cursor = user.tier !== "standard" ? "pointer" : "";
+  tierBadge.onclick =
+    user.tier !== "standard"
+      ? () => chrome.tabs.create({ url: "https://app.oddity1.com/plans" })
+      : null;
 
   // Popover data
   popoverName.textContent = user.display_name ?? displayName;
   popoverEmail.textContent = user.email;
-  popoverTier.textContent = user.tier === "pro" ? "Standard Plan" : "Free Plan";
+  popoverTier.textContent =
+    user.tier === "standard" ? "Standard Plan" : "Free Plan";
 
   // Total annotation count
   totalCountNumber.textContent = String(user.annotation_count ?? 0);
+
+  // Sally personality gating: no visual dimming — upgrade toast shown on click
+  const sallyBtn = intensityGroup.querySelector<HTMLButtonElement>(
+    '.density-btn[data-intensity="sally"]',
+  );
+  if (sallyBtn) {
+    sallyBtn.style.opacity = "";
+    sallyBtn.title = "";
+  }
 }
 
 function showUnauthenticatedUI(): void {
@@ -234,6 +257,36 @@ function showAuthError(msg: string): void {
 function hideAuthMessages(): void {
   authError.style.display = "none";
   authSuccess.style.display = "none";
+}
+
+function showUpgradeToast(msg: string): void {
+  if (!upgradeToastEl) {
+    upgradeToastEl = document.createElement("div");
+    upgradeToastEl.style.cssText = [
+      "position: absolute",
+      "left: 20px",
+      "right: 20px",
+      "bottom: 12px",
+      "display: none",
+      "padding: 8px 10px",
+      "border-radius: 10px",
+      "font-size: 12px",
+      "line-height: 1.3",
+      "background: #fef3c7",
+      "color: #92400e",
+      "z-index: 9999",
+      "text-align: center",
+    ].join(";");
+    document.body.appendChild(upgradeToastEl);
+  }
+
+  upgradeToastEl.textContent = msg;
+  upgradeToastEl.style.display = "block";
+
+  if (upgradeToastTimer !== null) window.clearTimeout(upgradeToastTimer);
+  upgradeToastTimer = window.setTimeout(() => {
+    if (upgradeToastEl) upgradeToastEl.style.display = "none";
+  }, 3000);
 }
 
 function friendlyAuthError(error: string): string {
@@ -353,6 +406,12 @@ intensityGroup.addEventListener("click", (e) => {
   const personality = btn.dataset["intensity"] as DepthPersonality | undefined;
   if (!personality) return;
 
+  // Gate: Sally personality requires Standard plan
+  if (personality === "sally" && currentUser?.tier !== "standard") {
+    showUpgradeToast("Sally personality requires a Standard plan");
+    return;
+  }
+
   currentPrefs.depth_personality = personality;
 
   for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(
@@ -399,16 +458,16 @@ exportBtn.addEventListener("click", async () => {
         action: "getUserTier",
         payload: {},
       });
-      if (result.tier !== "pro") {
+      if (result.tier !== "standard") {
         exportSubtitle.disabled = true;
-        exportProBadge.style.display = "inline-block";
+        exportStandardBadge.style.display = "inline-block";
       } else {
         exportSubtitle.disabled = false;
-        exportProBadge.style.display = "none";
+        exportStandardBadge.style.display = "none";
       }
     } catch {
       exportSubtitle.disabled = true;
-      exportProBadge.style.display = "inline-block";
+      exportStandardBadge.style.display = "inline-block";
     }
 
     mainContent.style.display = "none";

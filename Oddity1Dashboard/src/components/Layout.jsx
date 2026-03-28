@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useProfile } from "../hooks/useProfile";
 import { supabase } from "../lib/supabase";
 
@@ -144,14 +144,9 @@ export default function Layout({ session }) {
 
         <div className="sidebar-bottom">
           {tier === "free" && (
-            <a
-              href="https://oddity1.com/plans"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="sidebar-upgrade"
-            >
+            <Link to="/plans" className="sidebar-upgrade">
               Upgrade to Standard
-            </a>
+            </Link>
           )}
           <div className="sidebar-user-section">
             <span className="sidebar-email">{session.user.email}</span>

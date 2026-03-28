@@ -1,10 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
+import type { UserTier } from '@oddity/shared';
 import { serviceClient } from './supabase.js';
 
 declare global {
   namespace Express {
     interface Request {
-      user?: { id: string; email: string; tier: 'free' | 'pro' };
+      user?: { id: string; email: string; tier: UserTier };
     }
   }
 }
@@ -28,17 +29,23 @@ export async function authMiddleware(
     return;
   }
 
-  // Fetch tier from profiles table (default to 'free' if no profile exists)
+  // Fetch tier + subscription_status from profiles table
   const { data: profile } = await serviceClient
     .from('profiles')
-    .select('tier')
+    .select('tier, subscription_status')
     .eq('id', data.user.id)
     .single();
+
+  // Treat past_due as still 'standard' (grace period while Stripe retries)
+  let tier: UserTier = (profile?.tier as UserTier) ?? 'free';
+  if (tier === 'free' && profile?.subscription_status === 'past_due') {
+    tier = 'standard';
+  }
 
   req.user = {
     id: data.user.id,
     email: data.user.email ?? '',
-    tier: (profile?.tier as 'free' | 'pro') ?? 'free',
+    tier,
   };
 
   next();

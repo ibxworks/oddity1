@@ -9,6 +9,7 @@ import ArchivePage from "./pages/ArchivePage";
 import DocumentsPage from "./pages/DocumentsPage";
 import EditorPage from "./pages/EditorPage";
 import FeedbackPage from "./pages/FeedbackPage";
+import PlansPage from "./pages/PlansPage";
 import { clearAuthCookie, setAuthCookie } from "./utils/authCookie";
 
 const DEFAULT_ENABLED_SITES = ['chatgpt.com', 'chat.openai.com', 'claude.ai'];
@@ -111,21 +112,29 @@ export default function App() {
     );
   }
 
-  if (!session) return <AuthForm />;
-
-  if (recoveryMode) return <ResetPassword onComplete={() => setRecoveryMode(false)} />;
-
+  // /plans is in a single top-level route so the same PlansPage instance stays
+  // mounted through session changes — this preserves ref state (pendingCheckout)
+  // and lets an in-progress handleCheckout complete after sign-in.
   return (
     <Routes>
-      <Route path="/documents/:id" element={<EditorPage session={session} />} />
-      <Route element={<Layout session={session} />}>
-        <Route path="/documents" element={<DocumentsPage />} />
-        <Route path="/settings" element={<AccountPage />} />
-        <Route path="/feedback" element={<FeedbackPage />} />
-        <Route path="/archive" element={<ArchivePage />} />
-        <Route path="/" element={<Navigate to="/archive" replace />} />
-        <Route path="*" element={<Navigate to="/archive" replace />} />
-      </Route>
+      <Route path="/plans" element={<PlansPage session={session} />} />
+      {recoveryMode ? (
+        <Route path="*" element={<ResetPassword onComplete={() => setRecoveryMode(false)} />} />
+      ) : !session ? (
+        <Route path="*" element={<AuthForm />} />
+      ) : (
+        <>
+          <Route path="/documents/:id" element={<EditorPage session={session} />} />
+          <Route element={<Layout session={session} />}>
+            <Route path="/documents" element={<DocumentsPage />} />
+            <Route path="/settings" element={<AccountPage />} />
+            <Route path="/feedback" element={<FeedbackPage />} />
+            <Route path="/archive" element={<ArchivePage />} />
+            <Route path="/" element={<Navigate to="/archive" replace />} />
+            <Route path="*" element={<Navigate to="/archive" replace />} />
+          </Route>
+        </>
+      )}
     </Routes>
   );
 }

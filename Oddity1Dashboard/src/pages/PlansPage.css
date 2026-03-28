@@ -1,0 +1,229 @@
+/* ── Plans page ── */
+
+.plans-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 48px 32px 80px;
+}
+
+.plans-header {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.plans-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.plans-subtitle {
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+/* ── Interval toggle ── */
+.plans-interval-toggle {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+/* ── Plan cards grid ── */
+.plans-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* ── Plan card ── */
+.plan-card {
+  background: var(--bg-primary);
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--r-lg);
+  padding: 28px 24px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  transition: box-shadow var(--transition);
+}
+
+.plan-card--highlighted {
+  border-color: var(--green-500);
+  box-shadow: var(--shadow-card), 0 0 0 1px var(--green-500);
+}
+
+/* ── Most Popular badge ── */
+.plan-badge {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--green-500);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 12px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+
+.plan-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.plan-price-amount {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.plan-price-period {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.plan-price-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  min-height: 18px;
+}
+
+/* ── CTA buttons ── */
+.plan-cta {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: var(--r);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    opacity var(--transition),
+    border-color var(--transition);
+  text-decoration: none;
+  border: none;
+}
+
+.plan-cta--secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+}
+
+.plan-cta--secondary:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-hover);
+}
+
+.plan-cta--primary {
+  background: var(--green-500);
+  color: #fff;
+}
+
+.plan-cta--primary:hover {
+  background: var(--green-600);
+}
+
+.plan-cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Feature list ── */
+.plan-features {
+  list-style: none;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.plan-feature-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: var(--green-500);
+}
+
+/* ── Auth modal overlay ── */
+.plans-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.plans-modal-container {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+}
+
+.plans-modal-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: var(--r-sm);
+  transition: opacity var(--transition);
+}
+
+.plans-modal-close:hover {
+  opacity: 0.7;
+}
+
+/* ── Responsive ── */
+@media (max-width: 680px) {
+  .plans-page {
+    padding: 32px 16px 60px;
+  }
+
+  .plans-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plans-title {
+    font-size: 22px;
+  }
+}
