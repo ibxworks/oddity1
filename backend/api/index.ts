@@ -13,6 +13,7 @@ import webhookStripeRouter from "./webhook-stripe.js";
 import checkoutRouter from "./checkout.js";
 import subscriptionRouter from "./subscription.js";
 import portalRouter from "./portal.js";
+import pricesRouter from "./prices.js";
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.get("/api/health", (_req, res) => {
 
 // Public routes (no auth)
 app.use("/api/adapters", adaptersRouter);
+app.use("/api/prices", pricesRouter);
 
 // Protected routes
 app.use("/api/annotate", authMiddleware, annotateRouter);

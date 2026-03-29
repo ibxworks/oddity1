@@ -5,52 +5,39 @@ import { supabase } from "../lib/supabase";
 import { BACKEND_URL } from "../utils/annotationConstants";
 import "./PlansPage.css";
 
-const INTERVALS = [
-  { key: "month", label: "Monthly", price: "$10.99", period: "/mo", note: "" },
-  {
-    key: "quarter",
-    label: "Quarterly",
-    price: "$9.99",
-    period: "/mo",
-    note: "Billed $29.97 every 3 months",
-  },
-  {
-    key: "year",
-    label: "Annual",
-    price: "$8.99",
-    period: "/mo",
-    note: "Billed $107.88 per year",
-  },
-];
-
 const FREE_FEATURES = [
-  "Up to 100 pages/month",
-  "Overview & Depth annotations",
-  "Terry & Jerry personalities",
-  "PDF export (basic)",
+  "Access to Terry and Jerry annotation styles",
+  "Create and save your own annotations",
+  "Export annotated webpages to PDF",
+  "Limited monthly annotations",
 ];
 
 const STANDARD_FEATURES = [
-  "Up to 2,000 pages/month",
-  "Everything in Free +",
-  "Sally personality",
-  "PDF annotation",
-  "Custom PDF subtitles",
-  "Structured arguments (Sketch Pad)",
+  "Everything in Free",
+  "20x higher annotation limits than Free",
+  "Advanced AI annotations",
+  "Annotate PDFs",
+  "Turn your annotations into structured arguments",
+  "Full access to all annotation styles: Terry, Jerry, and Sally",
 ];
 
-function CheckIcon() {
+// Fallback while prices load or if fetch fails
+const FALLBACK_BILLING = [
+  { id: "yearly", label: "Yearly", price: "8.99", interval: "year" },
+  { id: "quarterly", label: "Quarterly", price: "9.99", interval: "quarter" },
+  { id: "monthly", label: "Monthly", price: "10.99", interval: "month" },
+];
+
+function ChevronDown() {
   return (
-    <svg
-      className="plan-feature-icon"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="3.5 8.5 6.5 11.5 12.5 4.5" />
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 4.5 6 8l3.5-3.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -59,15 +46,59 @@ export default function PlansPage({ session }) {
   const { profile } = useProfile(session);
   const tier = profile?.tier || "free";
 
-  const [interval, setInterval] = useState("month");
+  // Billing options fetched from Stripe
+  const [billingOptions, setBillingOptions] = useState(FALLBACK_BILLING);
+  const [pricesLoaded, setPricesLoaded] = useState(false);
+
+  const [interval, setInterval] = useState("yearly");
+  const [billingMenuOpen, setBillingMenuOpen] = useState(false);
+  const billingRef = useRef(null);
+
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const pendingCheckout = useRef(false);
-  // Store the interval at the moment Subscribe was clicked, so it survives
-  // auth modal interactions and Google OAuth page reloads.
-  const pendingInterval = useRef("month");
+  const pendingInterval = useRef("year");
 
-  const selected = INTERVALS.find((i) => i.key === interval);
+  const [scrolled, setScrolled] = useState(false);
+
+  const activeBilling =
+    billingOptions.find((o) => o.id === interval) ?? billingOptions[0];
+
+  // Fetch prices from Stripe on mount
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/prices`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.prices?.length) {
+          setBillingOptions(data.prices);
+        }
+        setPricesLoaded(true);
+      })
+      .catch(() => setPricesLoaded(true));
+  }, []);
+
+  // Scroll listener for navbar glass effect
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 50);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Click-outside to close billing dropdown
+  useEffect(() => {
+    function handler(e) {
+      if (!billingRef.current?.contains(e.target)) setBillingMenuOpen(false);
+    }
+    function escHandler(e) {
+      if (e.key === "Escape") setBillingMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", escHandler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", escHandler);
+    };
+  }, []);
 
   // On mount: check if a pending checkout was stored before a Google OAuth redirect
   useEffect(() => {
@@ -90,31 +121,30 @@ export default function PlansPage({ session }) {
 
   async function handleCheckout(activeSession, checkoutInterval) {
     const s = activeSession || session;
-    const selectedInterval = checkoutInterval || interval;
+    const selectedInterval = checkoutInterval || activeBilling.interval;
     if (tier === "standard") {
       window.location.href = "/settings";
       return;
     }
     if (!s) {
       pendingCheckout.current = true;
-      pendingInterval.current = interval;
-      // Persist for Google OAuth redirects (page reload loses ref state)
-      localStorage.setItem("pending_checkout_interval", interval);
+      pendingInterval.current = activeBilling.interval;
+      localStorage.setItem("pending_checkout_interval", activeBilling.interval);
       setShowAuthModal(true);
       return;
     }
 
     setCheckoutLoading(true);
     try {
-      // Always get a fresh token — never fall back to a potentially stale one
-      let { data: { session: freshSession } } = await supabase.auth.getSession();
+      let {
+        data: { session: freshSession },
+      } = await supabase.auth.getSession();
       if (!freshSession?.access_token) {
         const { data: refreshed } = await supabase.auth.refreshSession();
         freshSession = refreshed.session;
       }
       const token = freshSession?.access_token;
       if (!token) {
-        // Session truly expired — re-show auth modal so user can sign in again
         pendingCheckout.current = true;
         pendingInterval.current = selectedInterval;
         localStorage.setItem("pending_checkout_interval", selectedInterval);
@@ -138,7 +168,6 @@ export default function PlansPage({ session }) {
       }
 
       const { url } = await res.json();
-      // Only remove localStorage after we have a successful Stripe URL
       localStorage.removeItem("pending_checkout_interval");
       window.location.href = url;
     } catch (err) {
@@ -147,90 +176,200 @@ export default function PlansPage({ session }) {
     }
   }
 
-  function handleSubscribeClick() {
-    handleCheckout(session, interval);
-  }
-
   return (
-    <div className="plans-page">
-      <div className="plans-header">
-        <h1 className="plans-title">Choose your plan</h1>
-        <p className="plans-subtitle">
-          Get more out of Oddity 1 with a Standard plan.
-        </p>
-      </div>
-
-      {/* Interval toggle */}
-      <div className="plans-interval-toggle">
-        <div className="pill-group">
-          {INTERVALS.map((i) => (
-            <button
-              key={i.key}
-              className={`pill ${interval === i.key ? "pill--active" : ""}`}
-              onClick={() => setInterval(i.key)}
+    <main className="plans-page">
+      {/* ── Navbar ── */}
+      <div className={`plans-nav-wrapper${scrolled ? " scrolled" : ""}`}>
+        <nav className="plans-nav">
+          <div className="nav-left">
+            <a className="nav-logo" href="https://oddity1.com">
+              Oddity<sup>1</sup>
+            </a>
+          </div>
+          <ul className="nav-links">
+            <li>
+              <a href="https://oddity1.com/#what-it-is">Product</a>
+            </li>
+            <li>
+              <a href="https://oddity1.com/#how">Features</a>
+            </li>
+            <li>
+              <a href="/plans">Pricing</a>
+            </li>
+            <li>
+              <a href="https://oddity1.com/about">About</a>
+            </li>
+          </ul>
+          <div className="nav-right">
+            <a className="nav-signin" href="/archive">
+              Dashboard
+            </a>
+            <a
+              className="nav-cta"
+              href="https://chromewebstore.google.com/"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              {i.label}
-            </button>
-          ))}
-        </div>
+              Download Extension
+            </a>
+          </div>
+        </nav>
       </div>
 
-      {/* Plan cards */}
-      <div className="plans-grid">
-        {/* Free plan */}
-        <div className="plan-card">
-          <div className="plan-name">Free</div>
-          <div className="plan-price">
-            <span className="plan-price-amount">$0</span>
-            <span className="plan-price-period">/mo</span>
+      {/* ── Pricing Section ── */}
+      <section className="pricing-section">
+        <div className="container">
+          <div style={{ textAlign: "center" }}>
+            <p className="eyebrow">Pricing</p>
+            <h2 className="section-h">Start free. Think sharper.</h2>
           </div>
-          <div className="plan-price-note">Free forever</div>
-          <a
-            href="https://chromewebstore.google.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="plan-cta plan-cta--secondary"
-          >
-            Get Started
-          </a>
-          <ul className="plan-features">
-            {FREE_FEATURES.map((f) => (
-              <li key={f} className="plan-feature">
-                <CheckIcon />
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
 
-        {/* Standard plan */}
-        <div className="plan-card plan-card--highlighted">
-          <span className="plan-badge">Most Popular</span>
-          <div className="plan-name">Standard</div>
-          <div className="plan-price">
-            <span className="plan-price-amount">{selected.price}</span>
-            <span className="plan-price-period">{selected.period}</span>
+          <div className="pricing-grid">
+            {/* Free Card */}
+            <div className="price-card">
+              <div className="price-tier">Free</div>
+              <div className="price-topline price-topline--simple">
+                <div className="price-amount">$0</div>
+              </div>
+              <div className="price-desc">
+                Your personal critical thinking companion.
+              </div>
+              <div className="price-rule" />
+              <ul className="price-feats">
+                {FREE_FEATURES.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+              <a
+                className="price-btn"
+                href="https://chromewebstore.google.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Get Chrome Extension
+              </a>
+            </div>
+
+            {/* Standard Card (hot) */}
+            <div className="price-card hot">
+              <div className="price-tier">Standard</div>
+              <div className="price-topline">
+                <div className="price-amount">
+                  <sup>$</sup>
+                  {activeBilling.price}
+                  <sub>/mo</sub>
+                </div>
+                <div className="price-period-picker" ref={billingRef}>
+                  <button
+                    type="button"
+                    className={`price-period-trigger${billingMenuOpen ? " is-open" : ""}`}
+                    aria-haspopup="menu"
+                    aria-expanded={billingMenuOpen}
+                    onClick={() => setBillingMenuOpen((o) => !o)}
+                  >
+                    <span>{activeBilling.label}</span>
+                    <ChevronDown />
+                  </button>
+                  {billingMenuOpen && (
+                    <div className="price-period-menu">
+                      {billingOptions.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          className={`price-period-option${opt.id === interval ? " is-active" : ""}`}
+                          onClick={() => {
+                            setInterval(opt.id);
+                            setBillingMenuOpen(false);
+                          }}
+                        >
+                          <span>{opt.label}</span>
+                          <span className="price-period-option-price">
+                            ${opt.price}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="price-desc">
+                Everything you need to think at a higher level.
+              </div>
+              <div className="price-rule" />
+              <ul className="price-feats">
+                {STANDARD_FEATURES.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+              <button
+                className="price-btn"
+                disabled={checkoutLoading || tier === "standard"}
+                onClick={() => handleCheckout(session, activeBilling.interval)}
+              >
+                {tier === "standard"
+                  ? "Current Plan"
+                  : checkoutLoading
+                    ? "Redirecting…"
+                    : "Get Started"}
+              </button>
+            </div>
           </div>
-          <div className="plan-price-note">{selected.note || "\u00A0"}</div>
-          <button
-            className="plan-cta plan-cta--primary"
-            onClick={handleSubscribeClick}
-            disabled={checkoutLoading || tier === "standard"}
-          >
-            {tier === "standard" ? "Current Plan" : checkoutLoading ? "Redirecting..." : "Subscribe"}
-          </button>
-          <ul className="plan-features">
-            {STANDARD_FEATURES.map((f) => (
-              <li key={f} className="plan-feature">
-                <CheckIcon />
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
         </div>
-      </div>
+      </section>
 
-      {/* Auth modal */}
+      {/* ── Footer ── */}
+      <footer className="plans-footer">
+        <div className="footer-inner">
+          <div className="footer-main">
+            <div className="footer-brand">
+              <div className="footer-logo">
+                Oddity<sup>1</sup>
+              </div>
+              <a className="footer-email" href="mailto:hello@oddity1.com">
+                hello@oddity1.com
+              </a>
+            </div>
+            <div className="footer-links">
+              <div className="footer-col">
+                <div className="footer-col-title">Company</div>
+                <a href="https://oddity1.com/about">About</a>
+                <a href="https://oddity1.com/blog">Blog</a>
+                <a href="https://oddity1.com/terms">Terms</a>
+                <a href="https://oddity1.com/privacy">Privacy Policy</a>
+              </div>
+              <div className="footer-col">
+                <div className="footer-col-title">Connect</div>
+                <a
+                  href="https://x.com/TryOddity1"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  X (Twitter)
+                </a>
+                <a
+                  href="https://www.linkedin.com/company/oddity1"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  LinkedIn
+                </a>
+                <a
+                  href="https://www.instagram.com/tryoddity1/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Instagram
+                </a>
+              </div>
+            </div>
+          </div>
+          <div className="footer-copy">
+            © 2026 I Build X, Inc. All rights reserved.
+          </div>
+        </div>
+      </footer>
+
+      {/* ── Auth Modal ── */}
       {showAuthModal && (
         <div
           className="plans-modal-backdrop"
@@ -264,6 +403,6 @@ export default function PlansPage({ session }) {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
