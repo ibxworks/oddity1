@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import AuthForm from "./components/AuthForm";
 import Layout from "./components/Layout";
 import ResetPassword from "./components/ResetPassword";
@@ -61,6 +61,10 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const isResetPasswordPath = location.pathname === "/reset-password";
 
   useEffect(() => {
     // 1. Subscribe to auth changes FIRST (Supabase recommended pattern)
@@ -104,6 +108,45 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const hashParams = new URLSearchParams(
+      location.hash.startsWith("#") ? location.hash.slice(1) : location.hash,
+    );
+
+    const hasRecoveryParams =
+      searchParams.get("type") === "recovery" ||
+      hashParams.get("type") === "recovery" ||
+      (location.pathname === "/reset-password" &&
+        (searchParams.has("code") ||
+          searchParams.has("token_hash") ||
+          hashParams.has("access_token") ||
+          hashParams.has("refresh_token")));
+
+    if (recoveryMode || hasRecoveryParams) {
+      setRecoveryMode(true);
+      if (!isResetPasswordPath) {
+        navigate(
+          {
+            pathname: "/reset-password",
+            search: location.search,
+            hash: location.hash,
+          },
+          { replace: true },
+        );
+      }
+    } else if (isResetPasswordPath) {
+      setRecoveryMode(false);
+    }
+  }, [
+    isResetPasswordPath,
+    recoveryMode,
+    location.hash,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
+
   if (loading) {
     return (
       <div className="app-loading">
@@ -118,8 +161,33 @@ export default function App() {
   return (
     <Routes>
       <Route path="/plans" element={<PlansPage session={session} />} />
+      <Route
+        path="/reset-password"
+        element={
+          <ResetPassword
+            onComplete={() => {
+              setRecoveryMode(false);
+              setSession(null);
+              clearAuthCookie();
+              navigate("/?reset=success", { replace: true });
+            }}
+          />
+        }
+      />
       {recoveryMode ? (
-        <Route path="*" element={<ResetPassword onComplete={() => setRecoveryMode(false)} />} />
+        <Route
+          path="*"
+          element={
+            <ResetPassword
+              onComplete={() => {
+                setRecoveryMode(false);
+                setSession(null);
+                clearAuthCookie();
+                navigate("/?reset=success", { replace: true });
+              }}
+            />
+          }
+        />
       ) : !session ? (
         <Route path="*" element={<AuthForm />} />
       ) : (
