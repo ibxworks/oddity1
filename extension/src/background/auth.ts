@@ -59,6 +59,16 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
+const passwordResetSupabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: chromeStorageAdapter,
+    autoRefreshToken: false,
+    persistSession: false,
+    detectSessionInUrl: false,
+    flowType: 'implicit',
+  },
+});
+
 // ─── Exported Auth Functions ───
 
 export async function getSession(): Promise<Session | null> {
@@ -107,7 +117,7 @@ export async function signOut() {
 }
 
 export async function resetPassword(email: string): Promise<void> {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+  const { error } = await passwordResetSupabase.auth.resetPasswordForEmail(email, {
     redirectTo: RESET_PASSWORD_REDIRECT_URL,
   });
   if (error) throw error;

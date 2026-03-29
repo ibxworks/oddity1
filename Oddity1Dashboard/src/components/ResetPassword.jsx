@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { passwordResetSupabase } from '../lib/supabase'
 
 const RESET_PASSWORD_REDIRECT_URL = 'https://app.oddity1.com/reset-password'
 const RECOVERY_SESSION_TIMEOUT_MS = 5000
 const RECOVERY_SESSION_POLL_MS = 250
-const CODE_EXCHANGE_FALLBACK_MS = 1200
 
-export default function ResetPassword({ onComplete }) {
+export default function ResetPassword() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -35,7 +34,11 @@ export default function ResetPassword({ onComplete }) {
       searchParams.has('token_hash') ||
       hashParams.has('access_token') ||
       hashParams.has('refresh_token')
+    const recoveryType = searchParams.get('type') || hashParams.get('type')
     const code = searchParams.get('code')
+    const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash')
+    const accessToken = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
 
     function scheduleTimeout(callback, delay) {
       const timeoutId = window.setTimeout(callback, delay)
@@ -43,7 +46,19 @@ export default function ResetPassword({ onComplete }) {
       return timeoutId
     }
 
+    function clearRecoveryParamsFromUrl() {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('code')
+      url.searchParams.delete('token_hash')
+      url.searchParams.delete('type')
+      url.hash = ''
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`)
+    }
+
     function finishRecoveryReady() {
+      if (hasRecoveryParams) {
+        clearRecoveryParamsFromUrl()
+      }
       setReady(true)
       setNeedsResetEmail(false)
       setCheckingLink(false)
@@ -53,13 +68,38 @@ export default function ResetPassword({ onComplete }) {
     async function useExistingSession() {
       const {
         data: { session },
-      } = await supabase.auth.getSession()
+      } = await passwordResetSupabase.auth.getSession()
 
       if (!mounted) return true
 
       if (session) {
         finishRecoveryReady()
         return true
+      }
+
+      return false
+    }
+
+    async function establishRecoverySession() {
+      if (accessToken && refreshToken) {
+        const { error } = await passwordResetSupabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        })
+        if (!error && (await useExistingSession())) return true
+      }
+
+      if (tokenHash && recoveryType === 'recovery') {
+        const { error } = await passwordResetSupabase.auth.verifyOtp({
+          type: 'recovery',
+          token_hash: tokenHash,
+        })
+        if (!error && (await useExistingSession())) return true
+      }
+
+      if (code) {
+        const { error } = await passwordResetSupabase.auth.exchangeCodeForSession(code)
+        if (!error && (await useExistingSession())) return true
       }
 
       return false
@@ -74,18 +114,11 @@ export default function ResetPassword({ onComplete }) {
         return
       }
 
-      const startedAt = Date.now()
-      let attemptedCodeExchange = false
+      if (await establishRecoverySession()) return
 
+      const startedAt = Date.now()
       while (mounted && Date.now() - startedAt < RECOVERY_SESSION_TIMEOUT_MS) {
         if (await useExistingSession()) return
-
-        const elapsedMs = Date.now() - startedAt
-        if (code && !attemptedCodeExchange && elapsedMs >= CODE_EXCHANGE_FALLBACK_MS) {
-          attemptedCodeExchange = true
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          if (!exchangeError && (await useExistingSession())) return
-        }
 
         await new Promise(resolve => scheduleTimeout(resolve, RECOVERY_SESSION_POLL_MS))
       }
@@ -99,7 +132,7 @@ export default function ResetPassword({ onComplete }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = passwordResetSupabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return
       if (event === 'PASSWORD_RECOVERY' || (hasRecoveryParams && session)) {
         finishRecoveryReady()
@@ -131,7 +164,7 @@ export default function ResetPassword({ onComplete }) {
     setError('')
     setMessage('')
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    const { error } = await passwordResetSupabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: RESET_PASSWORD_REDIRECT_URL,
     })
 
@@ -158,22 +191,17 @@ export default function ResetPassword({ onComplete }) {
       return
     }
     setLoading(true)
-    const { error } = await supabase.auth.updateUser({ password })
+    const { error } = await passwordResetSupabase.auth.updateUser({ password })
     if (error) {
       setError(error.message)
       setLoading(false)
       return
     }
 
-    setMessage('Password updated successfully. Redirecting you to sign in...')
+    setPassword('')
+    setConfirmPassword('')
+    setMessage('Password updated successfully.')
     setLoading(false)
-
-    const { error: signOutError } = await supabase.auth.signOut()
-    if (signOutError) {
-      console.warn('[ResetPassword] Failed to sign out recovery session:', signOutError)
-    }
-
-    onComplete()
   }
 
   if (checkingLink) {
