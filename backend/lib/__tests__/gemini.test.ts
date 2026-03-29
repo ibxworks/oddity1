@@ -1,0 +1,273 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type StreamChunk = { text: () => string };
+type StreamFactory = () => Promise<{
+  stream: AsyncIterable<StreamChunk>;
+  response: Promise<unknown>;
+}>;
+type ContentFactory = () => Promise<{ response: { text: () => string } }>;
+
+type MockBehavior = {
+  streamFactories: StreamFactory[];
+  contentFactories: ContentFactory[];
+  streamSpy: ReturnType<typeof vi.fn>;
+  contentSpy: ReturnType<typeof vi.fn>;
+};
+
+const behaviors = new Map<string, MockBehavior>();
+
+class MockGoogleGenerativeAIError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GoogleGenerativeAIError";
+  }
+}
+
+class MockGoogleGenerativeAIFetchError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "GoogleGenerativeAIFetchError";
+    this.status = status;
+  }
+}
+
+class MockGoogleGenerativeAI {
+  constructor(private readonly key: string) {}
+
+  getGenerativeModel() {
+    const behavior = behaviors.get(this.key);
+    if (!behavior) {
+      throw new Error(`Missing mock behavior for key ${this.key}`);
+    }
+
+    behavior.streamSpy.mockImplementation(async () => {
+      const factory = behavior.streamFactories.shift();
+      if (!factory) {
+        throw new Error(`No stream factory left for key ${this.key}`);
+      }
+      return factory();
+    });
+
+    behavior.contentSpy.mockImplementation(async () => {
+      const factory = behavior.contentFactories.shift();
+      if (!factory) {
+        throw new Error(`No content factory left for key ${this.key}`);
+      }
+      return factory();
+    });
+
+    return {
+      generateContentStream: behavior.streamSpy,
+      generateContent: behavior.contentSpy,
+    };
+  }
+}
+
+vi.mock("@google/generative-ai", () => ({
+  GoogleGenerativeAI: MockGoogleGenerativeAI,
+  GoogleGenerativeAIError: MockGoogleGenerativeAIError,
+  GoogleGenerativeAIFetchError: MockGoogleGenerativeAIFetchError,
+}));
+
+function setBehavior(
+  key: string,
+  config: {
+    streamFactories?: StreamFactory[];
+    contentFactories?: ContentFactory[];
+  },
+): MockBehavior {
+  const behavior: MockBehavior = {
+    streamFactories: [...(config.streamFactories ?? [])],
+    contentFactories: [...(config.contentFactories ?? [])],
+    streamSpy: vi.fn(),
+    contentSpy: vi.fn(),
+  };
+  behaviors.set(key, behavior);
+  return behavior;
+}
+
+function createStream(
+  chunks: string[],
+  terminalError?: Error,
+): AsyncIterable<StreamChunk> {
+  return (async function* streamGenerator() {
+    for (const chunk of chunks) {
+      yield { text: () => chunk };
+    }
+
+    if (terminalError) {
+      throw terminalError;
+    }
+  })();
+}
+
+function validOverviewAnnotation(id: string, exact = "beta gamma") {
+  return {
+    id,
+    mode: "overview",
+    type: "core_claim",
+    anchor: {
+      type: "TextQuoteSelector",
+      exact,
+    },
+    content: {
+      note: `Summary ${id}`,
+    },
+  };
+}
+
+describe("generateAnnotationsStream", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    behaviors.clear();
+    process.env.NODE_ENV = "test";
+    process.env.GEMINI_API_KEY = "key1";
+    delete process.env.GEMINI_API_KEY_BACKUP1;
+    delete process.env.GEMINI_API_KEY_BACKUP2;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("falls back to buffered generation when a stream parse error happens before output", async () => {
+    const parseError = new MockGoogleGenerativeAIError(
+      "[GoogleGenerativeAI Error]: Failed to parse stream",
+    );
+
+    setBehavior("key1", {
+      streamFactories: [
+        async () => ({
+          stream: createStream([], parseError),
+          response: Promise.reject(parseError),
+        }),
+        async () => ({
+          stream: createStream([], parseError),
+          response: Promise.reject(parseError),
+        }),
+      ],
+      contentFactories: [
+        async () => ({
+          response: {
+            text: () => JSON.stringify([validOverviewAnnotation("fallback")]),
+          },
+        }),
+      ],
+    });
+
+    const { generateAnnotationsStream } = await import("../gemini.js");
+
+    const seen: unknown[] = [];
+    const result = await generateAnnotationsStream(
+      "alpha beta gamma delta",
+      "overview",
+      undefined,
+      {
+        onAnnotation: (annotation) => {
+          seen.push(annotation);
+        },
+        logContext: { route: "annotate/stream", requestId: "req_1" },
+      },
+    );
+
+    expect(seen).toHaveLength(0);
+    expect(result.usedBufferedFallback).toBe(true);
+    expect(result.annotations).toHaveLength(1);
+    expect(result.annotations[0]!.anchor.exact).toBe("beta gamma");
+  });
+
+  it("stops live stream retries after partial output and returns buffered fallback", async () => {
+    const parseError = new MockGoogleGenerativeAIError(
+      "[GoogleGenerativeAI Error]: Failed to parse stream",
+    );
+
+    const key1 = setBehavior("key1", {
+      streamFactories: [
+        async () => ({
+          stream: createStream(
+            [JSON.stringify([validOverviewAnnotation("partial")])],
+            parseError,
+          ),
+          response: Promise.reject(parseError),
+        }),
+      ],
+      contentFactories: [
+        async () => ({
+          response: {
+            text: () =>
+              JSON.stringify([
+                validOverviewAnnotation("full_1"),
+                validOverviewAnnotation("full_2", "gamma delta"),
+              ]),
+          },
+        }),
+      ],
+    });
+
+    const { generateAnnotationsStream } = await import("../gemini.js");
+
+    const streamedIds: string[] = [];
+    const result = await generateAnnotationsStream(
+      "alpha beta gamma delta epsilon",
+      "overview",
+      undefined,
+      {
+        onAnnotation: (annotation) => {
+          streamedIds.push(annotation.id);
+        },
+        logContext: { route: "annotate/stream", requestId: "req_2" },
+      },
+    );
+
+    expect(streamedIds).toHaveLength(1);
+    expect(key1.streamSpy).toHaveBeenCalledTimes(1);
+    expect(result.usedBufferedFallback).toBe(true);
+    expect(result.annotations).toHaveLength(2);
+  });
+
+  it("rotates to the next key after retryable stream failures with no output", async () => {
+    const parseError = new MockGoogleGenerativeAIError(
+      "[GoogleGenerativeAI Error]: Failed to parse stream",
+    );
+
+    const key1 = setBehavior("key1", {
+      streamFactories: [
+        async () => ({
+          stream: createStream([], parseError),
+          response: Promise.reject(parseError),
+        }),
+        async () => ({
+          stream: createStream([], parseError),
+          response: Promise.reject(parseError),
+        }),
+      ],
+    });
+    process.env.GEMINI_API_KEY_BACKUP1 = "key2";
+    const key2 = setBehavior("key2", {
+      streamFactories: [
+        async () => ({
+          stream: createStream([
+            JSON.stringify([validOverviewAnnotation("key2_success")]),
+          ]),
+          response: Promise.resolve({}),
+        }),
+      ],
+    });
+
+    const { generateAnnotationsStream } = await import("../gemini.js");
+    const result = await generateAnnotationsStream(
+      "alpha beta gamma delta",
+      "overview",
+      undefined,
+      { logContext: { route: "annotate/stream", requestId: "req_3" } },
+    );
+
+    expect(key1.streamSpy).toHaveBeenCalledTimes(2);
+    expect(key2.streamSpy).toHaveBeenCalledTimes(1);
+    expect(result.usedBufferedFallback).toBe(false);
+    expect(result.annotations).toHaveLength(1);
+    expect(result.annotations[0]!.anchor.exact).toBe("beta gamma");
+  });
+});

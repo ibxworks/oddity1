@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "posthog@claude-plugins-official": true
+  }
+}
