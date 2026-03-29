@@ -74,6 +74,19 @@ app.get("/api/debug-env", (_req, res) => {
   res.json(status);
 });
 
+app.get("/api/debug-test", async (_req, res) => {
+  try {
+    const { serviceClient } = await import("../lib/supabase.js");
+    const { data, error } = await serviceClient.from("site_adapters").select("id").limit(1);
+    res.json({ supabase: error ? error.message : `ok (${data?.length} rows)` });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error("[debug-test]", msg, stack);
+    res.json({ error: msg, stack });
+  }
+});
+
 // Public routes (no auth)
 app.use("/api/adapters", adaptersRouter);
 app.use("/api/prices", pricesRouter);
