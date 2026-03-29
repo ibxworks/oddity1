@@ -2,7 +2,7 @@
 
 export type AnnotationMode = 'overview' | 'depth';
 export type ViewMode = 'overview' | 'depth' | 'all';
-export type DepthPersonality = 'terry' | 'jerry' | 'sally';
+export type DepthPersonality = 'writing' | 'brainstorming' | 'reading';
 
 // ─── Overview Labels ───
 
@@ -16,7 +16,7 @@ export type OverviewLabel =
 // ─── Depth Types ───
 
 export type DepthType =
-  // Terry / Sally skills
+  // Writing / Reading skills
   | "caveat"
   | "counterargument"
   | "alternative"
@@ -28,7 +28,7 @@ export type DepthType =
   | "recall"
   | "translation"
   | "decision_making"
-  // Jerry skills
+  // Brainstorming skills
   | "juxtaposition"
   | "outsider"
   | "fixation_breaker"
@@ -60,6 +60,8 @@ export type AnnotationContent = {
   suggestions?: string[];
 };
 
+export type Verdict = "TAKE" | "CAUTION" | "THROW";
+
 export type Annotation = {
   id: string;
   mode: AnnotationMode;
@@ -73,6 +75,23 @@ export type Annotation = {
     start: TextQuoteSelector;
     end: TextQuoteSelector;
   };
+  /** Worldview lens key used for this annotation (depth mode only). */
+  worldview?: string;
+  /** Display name of the worldview thinker (e.g., "Richard Feynman"). */
+  worldviewName?: string;
+  /** Verdict assigned by the annotator: TAKE, CAUTION, or THROW. */
+  verdict?: Verdict;
+  /** Router's match reason — the specific concept or friction point. */
+  matchReason?: string;
+  /** Whether this claim was introduced by the AI rather than requested by the user. */
+  aiIntroduced?: boolean;
+};
+
+export type AnnotationSummary = {
+  takes: { count: number; pattern: string };
+  cautions: { count: number; pattern: string };
+  throws: { count: number; pattern: string };
+  overall: string;
 };
 
 export type AnnotationResponse = {
@@ -80,6 +99,7 @@ export type AnnotationResponse = {
   cached: boolean;
   annotations: Annotation[];
   feedback?: AnnotationFeedback[];
+  summary?: AnnotationSummary;
 };
 
 // ─── Feedback ───

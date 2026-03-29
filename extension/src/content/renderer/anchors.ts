@@ -96,7 +96,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     const span = document.createElement('span');
     span.setAttribute(ATTR, annotation.id);
     span.setAttribute('data-oddity-type', annotation.type);
-    const visual = getVisual(annotation.type, getThemeMode(), annotation.label);
+    const visual = getVisual(annotation.type, getThemeMode(), annotation.label, annotation.verdict);
     let bgColor = visual.backgroundColor;
     let underlineStyle = visual.underlineStyle;
     const bgCss = bgColor ? `background-color: ${bgColor};` : '';
@@ -114,7 +114,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
   // <em>, <strong>) that sit between two highlighted spans.  Without this the
   // ancestor's own inline box creates a visible gap in the highlight.
   if (spans.length > 0) {
-    const bgColor = getVisual(annotation.type, getThemeMode(), annotation.label).backgroundColor;
+    const bgColor = getVisual(annotation.type, getThemeMode(), annotation.label, annotation.verdict).backgroundColor;
     if (bgColor) {
       const tagged = new Set<Element>();
       for (const span of spans) {

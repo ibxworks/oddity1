@@ -23,7 +23,7 @@ const AllAnnotationTypes = z.enum([
   'outcome',
   'background',
   'transition',
-  // Terry/Sally depth skills
+  // Writing/Reading depth skills
   'caveat',
   'counterargument',
   'alternative',
@@ -35,7 +35,7 @@ const AllAnnotationTypes = z.enum([
   'insight',
   'recall',
   'translation',
-  // Jerry depth skills
+  // Brainstorming depth skills
   'juxtaposition',
   'outsider',
   'fixation_breaker',

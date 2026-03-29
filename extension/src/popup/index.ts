@@ -93,7 +93,7 @@ let isSignUpMode = true;
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   annotation_mode: "overview",
-  depth_personality: "terry",
+  depth_personality: "writing",
   visible_types: [],
   enabled_sites: [],
   annotation_font: "fraunces",
@@ -136,9 +136,12 @@ async function init(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   if (stored["preferences"]) {
     const prefs = stored["preferences"] as UserPreferences;
-    // Migrate renamed personality: gary → sally
-    let personality = prefs.depth_personality ?? "terry";
-    if (personality === ("gary" as DepthPersonality)) personality = "sally";
+    // Migrate legacy personality names
+    let personality = prefs.depth_personality ?? "writing";
+    const legacyMap: Record<string, DepthPersonality> = {
+      terry: "writing", jerry: "brainstorming", sally: "reading", gary: "reading",
+    };
+    if (personality in legacyMap) personality = legacyMap[personality as string]!;
     currentPrefs = {
       enabled: prefs.enabled ?? true,
       annotation_mode: prefs.annotation_mode ?? "overview",
@@ -175,10 +178,10 @@ function applyPrefsToUI(): void {
     );
   }
 
-  // Sync top avatar with personality
+  // Sync top label with mode
   const displayName =
-    (currentPrefs.depth_personality ?? "terry").charAt(0).toUpperCase() +
-    (currentPrefs.depth_personality ?? "terry").slice(1);
+    (currentPrefs.depth_personality ?? "writing").charAt(0).toUpperCase() +
+    (currentPrefs.depth_personality ?? "writing").slice(1);
   profilePersonaSelect.textContent = displayName;
   applyPersonaVisuals(displayName);
 
@@ -232,13 +235,13 @@ function showAuthenticatedUI(user: {
   // Total annotation count
   totalCountNumber.textContent = String(user.annotation_count ?? 0);
 
-  // Sally personality gating: no visual dimming — upgrade toast shown on click
-  const sallyBtn = intensityGroup.querySelector<HTMLButtonElement>(
-    '.density-btn[data-intensity="sally"]',
+  // Reading mode gating: no visual dimming — upgrade toast shown on click
+  const readingBtn = intensityGroup.querySelector<HTMLButtonElement>(
+    '.density-btn[data-intensity="reading"]',
   );
-  if (sallyBtn) {
-    sallyBtn.style.opacity = "";
-    sallyBtn.title = "";
+  if (readingBtn) {
+    readingBtn.style.opacity = "";
+    readingBtn.title = "";
   }
 }
 
@@ -406,9 +409,9 @@ intensityGroup.addEventListener("click", (e) => {
   const personality = btn.dataset["intensity"] as DepthPersonality | undefined;
   if (!personality) return;
 
-  // Gate: Sally personality requires Standard plan
-  if (personality === "sally" && currentUser?.tier !== "standard") {
-    showUpgradeToast("Sally personality requires a Standard plan");
+  // Gate: Reading mode requires Standard plan
+  if (personality === "reading" && currentUser?.tier !== "standard") {
+    showUpgradeToast("Reading mode requires a Standard plan");
     return;
   }
 
@@ -548,9 +551,9 @@ function applyPersonaVisuals(name: string): void {
   profileAvatarImg.src = `/${name}.png`;
   profileAvatarImg.alt = name;
   const bgMap: Record<string, string> = {
-    Jerry: "#FDCB24",
-    Terry: "#fff",
-    Sally: "#fff",
+    Brainstorming: "#FDCB24",
+    Writing: "#fff",
+    Reading: "#fff",
   };
   profileCircleEl.style.background = bgMap[name] ?? "#fff";
 }

@@ -138,6 +138,6 @@
   "enabledMcpjsonServers": [
     "supabase",
     "context7",
-    "executeautomation-playwright-server"
+    "playwright"
   ]
 }

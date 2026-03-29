@@ -314,7 +314,7 @@ let manualRunTriggered = false;
 let blocked = false;
 let enabled = true;
 let currentMode: ViewMode = "overview";
-let currentPersonality: DepthPersonality = "jerry";
+let currentPersonality: DepthPersonality = "brainstorming";
 let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
@@ -694,7 +694,7 @@ async function init(): Promise<void> {
   // Mode is not restored from storage — the user switches manually after load.
   // (Restoring caused cross-tab interference and unpredictable state on refresh.)
   if (prefs?.depth_personality) {
-    currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
+    currentPersonality = prefs.depth_personality;
   }
   // currentMode defaults to "overview" (line 315), visibleTypes to overview types (line 317)
   setMarginNoteMode(currentMode);

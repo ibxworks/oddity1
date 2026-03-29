@@ -147,7 +147,7 @@ let localAuthState: boolean | null = null; // cached auth state — avoids re-qu
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.preferences) return;
   const prefs = (changes.preferences.newValue ?? {}) as Record<string, unknown>;
-  const personality = (prefs.depth_personality as string) ?? "terry";
+  const personality = (prefs.depth_personality as string) ?? "writing";
   const display = personality.charAt(0).toUpperCase() + personality.slice(1);
   if (bubbleLogoImgEl) {
     bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
@@ -209,8 +209,8 @@ export function initArgumentsBox(): void {
         prefs.annotation_font as AnnotationFont | undefined,
         prefs.annotation_font_size as AnnotationFontSize | undefined,
       );
-      // Sync bubble logo to stored persona
-      const personality = (prefs.depth_personality as string) ?? "terry";
+      // Sync bubble logo to stored mode
+      const personality = (prefs.depth_personality as string) ?? "writing";
       const display =
         personality.charAt(0).toUpperCase() + personality.slice(1);
       if (bubbleLogoImgEl) {
@@ -1646,24 +1646,24 @@ function buildDashboardFace(): HTMLDivElement {
   personalityRow.className = "args-dash-row";
   const personalityLabel = document.createElement("span");
   personalityLabel.className = "args-dash-label";
-  personalityLabel.textContent = "Personality";
+  personalityLabel.textContent = "Mode";
   const personalityGroup = document.createElement("div");
   personalityGroup.className = "args-dash-density-group";
   const personaDescs: Record<string, string> = {
-    terry: "Sharp & critical",
-    jerry: "Creative & curious",
-    sally: "Engaging & guiding",
+    writing: "Sharp & critical",
+    brainstorming: "Creative & curious",
+    reading: "Engaging & guiding",
   };
   dashDensityBtns = [];
   for (const [value, label] of [
-    ["terry", "Terry"],
-    ["jerry", "Jerry"],
-    ["sally", "Sally"],
+    ["writing", "Writing"],
+    ["brainstorming", "Brainstorming"],
+    ["reading", "Reading"],
   ] as [string, string][]) {
     const btn = document.createElement("button");
     btn.className =
       "args-dash-density-btn" +
-      (value === "jerry" ? " args-dash-density-active" : "");
+      (value === "brainstorming" ? " args-dash-density-active" : "");
     btn.dataset.intensity = value;
     btn.textContent = label;
     const tooltip = document.createElement("span");
@@ -1671,9 +1671,9 @@ function buildDashboardFace(): HTMLDivElement {
     tooltip.textContent = personaDescs[value] ?? "";
     btn.appendChild(tooltip);
     btn.addEventListener("click", () => {
-      // Gate: Sally personality requires Standard plan
-      if (value === "sally" && dashUserTier !== "standard") {
-        showArgToast("Sally personality requires a Standard plan");
+      // Gate: Reading mode requires Standard plan
+      if (value === "reading" && dashUserTier !== "standard") {
+        showArgToast("Reading mode requires a Standard plan");
         return;
       }
 
@@ -2369,7 +2369,7 @@ function buildDashboardFace(): HTMLDivElement {
 async function loadDashboardPrefs(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-  const personality = (prefs.depth_personality as string) ?? "terry";
+  const personality = (prefs.depth_personality as string) ?? "writing";
   dashDensityBtns.forEach((btn) => {
     btn.classList.toggle(
       "args-dash-density-active",

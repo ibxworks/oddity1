@@ -108,7 +108,7 @@ chrome.runtime.onMessage.addListener(
           chrome.action.setBadgeText({ text: "" });
 
           // Build session cache key; overview is persona-independent
-          const sessionCacheKey = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
+          const sessionCacheKey = mode === "overview" ? "overview:writing" : `${mode}:${personality ?? "writing"}`;
 
           // ── Session cache: stale-while-revalidate for revisits ──
           const cached = await getFromSessionCache(contentHash, sessionCacheKey);
@@ -491,7 +491,7 @@ chrome.runtime.onMessage.addListener(
 
           // Evict from caches FIRST (before API call) so that if the service
           // worker is killed mid-execution, the caches are already clean.
-          for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+          for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
             const cached = await getFromSessionCache(delHash, intensity);
             if (cached) {
               cached.annotations = cached.annotations.filter((a) => a.id !== delId);
@@ -544,7 +544,7 @@ chrome.runtime.onMessage.addListener(
 
           // Update session cache so the next page load includes this feedback
           // immediately instead of waiting for the stale-while-revalidate fetch.
-          for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+          for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
             const cached = await getFromSessionCache(contentHash, intensity);
             if (cached) {
               cached.feedback.push(fb);
@@ -561,7 +561,7 @@ chrome.runtime.onMessage.addListener(
 
           // Update caches so edits survive page refresh
           if (ufHash) {
-            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+            for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
               const cached = await getFromSessionCache(ufHash, intensity);
               if (cached) {
                 const fb = cached.feedback.find((f) => f.id === ufId);
@@ -589,7 +589,7 @@ chrome.runtime.onMessage.addListener(
           // Evict from caches FIRST (before API call) so that if the service
           // worker is killed mid-execution, the caches are already clean.
           if (delFbHash) {
-            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+            for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
               const cached = await getFromSessionCache(delFbHash, intensity);
               if (cached) {
                 cached.feedback = cached.feedback.filter((f) => f.id !== delFbId);
@@ -618,7 +618,7 @@ chrome.runtime.onMessage.addListener(
 
           // Update caches so edits survive page refresh
           if (updHash) {
-            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+            for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
               const cached = await getFromSessionCache(updHash, intensity);
               if (cached) {
                 const idx = cached.annotations.findIndex((a) => a.id === annId);
@@ -838,7 +838,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
               payload: {
                 enabled: prefs.enabled ?? true,
                 annotationMode: prefs.annotation_mode ?? "overview",
-                depthPersonality: ((prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality) ?? "terry",
+                depthPersonality: prefs.depth_personality ?? "writing",
                 visibleTypes: prefs.visible_types ?? [],
                 annotationFont: prefs.annotation_font,
                 annotationFontSize: prefs.annotation_font_size,

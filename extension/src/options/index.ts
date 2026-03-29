@@ -44,7 +44,7 @@ let deleteConfirmShown = false;
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   annotation_mode: "overview",
-  depth_personality: "terry",
+  depth_personality: "writing",
   visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
   enabled_sites: [],
   annotation_font: "fraunces",
@@ -58,9 +58,12 @@ async function init(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   if (stored["preferences"]) {
     const prefs = stored["preferences"] as UserPreferences;
-    // Migrate renamed personality: gary → sally
-    let personality = prefs.depth_personality ?? "terry";
-    if (personality === ("gary" as DepthPersonality)) personality = "sally";
+    // Migrate legacy personality names
+    let personality = prefs.depth_personality ?? "writing";
+    const legacyMap: Record<string, DepthPersonality> = {
+      terry: "writing", jerry: "brainstorming", sally: "reading", gary: "reading",
+    };
+    if (personality in legacyMap) personality = legacyMap[personality as string]!;
     currentPrefs = {
       enabled: prefs.enabled ?? true,
       annotation_mode: prefs.annotation_mode ?? "overview",

@@ -1,4 +1,4 @@
-import type { AnnotationType, OverviewLabel, DepthType, UserTier } from "./types.js";
+import type { AnnotationType, OverviewLabel, DepthType, UserTier, Verdict } from "./types.js";
 
 // ─── Blocked Domains ───
 
@@ -37,13 +37,13 @@ export type PlanFeatureKey = keyof typeof PLAN_FEATURES.free;
 
 export const PLAN_FEATURES = {
   free: {
-    sallyPersonality: false,
+    readingPersonality: false,
     customPdfSubtitle: false,
     pdfAnnotation: false,
     sketchPad: false,
   },
   standard: {
-    sallyPersonality: true,
+    readingPersonality: true,
     customPdfSubtitle: true,
     pdfAnnotation: true,
     sketchPad: true,
@@ -83,7 +83,7 @@ export const OVERVIEW_LABELS: Record<OverviewLabel, string> = {
 // ─── Depth Annotation Colors & Labels ───
 
 export const DEPTH_COLORS: Record<DepthType, string> = {
-  // Terry/Sally — Critical (red)
+  // Writing/Reading — Critical (red)
   caveat: "#F5574C",
   counterargument: "#F5574C",
   alternative: "#F5574C",
@@ -92,16 +92,16 @@ export const DEPTH_COLORS: Record<DepthType, string> = {
   perspective: "#F5574C",
   consequence: "#F5574C",
   decision_making: "#F5574C",
-  // Terry/Sally — Enrichment (green)
+  // Writing/Reading — Enrichment (green)
   insight: "#578E6C",
   recall: "#578E6C",
   translation: "#578E6C",
-  // Jerry — Critical (red)
+  // Brainstorming — Critical (red)
   juxtaposition: "#F5574C",
   outsider: "#F5574C",
   fixation_breaker: "#F5574C",
   reverse_brainstorm: "#F5574C",
-  // Jerry — Enrichment (green)
+  // Brainstorming — Enrichment (green)
   incomplete_move: "#578E6C",
   personal_hook: "#578E6C",
   role_assignment: "#578E6C",
@@ -152,7 +152,7 @@ export const ANNOTATION_COLORS_LIGHT: Record<AnnotationType, string> = {
   outcome: "#FFDD69",
   background: "#FFDD69",
   transition: "#FFDD69",
-  // Terry/Sally — Critical (red)
+  // Writing/Reading — Critical (red)
   caveat: "#F5574C",
   counterargument: "#F5574C",
   alternative: "#F5574C",
@@ -161,16 +161,16 @@ export const ANNOTATION_COLORS_LIGHT: Record<AnnotationType, string> = {
   perspective: "#F5574C",
   consequence: "#F5574C",
   decision_making: "#F5574C",
-  // Terry/Sally — Enrichment (green)
+  // Writing/Reading — Enrichment (green)
   insight: "#578E6C",
   recall: "#578E6C",
   translation: "#578E6C",
-  // Jerry — Critical (red)
+  // Brainstorming — Critical (red)
   juxtaposition: "#F5574C",
   outsider: "#F5574C",
   fixation_breaker: "#F5574C",
   reverse_brainstorm: "#F5574C",
-  // Jerry — Enrichment (green)
+  // Brainstorming — Enrichment (green)
   incomplete_move: "#578E6C",
   personal_hook: "#578E6C",
   role_assignment: "#578E6C",
@@ -188,6 +188,19 @@ export function getAnnotationColor(
   theme: "light" | "dark",
 ): string {
   return (theme === "light" ? ANNOTATION_COLORS_LIGHT : ANNOTATION_COLORS)[type] ?? "#888";
+}
+
+// ─── Verdict Colors ───
+
+export const VERDICT_COLORS: Record<Verdict, string> = {
+  TAKE: "#578E6C",
+  CAUTION: "#FFDD69",
+  THROW: "#F5574C",
+};
+
+/** Return the color for a verdict. Falls back to getAnnotationColor when verdict is absent. */
+export function getVerdictColor(verdict: Verdict): string {
+  return VERDICT_COLORS[verdict];
 }
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {

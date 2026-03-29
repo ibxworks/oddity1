@@ -1,5 +1,5 @@
-import type { AnnotationType } from '@oddity/shared';
-import { ALL_OVERVIEW_TYPES, ANNOTATION_LABELS, getAnnotationColor } from '@oddity/shared';
+import type { AnnotationType, Verdict } from '@oddity/shared';
+import { ALL_OVERVIEW_TYPES, ANNOTATION_LABELS, getAnnotationColor, getVerdictColor } from '@oddity/shared';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -47,8 +47,16 @@ const fallbackVisual: AnnotationVisual = {
   color: "#888",
 };
 
-export function getVisual(type: AnnotationType, theme: ThemeMode = 'dark', labelOverride?: string): AnnotationVisual {
+export function getVisual(type: AnnotationType, theme: ThemeMode = 'dark', labelOverride?: string, verdict?: Verdict): AnnotationVisual {
   const visual = makeVisual(type, theme) ?? fallbackVisual;
   if (labelOverride) visual.label = labelOverride;
+  // Verdict overrides the type-based color for depth annotations
+  if (verdict) {
+    const vc = getVerdictColor(verdict);
+    visual.color = vc;
+    const bgOpacity = type === "user_written" ? "33" : "1A";
+    visual.backgroundColor = vc + bgOpacity;
+    visual.underlineStyle = `1.5px solid ${vc}E6`;
+  }
   return visual;
 }

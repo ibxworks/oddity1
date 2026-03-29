@@ -6,7 +6,7 @@ import type {
   AnnotationType,
   ViewMode,
 } from "@oddity/shared";
-import { ANNOTATION_LABELS, DEPTH_LABELS, getAnnotationColor } from "@oddity/shared";
+import { ANNOTATION_LABELS, getAnnotationColor, getVerdictColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
 import { getPageUrl } from "../page-url.js";
 import { renderMiniMarkdown } from "./mini-markdown.js";
@@ -1530,9 +1530,11 @@ function createNoteElement(
   const ENRICHMENT_TYPES = new Set(["insight", "recall", "study", "translation", "vocabulary", "incomplete_move", "personal_hook", "role_assignment", "exaggeration"]);
   const OVERVIEW_TYPES = new Set(["core_claim", "evidence", "outcome", "background", "transition"]);
   const theme = getThemeMode();
-  let color = getAnnotationColor(annotation.type, theme);
+  let color = annotation.verdict
+    ? getVerdictColor(annotation.verdict)
+    : getAnnotationColor(annotation.type, theme);
   // Green enrichment notes use a lighter accent in dark mode
-  if (theme === "dark" && ENRICHMENT_TYPES.has(annotation.type)) {
+  if (!annotation.verdict && theme === "dark" && ENRICHMENT_TYPES.has(annotation.type)) {
     color = "#BFF3D3";
   }
   // Overview notes: deeper yellow label in light mode, but buttons stay #FFDD69
@@ -1560,15 +1562,12 @@ function createNoteElement(
   bracket.className = "note-bracket";
   bracket.style.borderColor = labelColor;
 
-  // Skill tag (depth mode: shows the skill type when a custom label is present)
-  const DEPTH_TYPE_SET = new Set(Object.keys(DEPTH_LABELS));
-  const hasCustomLabel = !!annotation.label && DEPTH_TYPE_SET.has(annotation.type);
-  let skillTag: HTMLSpanElement | null = null;
-  if (hasCustomLabel) {
-    skillTag = document.createElement("span");
-    skillTag.className = "note-skill-tag";
-    skillTag.textContent = ANNOTATION_LABELS[annotation.type];
-    skillTag.style.setProperty("--skill-color", labelColor);
+  // Worldview tag (depth mode: shows the worldview thinker name instead of skill type)
+  let worldviewTag: HTMLSpanElement | null = null;
+  if (annotation.worldviewName) {
+    worldviewTag = document.createElement("span");
+    worldviewTag.className = "note-worldview-tag";
+    worldviewTag.textContent = annotation.worldviewName;
   }
 
   // Label
@@ -1897,7 +1896,7 @@ function createNoteElement(
   expandedContent.appendChild(expandedInner);
 
   el.appendChild(bracket);
-  if (skillTag) el.appendChild(skillTag);
+  if (worldviewTag) el.appendChild(worldviewTag);
   el.appendChild(labelEl);
   el.appendChild(textEl);
   el.appendChild(expandedContent);
@@ -2617,6 +2616,18 @@ const MARGIN_NOTES_CSS = `
     text-transform: uppercase;
     color: var(--skill-color, rgba(255,255,255,0.5));
     opacity: 0.7;
+    margin-bottom: 2px;
+  }
+
+  .note-worldview-tag {
+    display: inline-block;
+    font-family: var(--oddity-note-font);
+    font-size: 8px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #748DBF;
+    opacity: 0.8;
     margin-bottom: 2px;
   }
 

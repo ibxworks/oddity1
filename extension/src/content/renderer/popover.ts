@@ -58,7 +58,7 @@ function createPopover(annotation: Annotation, anchorEl: HTMLElement): void {
   destroy();
 
   currentAnchor = anchorEl;
-  const visual = getVisual(annotation.type, 'dark', annotation.label);
+  const visual = getVisual(annotation.type, 'dark', annotation.label, annotation.verdict);
 
   // Host element
   hostEl = document.createElement('div');
@@ -82,8 +82,14 @@ function createPopover(annotation: Annotation, anchorEl: HTMLElement): void {
   // ── Tag ──
   const tag = document.createElement('div');
   tag.className = 'annotation-tag';
-  tag.style.color = visual.color;
-  tag.textContent = visual.label;
+  if (annotation.worldviewName) {
+    // Depth mode: show worldview name instead of skill type
+    tag.style.color = '#748DBF';
+    tag.textContent = annotation.worldviewName;
+  } else {
+    tag.style.color = visual.color;
+    tag.textContent = visual.label;
+  }
   container.appendChild(tag);
 
   // ── Note text ──

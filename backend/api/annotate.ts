@@ -1,7 +1,7 @@
 import type {
   Annotation,
   AnnotationMode,
-  DepthPersonality,
+  AnnotationSummary,
 } from "@oddity/shared";
 import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
 import type { UserTier } from "@oddity/shared";
@@ -9,6 +9,7 @@ import { Router } from "express";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   filterAndFixAnnotations,
@@ -17,7 +18,13 @@ import {
 import {
   generateAnnotations,
   generateAnnotationsStream,
+  plannerCall,
+  executeAnnotations,
 } from "../lib/gemini.js";
+import type { ExecutorAssignment } from "../lib/gemini.js";
+import { planAnnotations } from "../lib/worldview-router.js";
+import type { RouterAssignment } from "../lib/worldview-router.js";
+import { getWorldviewByKey } from "../lib/worldview-registry.js";
 import { createInflightDedup } from "../lib/inflight-dedup.js";
 import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
 import { serviceClient } from "../lib/supabase.js";
@@ -34,8 +41,154 @@ function cacheKey(
   mode: string,
   personality?: string,
 ): string {
-  const intensityPart = mode === "overview" ? "terry" : (personality ?? "none");
+  const intensityPart = mode === "overview" ? "writing" : (personality ?? "none");
   return `${contentHash}:${mode}:${intensityPart}`;
+}
+
+// ─── Worldview helpers ───
+
+const worldviewsDir = resolve(__dirname, "../../worldviews");
+
+function loadWorldviewContent(key: string): { name: string; content: string } | undefined {
+  const meta = getWorldviewByKey(key);
+  if (!meta) return undefined;
+  const content = readFileSync(resolve(worldviewsDir, meta.fileName), "utf-8");
+  return { name: meta.name, content };
+}
+
+function sortByTextPosition(annotations: Annotation[], sourceText: string): Annotation[] {
+  return annotations.sort((a, b) => {
+    const posA = sourceText.indexOf(a.anchor.exact);
+    const posB = sourceText.indexOf(b.anchor.exact);
+    return posA - posB;
+  });
+}
+
+interface DepthResult {
+  annotations: Annotation[];
+  summary?: AnnotationSummary;
+}
+
+/**
+ * Depth-mode annotation pipeline: router → parallel annotators → merge.
+ * Returns annotations sorted by text position, plus an aggregate summary.
+ */
+async function generateDepthAnnotations(text: string): Promise<DepthResult> {
+  const plan = await planAnnotations(text, plannerCall);
+
+  // Router returned no assignments (short text or non-prose)
+  if (plan.assignments.length === 0) {
+    return { annotations: [] };
+  }
+
+  // Collect unique worldview keys from assignments
+  const uniqueKeys = new Set(plan.assignments.map((a) => a.worldview));
+
+  // Load worldview .md files
+  const worldviewContents = new Map<string, { name: string; content: string }>();
+  for (const wvKey of uniqueKeys) {
+    const wv = loadWorldviewContent(wvKey);
+    if (wv) worldviewContents.set(wvKey, wv);
+  }
+
+  // Group assignments by worldview
+  const grouped = new Map<string, RouterAssignment[]>();
+  for (const assignment of plan.assignments) {
+    if (!worldviewContents.has(assignment.worldview)) continue;
+    const list = grouped.get(assignment.worldview) ?? [];
+    list.push(assignment);
+    grouped.set(assignment.worldview, list);
+  }
+
+  // Run annotators in parallel (up to 9 worldviews, typically 1-3)
+  const executorPromises = Array.from(grouped.entries()).map(
+    async ([wvKey, assignments]) => {
+      const wv = worldviewContents.get(wvKey)!;
+      const execAssignments: ExecutorAssignment[] = assignments.map((a) => ({
+        anchor_index: a.anchor_index,
+        anchor_text: a.anchor_text,
+        match_reason: a.match_reason,
+        ai_introduced: a.ai_introduced,
+      }));
+      const result = await executeAnnotations(text, wv.name, wv.content, execAssignments);
+      return { wvKey, assignments, result };
+    },
+  );
+
+  const settled = await Promise.allSettled(executorPromises);
+
+  // Merge results
+  const allAnnotations: Annotation[] = [];
+  let mergedSummary: AnnotationSummary = {
+    takes: { count: 0, pattern: "" },
+    cautions: { count: 0, pattern: "" },
+    throws: { count: 0, pattern: "" },
+    overall: "",
+  };
+  const overallParts: string[] = [];
+
+  for (const outcome of settled) {
+    if (outcome.status !== "fulfilled") {
+      console.warn("[annotate] Annotator failed:", outcome.reason);
+      continue;
+    }
+    const { wvKey, assignments, result } = outcome.value;
+    const wv = worldviewContents.get(wvKey);
+
+    // Merge summary counts
+    if (result.summary) {
+      mergedSummary.takes.count += result.summary.takes?.count ?? 0;
+      mergedSummary.cautions.count += result.summary.cautions?.count ?? 0;
+      mergedSummary.throws.count += result.summary.throws?.count ?? 0;
+      if (result.summary.takes?.pattern) mergedSummary.takes.pattern = result.summary.takes.pattern;
+      if (result.summary.cautions?.pattern) mergedSummary.cautions.pattern = result.summary.cautions.pattern;
+      if (result.summary.throws?.pattern) mergedSummary.throws.pattern = result.summary.throws.pattern;
+      if (result.summary.overall) overallParts.push(result.summary.overall);
+    }
+
+    for (const annResult of result.annotations) {
+      // Find the matching router assignment
+      const routerAssignment = assignments.find(
+        (a) => a.anchor_index === annResult.anchor_index,
+      ) ?? assignments.find(
+        (a) => a.anchor_text === annResult.anchor_text,
+      );
+
+      const anchorText = routerAssignment?.anchor_text ?? annResult.anchor_text ?? "";
+      if (!anchorText) continue;
+
+      const verdict = annResult.verdict;
+      const validVerdicts = new Set(["TAKE", "CAUTION", "THROW"]);
+
+      allAnnotations.push({
+        id: randomUUID(),
+        mode: "depth",
+        type: "insight",
+        anchor: {
+          type: "TextQuoteSelector",
+          exact: anchorText,
+          prefix: routerAssignment?.prefix || undefined,
+          suffix: routerAssignment?.suffix || undefined,
+        },
+        content: {
+          note: annResult.provocation ?? "",
+        },
+        worldview: wvKey,
+        worldviewName: wv?.name ?? wvKey,
+        verdict: validVerdicts.has(verdict) ? verdict as Annotation["verdict"] : undefined,
+        matchReason: routerAssignment?.match_reason,
+        aiIntroduced: routerAssignment?.ai_introduced ?? annResult.ai_introduced ?? false,
+      });
+    }
+  }
+
+  mergedSummary.overall = overallParts.join(" ");
+
+  const sorted = sortByTextPosition(allAnnotations, text);
+  return {
+    annotations: filterAndFixAnnotations(sorted, text),
+    summary: mergedSummary,
+  };
 }
 
 const AnnotateRequestSchema = z.object({
@@ -43,7 +196,7 @@ const AnnotateRequestSchema = z.object({
   content_hash: z.string().min(1),
   text: z.string().min(1).max(MAX_TEXT_LENGTH),
   mode: z.enum(["overview", "depth"]),
-  personality: z.enum(["terry", "jerry", "sally", "gary"]).optional().transform(p => p === "gary" ? "sally" : p),
+  personality: z.enum(["writing", "brainstorming", "reading"]).optional(),
   word_count: z.number().int().positive(),
 });
 
@@ -61,13 +214,13 @@ router.post("/", async (req, res) => {
 
     const userTier = (req.user?.tier ?? "free") as UserTier;
 
-    // ── Feature gate: Sally personality requires Standard ──
+    // ── Feature gate: Reading personality requires Standard ──
     if (
-      parsed.data.personality === "sally" &&
-      !canUseFeature(userTier, "sallyPersonality")
+      parsed.data.personality === "reading" &&
+      !canUseFeature(userTier, "readingPersonality")
     ) {
       res.status(403).json({
-        error: "Sally personality requires a Standard plan",
+        error: "Reading personality requires a Standard plan",
         upgrade: true,
       });
       return;
@@ -121,7 +274,7 @@ router.post("/", async (req, res) => {
 
     // ── Layer 1: DB cache (Supabase) ──
     // Overview is persona-independent; depth varies by personality
-    const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
+    const cacheIntensity = mode === "overview" ? "overview:writing" : `${mode}:${personality ?? "writing"}`;
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
@@ -150,14 +303,19 @@ router.post("/", async (req, res) => {
     }
 
     // ── Layer 2: LLM generation (deduplicated) ──
-    const aiAnnotations = await dedup.run(key, async () => {
-      const rawAnnotations = await generateAnnotations(
-        text,
-        mode as AnnotationMode,
-        personality as DepthPersonality | undefined,
-      );
-      return filterAndFixAnnotations(rawAnnotations, text);
-    });
+    let aiAnnotations: Annotation[];
+    let summary: AnnotationSummary | undefined;
+
+    if (mode === "depth") {
+      const depthResult = await dedup.run(key, () => generateDepthAnnotations(text));
+      aiAnnotations = depthResult.annotations;
+      summary = depthResult.summary;
+    } else {
+      aiAnnotations = await dedup.run(key, async () => {
+        const rawAnnotations = await generateAnnotations(text, mode as AnnotationMode);
+        return filterAndFixAnnotations(rawAnnotations, text);
+      });
+    }
 
     // Write-through: populate DB cache
     const expiresAt = new Date();
@@ -187,7 +345,7 @@ router.post("/", async (req, res) => {
       content_hash,
       authToken,
     );
-    res.json({ success: true, cached: false, source: "llm", ...merged });
+    res.json({ success: true, cached: false, source: "llm", ...merged, ...(summary ? { summary } : {}) });
   } catch (err) {
     console.error("[annotate] Error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -215,7 +373,7 @@ async function handleStreamingAnnotation(
   try {
     // Check DB cache first
     // Overview is persona-independent; depth varies by personality
-    const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
+    const cacheIntensity = mode === "overview" ? "overview:writing" : `${mode}:${personality ?? "writing"}`;
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
@@ -248,20 +406,27 @@ async function handleStreamingAnnotation(
       return;
     }
 
-    // Stream from LLM
+    // Generate annotations
     const allAnnotations: Annotation[] = [];
+    let streamSummary: AnnotationSummary | undefined;
 
-    const stream = generateAnnotationsStream(
-      text,
-      mode as AnnotationMode,
-      personality as DepthPersonality | undefined,
-    );
-
-    for await (const annotation of stream) {
-      const fixed = fixSingleAnnotation(annotation, text);
-      if (fixed) {
-        allAnnotations.push(fixed);
-        res.write(`data: ${JSON.stringify({ annotation: fixed })}\n\n`);
+    if (mode === "depth") {
+      // Router/annotator pipeline — wait for all, then stream in order
+      const depthResult = await generateDepthAnnotations(text);
+      streamSummary = depthResult.summary;
+      for (const ann of depthResult.annotations) {
+        allAnnotations.push(ann);
+        res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
+      }
+    } else {
+      // Overview: stream incrementally from single LLM call
+      const stream = generateAnnotationsStream(text, mode as AnnotationMode);
+      for await (const annotation of stream) {
+        const fixed = fixSingleAnnotation(annotation, text);
+        if (fixed) {
+          allAnnotations.push(fixed);
+          res.write(`data: ${JSON.stringify({ annotation: fixed })}\n\n`);
+        }
       }
     }
 
@@ -297,7 +462,7 @@ async function handleStreamingAnnotation(
       authToken,
     );
     res.write(
-      `data: ${JSON.stringify({ done: true, cached: false, annotations: merged.annotations, feedback: merged.feedback })}\n\n`,
+      `data: ${JSON.stringify({ done: true, cached: false, annotations: merged.annotations, feedback: merged.feedback, ...(streamSummary ? { summary: streamSummary } : {}) })}\n\n`,
     );
     res.end();
   } catch (err) {

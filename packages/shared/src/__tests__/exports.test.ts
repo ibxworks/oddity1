@@ -16,10 +16,10 @@ describe("@oddity/shared exports", () => {
   });
 
   it("exports plan features and canUseFeature helper", () => {
-    expect(shared.PLAN_FEATURES.free.sallyPersonality).toBe(false);
-    expect(shared.PLAN_FEATURES.standard.sallyPersonality).toBe(true);
-    expect(shared.canUseFeature("free", "sallyPersonality")).toBe(false);
-    expect(shared.canUseFeature("standard", "sallyPersonality")).toBe(true);
+    expect(shared.PLAN_FEATURES.free.readingPersonality).toBe(false);
+    expect(shared.PLAN_FEATURES.standard.readingPersonality).toBe(true);
+    expect(shared.canUseFeature("free", "readingPersonality")).toBe(false);
+    expect(shared.canUseFeature("standard", "readingPersonality")).toBe(true);
   });
 
   it("exports request limit constants", () => {
