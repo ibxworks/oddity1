@@ -22,8 +22,25 @@ if (process.env.ODDITY_PROCESS_ROLE !== "worker") {
 
 const app = express();
 
-// Global middleware
-app.use(cors());
+// Global middleware — restrict CORS to known origins
+const ALLOWED_ORIGINS = [
+  process.env.DASHBOARD_URL,
+  "https://app.oddity1.com",
+].filter(Boolean) as string[];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow: no origin (Chrome extensions, server-to-server), or matched origin
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true,
+  }),
+);
 
 // Stripe webhook must receive raw body BEFORE express.json() parses it
 app.use("/api/webhook/stripe", express.raw({ type: "application/json" }), webhookStripeRouter);

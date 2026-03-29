@@ -5,13 +5,9 @@ import {
   GoogleGenerativeAIFetchError,
 } from "@google/generative-ai";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import { validateAnnotations } from "./schema-validator.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import promptsConfig from "../config/prompts.json" with { type: "json" };
 
 const apiKeys = [
   process.env.GEMINI_API_KEY,
@@ -93,14 +89,11 @@ type StreamResult = {
   usedBufferedFallback: boolean;
 };
 
-const promptsConfig = JSON.parse(
-  readFileSync(resolve(__dirname, "../config/prompts.json"), "utf-8"),
-);
-const overviewPromptTemplate: string =
-  promptsConfig.overview_prompt_template ?? promptsConfig.overview_prompt ?? "";
+// promptsConfig imported statically above (bundler-safe for Vercel)
+const overviewPromptTemplate: string = promptsConfig.overview_prompt_template ?? "";
 const depthPrompts: Record<string, string> = promptsConfig.depth_prompts ?? {};
 const overviewPersonalities: Record<string, string> =
-  promptsConfig.overview_personalities ?? {};
+  (promptsConfig as Record<string, unknown>).overview_personalities as Record<string, string> ?? {};
 const sketchPrompt: string = promptsConfig.sketch_prompt ?? "";
 
 export class GeminiOperationError extends Error {

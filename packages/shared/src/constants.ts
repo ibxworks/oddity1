@@ -1,8 +1,13 @@
-import type { AnnotationType, OverviewLabel, DepthType, UserTier } from "./types.js";
+import type {
+  AnnotationType,
+  DepthType,
+  OverviewLabel,
+  UserTier,
+} from "./types.js";
 
 // ─── Blocked Domains ───
 
-export const BLOCKED_DOMAINS = ['app.oddity1.com'];
+export const BLOCKED_DOMAINS = ["app.oddity1.com"];
 
 export function isBlockedDomain(domain: string): boolean {
   return BLOCKED_DOMAINS.includes(domain);
@@ -11,16 +16,23 @@ export function isBlockedDomain(domain: string): boolean {
 // ─── Default Enabled Sites ───
 
 export const DEFAULT_ENABLED_SITES: string[] = [
-  'chatgpt.com', 'claude.ai', 'gemini.google.com',
-  'wikipedia.org', 'substack.com', 'medium.com',
-  'bbc.com', 'cnn.com', 'nytimes.com',
-  'washingtonpost.com', 'theatlantic.com',
+  "chatgpt.com",
+  "claude.ai",
+  "gemini.google.com",
+  "wikipedia.org",
+  "substack.com",
+  "medium.com",
+  "bbc.com",
+  "cnn.com",
+  "nytimes.com",
+  "washingtonpost.com",
+  "theatlantic.com",
 ];
 
 // ─── Backend URL ───
 
 export const BACKEND_URL =
-  process.env.ODDITY_BACKEND_URL ?? "http://localhost:3001";
+  process.env.ODDITY_BACKEND_URL ?? "https://oddity1-backend.vercel.app";
 
 // ─── Timing ───
 
@@ -50,7 +62,10 @@ export const PLAN_FEATURES = {
   },
 } as const satisfies Record<UserTier, Record<string, boolean>>;
 
-export function canUseFeature(tier: UserTier, feature: PlanFeatureKey): boolean {
+export function canUseFeature(
+  tier: UserTier,
+  feature: PlanFeatureKey,
+): boolean {
   return PLAN_FEATURES[tier]?.[feature] ?? false;
 }
 
@@ -187,7 +202,10 @@ export function getAnnotationColor(
   type: AnnotationType,
   theme: "light" | "dark",
 ): string {
-  return (theme === "light" ? ANNOTATION_COLORS_LIGHT : ANNOTATION_COLORS)[type] ?? "#888";
+  return (
+    (theme === "light" ? ANNOTATION_COLORS_LIGHT : ANNOTATION_COLORS)[type] ??
+    "#888"
+  );
 }
 
 export const ANNOTATION_LABELS: Record<AnnotationType, string> = {

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { serviceClient } from '../lib/supabase.js';
-import { stripe } from '../lib/stripe.js';
+import { getStripe } from '../lib/stripe.js';
 
 const router = Router();
 
@@ -56,7 +56,7 @@ router.post('/', async (req, res) => {
     let customerId: string = profile?.stripe_customer_id ?? '';
 
     if (!customerId) {
-      const customer = await stripe.customers.create({
+      const customer = await getStripe().customers.create({
         email: userEmail,
         metadata: { user_id: userId },
       });
@@ -74,9 +74,13 @@ router.post('/', async (req, res) => {
       }
     }
 
-    const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:5173';
+    const dashboardUrl = process.env.DASHBOARD_URL;
+    if (!dashboardUrl) {
+      res.status(500).json({ error: 'DASHBOARD_URL not configured' });
+      return;
+    }
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await getStripe().checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
       client_reference_id: userId,
