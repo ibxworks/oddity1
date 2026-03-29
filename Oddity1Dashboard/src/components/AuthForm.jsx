@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { useState } from "react";
+import { passwordResetSupabase, supabase } from "../lib/supabase";
 
 const DEFAULT_ENABLED_SITES = ["chatgpt.com", "chat.openai.com", "claude.ai"];
 const RESET_PASSWORD_REDIRECT_URL = "https://app.oddity1.com/reset-password";
@@ -14,16 +13,6 @@ export default function AuthForm({ modal = false, onSuccess } = {}) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const location = useLocation();
-
-  useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    if (searchParams.get("reset") === "success") {
-      setIsSignUp(false);
-      setError("");
-      setMessage("Password updated. Sign in with your new password.");
-    }
-  }, [location.search]);
 
   async function handleForgotPassword() {
     const normalizedEmail = email.trim();
@@ -34,7 +23,7 @@ export default function AuthForm({ modal = false, onSuccess } = {}) {
     setError("");
     setMessage("");
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+    const { error } = await passwordResetSupabase.auth.resetPasswordForEmail(normalizedEmail, {
       redirectTo: RESET_PASSWORD_REDIRECT_URL,
     });
     if (error) setError(error.message);

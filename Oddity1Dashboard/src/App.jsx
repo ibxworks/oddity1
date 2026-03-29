@@ -163,30 +163,12 @@ export default function App() {
       <Route path="/plans" element={<PlansPage session={session} />} />
       <Route
         path="/reset-password"
-        element={
-          <ResetPassword
-            onComplete={() => {
-              setRecoveryMode(false);
-              setSession(null);
-              clearAuthCookie();
-              navigate("/?reset=success", { replace: true });
-            }}
-          />
-        }
+        element={<ResetPassword />}
       />
       {recoveryMode ? (
         <Route
           path="*"
-          element={
-            <ResetPassword
-              onComplete={() => {
-                setRecoveryMode(false);
-                setSession(null);
-                clearAuthCookie();
-                navigate("/?reset=success", { replace: true });
-              }}
-            />
-          }
+          element={<ResetPassword />}
         />
       ) : !session ? (
         <Route path="*" element={<AuthForm />} />
