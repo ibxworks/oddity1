@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type Stripe from 'stripe';
 import { serviceClient } from '../lib/supabase.js';
-import { stripe } from '../lib/stripe.js';
+import { getStripe } from '../lib/stripe.js';
 
 const router = Router();
 
@@ -26,10 +26,10 @@ router.post('/', async (req, res) => {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(
+    event = getStripe().webhooks.constructEvent(
       req.body as Buffer,
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET!,
+      process.env.STRIPE_WEBHOOK_SECRET ?? '',
     );
   } catch (err) {
     console.error('[webhook-stripe] Signature verification failed:', err);
@@ -50,7 +50,7 @@ router.post('/', async (req, res) => {
           break;
         }
 
-        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
         const firstItem = subscription.items.data[0];
         const priceRecurring = firstItem?.price?.recurring;
         const billingInterval = priceRecurring

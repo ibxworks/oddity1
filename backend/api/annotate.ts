@@ -8,9 +8,6 @@ import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
 import type { UserTier } from "@oddity/shared";
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   filterAndFixAnnotations,
@@ -24,10 +21,7 @@ import { createInflightDedup } from "../lib/inflight-dedup.js";
 import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
 import { createRequestAbortSignal } from "../lib/request-abort.js";
 import { serviceClient } from "../lib/supabase.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const promptsPath = resolve(__dirname, "../config/prompts.json");
-const prompts = JSON.parse(readFileSync(promptsPath, "utf-8"));
+import prompts from "../config/prompts.json" with { type: "json" };
 
 // ─── Optimization: in-flight request dedup ───
 const dedup = createInflightDedup();
