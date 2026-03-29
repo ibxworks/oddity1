@@ -2,19 +2,19 @@ import cors from "cors";
 import express from "express";
 import { registerProcessGuards } from "../lib/process-guards.js";
 import { authMiddleware } from "../lib/auth-middleware.js";
-import adaptersRouter from "./adapters.js";
-import annotateRouter from "./annotate.js";
-import annotationsRouter from "./annotations.js";
-import sketchRouter from "./sketch.js";
-import feedbackRouter from "./feedback.js";
-import userFeedbackRouter from "./user-feedback.js";
-import accountRouter from "./user/account.js";
-import preferencesRouter from "./user/preferences.js";
-import webhookStripeRouter from "./webhook-stripe.js";
-import checkoutRouter from "./checkout.js";
-import subscriptionRouter from "./subscription.js";
-import portalRouter from "./portal.js";
-import pricesRouter from "./prices.js";
+import adaptersRouter from "../routes/adapters.js";
+import annotateRouter from "../routes/annotate.js";
+import annotationsRouter from "../routes/annotations.js";
+import sketchRouter from "../routes/sketch.js";
+import feedbackRouter from "../routes/feedback.js";
+import userFeedbackRouter from "../routes/user-feedback.js";
+import accountRouter from "../routes/user/account.js";
+import preferencesRouter from "../routes/user/preferences.js";
+import webhookStripeRouter from "../routes/webhook-stripe.js";
+import checkoutRouter from "../routes/checkout.js";
+import subscriptionRouter from "../routes/subscription.js";
+import portalRouter from "../routes/portal.js";
+import pricesRouter from "../routes/prices.js";
 
 if (process.env.ODDITY_PROCESS_ROLE !== "worker") {
   registerProcessGuards({ role: "app", exitOnFatal: false });
@@ -50,41 +50,6 @@ app.use(express.json({ limit: "2mb" }));
 // Health check (no auth)
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
-});
-
-// Temporary diagnostic — remove after deployment is verified
-app.get("/api/debug-env", (_req, res) => {
-  const envKeys = [
-    "SUPABASE_URL",
-    "SUPABASE_ANON_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "STRIPE_SECRET_KEY",
-    "STRIPE_WEBHOOK_SECRET",
-    "STRIPE_STANDARD_PRODUCT_ID",
-    "GEMINI_API_KEY",
-    "DASHBOARD_URL",
-    "FREE_PLAN_LIMIT_PER_MONTH",
-    "STANDARD_PLAN_LIMIT_PER_MONTH",
-  ];
-  const status: Record<string, string> = {};
-  for (const k of envKeys) {
-    const v = process.env[k];
-    status[k] = v ? `set (${v.length} chars)` : "MISSING";
-  }
-  res.json(status);
-});
-
-app.get("/api/debug-test", async (_req, res) => {
-  try {
-    const { serviceClient } = await import("../lib/supabase.js");
-    const { data, error } = await serviceClient.from("site_adapters").select("id").limit(1);
-    res.json({ supabase: error ? error.message : `ok (${data?.length} rows)` });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const stack = err instanceof Error ? err.stack : undefined;
-    console.error("[debug-test]", msg, stack);
-    res.json({ error: msg, stack });
-  }
 });
 
 // Public routes (no auth)

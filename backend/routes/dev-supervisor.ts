@@ -34,7 +34,7 @@ function startWorker(): void {
   lastStartAt = Date.now();
   child = spawn(
     process.execPath,
-    ["--import", "tsx/esm", "api/server.ts"],
+    ["--import", "tsx/esm", "routes/server.ts"],
     {
       cwd: process.cwd(),
       env: process.env,
