@@ -16,7 +16,6 @@ const hasRecoveryUrlParams =
   (typeof window !== 'undefined' && window.location.pathname === '/reset-password') ||
   searchParams?.get('type') === 'recovery' ||
   hashParams?.get('type') === 'recovery' ||
-  searchParams?.has('code') ||
   searchParams?.has('token_hash') ||
   hashParams?.has('access_token') ||
   hashParams?.has('refresh_token')
