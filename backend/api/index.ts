@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import { registerProcessGuards } from "../lib/process-guards.js";
 import { authMiddleware } from "../lib/auth-middleware.js";
 import adaptersRouter from "./adapters.js";
 import annotateRouter from "./annotate.js";
@@ -14,6 +15,10 @@ import checkoutRouter from "./checkout.js";
 import subscriptionRouter from "./subscription.js";
 import portalRouter from "./portal.js";
 import pricesRouter from "./prices.js";
+
+if (process.env.ODDITY_PROCESS_ROLE !== "worker") {
+  registerProcessGuards({ role: "app", exitOnFatal: false });
+}
 
 const app = express();
 
@@ -58,13 +63,5 @@ app.use(
     res.status(500).json({ error: "Internal server error" });
   },
 );
-
-// For local development
-if (process.env.NODE_ENV !== "production") {
-  const port = process.env.PORT ?? 3001;
-  app.listen(port, () => {
-    console.log(`[Oddity 1] Backend listening on :${port}`);
-  });
-}
 
 export default app;

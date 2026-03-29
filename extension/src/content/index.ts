@@ -86,6 +86,7 @@ import {
 import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
 import { createStabilityWatcher } from "./stability.js";
 import { getPageUrl } from "./page-url.js";
+import { setThemeOverride } from "./renderer/theme-detector.js";
 
 // ─── Extension context guard ───
 // After extension reload/update, content scripts lose access to chrome.* APIs.
@@ -873,6 +874,9 @@ async function startPipeline(): Promise<void> {
   const matchedAdapter = adapters.find((a) =>
     matchHostname(hostname, a.hostname_pattern),
   );
+
+  // Dark mode only for sites with a known adapter; everything else defaults to light.
+  if (!matchedAdapter) setThemeOverride('light');
 
   if (matchedAdapter?.response_selector) {
     // ── Chat/dynamic site mode ──

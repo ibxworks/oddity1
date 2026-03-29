@@ -6,6 +6,7 @@ let observer: MutationObserver | null = null;
 let mediaQuery: MediaQueryList | null = null;
 let listeners: ThemeChangeCallback[] = [];
 let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+let themeOverride: ThemeMode | null = null;
 
 /**
  * Compute relative luminance from an rgb/rgba color string.
@@ -97,6 +98,7 @@ function detectMode(): ThemeMode {
 }
 
 function handlePossibleChange(): void {
+  if (themeOverride !== null) return;
   if (throttleTimer) return;
   throttleTimer = setTimeout(() => {
     throttleTimer = null;
@@ -108,7 +110,16 @@ function handlePossibleChange(): void {
   }, 500);
 }
 
+export function setThemeOverride(mode: ThemeMode | null): void {
+  themeOverride = mode;
+  if (mode !== null) {
+    currentMode = mode;
+    for (const cb of listeners) cb(currentMode);
+  }
+}
+
 export function getThemeMode(): ThemeMode {
+  if (themeOverride !== null) return themeOverride;
   currentMode = detectMode();
   return currentMode;
 }

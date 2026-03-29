@@ -1,8 +1,13 @@
 import type { Annotation, AnnotationMode, DepthPersonality } from "@oddity/shared";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  GoogleGenerativeAI,
+  GoogleGenerativeAIError,
+  GoogleGenerativeAIFetchError,
+} from "@google/generative-ai";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { validateAnnotations } from "./schema-validator.js";
 
@@ -12,61 +17,189 @@ const apiKeys = [
   process.env.GEMINI_API_KEY,
   process.env.GEMINI_API_KEY_BACKUP1,
   process.env.GEMINI_API_KEY_BACKUP2,
-].filter((k): k is string => !!k);
+].filter((key): key is string => !!key);
 
-const genAIClients = apiKeys.map((key) => new GoogleGenerativeAI(key));
+type ClientEntry = {
+  client: GoogleGenerativeAI;
+  keyIndex: number;
+};
+
+const genAIClients: ClientEntry[] = apiKeys.map((key, index) => ({
+  client: new GoogleGenerativeAI(key),
+  keyIndex: index + 1,
+}));
+
 const modelName = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview";
+const GEMINI_TIMEOUT_MS = getPositiveNumber(process.env.GEMINI_TIMEOUT_MS, 45000);
+const GEMINI_ATTEMPTS_PER_KEY = getPositiveNumber(
+  process.env.GEMINI_ATTEMPTS_PER_KEY,
+  2,
+);
+const GEMINI_RETRY_BASE_DELAY_MS = getPositiveNumber(
+  process.env.GEMINI_RETRY_BASE_DELAY_MS,
+  250,
+);
+const GEMINI_RETRY_MAX_DELAY_MS = getPositiveNumber(
+  process.env.GEMINI_RETRY_MAX_DELAY_MS,
+  2000,
+);
 
-/**
- * Try an async operation with each API key client in order.
- * Only throws if all keys fail.
- */
-async function withKeyRetry<T>(
-  fn: (client: GoogleGenerativeAI) => Promise<T>,
-): Promise<T> {
-  let lastError: unknown;
-  for (let i = 0; i < genAIClients.length; i++) {
-    try {
-      return await fn(genAIClients[i]!);
-    } catch (err) {
-      lastError = err;
-      if (i < genAIClients.length - 1) {
-        console.warn(`[gemini] API call failed with key ${i + 1}, trying next key...`, err);
-      }
-    }
-  }
-  throw lastError;
-}
+const reliabilityCounters = {
+  stream_parse_failures: 0,
+  retries: 0,
+  key_rotations: 0,
+  buffered_fallbacks: 0,
+};
 
-// Load prompt config once at startup
+type CounterName = keyof typeof reliabilityCounters;
+
+export type GeminiLogContext = {
+  route: "annotate" | "annotate/stream" | "sketch";
+  requestId?: string;
+  contentHash?: string;
+};
+
+type GeminiRequestOptions = {
+  signal?: AbortSignal;
+  logContext?: GeminiLogContext;
+};
+
+type AnnotationStreamOptions = GeminiRequestOptions & {
+  onAnnotation?: (annotation: Annotation) => void;
+};
+
+type SketchStreamOptions = GeminiRequestOptions & {
+  onChunk?: (text: string) => void;
+};
+
+type GeminiFailureKind =
+  | "stream_parse"
+  | "network"
+  | "rate_limit"
+  | "upstream_5xx"
+  | "timeout"
+  | "abort"
+  | "permanent"
+  | "unknown";
+
+type GeminiErrorInfo = {
+  kind: GeminiFailureKind;
+  retryable: boolean;
+  status?: number;
+};
+
+type StreamResult = {
+  annotations: Annotation[];
+  usedBufferedFallback: boolean;
+};
+
 const promptsConfig = JSON.parse(
   readFileSync(resolve(__dirname, "../config/prompts.json"), "utf-8"),
 );
-const overviewPromptTemplate: string = promptsConfig.overview_prompt_template ?? promptsConfig.overview_prompt ?? "";
+const overviewPromptTemplate: string =
+  promptsConfig.overview_prompt_template ?? promptsConfig.overview_prompt ?? "";
 const depthPrompts: Record<string, string> = promptsConfig.depth_prompts ?? {};
-const overviewPersonalities: Record<string, string> = promptsConfig.overview_personalities ?? {};
+const overviewPersonalities: Record<string, string> =
+  promptsConfig.overview_personalities ?? {};
+const sketchPrompt: string = promptsConfig.sketch_prompt ?? "";
 
-/**
- * Build the system prompt for a given mode and personality.
- */
-function buildSystemPrompt(mode: AnnotationMode, personality?: DepthPersonality): string {
+export class GeminiOperationError extends Error {
+  readonly kind: GeminiFailureKind;
+  readonly retryable: boolean;
+  readonly status?: number;
+  readonly keyIndex: number;
+  readonly attemptNumber: number;
+
+  constructor(
+    message: string,
+    {
+      kind,
+      retryable,
+      status,
+      keyIndex,
+      attemptNumber,
+      cause,
+    }: GeminiErrorInfo & {
+      keyIndex: number;
+      attemptNumber: number;
+      cause?: unknown;
+    },
+  ) {
+    super(message, { cause });
+    this.name = "GeminiOperationError";
+    this.kind = kind;
+    this.retryable = retryable;
+    this.status = status;
+    this.keyIndex = keyIndex;
+    this.attemptNumber = attemptNumber;
+  }
+}
+
+function getPositiveNumber(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function incrementCounter(counter: CounterName): number {
+  reliabilityCounters[counter] += 1;
+  return reliabilityCounters[counter];
+}
+
+function serializeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return { message: String(error) };
+}
+
+function logGeminiEvent(
+  level: "log" | "warn" | "error",
+  event: string,
+  context: GeminiLogContext | undefined,
+  details: Record<string, unknown> = {},
+): void {
+  console[level](
+    `[gemini] ${event}`,
+    JSON.stringify({
+      route: context?.route,
+      request_id: context?.requestId,
+      content_hash_prefix: context?.contentHash?.slice(0, 12),
+      model: modelName,
+      ...details,
+    }),
+  );
+}
+
+function ensureClientsConfigured(): void {
+  if (genAIClients.length === 0) {
+    throw new Error("No Gemini API keys configured");
+  }
+}
+
+function buildSystemPrompt(
+  mode: AnnotationMode,
+  personality?: DepthPersonality,
+): string {
   if (mode === "overview") {
-    const personalityText = overviewPersonalities[personality ?? "jerry"] ?? overviewPersonalities.jerry ?? "";
+    const personalityText =
+      overviewPersonalities[personality ?? "jerry"] ??
+      overviewPersonalities.jerry ??
+      "";
     return overviewPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
   }
-  // Depth mode: each personality has its own full prompt
+
   const key = personality ?? "jerry";
   return depthPrompts[key] ?? depthPrompts.jerry ?? "";
 }
 
-/**
- * Map raw LLM output (overview format) into Annotation objects.
- * Overview LLM returns: { anchor, prefix?, suffix?, label, summary }
- */
 function mapOverviewOutput(raw: unknown[]): unknown[] {
   return raw.map((item: any) => {
     if (!item || typeof item !== "object") return item;
-    // Already in Annotation format (has mode, type, anchor, content)
     if (item.mode && item.type && item.anchor && item.content) return item;
 
     return {
@@ -83,28 +216,28 @@ function mapOverviewOutput(raw: unknown[]): unknown[] {
       content: {
         note: item.summary ?? item.note ?? "",
       },
-      ...(item.chunk_start && item.chunk_end ? {
-        chunk: {
-          start: { type: "TextQuoteSelector", exact: item.chunk_start },
-          end: { type: "TextQuoteSelector", exact: item.chunk_end },
-        },
-      } : {}),
+      ...(item.chunk_start && item.chunk_end
+        ? {
+            chunk: {
+              start: { type: "TextQuoteSelector", exact: item.chunk_start },
+              end: { type: "TextQuoteSelector", exact: item.chunk_end },
+            },
+          }
+        : {}),
     };
   });
 }
 
-/**
- * Map raw LLM output (depth format) into Annotation objects.
- * Depth LLM returns: { anchor, prefix?, suffix?, type, provocation }
- */
 function mapDepthOutput(raw: unknown[]): unknown[] {
   return raw.map((item: any) => {
     if (!item || typeof item !== "object") return item;
-    // Already in Annotation format
-    if (item.mode && item.anchor?.type === "TextQuoteSelector" && item.content) return item;
+    if (item.mode && item.anchor?.type === "TextQuoteSelector" && item.content) {
+      return item;
+    }
 
-    // New prompts use "skill", old prompts used "type"; default to "caveat" when absent
-    const rawType = (item.skill ?? item.type ?? "caveat").replace(/\s+/g, "_").toLowerCase();
+    const rawType = (item.skill ?? item.type ?? "caveat")
+      .replace(/\s+/g, "_")
+      .toLowerCase();
 
     return {
       id: item.id ?? randomUUID(),
@@ -124,19 +257,13 @@ function mapDepthOutput(raw: unknown[]): unknown[] {
   });
 }
 
-/**
- * Map raw LLM output to Annotation format based on mode.
- */
 function mapLlmOutput(raw: unknown[], mode: AnnotationMode): unknown[] {
   return mode === "overview" ? mapOverviewOutput(raw) : mapDepthOutput(raw);
 }
 
-/**
- * Assign globally unique IDs to annotations.
- */
 function assignUniqueIds(annotations: Annotation[]): Annotation[] {
-  for (const ann of annotations) {
-    ann.id = randomUUID();
+  for (const annotation of annotations) {
+    annotation.id = randomUUID();
   }
   return annotations;
 }
@@ -149,26 +276,205 @@ function getGenerationConfig() {
   };
 }
 
+function buildClientAttemptPlan(): ClientEntry[] {
+  ensureClientsConfigured();
+  return genAIClients.flatMap((entry) =>
+    Array.from({ length: GEMINI_ATTEMPTS_PER_KEY }, () => entry),
+  );
+}
+
+function classifyGeminiError(
+  error: unknown,
+  signal?: AbortSignal,
+): GeminiErrorInfo {
+  if (signal?.aborted) {
+    return {
+      kind: "abort",
+      retryable: false,
+    };
+  }
+
+  if (error instanceof GoogleGenerativeAIFetchError) {
+    const status = error.status ?? 0;
+
+    if (status === 429) {
+      return {
+        kind: "rate_limit",
+        retryable: true,
+        status,
+      };
+    }
+
+    if (status >= 500) {
+      return {
+        kind: "upstream_5xx",
+        retryable: true,
+        status,
+      };
+    }
+
+    return {
+      kind: "permanent",
+      retryable: false,
+      status,
+    };
+  }
+
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  if (message.includes("failed to parse stream")) {
+    incrementCounter("stream_parse_failures");
+    return {
+      kind: "stream_parse",
+      retryable: true,
+    };
+  }
+
+  if (message.includes("fetch failed") || message.includes("network")) {
+    return {
+      kind: "network",
+      retryable: true,
+    };
+  }
+
+  if (
+    message.includes("timed out") ||
+    message.includes("timeout") ||
+    message.includes("aborterror")
+  ) {
+    return {
+      kind: "timeout",
+      retryable: true,
+    };
+  }
+
+  if (error instanceof GoogleGenerativeAIError) {
+    return {
+      kind: "unknown",
+      retryable: false,
+    };
+  }
+
+  return {
+    kind: "unknown",
+    retryable: false,
+  };
+}
+
+function toGeminiOperationError(
+  error: unknown,
+  keyIndex: number,
+  attemptNumber: number,
+  signal?: AbortSignal,
+): GeminiOperationError {
+  const info = classifyGeminiError(error, signal);
+  const message = error instanceof Error ? error.message : String(error);
+  return new GeminiOperationError(message, {
+    ...info,
+    keyIndex,
+    attemptNumber,
+    cause: error,
+  });
+}
+
+function getRequestOptions(signal?: AbortSignal) {
+  return {
+    signal,
+    timeout: GEMINI_TIMEOUT_MS,
+  };
+}
+
+async function waitBeforeRetry(
+  attemptNumber: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const baseDelay = GEMINI_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
+  const cappedDelay = Math.min(baseDelay, GEMINI_RETRY_MAX_DELAY_MS);
+  const jitterMs = process.env.NODE_ENV === "test" ? 0 : Math.floor(Math.random() * 100);
+  await delay(cappedDelay + jitterMs, undefined, { signal });
+}
+
+async function runWithRetryPlan<T>(
+  operation: string,
+  runner: (
+    entry: ClientEntry,
+    attemptNumber: number,
+  ) => Promise<T>,
+  options: GeminiRequestOptions = {},
+): Promise<T> {
+  const attempts = buildClientAttemptPlan();
+  let lastError: GeminiOperationError | null = null;
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const entry = attempts[index]!;
+    const attemptNumber = index + 1;
+
+    try {
+      return await runner(entry, attemptNumber);
+    } catch (error) {
+      const operationError = toGeminiOperationError(
+        error,
+        entry.keyIndex,
+        attemptNumber,
+        options.signal,
+      );
+      lastError = operationError;
+
+      logGeminiEvent("warn", `${operation}.attempt_failed`, options.logContext, {
+        key_index: entry.keyIndex,
+        attempt_number: attemptNumber,
+        error_kind: operationError.kind,
+        retryable: operationError.retryable,
+        status: operationError.status,
+        error: serializeError(error),
+      });
+
+      if (!operationError.retryable || options.signal?.aborted) {
+        throw operationError;
+      }
+
+      if (index >= attempts.length - 1) {
+        break;
+      }
+
+      incrementCounter("retries");
+      const nextEntry = attempts[index + 1]!;
+      if (nextEntry.keyIndex !== entry.keyIndex) {
+        incrementCounter("key_rotations");
+      }
+
+      await waitBeforeRetry(attemptNumber, options.signal);
+    }
+  }
+
+  throw lastError ?? new Error(`Gemini ${operation} failed without attempts`);
+}
+
 async function callGeminiWithClient(
-  client: GoogleGenerativeAI,
+  entry: ClientEntry,
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
   correctionNote?: string,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const systemPrompt = buildSystemPrompt(mode, personality);
   const generationConfig = getGenerationConfig();
 
-  const model = client.getGenerativeModel({
+  const model = entry.client.getGenerativeModel({
     model: modelName,
     systemInstruction: systemPrompt,
     generationConfig,
   });
 
   const userContent = correctionNote ? `${text}\n\n${correctionNote}` : text;
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: userContent }] }],
-  });
+  const result = await model.generateContent(
+    {
+      contents: [{ role: "user", parts: [{ text: userContent }] }],
+    },
+    getRequestOptions(signal),
+  );
 
   const content = result.response.text();
   if (!content) return [];
@@ -186,18 +492,160 @@ async function callGemini(
   mode: AnnotationMode,
   personality?: DepthPersonality,
   correctionNote?: string,
+  options: GeminiRequestOptions = {},
 ): Promise<unknown> {
-  return withKeyRetry((client) =>
-    callGeminiWithClient(client, text, mode, personality, correctionNote),
+  return runWithRetryPlan(
+    "generate_content",
+    (entry) =>
+      callGeminiWithClient(
+        entry,
+        text,
+        mode,
+        personality,
+        correctionNote,
+        options.signal,
+      ),
+    options,
   );
+}
+
+async function consumeAnnotationStreamAttempt(
+  entry: ClientEntry,
+  text: string,
+  mode: AnnotationMode,
+  personality: DepthPersonality | undefined,
+  options: AnnotationStreamOptions,
+): Promise<Annotation[]> {
+  const systemPrompt = buildSystemPrompt(mode, personality);
+  const generationConfig = getGenerationConfig();
+
+  const model = entry.client.getGenerativeModel({
+    model: modelName,
+    systemInstruction: systemPrompt,
+    generationConfig,
+  });
+
+  const streamResult = await model.generateContentStream(
+    {
+      contents: [{ role: "user", parts: [{ text }] }],
+    },
+    getRequestOptions(options.signal),
+  );
+
+  let responseError: unknown = null;
+  const responseSettled = streamResult.response
+    .then(() => undefined)
+    .catch((error) => {
+      responseError = error;
+    });
+
+  const allAnnotations: Annotation[] = [];
+  let buffer = "";
+
+  try {
+    for await (const chunk of streamResult.stream) {
+      const delta = chunk.text();
+      if (!delta) continue;
+      buffer += delta;
+
+      const extracted = extractCompleteObjects(buffer);
+      for (const objectString of extracted.objects) {
+        try {
+          const raw = JSON.parse(objectString);
+          const mapped = mapLlmOutput([raw], mode);
+          const { valid } = validateAnnotations(mapped);
+          if (valid.length > 0) {
+            valid[0]!.id = randomUUID();
+            allAnnotations.push(valid[0]!);
+            options.onAnnotation?.(valid[0]!);
+          }
+        } catch {
+          // Skip malformed items; the authoritative final result is sent later.
+        }
+      }
+
+      buffer = extracted.remaining;
+    }
+  } catch (error) {
+    await responseSettled;
+    throw error;
+  }
+
+  await responseSettled;
+  if (responseError) {
+    throw responseError;
+  }
+
+  return allAnnotations;
+}
+
+async function consumeSketchStreamAttempt(
+  entry: ClientEntry,
+  inputText: string,
+  purpose: string,
+  userReactions: string,
+  options: SketchStreamOptions,
+): Promise<string> {
+  const userMessage = `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${userReactions}`;
+  const model = entry.client.getGenerativeModel({
+    model: modelName,
+    systemInstruction: sketchPrompt,
+    generationConfig: {
+      responseMimeType: "text/plain" as const,
+      maxOutputTokens: 2048,
+      temperature: 0.3,
+    },
+  });
+
+  const streamResult = await model.generateContentStream(
+    {
+      contents: [{ role: "user", parts: [{ text: userMessage }] }],
+    },
+    getRequestOptions(options.signal),
+  );
+
+  let responseError: unknown = null;
+  const responseSettled = streamResult.response
+    .then(() => undefined)
+    .catch((error) => {
+      responseError = error;
+    });
+
+  let fullText = "";
+
+  try {
+    for await (const chunk of streamResult.stream) {
+      const delta = chunk.text();
+      if (!delta) continue;
+      fullText += delta;
+      options.onChunk?.(delta);
+    }
+  } catch (error) {
+    await responseSettled;
+    throw error;
+  }
+
+  await responseSettled;
+  if (responseError) {
+    throw responseError;
+  }
+
+  return fullText;
 }
 
 export async function generateAnnotations(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
+  options: GeminiRequestOptions = {},
 ): Promise<Annotation[]> {
-  const firstAttempt = await callGemini(text, mode, personality);
+  const firstAttempt = await callGemini(
+    text,
+    mode,
+    personality,
+    undefined,
+    options,
+  );
   const mapped = Array.isArray(firstAttempt)
     ? mapLlmOutput(firstAttempt, mode)
     : firstAttempt;
@@ -205,9 +653,14 @@ export async function generateAnnotations(
 
   if (errors.length === 0) return assignUniqueIds(valid);
 
-  // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callGemini(text, mode, personality, correctionPrompt);
+  const retryAttempt = await callGemini(
+    text,
+    mode,
+    personality,
+    correctionPrompt,
+    options,
+  );
   const retryMapped = Array.isArray(retryAttempt)
     ? mapLlmOutput(retryAttempt, mode)
     : retryAttempt;
@@ -218,97 +671,172 @@ export async function generateAnnotations(
   );
 }
 
-/**
- * Streaming annotation generator. Yields individual annotation objects
- * as they are parsed from the incremental JSON stream (flat array).
- */
-export async function* generateAnnotationsStream(
+export async function generateAnnotationsStream(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
-): AsyncGenerator<Annotation, Annotation[], unknown> {
-  const systemPrompt = buildSystemPrompt(mode, personality);
-  const generationConfig = getGenerationConfig();
-  const allAnnotations: Annotation[] = [];
+  options: AnnotationStreamOptions = {},
+): Promise<StreamResult> {
+  const attempts = buildClientAttemptPlan();
+  let lastError: GeminiOperationError | null = null;
+  let emittedAnnotations = false;
 
-  const stream = await withKeyRetry(async (client) => {
-    const model = client.getGenerativeModel({
-      model: modelName,
-      systemInstruction: systemPrompt,
-      generationConfig,
-    });
-    return model.generateContentStream({
-      contents: [{ role: "user", parts: [{ text }] }],
-    });
-  });
+  for (let index = 0; index < attempts.length; index += 1) {
+    const entry = attempts[index]!;
+    const attemptNumber = index + 1;
 
-  let buffer = "";
+    try {
+      const annotations = await consumeAnnotationStreamAttempt(
+        entry,
+        text,
+        mode,
+        personality,
+        {
+          ...options,
+          onAnnotation: (annotation) => {
+            emittedAnnotations = true;
+            options.onAnnotation?.(annotation);
+          },
+        },
+      );
+      return {
+        annotations,
+        usedBufferedFallback: false,
+      };
+    } catch (error) {
+      const operationError = toGeminiOperationError(
+        error,
+        entry.keyIndex,
+        attemptNumber,
+        options.signal,
+      );
+      lastError = operationError;
 
-  for await (const chunk of stream.stream) {
-    const delta = chunk.text();
-    if (!delta) continue;
-    buffer += delta;
+      emittedAnnotations = emittedAnnotations || false;
 
-    const extracted = extractCompleteObjects(buffer);
-    for (const objStr of extracted.objects) {
-      try {
-        const raw = JSON.parse(objStr);
-        const mapped = mapLlmOutput([raw], mode);
-        const { valid } = validateAnnotations(mapped);
-        if (valid.length > 0) {
-          valid[0]!.id = randomUUID();
-          allAnnotations.push(valid[0]!);
-          yield valid[0]!;
-        }
-      } catch {
-        // Incomplete or malformed — skip
+      logGeminiEvent("warn", "generate_annotations_stream.attempt_failed", options.logContext, {
+        key_index: entry.keyIndex,
+        attempt_number: attemptNumber,
+        error_kind: operationError.kind,
+        retryable: operationError.retryable,
+        status: operationError.status,
+        emitted_annotations: emittedAnnotations,
+        error: serializeError(error),
+      });
+
+      if (!operationError.retryable || options.signal?.aborted) {
+        throw operationError;
       }
+
+      if (emittedAnnotations) {
+        break;
+      }
+
+      if (index >= attempts.length - 1) {
+        break;
+      }
+
+      incrementCounter("retries");
+      const nextEntry = attempts[index + 1]!;
+      if (nextEntry.keyIndex !== entry.keyIndex) {
+        incrementCounter("key_rotations");
+      }
+
+      await waitBeforeRetry(attemptNumber, options.signal);
     }
-    buffer = extracted.remaining;
   }
 
-  return allAnnotations;
+  incrementCounter("buffered_fallbacks");
+  logGeminiEvent("warn", "generate_annotations_stream.buffered_fallback", options.logContext, {
+    fallback_from_error_kind: lastError?.kind,
+  });
+
+  try {
+    const annotations = await generateAnnotations(text, mode, personality, options);
+    logGeminiEvent("log", "generate_annotations_stream.buffered_fallback_succeeded", options.logContext, {
+      fallback_from_error_kind: lastError?.kind,
+    });
+    return {
+      annotations,
+      usedBufferedFallback: true,
+    };
+  } catch (fallbackError) {
+    logGeminiEvent("error", "generate_annotations_stream.buffered_fallback_failed", options.logContext, {
+      fallback_from_error_kind: lastError?.kind,
+      error: serializeError(fallbackError),
+    });
+    throw fallbackError;
+  }
 }
 
-// ─── Sketch Generation ───
-
-const sketchPrompt: string = promptsConfig.sketch_prompt ?? "";
-
-/**
- * Streaming sketch generator. Yields plain-text chunks as the LLM produces them.
- */
-export async function* generateSketchStream(
+export async function generateSketchStream(
   inputText: string,
   purpose: string,
   userReactions: string,
-): AsyncGenerator<string, void, unknown> {
-  const userMessage = `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${userReactions}`;
+  options: SketchStreamOptions = {},
+): Promise<string> {
+  const attempts = buildClientAttemptPlan();
+  let lastError: GeminiOperationError | null = null;
+  let emittedText = false;
 
-  const stream = await withKeyRetry(async (client) => {
-    const model = client.getGenerativeModel({
-      model: modelName,
-      systemInstruction: sketchPrompt,
-      generationConfig: {
-        responseMimeType: "text/plain" as const,
-        maxOutputTokens: 2048,
-        temperature: 0.3,
-      },
-    });
-    return model.generateContentStream({
-      contents: [{ role: "user", parts: [{ text: userMessage }] }],
-    });
-  });
+  for (let index = 0; index < attempts.length; index += 1) {
+    const entry = attempts[index]!;
+    const attemptNumber = index + 1;
 
-  for await (const chunk of stream.stream) {
-    const delta = chunk.text();
-    if (delta) yield delta;
+    try {
+      return await consumeSketchStreamAttempt(
+        entry,
+        inputText,
+        purpose,
+        userReactions,
+        {
+          ...options,
+          onChunk: (chunk) => {
+            emittedText = true;
+            options.onChunk?.(chunk);
+          },
+        },
+      );
+    } catch (error) {
+      const operationError = toGeminiOperationError(
+        error,
+        entry.keyIndex,
+        attemptNumber,
+        options.signal,
+      );
+      lastError = operationError;
+
+      logGeminiEvent("warn", "generate_sketch_stream.attempt_failed", options.logContext, {
+        key_index: entry.keyIndex,
+        attempt_number: attemptNumber,
+        error_kind: operationError.kind,
+        retryable: operationError.retryable,
+        status: operationError.status,
+        emitted_chunks: emittedText,
+        error: serializeError(error),
+      });
+
+      if (!operationError.retryable || options.signal?.aborted || emittedText) {
+        throw operationError;
+      }
+
+      if (index >= attempts.length - 1) {
+        break;
+      }
+
+      incrementCounter("retries");
+      const nextEntry = attempts[index + 1]!;
+      if (nextEntry.keyIndex !== entry.keyIndex) {
+        incrementCounter("key_rotations");
+      }
+
+      await waitBeforeRetry(attemptNumber, options.signal);
+    }
   }
+
+  throw lastError ?? new Error("Sketch stream failed without attempts");
 }
 
-/**
- * Extract complete JSON objects from a buffer containing an array.
- * Tracks brace depth to find complete {...} segments.
- */
 function extractCompleteObjects(buffer: string): {
   objects: string[];
   remaining: string;
@@ -324,8 +852,8 @@ function extractCompleteObjects(buffer: string): {
 
   let searchFrom = arrayStart + 1;
 
-  for (let i = searchFrom; i < buffer.length; i++) {
-    const ch = buffer[i]!;
+  for (let index = searchFrom; index < buffer.length; index += 1) {
+    const ch = buffer[index]!;
 
     if (escape) {
       escape = false;
@@ -345,13 +873,13 @@ function extractCompleteObjects(buffer: string): {
     if (inString) continue;
 
     if (ch === "{") {
-      if (depth === 0) objectStart = i;
-      depth++;
+      if (depth === 0) objectStart = index;
+      depth += 1;
     } else if (ch === "}") {
-      depth--;
+      depth -= 1;
       if (depth === 0 && objectStart !== -1) {
-        objects.push(buffer.slice(objectStart, i + 1));
-        searchFrom = i + 1;
+        objects.push(buffer.slice(objectStart, index + 1));
+        searchFrom = index + 1;
         objectStart = -1;
       }
     }
@@ -361,4 +889,8 @@ function extractCompleteObjects(buffer: string): {
     objects,
     remaining: buffer.slice(0, arrayStart + 1) + buffer.slice(searchFrom),
   };
+}
+
+export function getGeminiReliabilityCounters(): Record<string, number> {
+  return { ...reliabilityCounters };
 }

@@ -7,6 +7,7 @@ import type {
 import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
 import type { UserTier } from "@oddity/shared";
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,7 @@ import {
 } from "../lib/gemini.js";
 import { createInflightDedup } from "../lib/inflight-dedup.js";
 import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
+import { createRequestAbortSignal } from "../lib/request-abort.js";
 import { serviceClient } from "../lib/supabase.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -194,6 +196,14 @@ router.post("/", async (req, res) => {
           content_hash,
           authToken,
         );
+        if (req.user?.id && merged.annotations.length > 0) {
+          serviceClient.rpc("increment_annotation_count", {
+            p_user_id: req.user.id,
+            p_count: merged.annotations.length,
+          }).then(({ error }) => {
+            if (error) console.error("[annotate] annotation_count increment failed:", error.message);
+          });
+        }
         res.json({
           success: true,
           cached: true,
@@ -245,6 +255,14 @@ router.post("/", async (req, res) => {
       content_hash,
       authToken,
     );
+    if (req.user?.id && merged.annotations.length > 0) {
+      serviceClient.rpc("increment_annotation_count", {
+        p_user_id: req.user.id,
+        p_count: merged.annotations.length,
+      }).then(({ error }) => {
+        if (error) console.error("[annotate] annotation_count increment failed:", error.message);
+      });
+    }
     res.json({
       success: true,
       cached: false,
@@ -274,6 +292,8 @@ async function handleStreamingAnnotation(
 ): Promise<void> {
   const { url, content_hash, text, mode, personality } = data;
   const authToken = req.headers.authorization?.slice(7) ?? "";
+  const requestId = randomUUID();
+  const { signal, cleanup } = createRequestAbortSignal(req, res);
 
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -307,6 +327,14 @@ async function handleStreamingAnnotation(
         content_hash,
         authToken,
       );
+      if (req.user?.id && merged.annotations.length > 0) {
+        serviceClient.rpc("increment_annotation_count", {
+          p_user_id: req.user.id,
+          p_count: merged.annotations.length,
+        }).then(({ error }) => {
+          if (error) console.error("[annotate/stream] annotation_count increment failed:", error.message);
+        });
+      }
       for (const ann of merged.annotations) {
         res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
       }
@@ -326,21 +354,25 @@ async function handleStreamingAnnotation(
     }
 
     // Stream from LLM
-    const allAnnotations: Annotation[] = [];
-
-    const stream = generateAnnotationsStream(
+    const streamResult = await generateAnnotationsStream(
       text,
       mode as AnnotationMode,
       personality as DepthPersonality | undefined,
+      {
+        signal,
+        logContext: {
+          route: "annotate/stream",
+          requestId,
+          contentHash: content_hash,
+        },
+        onAnnotation: (annotation) => {
+          const fixed = fixSingleAnnotation(annotation, text);
+          if (!fixed || signal.aborted || res.writableEnded) return;
+          res.write(`data: ${JSON.stringify({ annotation: fixed })}\n\n`);
+        },
+      },
     );
-
-    for await (const annotation of stream) {
-      const fixed = fixSingleAnnotation(annotation, text);
-      if (fixed) {
-        allAnnotations.push(fixed);
-        res.write(`data: ${JSON.stringify({ annotation: fixed })}\n\n`);
-      }
-    }
+    const allAnnotations = filterAndFixAnnotations(streamResult.annotations, text);
 
     // Cache the complete result
     const expiresAt = new Date();
@@ -373,6 +405,25 @@ async function handleStreamingAnnotation(
       content_hash,
       authToken,
     );
+    if (streamResult.usedBufferedFallback) {
+      console.warn(
+        "[annotate/stream] Completed via buffered fallback",
+        JSON.stringify({
+          request_id: requestId,
+          content_hash_prefix: content_hash.slice(0, 12),
+          annotations: allAnnotations.length,
+        }),
+      );
+    }
+    if (signal.aborted || res.writableEnded) return;
+    if (req.user?.id && merged.annotations.length > 0) {
+      serviceClient.rpc("increment_annotation_count", {
+        p_user_id: req.user.id,
+        p_count: merged.annotations.length,
+      }).then(({ error }) => {
+        if (error) console.error("[annotate/stream] annotation_count increment failed:", error.message);
+      });
+    }
     res.write(
       `data: ${JSON.stringify({
         done: true,
@@ -386,11 +437,26 @@ async function handleStreamingAnnotation(
     );
     res.end();
   } catch (err) {
+    if (signal.aborted) {
+      console.warn(
+        "[annotate/stream] Request aborted",
+        JSON.stringify({
+          request_id: requestId,
+          content_hash_prefix: content_hash.slice(0, 12),
+        }),
+      );
+      if (!res.writableEnded) res.end();
+      return;
+    }
     console.error("[annotate/stream] Error:", err);
-    res.write(
-      `data: ${JSON.stringify({ error: "Internal server error" })}\n\n`,
-    );
-    res.end();
+    if (!res.writableEnded) {
+      res.write(
+        `data: ${JSON.stringify({ error: "Internal server error" })}\n\n`,
+      );
+      res.end();
+    }
+  } finally {
+    cleanup();
   }
 }
 

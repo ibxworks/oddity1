@@ -4,7 +4,8 @@ export default defineManifest({
   manifest_version: 3,
   name: "Oddity1",
   version: "0.1.0",
-  description: "AI-powered in-place text annotations for any page",
+  description:
+    "Annotation layer on top of your LLM conversation, amplifying your critical thinking.",
   icons: {
     16: "icons/terry-icon-16.png",
     32: "icons/terry-icon-32.png",
