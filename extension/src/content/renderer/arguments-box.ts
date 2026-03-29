@@ -954,6 +954,10 @@ export function setArgumentsBoxPdf(isPdf: boolean): void {
   }
 }
 
+export function setDashUserTier(tier: string): void {
+  dashUserTier = tier;
+}
+
 export function setPdfRunCallback(cb: () => void): void {
   pdfRunCb = cb;
 }
@@ -1337,25 +1341,38 @@ function showPdfOverlay(): void {
   hint.className = "args-not-enabled-hint";
   hint.style.fontSize = "12px";
   hint.style.marginTop = "4px";
-  hint.textContent = "Convert to HTML to enable Oddity 1";
 
   const btnRow = document.createElement("div");
   btnRow.className = "args-not-enabled-btn-row";
 
-  const runBtn = document.createElement("button");
-  runBtn.className = "args-run-btn";
-  runBtn.textContent = "Run as HTML";
-  runBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    runBtn.disabled = true;
-    runBtn.textContent = "Converting…";
-    pdfRunCb?.();
-  });
+  if (dashUserTier !== "standard") {
+    // Free users: show upgrade prompt
+    hint.textContent = "Annotations on PDF requires a Standard plan. ";
+    const link = document.createElement("a");
+    link.href = "https://app.oddity1.com/plans";
+    link.target = "_blank";
+    link.style.color = "#22c55e";
+    link.style.textDecoration = "underline";
+    link.textContent = "Get Standard";
+    hint.appendChild(link);
+  } else {
+    // Standard users: show conversion button
+    hint.textContent = "Convert to HTML to enable Oddity 1";
+    const runBtn = document.createElement("button");
+    runBtn.className = "args-run-btn";
+    runBtn.textContent = "Run as HTML";
+    runBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      runBtn.disabled = true;
+      runBtn.textContent = "Converting…";
+      pdfRunCb?.();
+    });
+    btnRow.appendChild(runBtn);
+  }
 
-  btnRow.appendChild(runBtn);
   pdfPanelEl.appendChild(msg);
   pdfPanelEl.appendChild(hint);
-  pdfPanelEl.appendChild(btnRow);
+  if (btnRow.children.length > 0) pdfPanelEl.appendChild(btnRow);
   pdfPanelEl.addEventListener("click", (e) => e.stopPropagation());
   contentClip.appendChild(pdfPanelEl);
 

@@ -744,7 +744,11 @@ chrome.runtime.onMessage.addListener(
               chrome.tabs.onUpdated.removeListener(onUpdated);
 
               const manifest = chrome.runtime.getManifest();
-              const file = manifest.content_scripts?.[0]?.js?.[0];
+              // Use the isolated-world content script (the pipeline loader), not [0]
+              // which is the MAIN world dom-guard that has no argbox logic.
+              const scripts = manifest.content_scripts ?? [];
+              const cs = scripts.find((s) => s.world !== "MAIN") ?? scripts[1] ?? scripts[0];
+              const file = cs?.js?.[0];
               if (!file) return;
 
               chrome.scripting.executeScript({

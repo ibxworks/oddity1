@@ -43,6 +43,7 @@ import {
   updateDashboardPersonality,
   setArgumentsBoxPdf,
   setPdfRunCallback,
+  setDashUserTier,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -674,6 +675,17 @@ async function init(): Promise<void> {
     console.log("[Oddity 1] PDF detected — showing conversion overlay");
     initArgumentsBox();
     setArgumentsBoxEnabled(true);
+
+    // Fetch auth status so the PDF overlay shows the correct tier gate.
+    // (The normal auth check at line ~713 is bypassed by this early return.)
+    const pdfAuthStatus = await sendMessage<{ authenticated: boolean; user?: { email: string; display_name: string | null; tier: string; annotation_count: number } }>({
+      action: "getAuthStatus",
+      payload: {},
+    });
+    if (pdfAuthStatus?.user?.tier) {
+      setDashUserTier(pdfAuthStatus.user.tier);
+    }
+
     setArgumentsBoxPdf(true);
     setPdfRunCallback(handlePdfConversion);
     return;
@@ -722,6 +734,14 @@ async function init(): Promise<void> {
     setArgumentsBoxEnabled(enabled);
     setManualRunCallback(manualRun);
     setInputTextProvider(collectInputText);
+    return;
+  }
+
+  // PDF-converted HTML page — skip whitelist check and auto-run annotations.
+  // The meta tag is injected by pdf-converter.ts for all converted pages.
+  if (document.querySelector('meta[name="oddity-source-pdf"]')) {
+    siteWhitelisted = true;
+    await startPipeline();
     return;
   }
 
