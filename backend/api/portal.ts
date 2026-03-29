@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { serviceClient } from '../lib/supabase.js';
-import { stripe } from '../lib/stripe.js';
+import { getStripe } from '../lib/stripe.js';
 
 const router = Router();
 
@@ -26,9 +26,15 @@ router.post('/', async (req, res) => {
       return;
     }
 
-    const session = await stripe.billingPortal.sessions.create({
+    const dashboardUrl = process.env.DASHBOARD_URL;
+    if (!dashboardUrl) {
+      res.status(500).json({ error: 'DASHBOARD_URL not configured' });
+      return;
+    }
+
+    const session = await getStripe().billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
-      return_url: `${process.env.DASHBOARD_URL || 'http://localhost:5173'}/settings?portal_return=1`,
+      return_url: `${dashboardUrl}/settings?portal_return=1`,
     });
 
     res.json({ url: session.url });

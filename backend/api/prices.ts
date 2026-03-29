@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { stripe } from '../lib/stripe.js';
+import { getStripe } from '../lib/stripe.js';
 
 const router = Router();
 
@@ -41,7 +41,7 @@ router.get('/', async (_req, res) => {
       return;
     }
 
-    const { data: stripePrices } = await stripe.prices.list({
+    const { data: stripePrices } = await getStripe().prices.list({
       product: productId,
       active: true,
       limit: 10,
