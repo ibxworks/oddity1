@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 import { useProfile } from "../hooks/useProfile";
 import { supabase } from "../lib/supabase";
@@ -22,21 +22,85 @@ export default function AccountPage() {
     loading,
     updatePreferences,
     updateDisplayName,
+    refetchProfile,
   } = useProfile(session);
   const showToast = useToast();
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [newSite, setNewSite] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [subscription, setSubscription] = useState(null);
+  const [subscriptionError, setSubscriptionError] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   const tier = profile?.tier || "free";
   const displayName =
     profile?.display_name ||
     session.user.email.split("@")[0] ||
     session.user.email;
+  // Fetch subscription info
+  useEffect(() => {
+    if (!session?.access_token) return;
+    fetch(`${BACKEND_URL}/api/subscription`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setSubscription(data);
+        else setSubscriptionError(true);
+      })
+      .catch(() => setSubscriptionError(true));
+  }, [session?.access_token]);
+
+  // Handle ?portal_return=1 from billing portal redirect
+  useEffect(() => {
+    if (searchParams.get("portal_return") !== "1") return;
+    setSearchParams({}, { replace: true });
+
+    refetchProfile();
+    if (!session?.access_token) return;
+    fetch(`${BACKEND_URL}/api/subscription`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) {
+          setSubscription(data);
+          setSubscriptionError(false);
+          showToast("Subscription updated.");
+        } else {
+          setSubscriptionError(true);
+        }
+      })
+      .catch(() => setSubscriptionError(true));
+  }, []);
+
+  // Handle ?checkout=success from Stripe redirect
+  useEffect(() => {
+    if (searchParams.get("checkout") !== "success") return;
+    setSearchParams({}, { replace: true });
+
+    // Re-fetch profile and subscription so UI reflects updated tier immediately
+    refetchProfile();
+    if (!session?.access_token) {
+      showToast("Subscription activated! Welcome to Standard.");
+      return;
+    }
+    fetch(`${BACKEND_URL}/api/subscription`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setSubscription(data);
+        showToast("Subscription activated! Welcome to Standard.");
+      })
+      .catch(() => showToast("Subscription activated! Welcome to Standard."));
+  }, []);
+
   const depthPersonality = preferences.depth_personality || "terry";
   const visibleTypes = preferences.visible_types || [
     ...ALL_OVERVIEW_TYPES,
@@ -62,6 +126,10 @@ export default function AccountPage() {
   }
 
   async function handlePersonality(value) {
+    if (value === "sally" && tier !== "standard") {
+      showToast("Sally personality requires a Standard plan");
+      return;
+    }
     await updatePreferences({ depth_personality: value });
   }
 
@@ -137,6 +205,31 @@ export default function AccountPage() {
     }
   }
 
+  async function handleManageSubscription() {
+    setPortalLoading(true);
+    try {
+      const {
+        data: { session: currentSession },
+      } = await supabase.auth.getSession();
+      const res = await fetch(`${BACKEND_URL}/api/portal`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentSession.access_token}`,
+        },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to open billing portal");
+      }
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch (err) {
+      showToast(err.message);
+      setPortalLoading(false);
+    }
+  }
+
   async function handleSignOut() {
     await supabase.auth.signOut();
   }
@@ -199,25 +292,72 @@ export default function AccountPage() {
           <div className="field">
             <span className="field-label">Tier</span>
             <div className="auth-detail">
-              {tier === "pro" ? "Standard Plan" : "Free Plan"}
+              {tier === "standard" ? "Standard Plan" : "Free Plan"}
             </div>
           </div>
 
           <div className="field">
-            <span className="field-label">Annotations</span>
-            <div className="auth-detail">0</div>
+            <span className="field-label">Usage</span>
+            <div className="auth-detail">
+              {subscription
+                ? `${subscription.usage.count} / ${subscription.usage.limit} pages annotated this month`
+                : subscriptionError
+                  ? "Unable to load usage"
+                  : "Loading..."}
+            </div>
           </div>
+
+          {tier === "standard" && subscription && (
+            <div className="field">
+              <span className="field-label">Subscription</span>
+              <div className="auth-detail">
+                {subscription.subscription_status === "active"
+                  ? "Active"
+                  : subscription.subscription_status === "past_due"
+                    ? "Past due"
+                    : subscription.subscription_status
+                      ? subscription.subscription_status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+                      : "—"}
+                {subscription.billing_interval &&
+                  ` · ${subscription.billing_interval.replace(/\b\w/g, (c) => c.toUpperCase())} billing`}
+              </div>
+              {subscription.current_period_end && (
+                <div className="auth-detail" style={{ marginTop: 4 }}>
+                  {subscription.cancel_at_period_end
+                    ? `Cancels on ${new Date(subscription.current_period_end).toLocaleDateString()}`
+                    : `Renews ${new Date(subscription.current_period_end).toLocaleDateString()}`}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tier === "standard" && subscription?.subscription_status === "past_due" && (
+            <div className="past-due-warning">
+              <span>⚠ Payment failed. Update your payment method to keep your subscription.</span>
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={handleManageSubscription}
+                disabled={portalLoading}
+              >
+                {portalLoading ? "Redirecting..." : "Update Payment"}
+              </button>
+            </div>
+          )}
 
           <div className="btn-row" style={{ marginTop: 16 }}>
             {tier === "free" && (
-              <a
-                href="https://oddity1.com/plans"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-sm"
-              >
+              <Link to="/plans" className="btn btn-sm">
                 Upgrade to Standard
-              </a>
+              </Link>
+            )}
+            {tier === "standard" && (
+              <button
+                className="btn btn-sm"
+                onClick={handleManageSubscription}
+                disabled={portalLoading}
+              >
+                {portalLoading ? "Redirecting..." : "Manage Subscription"}
+              </button>
             )}
             <button className="btn btn-sm btn-danger" onClick={handleSignOut}>
               Sign out
@@ -309,6 +449,8 @@ export default function AccountPage() {
                   key={p}
                   className={`radio-btn ${depthPersonality === p ? "active" : ""}`}
                   onClick={() => handlePersonality(p)}
+                  style={undefined}
+                  title={p === "sally" && tier !== "standard" ? "Standard plan required" : undefined}
                 >
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                 </button>

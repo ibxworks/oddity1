@@ -1,4 +1,4 @@
-import type { AnnotationType, OverviewLabel, DepthType } from "./types.js";
+import type { AnnotationType, OverviewLabel, DepthType, UserTier } from "./types.js";
 
 // ─── Blocked Domains ───
 
@@ -31,10 +31,28 @@ export const ADAPTER_REFRESH_INTERVAL_MINUTES = 360; // 6 hours
 export const SCROLL_LOADER_ROOT_MARGIN = "500px";
 export const EAGER_WORD_LIMIT = 6000;
 
-// ─── Rate Limits ───
+// ─── Plan Features ───
 
-export const RATE_LIMIT_FREE = 5000;
-export const RATE_LIMIT_PRO = 500;
+export type PlanFeatureKey = keyof typeof PLAN_FEATURES.free;
+
+export const PLAN_FEATURES = {
+  free: {
+    sallyPersonality: false,
+    customPdfSubtitle: false,
+    pdfAnnotation: false,
+    sketchPad: false,
+  },
+  standard: {
+    sallyPersonality: true,
+    customPdfSubtitle: true,
+    pdfAnnotation: true,
+    sketchPad: true,
+  },
+} as const satisfies Record<UserTier, Record<string, boolean>>;
+
+export function canUseFeature(tier: UserTier, feature: PlanFeatureKey): boolean {
+  return PLAN_FEATURES[tier]?.[feature] ?? false;
+}
 
 // ─── Request Limits ───
 

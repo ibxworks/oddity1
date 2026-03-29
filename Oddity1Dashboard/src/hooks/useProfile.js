@@ -44,5 +44,18 @@ export function useProfile(session) {
       .eq('id', session.user.id)
   }
 
-  return { profile, preferences, loading, updatePreferences, updateDisplayName }
+  async function refetchProfile() {
+    if (!session?.user?.id) return
+    const { data } = await supabase
+      .from('profiles')
+      .select('display_name, tier, preferences')
+      .eq('id', session.user.id)
+      .single()
+    if (data) {
+      setProfile(data)
+      setPreferences(data.preferences || {})
+    }
+  }
+
+  return { profile, preferences, loading, updatePreferences, updateDisplayName, refetchProfile }
 }

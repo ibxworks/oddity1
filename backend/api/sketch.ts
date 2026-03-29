@@ -1,4 +1,5 @@
-import { MAX_TEXT_LENGTH } from "@oddity/shared";
+import { MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
+import type { UserTier } from "@oddity/shared";
 import { Router } from "express";
 import { z } from "zod";
 import { generateSketchStream } from "../lib/gemini.js";
@@ -12,6 +13,16 @@ const SketchRequestSchema = z.object({
 const router = Router();
 
 router.post("/", async (req, res) => {
+  // Feature gate: Sketch Pad requires Standard plan
+  const userTier = (req.user?.tier ?? "free") as UserTier;
+  if (!canUseFeature(userTier, "sketchPad")) {
+    res.status(403).json({
+      error: "Sketch Pad requires a Standard plan",
+      upgrade: true,
+    });
+    return;
+  }
+
   const parsed = SketchRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request", details: parsed.error.issues });

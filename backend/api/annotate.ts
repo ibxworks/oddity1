@@ -1,9 +1,11 @@
 import type {
   Annotation,
   AnnotationMode,
+  AnnotationUsage,
   DepthPersonality,
 } from "@oddity/shared";
-import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH } from "@oddity/shared";
+import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
+import type { UserTier } from "@oddity/shared";
 import { Router } from "express";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -27,6 +29,38 @@ const prompts = JSON.parse(readFileSync(promptsPath, "utf-8"));
 
 // ─── Optimization: in-flight request dedup ───
 const dedup = createInflightDedup();
+
+function getPlanLimit(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getMonthlyPlanLimits(): { free: number; standard: number } {
+  return {
+    free: getPlanLimit(process.env.FREE_PLAN_LIMIT_PER_MONTH, 100),
+    standard: getPlanLimit(process.env.STANDARD_PLAN_LIMIT_PER_MONTH, 2000),
+  };
+}
+
+function getUpgradeMultiplier(): number | undefined {
+  const limits = getMonthlyPlanLimits();
+  if (limits.free <= 0) return undefined;
+
+  const multiplier = Math.round(limits.standard / limits.free);
+  return Number.isFinite(multiplier) && multiplier > 1 ? multiplier : undefined;
+}
+
+function buildUsage(
+  count: number,
+  limit: number,
+  alreadyCounted: boolean,
+): AnnotationUsage {
+  return {
+    count,
+    limit,
+    already_counted: alreadyCounted,
+  };
+}
 
 function cacheKey(
   contentHash: string,
@@ -58,10 +92,77 @@ router.post("/", async (req, res) => {
       return;
     }
 
+    const userTier = (req.user?.tier ?? "free") as UserTier;
+    const upgradeMultiplier =
+      userTier === "free" ? getUpgradeMultiplier() : undefined;
+    let usage: AnnotationUsage | undefined;
+
+    // ── Feature gate: Sally personality requires Standard ──
+    if (
+      parsed.data.personality === "sally" &&
+      !canUseFeature(userTier, "sallyPersonality")
+    ) {
+      res.status(403).json({
+        error: "Sally personality requires a Standard plan",
+        upgrade: true,
+      });
+      return;
+    }
+
+    // ── Feature gate: PDF URLs require Standard ──
+    if (
+      /\.pdf($|\?)/i.test(parsed.data.url) &&
+      !canUseFeature(userTier, "pdfAnnotation")
+    ) {
+      res.status(403).json({
+        error: "PDF annotation requires a Standard plan",
+        upgrade: true,
+      });
+      return;
+    }
+
+    // ── Usage limit check ──
+    if (req.user?.id) {
+      const limits = getMonthlyPlanLimits();
+      const limit = userTier !== "free" ? limits.standard : limits.free;
+
+      const { data: usageResult, error: usageErr } = await serviceClient.rpc(
+        "check_and_record_usage",
+        { p_user_id: req.user.id, p_url: parsed.data.url, p_limit: limit },
+      );
+
+      if (usageErr) {
+        console.error("[annotate] Usage check failed:", usageErr.message);
+      } else if (usageResult) {
+        usage = buildUsage(
+          Number(usageResult.count ?? 0),
+          limit,
+          Boolean(usageResult.already_counted),
+        );
+      }
+
+      if (usageResult && !usageResult.allowed) {
+        res.status(403).json({
+          error: "Monthly annotation limit reached",
+          usage,
+          upgrade: userTier === "free",
+          upgrade_multiplier: upgradeMultiplier,
+        });
+        return;
+      }
+    }
+
     // SSE streaming path: client requests progressive delivery
     const wantsStream = req.headers.accept === "text/event-stream";
     if (wantsStream) {
-      return handleStreamingAnnotation(req, res, parsed.data);
+      return handleStreamingAnnotation(
+        req,
+        res,
+        parsed.data,
+        usage,
+        userTier,
+        upgradeMultiplier,
+      );
     }
 
     const { url, content_hash, text, mode, personality } = parsed.data;
@@ -93,7 +194,15 @@ router.post("/", async (req, res) => {
           content_hash,
           authToken,
         );
-        res.json({ success: true, cached: true, source: "db", ...merged });
+        res.json({
+          success: true,
+          cached: true,
+          source: "db",
+          ...merged,
+          usage,
+          upgrade: userTier === "free" ? true : undefined,
+          upgrade_multiplier: upgradeMultiplier,
+        });
         return;
       }
     }
@@ -130,21 +239,21 @@ router.post("/", async (req, res) => {
       console.error("[annotate] Cache write failed:", cacheWriteError.message);
     }
 
-    // Increment user's annotation count (fresh generation only)
-    if (req.user?.id) {
-      await serviceClient.rpc("increment_annotation_count", {
-        p_user_id: req.user.id,
-        p_count: aiAnnotations.length,
-      });
-    }
-
     const merged = await mergeAnnotationsAndFeedback(
       aiAnnotations,
       url,
       content_hash,
       authToken,
     );
-    res.json({ success: true, cached: false, source: "llm", ...merged });
+    res.json({
+      success: true,
+      cached: false,
+      source: "llm",
+      ...merged,
+      usage,
+      upgrade: userTier === "free" ? true : undefined,
+      upgrade_multiplier: upgradeMultiplier,
+    });
   } catch (err) {
     console.error("[annotate] Error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -159,6 +268,9 @@ async function handleStreamingAnnotation(
   req: import("express").Request,
   res: import("express").Response,
   data: z.infer<typeof AnnotateRequestSchema>,
+  usage: AnnotationUsage | undefined,
+  userTier: UserTier,
+  upgradeMultiplier: number | undefined,
 ): Promise<void> {
   const { url, content_hash, text, mode, personality } = data;
   const authToken = req.headers.authorization?.slice(7) ?? "";
@@ -199,7 +311,15 @@ async function handleStreamingAnnotation(
         res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
       }
       res.write(
-        `data: ${JSON.stringify({ done: true, cached: true, annotations: merged.annotations, feedback: merged.feedback })}\n\n`,
+        `data: ${JSON.stringify({
+          done: true,
+          cached: true,
+          annotations: merged.annotations,
+          feedback: merged.feedback,
+          usage,
+          upgrade: userTier === "free" ? true : undefined,
+          upgrade_multiplier: upgradeMultiplier,
+        })}\n\n`,
       );
       res.end();
       return;
@@ -247,13 +367,6 @@ async function handleStreamingAnnotation(
       );
     }
 
-    if (req.user?.id) {
-      await serviceClient.rpc("increment_annotation_count", {
-        p_user_id: req.user.id,
-        p_count: allAnnotations.length,
-      });
-    }
-
     const merged = await mergeAnnotationsAndFeedback(
       allAnnotations,
       url,
@@ -261,7 +374,15 @@ async function handleStreamingAnnotation(
       authToken,
     );
     res.write(
-      `data: ${JSON.stringify({ done: true, cached: false, annotations: merged.annotations, feedback: merged.feedback })}\n\n`,
+      `data: ${JSON.stringify({
+        done: true,
+        cached: false,
+        annotations: merged.annotations,
+        feedback: merged.feedback,
+        usage,
+        upgrade: userTier === "free" ? true : undefined,
+        upgrade_multiplier: upgradeMultiplier,
+      })}\n\n`,
     );
     res.end();
   } catch (err) {

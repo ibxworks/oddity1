@@ -75,11 +75,20 @@ export type Annotation = {
   };
 };
 
+export type AnnotationUsage = {
+  count: number;
+  limit: number;
+  already_counted: boolean;
+};
+
 export type AnnotationResponse = {
   success: boolean;
   cached: boolean;
   annotations: Annotation[];
   feedback?: AnnotationFeedback[];
+  usage?: AnnotationUsage;
+  upgrade?: boolean;
+  upgrade_multiplier?: number;
 };
 
 // ─── Feedback ───
@@ -128,12 +137,28 @@ export type SiteAdapter = {
 
 // ─── User ───
 
-export type UserTier = "free" | "pro";
+export type UserTier = "free" | "standard";
+
+export type SubscriptionStatus =
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "incomplete"
+  | "trialing"
+  | "unpaid"
+  | null;
+
+export type BillingInterval = "month" | "quarter" | "year" | null;
 
 export type UserProfile = {
   id: string;
   display_name: string | null;
   tier: UserTier;
+  subscription_status: SubscriptionStatus;
+  billing_interval: BillingInterval;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  monthly_annotation_count: number;
   preferences: UserPreferences;
   created_at: string;
 };

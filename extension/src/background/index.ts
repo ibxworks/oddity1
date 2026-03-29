@@ -1,5 +1,9 @@
 import type { ExtensionMessage, UserPreferences } from "@oddity/shared";
-import { DEFAULT_ENABLED_SITES, isBlockedDomain, MAX_TEXT_LENGTH } from "@oddity/shared";
+import {
+  DEFAULT_ENABLED_SITES,
+  isBlockedDomain,
+  MAX_TEXT_LENGTH,
+} from "@oddity/shared";
 import { sendToTab } from "../shared/messaging.js";
 import {
   getAdapters,
@@ -7,20 +11,34 @@ import {
   initAdapterRefresh,
 } from "./adapter-registry.js";
 import {
-  AuthError,
-  RateLimitError,
   deleteAnnotation as apiDeleteAnnotation,
   deleteFeedback as apiDeleteFeedback,
-  updateFeedback as apiUpdateFeedback,
-  requestAnnotationsStreaming,
-  requestSketchStreaming,
-  saveAnnotation,
   saveFeedback as apiSaveFeedback,
   sendUserFeedback as apiSendUserFeedback,
   updateAnnotation as apiUpdateAnnotation,
+  updateFeedback as apiUpdateFeedback,
+  AuthError,
   deleteAccount,
+  RateLimitError,
+  requestAnnotationsStreaming,
+  requestSketchStreaming,
+  saveAnnotation,
+  UsageLimitError,
 } from "./api-client.js";
-import { ensureProfile, getEnabledSites, getProfile, getSession, getUserTier, resetPassword, signIn, signInWithGoogle, signOut, signUp, updateEnabledSites, updateProfile } from "./auth.js";
+import {
+  ensureProfile,
+  getEnabledSites,
+  getProfile,
+  getSession,
+  getUserTier,
+  resetPassword,
+  signIn,
+  signInWithGoogle,
+  signOut,
+  signUp,
+  updateEnabledSites,
+  updateProfile,
+} from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 import { getFromSessionCache, setInSessionCache } from "./sw-cache.js";
 import { getUrlCache, setUrlCache } from "./url-cache.js";
@@ -70,7 +88,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Migration: replace disabled_sites with enabled_sites
   const stored = await chrome.storage.local.get("preferences");
   const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-  if ('disabled_sites' in prefs) {
+  if ("disabled_sites" in prefs) {
     delete prefs.disabled_sites;
     if (!Array.isArray(prefs.enabled_sites)) {
       prefs.enabled_sites = DEFAULT_ENABLED_SITES;
@@ -91,10 +109,20 @@ chrome.runtime.onMessage.addListener(
     const handleAsync = async (): Promise<unknown> => {
       switch (message.action) {
         case "requestAnnotations": {
-          const { url, regionId, contentHash, text, mode: rawMode, personality, wordCount } =
-            message.payload;
+          const {
+            url,
+            regionId,
+            contentHash,
+            text,
+            mode: rawMode,
+            personality,
+            wordCount,
+          } = message.payload;
           // Guard against stale content scripts (pre-mode-refactor) sending undefined mode
-          const mode = (rawMode === "overview" || rawMode === "depth") ? rawMode : "overview";
+          const mode =
+            rawMode === "overview" || rawMode === "depth"
+              ? rawMode
+              : "overview";
 
           // Proactive auth check — fail fast with badge if not signed in
           const session = await getSession();
@@ -108,15 +136,27 @@ chrome.runtime.onMessage.addListener(
           chrome.action.setBadgeText({ text: "" });
 
           // Build session cache key; overview is persona-independent
-          const sessionCacheKey = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
+          const sessionCacheKey =
+            mode === "overview"
+              ? "overview:terry"
+              : `${mode}:${personality ?? "terry"}`;
 
           // ── Session cache: stale-while-revalidate for revisits ──
-          const cached = await getFromSessionCache(contentHash, sessionCacheKey);
+          const cached = await getFromSessionCache(
+            contentHash,
+            sessionCacheKey,
+          );
           if (cached) {
-            console.log(`[Oddity 1] Session cache hit for ${contentHash.slice(0, 12)}… (stale-while-revalidate)`);
+            console.log(
+              `[Oddity 1] Session cache hit for ${contentHash.slice(0, 12)}… (stale-while-revalidate)`,
+            );
             // Filter out locally deleted items before sending cached data
-            const cachedAnnotations = cached.annotations.filter((a) => !deletedAnnotationIds.has(a.id));
-            const cachedFeedback = cached.feedback.filter((f) => !deletedFeedbackIds.has(f.id));
+            const cachedAnnotations = cached.annotations.filter(
+              (a) => !deletedAnnotationIds.has(a.id),
+            );
+            const cachedFeedback = cached.feedback.filter(
+              (f) => !deletedFeedbackIds.has(f.id),
+            );
             if (sender.tab?.id) {
               await sendToTab(sender.tab.id, {
                 action: "annotationsReady",
@@ -149,9 +189,13 @@ chrome.runtime.onMessage.addListener(
             let validatedWordCount = wordCount;
 
             if (validatedText.length > MAX_TEXT_LENGTH) {
-              console.log(`[Oddity 1] Truncating text from ${validatedText.length} to ${MAX_TEXT_LENGTH} chars`);
+              console.log(
+                `[Oddity 1] Truncating text from ${validatedText.length} to ${MAX_TEXT_LENGTH} chars`,
+              );
               validatedText = validatedText.slice(0, MAX_TEXT_LENGTH);
-              validatedWordCount = validatedText.split(/\s+/).filter(Boolean).length;
+              validatedWordCount = validatedText
+                .split(/\s+/)
+                .filter(Boolean).length;
             }
 
             if (validatedWordCount <= 0) {
@@ -179,7 +223,9 @@ chrome.runtime.onMessage.addListener(
                       regionId: contentHash,
                       annotation,
                     },
-                  }).catch(() => { /* tab may have closed */ });
+                  }).catch(() => {
+                    /* tab may have closed */
+                  });
                 }
               },
               controller.signal,
@@ -198,8 +244,19 @@ chrome.runtime.onMessage.addListener(
             );
 
             // Populate caches for future revisits
-            await setInSessionCache(contentHash, sessionCacheKey, annotations, feedback);
-            await setUrlCache(url, contentHash, sessionCacheKey, annotations, feedback);
+            await setInSessionCache(
+              contentHash,
+              sessionCacheKey,
+              annotations,
+              feedback,
+            );
+            await setUrlCache(
+              url,
+              contentHash,
+              sessionCacheKey,
+              annotations,
+              feedback,
+            );
 
             // Send final annotationsReady with complete set + feedback
             if (sender.tab?.id) {
@@ -253,7 +310,7 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "openOptions": {
-          chrome.runtime.openOptionsPage();
+          chrome.tabs.create({ url: "https://app.oddity1.com/settings" });
           return {};
         }
 
@@ -291,11 +348,18 @@ chrome.runtime.onMessage.addListener(
           // This handles the flow: signup (no session, RLS blocks profile insert)
           // → email confirmation → first sign-in.
           if (!signInProfile?.display_name) {
-            const pending = await chrome.storage.local.get("pending_display_name");
-            const cached = pending["pending_display_name"] as { email: string; displayName: string } | undefined;
+            const pending = await chrome.storage.local.get(
+              "pending_display_name",
+            );
+            const cached = pending["pending_display_name"] as
+              | { email: string; displayName: string }
+              | undefined;
             if (cached && cached.email === email && cached.displayName) {
               await updateProfile(cached.displayName).catch((err) =>
-                console.error("[Oddity 1] Failed to set cached display_name:", err)
+                console.error(
+                  "[Oddity 1] Failed to set cached display_name:",
+                  err,
+                ),
               );
               await chrome.storage.local.remove("pending_display_name");
               signInProfile = await getProfile();
@@ -303,10 +367,16 @@ chrome.runtime.onMessage.addListener(
           }
 
           // Cache enabled sites locally after sign-in
-          const signInSites = await getEnabledSites() ?? DEFAULT_ENABLED_SITES;
+          const signInSites =
+            (await getEnabledSites()) ?? DEFAULT_ENABLED_SITES;
           const signInStored = await chrome.storage.local.get("preferences");
-          const signInPrefs = (signInStored["preferences"] ?? {}) as Record<string, unknown>;
-          await chrome.storage.local.set({ preferences: { ...signInPrefs, enabled_sites: signInSites } });
+          const signInPrefs = (signInStored["preferences"] ?? {}) as Record<
+            string,
+            unknown
+          >;
+          await chrome.storage.local.set({
+            preferences: { ...signInPrefs, enabled_sites: signInSites },
+          });
 
           // Broadcast auth change to all other tabs (include user data to avoid re-querying auth)
           const signInTabId = sender.tab?.id;
@@ -319,7 +389,10 @@ chrome.runtime.onMessage.addListener(
           chrome.tabs.query({}, (tabs) => {
             for (const tab of tabs) {
               if (tab.id && tab.id !== signInTabId) {
-                sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: true, user: signInUser } }).catch(() => {});
+                sendToTab(tab.id, {
+                  action: "authStateChanged",
+                  payload: { authenticated: true, user: signInUser },
+                }).catch(() => {});
               }
             }
           });
@@ -340,9 +413,13 @@ chrome.runtime.onMessage.addListener(
           const googleProfile = await getProfile();
 
           // Cache enabled sites locally after Google sign-in
-          const googleSites = (await getEnabledSites()) ?? DEFAULT_ENABLED_SITES;
+          const googleSites =
+            (await getEnabledSites()) ?? DEFAULT_ENABLED_SITES;
           const googleStored = await chrome.storage.local.get("preferences");
-          const googlePrefs = (googleStored["preferences"] ?? {}) as Record<string, unknown>;
+          const googlePrefs = (googleStored["preferences"] ?? {}) as Record<
+            string,
+            unknown
+          >;
           await chrome.storage.local.set({
             preferences: { ...googlePrefs, enabled_sites: googleSites },
           });
@@ -387,14 +464,24 @@ chrome.runtime.onMessage.addListener(
           // is required (no session → RLS blocks INSERT), so we need this
           // cached value to set display_name on first sign-in.
           if (displayName && email) {
-            await chrome.storage.local.set({ "pending_display_name": { email, displayName } });
+            await chrome.storage.local.set({
+              pending_display_name: { email, displayName },
+            });
           }
 
           // Cache default enabled sites locally after sign-up
           if (!needsConfirmation) {
             const signUpStored = await chrome.storage.local.get("preferences");
-            const signUpPrefs = (signUpStored["preferences"] ?? {}) as Record<string, unknown>;
-            await chrome.storage.local.set({ preferences: { ...signUpPrefs, enabled_sites: DEFAULT_ENABLED_SITES } });
+            const signUpPrefs = (signUpStored["preferences"] ?? {}) as Record<
+              string,
+              unknown
+            >;
+            await chrome.storage.local.set({
+              preferences: {
+                ...signUpPrefs,
+                enabled_sites: DEFAULT_ENABLED_SITES,
+              },
+            });
           }
 
           return {
@@ -413,7 +500,10 @@ chrome.runtime.onMessage.addListener(
           chrome.tabs.query({}, (tabs) => {
             for (const tab of tabs) {
               if (tab.id && tab.id !== signOutTabId) {
-                sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: false } }).catch(() => {});
+                sendToTab(tab.id, {
+                  action: "authStateChanged",
+                  payload: { authenticated: false },
+                }).catch(() => {});
               }
             }
           });
@@ -434,7 +524,10 @@ chrome.runtime.onMessage.addListener(
           chrome.tabs.query({}, (tabs) => {
             for (const tab of tabs) {
               if (tab.id && tab.id !== delTabId) {
-                sendToTab(tab.id, { action: "authStateChanged", payload: { authenticated: false } }).catch(() => {});
+                sendToTab(tab.id, {
+                  action: "authStateChanged",
+                  payload: { authenticated: false },
+                }).catch(() => {});
               }
             }
           });
@@ -443,7 +536,12 @@ chrome.runtime.onMessage.addListener(
 
         case "saveManualAnnotation": {
           const { url, contentHash, annotation, pageTitle } = message.payload;
-          const saved = await saveAnnotation(url, contentHash, annotation, pageTitle);
+          const saved = await saveAnnotation(
+            url,
+            contentHash,
+            annotation,
+            pageTitle,
+          );
           return saved;
         }
 
@@ -486,26 +584,56 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "deleteAnnotation": {
-          const { annotationId: delId, url: delUrl, contentHash: delHash } = message.payload;
+          const {
+            annotationId: delId,
+            url: delUrl,
+            contentHash: delHash,
+          } = message.payload;
           deletedAnnotationIds.add(delId);
 
           // Evict from caches FIRST (before API call) so that if the service
           // worker is killed mid-execution, the caches are already clean.
-          for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+          for (const intensity of [
+            "overview:terry",
+            "overview:jerry",
+            "overview:sally",
+            "depth:terry",
+            "depth:jerry",
+            "depth:sally",
+          ]) {
             const cached = await getFromSessionCache(delHash, intensity);
             if (cached) {
-              cached.annotations = cached.annotations.filter((a) => a.id !== delId);
+              cached.annotations = cached.annotations.filter(
+                (a) => a.id !== delId,
+              );
               // Also remove orphaned feedback for this annotation
-              cached.feedback = cached.feedback.filter((f) => f.annotation_id !== delId);
-              await setInSessionCache(delHash, intensity, cached.annotations, cached.feedback);
+              cached.feedback = cached.feedback.filter(
+                (f) => f.annotation_id !== delId,
+              );
+              await setInSessionCache(
+                delHash,
+                intensity,
+                cached.annotations,
+                cached.feedback,
+              );
             }
           }
           if (delUrl) {
             const urlCached = await getUrlCache(delUrl);
             if (urlCached) {
-              urlCached.annotations = urlCached.annotations.filter((a) => a.id !== delId);
-              urlCached.feedback = urlCached.feedback.filter((f) => f.annotation_id !== delId);
-              await setUrlCache(delUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
+              urlCached.annotations = urlCached.annotations.filter(
+                (a) => a.id !== delId,
+              );
+              urlCached.feedback = urlCached.feedback.filter(
+                (f) => f.annotation_id !== delId,
+              );
+              await setUrlCache(
+                delUrl,
+                urlCached.contentHash,
+                urlCached.mode,
+                urlCached.annotations,
+                urlCached.feedback,
+              );
             }
           }
 
@@ -531,8 +659,14 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "saveFeedback": {
-          const { annotationId, contentHash, url, feedbackType, replyText, pageTitle } =
-            message.payload;
+          const {
+            annotationId,
+            contentHash,
+            url,
+            feedbackType,
+            replyText,
+            pageTitle,
+          } = message.payload;
           const fb = await apiSaveFeedback({
             annotation_id: annotationId,
             content_hash: contentHash,
@@ -544,11 +678,23 @@ chrome.runtime.onMessage.addListener(
 
           // Update session cache so the next page load includes this feedback
           // immediately instead of waiting for the stale-while-revalidate fetch.
-          for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+          for (const intensity of [
+            "overview:terry",
+            "overview:jerry",
+            "overview:sally",
+            "depth:terry",
+            "depth:jerry",
+            "depth:sally",
+          ]) {
             const cached = await getFromSessionCache(contentHash, intensity);
             if (cached) {
               cached.feedback.push(fb);
-              await setInSessionCache(contentHash, intensity, cached.annotations, cached.feedback);
+              await setInSessionCache(
+                contentHash,
+                intensity,
+                cached.annotations,
+                cached.feedback,
+              );
             }
           }
 
@@ -556,26 +702,51 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "updateFeedback": {
-          const { feedbackId: ufId, replyText: ufText, contentHash: ufHash, url: ufUrl } = message.payload;
+          const {
+            feedbackId: ufId,
+            replyText: ufText,
+            contentHash: ufHash,
+            url: ufUrl,
+          } = message.payload;
           const updatedFb = await apiUpdateFeedback(ufId, ufText);
 
           // Update caches so edits survive page refresh
           if (ufHash) {
-            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+            for (const intensity of [
+              "overview:terry",
+              "overview:jerry",
+              "overview:sally",
+              "depth:terry",
+              "depth:jerry",
+              "depth:sally",
+            ]) {
               const cached = await getFromSessionCache(ufHash, intensity);
               if (cached) {
                 const fb = cached.feedback.find((f) => f.id === ufId);
                 if (fb) fb.reply_text = ufText;
-                await setInSessionCache(ufHash, intensity, cached.annotations, cached.feedback);
+                await setInSessionCache(
+                  ufHash,
+                  intensity,
+                  cached.annotations,
+                  cached.feedback,
+                );
               }
             }
           }
           if (ufUrl) {
             const urlCached = await getUrlCache(ufUrl);
             if (urlCached) {
-              const fb = (urlCached as any).feedback?.find((f: any) => f.id === ufId);
+              const fb = (urlCached as any).feedback?.find(
+                (f: any) => f.id === ufId,
+              );
               if (fb) fb.reply_text = ufText;
-              await setUrlCache(ufUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
+              await setUrlCache(
+                ufUrl,
+                urlCached.contentHash,
+                urlCached.mode,
+                urlCached.annotations,
+                urlCached.feedback,
+              );
             }
           }
 
@@ -583,25 +754,51 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "deleteFeedback": {
-          const { feedbackId: delFbId, contentHash: delFbHash, url: delFbUrl } = message.payload;
+          const {
+            feedbackId: delFbId,
+            contentHash: delFbHash,
+            url: delFbUrl,
+          } = message.payload;
           deletedFeedbackIds.add(delFbId);
 
           // Evict from caches FIRST (before API call) so that if the service
           // worker is killed mid-execution, the caches are already clean.
           if (delFbHash) {
-            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+            for (const intensity of [
+              "overview:terry",
+              "overview:jerry",
+              "overview:sally",
+              "depth:terry",
+              "depth:jerry",
+              "depth:sally",
+            ]) {
               const cached = await getFromSessionCache(delFbHash, intensity);
               if (cached) {
-                cached.feedback = cached.feedback.filter((f) => f.id !== delFbId);
-                await setInSessionCache(delFbHash, intensity, cached.annotations, cached.feedback);
+                cached.feedback = cached.feedback.filter(
+                  (f) => f.id !== delFbId,
+                );
+                await setInSessionCache(
+                  delFbHash,
+                  intensity,
+                  cached.annotations,
+                  cached.feedback,
+                );
               }
             }
           }
           if (delFbUrl) {
             const urlCached = await getUrlCache(delFbUrl);
             if (urlCached) {
-              urlCached.feedback = urlCached.feedback.filter((f) => f.id !== delFbId);
-              await setUrlCache(delFbUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
+              urlCached.feedback = urlCached.feedback.filter(
+                (f) => f.id !== delFbId,
+              );
+              await setUrlCache(
+                delFbUrl,
+                urlCached.contentHash,
+                urlCached.mode,
+                urlCached.annotations,
+                urlCached.feedback,
+              );
             }
           }
 
@@ -612,27 +809,58 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "updateAnnotation": {
-          const { annotationId: annId, annotation: updatedAnn, url: updUrl, contentHash: updHash, pageTitle: updTitle } =
-            message.payload;
-          const result = await apiUpdateAnnotation(annId, updatedAnn, updUrl, updHash, updTitle);
+          const {
+            annotationId: annId,
+            annotation: updatedAnn,
+            url: updUrl,
+            contentHash: updHash,
+            pageTitle: updTitle,
+          } = message.payload;
+          const result = await apiUpdateAnnotation(
+            annId,
+            updatedAnn,
+            updUrl,
+            updHash,
+            updTitle,
+          );
 
           // Update caches so edits survive page refresh
           if (updHash) {
-            for (const intensity of ["overview:terry", "overview:jerry", "overview:sally", "depth:terry", "depth:jerry", "depth:sally"]) {
+            for (const intensity of [
+              "overview:terry",
+              "overview:jerry",
+              "overview:sally",
+              "depth:terry",
+              "depth:jerry",
+              "depth:sally",
+            ]) {
               const cached = await getFromSessionCache(updHash, intensity);
               if (cached) {
                 const idx = cached.annotations.findIndex((a) => a.id === annId);
                 if (idx !== -1) cached.annotations[idx] = updatedAnn;
-                await setInSessionCache(updHash, intensity, cached.annotations, cached.feedback);
+                await setInSessionCache(
+                  updHash,
+                  intensity,
+                  cached.annotations,
+                  cached.feedback,
+                );
               }
             }
           }
           if (updUrl) {
             const urlCached = await getUrlCache(updUrl);
             if (urlCached) {
-              const idx = urlCached.annotations.findIndex((a) => a.id === annId);
+              const idx = urlCached.annotations.findIndex(
+                (a) => a.id === annId,
+              );
               if (idx !== -1) urlCached.annotations[idx] = updatedAnn;
-              await setUrlCache(updUrl, urlCached.contentHash, urlCached.mode, urlCached.annotations, urlCached.feedback);
+              await setUrlCache(
+                updUrl,
+                urlCached.contentHash,
+                urlCached.mode,
+                urlCached.annotations,
+                urlCached.feedback,
+              );
             }
           }
 
@@ -648,29 +876,47 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "getEnabledSites": {
-          const sites = await getEnabledSites() ?? DEFAULT_ENABLED_SITES;
+          const sites = (await getEnabledSites()) ?? DEFAULT_ENABLED_SITES;
           // Cache locally
           const esStored = await chrome.storage.local.get("preferences");
-          const esPrefs = (esStored["preferences"] ?? {}) as Record<string, unknown>;
-          await chrome.storage.local.set({ preferences: { ...esPrefs, enabled_sites: sites } });
+          const esPrefs = (esStored["preferences"] ?? {}) as Record<
+            string,
+            unknown
+          >;
+          await chrome.storage.local.set({
+            preferences: { ...esPrefs, enabled_sites: sites },
+          });
           return { sites };
         }
 
         case "addEnabledSite": {
           const { domain } = message.payload;
           if (isBlockedDomain(domain)) {
-            return { error: "Cannot enable extension on app.oddity1.com — annotations are built into the dashboard" };
+            return {
+              error:
+                "Cannot enable extension on app.oddity1.com — annotations are built into the dashboard",
+            };
           }
           const addStored = await chrome.storage.local.get("preferences");
-          const addPrefs = (addStored["preferences"] ?? {}) as Record<string, unknown>;
-          const addList = Array.isArray(addPrefs.enabled_sites) ? [...addPrefs.enabled_sites as string[]] : [...DEFAULT_ENABLED_SITES];
+          const addPrefs = (addStored["preferences"] ?? {}) as Record<
+            string,
+            unknown
+          >;
+          const addList = Array.isArray(addPrefs.enabled_sites)
+            ? [...(addPrefs.enabled_sites as string[])]
+            : [...DEFAULT_ENABLED_SITES];
           if (!addList.includes(domain)) {
             addList.push(domain);
           }
-          await chrome.storage.local.set({ preferences: { ...addPrefs, enabled_sites: addList } });
+          await chrome.storage.local.set({
+            preferences: { ...addPrefs, enabled_sites: addList },
+          });
           // Persist to Supabase (non-blocking)
           updateEnabledSites(addList).catch((err) => {
-            console.error("[Oddity 1] Failed to sync enabled sites to Supabase:", err);
+            console.error(
+              "[Oddity 1] Failed to sync enabled sites to Supabase:",
+              err,
+            );
           });
           // Broadcast to all tabs
           chrome.tabs.query({}, (tabs) => {
@@ -689,19 +935,33 @@ chrome.runtime.onMessage.addListener(
         case "setBadge": {
           const { text, color } = message.payload;
           chrome.action.setBadgeText({ text, tabId: sender.tab?.id });
-          if (color) chrome.action.setBadgeBackgroundColor({ color, tabId: sender.tab?.id });
+          if (color)
+            chrome.action.setBadgeBackgroundColor({
+              color,
+              tabId: sender.tab?.id,
+            });
           return {};
         }
 
         case "removeEnabledSite": {
           const { domain: rmDomain } = message.payload;
           const rmStored = await chrome.storage.local.get("preferences");
-          const rmPrefs = (rmStored["preferences"] ?? {}) as Record<string, unknown>;
-          const rmList = Array.isArray(rmPrefs.enabled_sites) ? (rmPrefs.enabled_sites as string[]).filter(s => s !== rmDomain) : [...DEFAULT_ENABLED_SITES];
-          await chrome.storage.local.set({ preferences: { ...rmPrefs, enabled_sites: rmList } });
+          const rmPrefs = (rmStored["preferences"] ?? {}) as Record<
+            string,
+            unknown
+          >;
+          const rmList = Array.isArray(rmPrefs.enabled_sites)
+            ? (rmPrefs.enabled_sites as string[]).filter((s) => s !== rmDomain)
+            : [...DEFAULT_ENABLED_SITES];
+          await chrome.storage.local.set({
+            preferences: { ...rmPrefs, enabled_sites: rmList },
+          });
           // Persist to Supabase (non-blocking)
           updateEnabledSites(rmList).catch((err) => {
-            console.error("[Oddity 1] Failed to sync enabled sites to Supabase:", err);
+            console.error(
+              "[Oddity 1] Failed to sync enabled sites to Supabase:",
+              err,
+            );
           });
           // Broadcast to all tabs
           chrome.tabs.query({}, (tabs) => {
@@ -739,27 +999,45 @@ chrome.runtime.onMessage.addListener(
             const tabId = tab.id;
 
             // Wait for the tab to finish loading before injecting
-            const onUpdated = (updatedId: number, info: chrome.tabs.TabChangeInfo) => {
+            const onUpdated = (
+              updatedId: number,
+              info: chrome.tabs.TabChangeInfo,
+            ) => {
               if (updatedId !== tabId || info.status !== "complete") return;
               chrome.tabs.onUpdated.removeListener(onUpdated);
 
               const manifest = chrome.runtime.getManifest();
-              const file = manifest.content_scripts?.[0]?.js?.[0];
+              // Use the isolated-world content script (the pipeline loader), not [0]
+              // which is the MAIN world dom-guard that has no argbox logic.
+              const scripts = manifest.content_scripts ?? [];
+              const cs =
+                scripts.find((s) => s.world !== "MAIN") ??
+                scripts[1] ??
+                scripts[0];
+              const file = cs?.js?.[0];
               if (!file) return;
 
-              chrome.scripting.executeScript({
-                target: { tabId },
-                files: [file],
-              }).catch((err) => {
-                console.warn("[Oddity 1] Failed to inject into blob tab:", err);
-              });
+              chrome.scripting
+                .executeScript({
+                  target: { tabId },
+                  files: [file],
+                })
+                .catch((err) => {
+                  console.warn(
+                    "[Oddity 1] Failed to inject into blob tab:",
+                    err,
+                  );
+                });
             };
             chrome.tabs.onUpdated.addListener(onUpdated);
           };
           chrome.tabs.onCreated.addListener(onCreated);
 
           // Auto-cleanup if no tab is created within 10s
-          setTimeout(() => chrome.tabs.onCreated.removeListener(onCreated), 10000);
+          setTimeout(
+            () => chrome.tabs.onCreated.removeListener(onCreated),
+            10000,
+          );
           return { success: true };
         }
 
@@ -772,14 +1050,30 @@ chrome.runtime.onMessage.addListener(
       .then(sendResponse)
       .catch((err) => {
         // Intentional cancellation — not an error, no response needed
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (err instanceof DOMException && err.name === "AbortError") {
           sendResponse({ aborted: true });
           return;
         }
 
         if (err instanceof RateLimitError) {
-          console.warn(`[Oddity 1] Rate limited — retry after ${err.retryAfter}s`);
-          sendResponse({ error: `Rate limited. Please wait ~${Math.ceil(err.retryAfter / 60)} min.`, rateLimited: true });
+          console.warn(
+            `[Oddity 1] Rate limited — retry after ${err.retryAfter}s`,
+          );
+          sendResponse({
+            error: `Rate limited. Please wait ~${Math.ceil(err.retryAfter / 60)} min.`,
+            rateLimited: true,
+          });
+          return;
+        }
+
+        if (err instanceof UsageLimitError) {
+          sendResponse({
+            error: err.message,
+            limitReached: true,
+            usage: err.usage,
+            upgrade: err.upgrade,
+            upgrade_multiplier: err.upgradeMultiplier,
+          });
           return;
         }
 
@@ -838,7 +1132,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
               payload: {
                 enabled: prefs.enabled ?? true,
                 annotationMode: prefs.annotation_mode ?? "overview",
-                depthPersonality: ((prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality) ?? "terry",
+                depthPersonality:
+                  ((prefs.depth_personality as string) === "gary"
+                    ? "sally"
+                    : prefs.depth_personality) ?? "terry",
                 visibleTypes: prefs.visible_types ?? [],
                 annotationFont: prefs.annotation_font,
                 annotationFontSize: prefs.annotation_font_size,
@@ -852,7 +1149,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
   }
 });
-
 
 // ─── Eager Session Refresh on SW Boot ───
 // MV3 service workers suspend/resume frequently, killing Supabase's

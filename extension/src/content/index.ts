@@ -2,7 +2,9 @@ import type {
   Annotation,
   AnnotationFeedback,
   AnnotationMode,
+  AnnotationResponse,
   AnnotationType,
+  AnnotationUsage,
   DepthPersonality,
   ExtensionMessage,
   SiteAdapter,
@@ -19,6 +21,7 @@ import { extractText, extractWithReadability } from "./extractor.js";
 import { isLongRequest } from "./long-request.js";
 import { LongWaitManager } from "./long-wait-manager.js";
 import { hideLongWaitToast, showLongWaitToast } from "./long-wait-toast.js";
+import { showUsageToast } from "./usage-toast.js";
 import {
   destroyManualAnnotations,
   initManualAnnotations,
@@ -43,6 +46,7 @@ import {
   updateDashboardPersonality,
   setArgumentsBoxPdf,
   setPdfRunCallback,
+  setDashUserTier,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -322,6 +326,94 @@ const longWaitManager = new LongWaitManager(
   { show: showLongWaitToast, hide: hideLongWaitToast },
   500,
 );
+const STANDARD_PLANS_URL = "https://app.oddity1.com/plans";
+
+type AnnotationRequestResult = Partial<AnnotationResponse> & {
+  error?: string;
+  aborted?: boolean;
+  rateLimited?: boolean;
+  limitReached?: boolean;
+};
+
+function formatUpgradeUsage(multiplier?: number): string {
+  if (typeof multiplier === "number" && Number.isFinite(multiplier) && multiplier > 1) {
+    return `about ${Math.round(multiplier)}x more monthly usage`;
+  }
+
+  return "more monthly usage";
+}
+
+function buildUsageToastContent(
+  usage: AnnotationUsage,
+  limitReached: boolean,
+  upgrade: boolean,
+  upgradeMultiplier?: number,
+): {
+  title: string;
+  message: string;
+  actionLabel?: string;
+  actionUrl?: string;
+} {
+  const usageSummary = `${usage.count} of ${usage.limit}`;
+
+  if (limitReached) {
+    return upgrade
+      ? {
+          title: "Monthly annotation limit reached",
+          message: `You've used ${usageSummary} annotations this month. Standard gives you ${formatUpgradeUsage(
+            upgradeMultiplier,
+          )}.`,
+          actionLabel: "Get Standard",
+          actionUrl: STANDARD_PLANS_URL,
+        }
+      : {
+          title: "Monthly annotation limit reached",
+          message: `You've used ${usageSummary} annotations this month.`,
+        };
+  }
+
+  return upgrade
+    ? {
+        title: `You've used ${usageSummary} monthly annotations`,
+        message: `You're close to the Free plan limit. Standard gives you ${formatUpgradeUsage(
+          upgradeMultiplier,
+        )}.`,
+        actionLabel: "Get Standard",
+        actionUrl: STANDARD_PLANS_URL,
+      }
+    : {
+        title: `You've used ${usageSummary} monthly annotations`,
+        message: "You're close to the Standard plan limit.",
+      };
+}
+
+function maybeShowUsageToast(result: AnnotationRequestResult | undefined): void {
+  if (!result?.usage) return;
+
+  if (result.limitReached) {
+    showUsageToast(
+      buildUsageToastContent(
+        result.usage,
+        true,
+        result.upgrade === true,
+        result.upgrade_multiplier,
+      ),
+    );
+    return;
+  }
+
+  const threshold = Math.ceil(result.usage.limit * 0.8);
+  if (result.usage.already_counted || result.usage.count !== threshold) return;
+
+  showUsageToast(
+    buildUsageToastContent(
+      result.usage,
+      false,
+      result.upgrade === true,
+      result.upgrade_multiplier,
+    ),
+  );
+}
 
 // ─── SPA Navigation State ───
 
@@ -674,6 +766,17 @@ async function init(): Promise<void> {
     console.log("[Oddity 1] PDF detected — showing conversion overlay");
     initArgumentsBox();
     setArgumentsBoxEnabled(true);
+
+    // Fetch auth status so the PDF overlay shows the correct tier gate.
+    // (The normal auth check at line ~713 is bypassed by this early return.)
+    const pdfAuthStatus = await sendMessage<{ authenticated: boolean; user?: { email: string; display_name: string | null; tier: string; annotation_count: number } }>({
+      action: "getAuthStatus",
+      payload: {},
+    });
+    if (pdfAuthStatus?.user?.tier) {
+      setDashUserTier(pdfAuthStatus.user.tier);
+    }
+
     setArgumentsBoxPdf(true);
     setPdfRunCallback(handlePdfConversion);
     return;
@@ -722,6 +825,14 @@ async function init(): Promise<void> {
     setArgumentsBoxEnabled(enabled);
     setManualRunCallback(manualRun);
     setInputTextProvider(collectInputText);
+    return;
+  }
+
+  // PDF-converted HTML page — skip whitelist check and auto-run annotations.
+  // The meta tag is injected by pdf-converter.ts for all converted pages.
+  if (document.querySelector('meta[name="oddity-source-pdf"]')) {
+    siteWhitelisted = true;
+    await startPipeline();
     return;
   }
 
@@ -1030,7 +1141,7 @@ async function handleStableRegion(
   );
 
   try {
-    const result = await sendMessage<{ error?: string }>({
+    const result = await sendMessage<AnnotationRequestResult>({
       action: "requestAnnotations",
       payload: {
         url: getPageUrl(),
@@ -1049,8 +1160,12 @@ async function handleStableRegion(
       return;
     }
 
+    maybeShowUsageToast(result);
+
     if (result?.error) {
-      if (result.error.includes("Sign in")) {
+      if (result.limitReached) {
+        console.warn(`[Oddity 1] ${result.error}`);
+      } else if (result.error.includes("Sign in")) {
         console.warn(
           "[Oddity 1] Not signed in — open the Oddity extension to sign in",
         );
@@ -1132,7 +1247,7 @@ async function handleStableRegionForMode(
   );
 
   try {
-    const result = await sendMessage<{ error?: string }>({
+    const result = await sendMessage<AnnotationRequestResult>({
       action: "requestAnnotations",
       payload: {
         url: getPageUrl(),
@@ -1152,8 +1267,12 @@ async function handleStableRegionForMode(
       return;
     }
 
+    maybeShowUsageToast(result);
+
     if (result?.error) {
-      if (result.error.includes("Sign in")) {
+      if (result.limitReached) {
+        console.warn(`[Oddity 1] ${result.error}`);
+      } else if (result.error.includes("Sign in")) {
         showAuthToast();
       } else {
         console.error(`[Oddity 1] Annotation request failed: ${result.error}`);

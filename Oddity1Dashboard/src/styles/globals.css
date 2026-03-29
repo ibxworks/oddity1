@@ -117,7 +117,7 @@ body {
   color: var(--text-muted);
 }
 
-.sidebar-tier--pro {
+.sidebar-tier--standard {
   background: #fef3c7;
   color: #92400e;
 }

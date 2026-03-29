@@ -230,7 +230,7 @@ export async function ensureProfile(user: { id: string; user_metadata?: Record<s
   }
 }
 
-export async function getProfile(): Promise<{ display_name: string | null; tier: 'free' | 'pro'; annotation_count: number } | null> {
+export async function getProfile(): Promise<{ display_name: string | null; tier: 'free' | 'standard'; annotation_count: number } | null> {
   const session = await getSession();
   if (!session) return null;
 
@@ -243,7 +243,7 @@ export async function getProfile(): Promise<{ display_name: string | null; tier:
   if (error || !data) return null;
   return {
     display_name: data.display_name ?? null,
-    tier: (data.tier as 'free' | 'pro') ?? 'free',
+    tier: (data.tier as 'free' | 'standard') ?? 'free',
     annotation_count: (data.annotation_count as number) ?? 0,
   };
 }
@@ -280,7 +280,7 @@ export async function refreshAccessToken(): Promise<string | null> {
   return data.session.access_token;
 }
 
-export async function getUserTier(): Promise<"free" | "pro"> {
+export async function getUserTier(): Promise<"free" | "standard"> {
   const session = await getSession();
   if (!session) return "free";
 
@@ -291,7 +291,7 @@ export async function getUserTier(): Promise<"free" | "pro"> {
     .single();
 
   if (error || !data) return "free";
-  return (data.tier as "free" | "pro") ?? "free";
+  return (data.tier as "free" | "standard") ?? "free";
 }
 
 export async function getEnabledSites(): Promise<string[] | null> {

@@ -271,6 +271,20 @@
   color: #ef4444 !important;
 }
 
+.past-due-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #856404;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 768px) {
   .account-body { padding: 16px 16px 40px; }
   .checkbox-grid { grid-template-columns: repeat(2, 1fr); }

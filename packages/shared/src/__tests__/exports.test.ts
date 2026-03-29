@@ -15,9 +15,11 @@ describe("@oddity/shared exports", () => {
     expect(shared.EAGER_WORD_LIMIT).toBe(6000);
   });
 
-  it("exports rate limit constants", () => {
-    expect(shared.RATE_LIMIT_FREE).toBe(50);
-    expect(shared.RATE_LIMIT_PRO).toBe(500);
+  it("exports plan features and canUseFeature helper", () => {
+    expect(shared.PLAN_FEATURES.free.sallyPersonality).toBe(false);
+    expect(shared.PLAN_FEATURES.standard.sallyPersonality).toBe(true);
+    expect(shared.canUseFeature("free", "sallyPersonality")).toBe(false);
+    expect(shared.canUseFeature("standard", "sallyPersonality")).toBe(true);
   });
 
   it("exports request limit constants", () => {
@@ -58,8 +60,8 @@ describe("@oddity/shared exports", () => {
     expect(shared.ALL_OVERVIEW_TYPES).toContain("transition");
   });
 
-  it("exports ALL_DEPTH_TYPES with 12 entries", () => {
-    expect(shared.ALL_DEPTH_TYPES).toHaveLength(12);
+  it("exports ALL_DEPTH_TYPES with 21 entries", () => {
+    expect(shared.ALL_DEPTH_TYPES).toHaveLength(21);
     expect(shared.ALL_DEPTH_TYPES).toContain("counterargument");
     expect(shared.ALL_DEPTH_TYPES).toContain("insight");
     expect(shared.ALL_DEPTH_TYPES).toContain("vocabulary");
