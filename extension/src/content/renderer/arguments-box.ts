@@ -8,6 +8,7 @@ import type {
 import { getAnnotationColor } from "@oddity/shared";
 
 import { getPageUrl } from "../page-url.js";
+import { showNoticeToast } from "../notice-toast.js";
 import {
   getThemeMode,
   offThemeChange,
@@ -1690,7 +1691,7 @@ function buildDashboardFace(): HTMLDivElement {
     btn.addEventListener("click", () => {
       // Gate: Sally personality requires Standard plan
       if (value === "sally" && dashUserTier !== "standard") {
-        showArgToast("Sally personality requires a Standard plan");
+        showNoticeToast("Sally personality requires a Standard plan");
         return;
       }
 
@@ -1906,7 +1907,7 @@ function buildDashboardFace(): HTMLDivElement {
   settingsLink.className = "args-dash-footer-link";
   settingsLink.textContent = "Settings";
   settingsLink.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ action: "openOptions", payload: {} });
+    window.open("https://app.oddity1.com/settings", "_blank");
   });
   const sep = document.createElement("span");
   sep.className = "args-dash-footer-sep";

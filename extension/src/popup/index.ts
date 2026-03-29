@@ -532,7 +532,7 @@ exportDownloadBtn.addEventListener("click", async () => {
 // Open options page
 openOptions.addEventListener("click", (e) => {
   e.preventDefault();
-  chrome.runtime.openOptionsPage();
+  chrome.tabs.create({ url: "https://app.oddity1.com/settings" });
 });
 
 // ─── Persona Picker ───

@@ -4,6 +4,7 @@ import {
   type AnnotationResponse,
   type Annotation,
   type AnnotationFeedback,
+  type AnnotationUsage,
   type FeedbackType,
   type SiteAdapter,
   type UserPreferences,
@@ -28,12 +29,82 @@ export class RateLimitError extends Error {
   }
 }
 
+export class UsageLimitError extends Error {
+  usage: AnnotationUsage;
+  upgrade: boolean;
+  upgradeMultiplier?: number;
+
+  constructor(
+    message: string,
+    usage: AnnotationUsage,
+    upgrade = false,
+    upgradeMultiplier?: number,
+  ) {
+    super(message);
+    this.name = 'UsageLimitError';
+    this.usage = usage;
+    this.upgrade = upgrade;
+    this.upgradeMultiplier = upgradeMultiplier;
+  }
+}
+
 /** Rate limit gate for annotation requests: timestamp (ms) until which requests should be blocked. */
 let annotationRateLimitUntil = 0;
 /** Rate limit gate for sketch requests (separate from annotations). */
 let sketchRateLimitUntil = 0;
 /** Max rate limit duration: 5 minutes. Servers may return absurdly long values. */
 const MAX_RATE_LIMIT_SECS = 300;
+
+type AnnotationErrorPayload = {
+  error?: string;
+  usage?: AnnotationUsage;
+  upgrade?: boolean;
+  upgrade_multiplier?: number;
+  retry_after?: number;
+};
+
+async function readJsonPayload(
+  response: Response,
+): Promise<AnnotationErrorPayload | null> {
+  const body = await response.text().catch(() => '');
+  if (!body) return null;
+
+  try {
+    return JSON.parse(body) as AnnotationErrorPayload;
+  } catch {
+    return { error: body };
+  }
+}
+
+function getErrorMessage(
+  prefix: string,
+  status: number,
+  payload: AnnotationErrorPayload | null,
+): string {
+  const detail = payload?.error ?? 'Request failed';
+  return `${prefix} (${status}): ${detail}`;
+}
+
+function throwAnnotationResponseError(
+  prefix: string,
+  status: number,
+  payload: AnnotationErrorPayload | null,
+): never {
+  if (
+    status === 403 &&
+    payload?.error === 'Monthly annotation limit reached' &&
+    payload.usage
+  ) {
+    throw new UsageLimitError(
+      payload.error,
+      payload.usage,
+      payload.upgrade === true,
+      payload.upgrade_multiplier,
+    );
+  }
+
+  throw new Error(getErrorMessage(prefix, status, payload));
+}
 
 // ─── Internal Fetch with Auth ───
 
@@ -105,8 +176,8 @@ export async function requestAnnotations(
     signal,
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`requestAnnotations failed (${res.status}): ${body}`);
+    const payload = await readJsonPayload(res);
+    throwAnnotationResponseError('requestAnnotations failed', res.status, payload);
   }
   return res.json() as Promise<AnnotationResponse>;
 }
@@ -154,12 +225,9 @@ export async function requestAnnotationsStreaming(
   }
 
   if (res.status === 429) {
-    const body = await res.text().catch(() => '');
+    const payload = await readJsonPayload(res);
     let retryAfter = 60; // default 60s
-    try {
-      const parsed = JSON.parse(body);
-      if (parsed.retry_after) retryAfter = Math.ceil(Number(parsed.retry_after));
-    } catch {}
+    if (payload?.retry_after) retryAfter = Math.ceil(Number(payload.retry_after));
     // Cap to prevent absurdly long blocks (server may return hours)
     retryAfter = Math.min(retryAfter, MAX_RATE_LIMIT_SECS);
     annotationRateLimitUntil = Date.now() + retryAfter * 1000;
@@ -167,8 +235,12 @@ export async function requestAnnotationsStreaming(
   }
 
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`requestAnnotationsStreaming failed (${res.status}): ${body}`);
+    const payload = await readJsonPayload(res);
+    throwAnnotationResponseError(
+      'requestAnnotationsStreaming failed',
+      res.status,
+      payload,
+    );
   }
   if (!res.body) throw new Error('No response body for SSE stream');
 
@@ -177,6 +249,9 @@ export async function requestAnnotationsStreaming(
   const annotations: Annotation[] = [];
   let feedback: AnnotationFeedback[] = [];
   let cached = false;
+  let usage: AnnotationUsage | undefined;
+  let upgrade: boolean | undefined;
+  let upgradeMultiplier: number | undefined;
   let buffer = '';
 
   try {
@@ -192,28 +267,35 @@ export async function requestAnnotationsStreaming(
         if (!line.startsWith('data: ')) continue;
         const jsonStr = line.slice(6);
 
+        let event: Record<string, unknown>;
+
         try {
-          const event = JSON.parse(jsonStr);
-
-          if (event.error) {
-            throw new Error(event.error);
-          }
-
-          if (event.annotation) {
-            annotations.push(event.annotation);
-            onAnnotation(event.annotation);
-          }
-
-          if (event.done) {
-            cached = event.cached ?? false;
-            feedback = event.feedback ?? [];
-            if (event.annotations) {
-              annotations.length = 0;
-              annotations.push(...event.annotations);
-            }
-          }
+          event = JSON.parse(jsonStr) as Record<string, unknown>;
         } catch {
           // Skip malformed events
+          continue;
+        }
+
+        if (typeof event.error === 'string') {
+          throw new Error(event.error);
+        }
+
+        if (event.annotation) {
+          const annotation = event.annotation as Annotation;
+          annotations.push(annotation);
+          onAnnotation(annotation);
+        }
+
+        if (event.done) {
+          cached = event.cached === true;
+          feedback = (event.feedback as AnnotationFeedback[] | undefined) ?? [];
+          usage = event.usage as AnnotationUsage | undefined;
+          upgrade = event.upgrade as boolean | undefined;
+          upgradeMultiplier = event.upgrade_multiplier as number | undefined;
+          if (event.annotations) {
+            annotations.length = 0;
+            annotations.push(...(event.annotations as Annotation[]));
+          }
         }
       }
     }
@@ -221,7 +303,15 @@ export async function requestAnnotationsStreaming(
     reader.releaseLock();
   }
 
-  return { success: true, cached, annotations, feedback };
+  return {
+    success: true,
+    cached,
+    annotations,
+    feedback,
+    usage,
+    upgrade,
+    upgrade_multiplier: upgradeMultiplier,
+  };
 }
 
 /**

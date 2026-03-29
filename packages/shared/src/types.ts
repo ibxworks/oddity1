@@ -75,11 +75,20 @@ export type Annotation = {
   };
 };
 
+export type AnnotationUsage = {
+  count: number;
+  limit: number;
+  already_counted: boolean;
+};
+
 export type AnnotationResponse = {
   success: boolean;
   cached: boolean;
   annotations: Annotation[];
   feedback?: AnnotationFeedback[];
+  usage?: AnnotationUsage;
+  upgrade?: boolean;
+  upgrade_multiplier?: number;
 };
 
 // ─── Feedback ───

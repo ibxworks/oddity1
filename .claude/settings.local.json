@@ -131,7 +131,8 @@
       "Bash(grep -r \"Stripe Sync Engine\\\\|Stripe webhook\\\\|stripe.subscriptions\" /Users/realtonypark/Developer/oddity1 --include=*.md --include=*.txt)",
       "Bash(grep -r \"webhook\\\\|Sync Engine\" /Users/realtonypark/Developer/oddity1 --include=*.md --include=*.ts --include=*.js)",
       "Bash(grep -r STRIPE_ /Users/realtonypark/Developer/oddity1/backend --include=*.ts --include=*.env*)",
-      "Bash(grep -r \"stripe\\\\.customers\\\\|stripe\\\\.subscriptions\\\\|stripe\\\\.invoices\\\\|Sync Engine\\\\|sync engine\" /Users/realtonypark/Developer/oddity1 --include=*.ts --include=*.md)"
+      "Bash(grep -r \"stripe\\\\.customers\\\\|stripe\\\\.subscriptions\\\\|stripe\\\\.invoices\\\\|Sync Engine\\\\|sync engine\" /Users/realtonypark/Developer/oddity1 --include=*.ts --include=*.md)",
+      "Bash(find /Users/realtonypark/Developer/oddity1/backend -name *checkout* -o -name *stripe*)"
     ]
   },
   "enableAllProjectMcpServers": true,

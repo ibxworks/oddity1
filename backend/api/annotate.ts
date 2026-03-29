@@ -1,6 +1,7 @@
 import type {
   Annotation,
   AnnotationMode,
+  AnnotationUsage,
   DepthPersonality,
 } from "@oddity/shared";
 import { CACHE_TTL_DAYS, MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
@@ -28,6 +29,38 @@ const prompts = JSON.parse(readFileSync(promptsPath, "utf-8"));
 
 // ─── Optimization: in-flight request dedup ───
 const dedup = createInflightDedup();
+
+function getPlanLimit(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getMonthlyPlanLimits(): { free: number; standard: number } {
+  return {
+    free: getPlanLimit(process.env.FREE_PLAN_LIMIT_PER_MONTH, 100),
+    standard: getPlanLimit(process.env.STANDARD_PLAN_LIMIT_PER_MONTH, 2000),
+  };
+}
+
+function getUpgradeMultiplier(): number | undefined {
+  const limits = getMonthlyPlanLimits();
+  if (limits.free <= 0) return undefined;
+
+  const multiplier = Math.round(limits.standard / limits.free);
+  return Number.isFinite(multiplier) && multiplier > 1 ? multiplier : undefined;
+}
+
+function buildUsage(
+  count: number,
+  limit: number,
+  alreadyCounted: boolean,
+): AnnotationUsage {
+  return {
+    count,
+    limit,
+    already_counted: alreadyCounted,
+  };
+}
 
 function cacheKey(
   contentHash: string,
@@ -60,6 +93,9 @@ router.post("/", async (req, res) => {
     }
 
     const userTier = (req.user?.tier ?? "free") as UserTier;
+    const upgradeMultiplier =
+      userTier === "free" ? getUpgradeMultiplier() : undefined;
+    let usage: AnnotationUsage | undefined;
 
     // ── Feature gate: Sally personality requires Standard ──
     if (
@@ -87,10 +123,8 @@ router.post("/", async (req, res) => {
 
     // ── Usage limit check ──
     if (req.user?.id) {
-      const limit =
-        userTier !== "free"
-          ? Number(process.env.STANDARD_PLAN_LIMIT_PER_MONTH ?? 2000)
-          : Number(process.env.FREE_PLAN_LIMIT_PER_MONTH ?? 100);
+      const limits = getMonthlyPlanLimits();
+      const limit = userTier !== "free" ? limits.standard : limits.free;
 
       const { data: usageResult, error: usageErr } = await serviceClient.rpc(
         "check_and_record_usage",
@@ -99,11 +133,20 @@ router.post("/", async (req, res) => {
 
       if (usageErr) {
         console.error("[annotate] Usage check failed:", usageErr.message);
-      } else if (usageResult && !usageResult.allowed) {
+      } else if (usageResult) {
+        usage = buildUsage(
+          Number(usageResult.count ?? 0),
+          limit,
+          Boolean(usageResult.already_counted),
+        );
+      }
+
+      if (usageResult && !usageResult.allowed) {
         res.status(403).json({
           error: "Monthly annotation limit reached",
-          usage: { count: usageResult.count, limit },
+          usage,
           upgrade: userTier === "free",
+          upgrade_multiplier: upgradeMultiplier,
         });
         return;
       }
@@ -112,7 +155,14 @@ router.post("/", async (req, res) => {
     // SSE streaming path: client requests progressive delivery
     const wantsStream = req.headers.accept === "text/event-stream";
     if (wantsStream) {
-      return handleStreamingAnnotation(req, res, parsed.data);
+      return handleStreamingAnnotation(
+        req,
+        res,
+        parsed.data,
+        usage,
+        userTier,
+        upgradeMultiplier,
+      );
     }
 
     const { url, content_hash, text, mode, personality } = parsed.data;
@@ -144,7 +194,15 @@ router.post("/", async (req, res) => {
           content_hash,
           authToken,
         );
-        res.json({ success: true, cached: true, source: "db", ...merged });
+        res.json({
+          success: true,
+          cached: true,
+          source: "db",
+          ...merged,
+          usage,
+          upgrade: userTier === "free" ? true : undefined,
+          upgrade_multiplier: upgradeMultiplier,
+        });
         return;
       }
     }
@@ -187,7 +245,15 @@ router.post("/", async (req, res) => {
       content_hash,
       authToken,
     );
-    res.json({ success: true, cached: false, source: "llm", ...merged });
+    res.json({
+      success: true,
+      cached: false,
+      source: "llm",
+      ...merged,
+      usage,
+      upgrade: userTier === "free" ? true : undefined,
+      upgrade_multiplier: upgradeMultiplier,
+    });
   } catch (err) {
     console.error("[annotate] Error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -202,6 +268,9 @@ async function handleStreamingAnnotation(
   req: import("express").Request,
   res: import("express").Response,
   data: z.infer<typeof AnnotateRequestSchema>,
+  usage: AnnotationUsage | undefined,
+  userTier: UserTier,
+  upgradeMultiplier: number | undefined,
 ): Promise<void> {
   const { url, content_hash, text, mode, personality } = data;
   const authToken = req.headers.authorization?.slice(7) ?? "";
@@ -242,7 +311,15 @@ async function handleStreamingAnnotation(
         res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
       }
       res.write(
-        `data: ${JSON.stringify({ done: true, cached: true, annotations: merged.annotations, feedback: merged.feedback })}\n\n`,
+        `data: ${JSON.stringify({
+          done: true,
+          cached: true,
+          annotations: merged.annotations,
+          feedback: merged.feedback,
+          usage,
+          upgrade: userTier === "free" ? true : undefined,
+          upgrade_multiplier: upgradeMultiplier,
+        })}\n\n`,
       );
       res.end();
       return;
@@ -297,7 +374,15 @@ async function handleStreamingAnnotation(
       authToken,
     );
     res.write(
-      `data: ${JSON.stringify({ done: true, cached: false, annotations: merged.annotations, feedback: merged.feedback })}\n\n`,
+      `data: ${JSON.stringify({
+        done: true,
+        cached: false,
+        annotations: merged.annotations,
+        feedback: merged.feedback,
+        usage,
+        upgrade: userTier === "free" ? true : undefined,
+        upgrade_multiplier: upgradeMultiplier,
+      })}\n\n`,
     );
     res.end();
   } catch (err) {
