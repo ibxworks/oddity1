@@ -1,6 +1,7 @@
 {
   "buildCommand": "cd ../packages/shared && npm run build && cd ../../backend && npm run build",
   "installCommand": "npm install --prefix .. && npm install",
+  "outputDirectory": ".",
   "framework": null,
   "functions": {
     "api/index.ts": {
