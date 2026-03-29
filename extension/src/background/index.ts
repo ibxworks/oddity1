@@ -35,7 +35,7 @@ function abortKey(tabId: number, regionId: string): string {
 }
 
 // ─── Per-tab concurrency limiter ───
-// Prevents bursts of simultaneous API requests (personality change, "all" mode).
+// Prevents bursts of simultaneous API requests (context mode change, "all" mode).
 const MAX_CONCURRENT_PER_TAB = 3;
 const tabConcurrency = new Map<number, number>();
 
@@ -91,7 +91,7 @@ chrome.runtime.onMessage.addListener(
     const handleAsync = async (): Promise<unknown> => {
       switch (message.action) {
         case "requestAnnotations": {
-          const { url, regionId, contentHash, text, mode: rawMode, personality, wordCount } =
+          const { url, regionId, contentHash, text, mode: rawMode, userContext, wordCount } =
             message.payload;
           // Guard against stale content scripts (pre-mode-refactor) sending undefined mode
           const mode = (rawMode === "overview" || rawMode === "depth") ? rawMode : "overview";
@@ -107,8 +107,9 @@ chrome.runtime.onMessage.addListener(
           // Session exists — clear any stale badge
           chrome.action.setBadgeText({ text: "" });
 
-          // Build session cache key; overview is persona-independent
-          const sessionCacheKey = mode === "overview" ? "overview:writing" : `${mode}:${personality ?? "writing"}`;
+          // Build session cache key; overview is context-independent
+          const contextMode = userContext?.mode ?? "default";
+          const sessionCacheKey = mode === "overview" ? "overview:default" : `${mode}:${contextMode}`;
 
           // ── Session cache: stale-while-revalidate for revisits ──
           const cached = await getFromSessionCache(contentHash, sessionCacheKey);
@@ -163,7 +164,7 @@ chrome.runtime.onMessage.addListener(
               content_hash: contentHash,
               text: validatedText,
               mode,
-              personality,
+              user_context: userContext,
               word_count: validatedWordCount,
             };
 
@@ -491,7 +492,7 @@ chrome.runtime.onMessage.addListener(
 
           // Evict from caches FIRST (before API call) so that if the service
           // worker is killed mid-execution, the caches are already clean.
-          for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
+          for (const intensity of ["overview:default", "depth:default", "depth:info-takeaway", "depth:brainstorm", "depth:argument-formation", "depth:decision", "depth:learning"]) {
             const cached = await getFromSessionCache(delHash, intensity);
             if (cached) {
               cached.annotations = cached.annotations.filter((a) => a.id !== delId);
@@ -544,7 +545,7 @@ chrome.runtime.onMessage.addListener(
 
           // Update session cache so the next page load includes this feedback
           // immediately instead of waiting for the stale-while-revalidate fetch.
-          for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
+          for (const intensity of ["overview:default", "depth:default", "depth:info-takeaway", "depth:brainstorm", "depth:argument-formation", "depth:decision", "depth:learning"]) {
             const cached = await getFromSessionCache(contentHash, intensity);
             if (cached) {
               cached.feedback.push(fb);
@@ -561,7 +562,7 @@ chrome.runtime.onMessage.addListener(
 
           // Update caches so edits survive page refresh
           if (ufHash) {
-            for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
+            for (const intensity of ["overview:default", "depth:default", "depth:info-takeaway", "depth:brainstorm", "depth:argument-formation", "depth:decision", "depth:learning"]) {
               const cached = await getFromSessionCache(ufHash, intensity);
               if (cached) {
                 const fb = cached.feedback.find((f) => f.id === ufId);
@@ -589,7 +590,7 @@ chrome.runtime.onMessage.addListener(
           // Evict from caches FIRST (before API call) so that if the service
           // worker is killed mid-execution, the caches are already clean.
           if (delFbHash) {
-            for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
+            for (const intensity of ["overview:default", "depth:default", "depth:info-takeaway", "depth:brainstorm", "depth:argument-formation", "depth:decision", "depth:learning"]) {
               const cached = await getFromSessionCache(delFbHash, intensity);
               if (cached) {
                 cached.feedback = cached.feedback.filter((f) => f.id !== delFbId);
@@ -618,7 +619,7 @@ chrome.runtime.onMessage.addListener(
 
           // Update caches so edits survive page refresh
           if (updHash) {
-            for (const intensity of ["overview:writing", "overview:brainstorming", "overview:reading", "depth:writing", "depth:brainstorming", "depth:reading"]) {
+            for (const intensity of ["overview:default", "depth:default", "depth:info-takeaway", "depth:brainstorm", "depth:argument-formation", "depth:decision", "depth:learning"]) {
               const cached = await getFromSessionCache(updHash, intensity);
               if (cached) {
                 const idx = cached.annotations.findIndex((a) => a.id === annId);
@@ -838,7 +839,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
               payload: {
                 enabled: prefs.enabled ?? true,
                 annotationMode: prefs.annotation_mode ?? "overview",
-                depthPersonality: prefs.depth_personality ?? "writing",
+                depthContextMode: prefs.depth_context_mode,
+                depthContextNote: prefs.depth_context_note,
                 visibleTypes: prefs.visible_types ?? [],
                 annotationFont: prefs.annotation_font,
                 annotationFontSize: prefs.annotation_font_size,

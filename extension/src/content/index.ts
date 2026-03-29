@@ -3,15 +3,17 @@ import type {
   AnnotationFeedback,
   AnnotationMode,
   AnnotationType,
-  DepthPersonality,
   ExtensionMessage,
   SiteAdapter,
+  UserContext,
+  UserContextMode,
   ViewMode,
 } from "@oddity/shared";
 import { ALL_ANNOTATION_TYPES, ALL_DEPTH_TYPES, ALL_OVERVIEW_TYPES, DEFAULT_ENABLED_SITES, isBlockedDomain, MAX_TEXT_LENGTH } from "@oddity/shared";
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
+import { showContextPopup, hideContextPopup } from "./context-popup.js";
 import { createChatObserver, type ChatObserver } from "./chat-observer.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
 import { handleExportPdf } from "./export-pdf.js";
@@ -40,9 +42,9 @@ import {
   hideEmptyAnnotationsBubble,
   updateArgumentsBox,
   updateArgumentsBoxStyle,
-  updateDashboardPersonality,
   setArgumentsBoxPdf,
   setPdfRunCallback,
+  updateContextLink,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -314,7 +316,9 @@ let manualRunTriggered = false;
 let blocked = false;
 let enabled = true;
 let currentMode: ViewMode = "overview";
-let currentPersonality: DepthPersonality = "brainstorming";
+let currentContextMode: UserContextMode | undefined = undefined;
+let currentContextNote: string = "";
+let hasShownContextPopupThisPage = false;
 let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
@@ -514,6 +518,7 @@ function resetAnnotationState(): void {
   // Reset whitelist state
   manualRunTriggered = false;
   siteWhitelisted = false;
+  hasShownContextPopupThisPage = false;
 
   // Clear in-flight state
   longWaitManager.reset();
@@ -693,8 +698,11 @@ async function init(): Promise<void> {
   // Always start in overview mode on page load for stability.
   // Mode is not restored from storage — the user switches manually after load.
   // (Restoring caused cross-tab interference and unpredictable state on refresh.)
-  if (prefs?.depth_personality) {
-    currentPersonality = prefs.depth_personality;
+  if (prefs?.depth_context_mode) {
+    currentContextMode = prefs.depth_context_mode as UserContextMode;
+  }
+  if (prefs?.depth_context_note) {
+    currentContextNote = prefs.depth_context_note;
   }
   // currentMode defaults to "overview" (line 315), visibleTypes to overview types (line 317)
   setMarginNoteMode(currentMode);
@@ -1038,7 +1046,7 @@ async function handleStableRegion(
         contentHash,
         text: extracted.text,
         mode: currentMode as AnnotationMode,
-        personality: currentPersonality,
+        userContext: { mode: currentContextMode, note: currentContextNote || undefined } as UserContext,
         wordCount: extracted.wordCount,
       },
     });
@@ -1140,7 +1148,7 @@ async function handleStableRegionForMode(
         contentHash,
         text: extracted.text,
         mode: requestMode,
-        personality: currentPersonality,
+        userContext: { mode: currentContextMode, note: currentContextNote || undefined } as UserContext,
         wordCount: extracted.wordCount,
       },
     });
@@ -1500,7 +1508,7 @@ function rerenderAll(): void {
 
 // ─── Mode Switching ───
 
-function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void {
+function switchMode(newMode: ViewMode, newContextMode?: UserContextMode, newContextNote?: string): void {
   // Cancel any pending anchor guard re-render — switchMode handles its own rendering
   if (anchorGuardRerenderTimer) {
     clearTimeout(anchorGuardRerenderTimer);
@@ -1520,7 +1528,8 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   // Update state
   currentMode = newMode;
   setMarginNoteMode(newMode);
-  if (newPersonality) currentPersonality = newPersonality;
+  if (newContextMode !== undefined) currentContextMode = newContextMode;
+  if (newContextNote !== undefined) currentContextNote = newContextNote;
 
   // Update visible types for new mode
   visibleTypes = [
@@ -1888,7 +1897,8 @@ onMessage((message: ExtensionMessage) => {
       const {
         enabled: newEnabled,
         annotationMode: newMode,
-        depthPersonality: newPersonality,
+        depthContextMode: newContextMode,
+        depthContextNote: newContextNote,
         visibleTypes: newVisibleTypes,
         annotationFont,
         annotationFontSize,
@@ -1900,7 +1910,7 @@ onMessage((message: ExtensionMessage) => {
       const wasEnabled = enabled;
       const viewMode = newMode as ViewMode;
       const modeChanged = viewMode !== currentMode;
-      const personalityChanged = newPersonality !== currentPersonality;
+      const contextChanged = newContextMode !== currentContextMode || (newContextNote ?? "") !== currentContextNote;
       enabled = newEnabled;
       visibleTypes = newVisibleTypes.length > 0 ? newVisibleTypes : [
         ...(viewMode === "all" ? ALL_ANNOTATION_TYPES : viewMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
@@ -1908,7 +1918,7 @@ onMessage((message: ExtensionMessage) => {
       ];
 
       console.log(
-        `[Oddity 1] Settings updated — enabled: ${enabled}, mode: ${viewMode}, personality: ${newPersonality}`,
+        `[Oddity 1] Settings updated — enabled: ${enabled}, mode: ${viewMode}, contextMode: ${newContextMode}`,
       );
 
       setArgumentsBoxEnabled(enabled);
@@ -1920,11 +1930,11 @@ onMessage((message: ExtensionMessage) => {
         longWaitManager.reset();
       } else if (modeChanged) {
         // Mode changed: switch annotation display
-        switchMode(viewMode, newPersonality);
-      } else if (personalityChanged) {
-        // Personality only affects depth annotations — preserve user-written notes and their feedback
-        currentPersonality = newPersonality;
-        updateDashboardPersonality(newPersonality);
+        switchMode(viewMode, newContextMode, newContextNote);
+      } else if (contextChanged) {
+        // Context only affects depth annotations — preserve user-written notes and their feedback
+        currentContextMode = newContextMode;
+        currentContextNote = newContextNote ?? "";
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
@@ -1952,7 +1962,7 @@ onMessage((message: ExtensionMessage) => {
           }
         }
 
-        // Only clear depth (personality doesn't affect overview)
+        // Only clear depth (context mode doesn't affect overview)
         depthAnnotations.clear();
         depthFeedback.clear();
         depthGenerated.clear();
@@ -1988,7 +1998,7 @@ onMessage((message: ExtensionMessage) => {
         // Re-render existing overview annotations immediately (they were cleared above)
         rerenderAll();
 
-        // Fire new depth requests with the updated personality — staggered to avoid rate limits
+        // Fire new depth requests with the updated context — staggered to avoid rate limits
         for (let i = 0; i < regions.length; i++) {
           const region = regions[i]!;
           if (i === 0) {
@@ -2265,16 +2275,47 @@ document.addEventListener("oddity:feedback-deleted", (e) => {
   }
 });
 
-document.addEventListener("oddity:modeChange", (e) => {
+const CONTEXT_MODE_LABELS: Record<string, string> = {
+  "info-takeaway": "Info Takeaway",
+  "brainstorm": "Brainstorm",
+  "argument-formation": "Argument",
+  "decision": "Decision",
+  "learning": "Learning",
+};
+
+document.addEventListener("oddity:modeChange", async (e) => {
   const { mode } = (e as CustomEvent<{ mode: ViewMode }>).detail;
   if (mode === currentMode) return;
 
-  // Persist to storage so the service worker broadcasts settingsUpdated
+  // Dismiss context popup if switching away while it's open
+  hideContextPopup();
+
+  // Show context popup on first depth switch this page
+  if ((mode === "depth" || mode === "all") && !hasShownContextPopupThisPage) {
+    hasShownContextPopupThisPage = true;
+    const result = await showContextPopup(currentContextMode, currentContextNote);
+    if (result) {
+      currentContextMode = result.mode;
+      currentContextNote = result.note;
+      updateContextLink(CONTEXT_MODE_LABELS[result.mode]);
+      // Persist context to storage
+      if (chrome?.storage?.local) {
+        chrome.storage.local.get("preferences", (r) => {
+          const prefs = (r["preferences"] ?? {}) as Record<string, unknown>;
+          chrome.storage.local.set({
+            preferences: { ...prefs, depth_context_mode: result.mode, depth_context_note: result.note },
+          });
+        });
+      }
+    }
+    // Show context link even if skipped
+    updateContextLink(currentContextMode ? CONTEXT_MODE_LABELS[currentContextMode] : undefined);
+  }
+
+  // Persist mode to storage so the service worker broadcasts settingsUpdated
   if (chrome?.storage?.local) {
     chrome.storage.local.get("preferences", (result) => {
       const prefs = (result["preferences"] ?? {}) as Record<string, unknown>;
-      // Include visible_types matching the new mode so the settingsUpdated
-      // broadcast doesn't overwrite visibleTypes with stale overview-only types.
       const modeTypes = mode === "all"
         ? ALL_ANNOTATION_TYPES
         : mode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES;
@@ -2285,6 +2326,49 @@ document.addEventListener("oddity:modeChange", (e) => {
   }
 
   switchMode(mode);
+});
+
+// ─── Change Context (re-open popup from arguments-box link) ───
+
+document.addEventListener("oddity:openContextPopup", async () => {
+  const previousMode = currentContextMode;
+  const result = await showContextPopup(currentContextMode, currentContextNote);
+  if (result) {
+    currentContextMode = result.mode;
+    currentContextNote = result.note;
+    updateContextLink(CONTEXT_MODE_LABELS[result.mode]);
+    if (chrome?.storage?.local) {
+      chrome.storage.local.get("preferences", (r) => {
+        const prefs = (r["preferences"] ?? {}) as Record<string, unknown>;
+        chrome.storage.local.set({
+          preferences: { ...prefs, depth_context_mode: result.mode, depth_context_note: result.note },
+        });
+      });
+    }
+
+    // If context actually changed and we're in depth/all mode, re-fire depth annotations
+    if (result.mode !== previousMode && (currentMode === "depth" || currentMode === "all")) {
+      // Clear existing depth data so switchMode treats it as fresh
+      depthAnnotations.clear();
+      depthFeedback.clear();
+      depthGenerated.clear();
+      annotatedRegions.clear();
+      pendingRegions.clear();
+      pendingModeByHash.clear();
+      streamedRegions.clear();
+      longWaitManager.reset();
+
+      // Clear rendered depth annotations and re-trigger
+      clearOverlay();
+      clearAllAnchors();
+      clearMarginNotes();
+      for (const region of regions) invalidateTextNodeIndex(region.element);
+
+      for (const region of regions) {
+        handleStableRegionForMode(region, region.element, "depth");
+      }
+    }
+  }
 });
 
 // ─── Manual Annotation Store Sync ───

@@ -956,14 +956,21 @@
       <div class="section">
         <div class="section-title">Annotation</div>
         <div class="style-controls">
-          <!-- Personality (Depth mode) -->
+          <!-- Context Mode (Depth mode) -->
           <div class="style-row">
-            <span class="style-label">Mode</span>
-            <div class="density-group" id="intensity-group">
-              <button class="density-btn" data-intensity="writing" data-desc="Sharp &amp; critical">Writing</button>
-              <button class="density-btn active" data-intensity="brainstorming" data-desc="Creative &amp; curious">Brainstorming</button>
-              <button class="density-btn" data-intensity="reading" data-desc="Engaging &amp; guiding">Reading</button>
-            </div>
+            <span class="style-label">Context</span>
+            <select class="style-select" id="context-mode-select">
+              <option value="">Default</option>
+              <option value="info-takeaway">Info Takeaway</option>
+              <option value="brainstorm">Brainstorm</option>
+              <option value="argument-formation">Argument</option>
+              <option value="decision">Decision</option>
+              <option value="learning">Learning</option>
+            </select>
+          </div>
+          <div class="style-row">
+            <span class="style-label">Note</span>
+            <input type="text" class="style-input" id="context-note-input" placeholder="What are you reading for?" maxlength="500" />
           </div>
           <!-- Font -->
           <div class="style-row">

@@ -92,6 +92,7 @@ let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
+let contextLinkEl: HTMLButtonElement | null = null;
 let pdfDetected = false;
 let pdfPanelEl: HTMLDivElement | null = null;
 let pdfRunCb: (() => void) | null = null;
@@ -142,18 +143,6 @@ let dashFaceEl: HTMLDivElement | null = null;
 let footerTextEl: HTMLSpanElement | null = null;
 let sessionSiteEnabled = false;
 let localAuthState: boolean | null = null; // cached auth state — avoids re-querying background on every toggle
-
-// ── Sync bubble logo when preferences change externally (e.g. from popup) ──
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes.preferences) return;
-  const prefs = (changes.preferences.newValue ?? {}) as Record<string, unknown>;
-  const personality = (prefs.depth_personality as string) ?? "writing";
-  const display = personality.charAt(0).toUpperCase() + personality.slice(1);
-  if (bubbleLogoImgEl) {
-    bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
-    bubbleLogoImgEl.alt = display;
-  }
-});
 
 // ── Button drag state ──
 const BTN_DEFAULT_RIGHT = 20;
@@ -209,14 +198,6 @@ export function initArgumentsBox(): void {
         prefs.annotation_font as AnnotationFont | undefined,
         prefs.annotation_font_size as AnnotationFontSize | undefined,
       );
-      // Sync bubble logo to stored mode
-      const personality = (prefs.depth_personality as string) ?? "writing";
-      const display =
-        personality.charAt(0).toUpperCase() + personality.slice(1);
-      if (bubbleLogoImgEl) {
-        bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
-        bubbleLogoImgEl.alt = display;
-      }
     }
   });
 
@@ -761,7 +742,7 @@ export function initArgumentsBox(): void {
     const isReply = e?.detail?.isReply;
     if (isReply) {
       showArgToast(
-        "This note is from a different personality and isn't on the page right now.",
+        "This note is from a different context mode and isn't on the page right now.",
       );
     } else {
       showArgToast("Could not find this highlight on the page.");
@@ -996,31 +977,14 @@ export function updateArgumentsBoxStyle(
 
 let signOutCb: (() => void) | null = null;
 
-/** Update the dashboard's personality display (avatar, select, buttons, bubble). */
-export function updateDashboardPersonality(personality: string): void {
-  const display = personality.charAt(0).toUpperCase() + personality.slice(1);
-  if (dashPersonaSelect) dashPersonaSelect.textContent = display;
-  if (dashPersonaAvatarImgEl) {
-    dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${display}.png`);
-    dashPersonaAvatarImgEl.alt = display;
-  }
-  if (dashPersonaCircleEl)
-    dashPersonaCircleEl.style.background =
-      display === "Jerry" ? "#FDCB24" : "#fff";
-  dashDensityBtns.forEach((b) =>
-    b.classList.toggle(
-      "args-dash-density-active",
-      b.dataset.intensity === personality,
-    ),
-  );
-  if (bubbleLogoImgEl) {
-    bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
-    bubbleLogoImgEl.alt = display;
-  }
-}
-
 export function setSignOutCallback(cb: () => void): void {
   signOutCb = cb;
+}
+
+export function updateContextLink(modeLabel?: string, visible = true): void {
+  if (!contextLinkEl) return;
+  contextLinkEl.textContent = modeLabel ? `Context: ${modeLabel}` : "Set context";
+  contextLinkEl.style.display = visible ? "" : "none";
 }
 
 export function handleRemoteSignOut(): void {
@@ -1139,6 +1103,7 @@ export function destroyArgumentsBox(): void {
   dashPersonaSelect = null;
   dashPersonaAvatarImgEl = null;
   dashPersonaCircleEl = null;
+  contextLinkEl = null;
   dashFeedbackViewEl = null;
   dashFeedbackEmailEl = null;
   dashFeedbackTextareaEl = null;
@@ -1641,74 +1606,59 @@ function buildDashboardFace(): HTMLDivElement {
   sectionTitle.textContent = "Annotation";
   section.appendChild(sectionTitle);
 
-  // Personality row (replaces density — only relevant for Depth mode)
-  const personalityRow = document.createElement("div");
-  personalityRow.className = "args-dash-row";
-  const personalityLabel = document.createElement("span");
-  personalityLabel.className = "args-dash-label";
-  personalityLabel.textContent = "Mode";
-  const personalityGroup = document.createElement("div");
-  personalityGroup.className = "args-dash-density-group";
-  const personaDescs: Record<string, string> = {
-    writing: "Sharp & critical",
-    brainstorming: "Creative & curious",
-    reading: "Engaging & guiding",
+  // Context mode row (depth mode)
+  const contextModeRow = document.createElement("div");
+  contextModeRow.className = "args-dash-row";
+  const contextModeLabel = document.createElement("span");
+  contextModeLabel.className = "args-dash-label";
+  contextModeLabel.textContent = "Context";
+  const contextModeGroup = document.createElement("div");
+  contextModeGroup.className = "args-dash-density-group";
+  const contextModeDescs: Record<string, string> = {
+    "info-takeaway": "Extract key facts",
+    "brainstorm": "Creative connections",
+    "argument-formation": "Build arguments",
+    "decision": "Weigh options",
+    "learning": "Deepen understanding",
   };
   dashDensityBtns = [];
   for (const [value, label] of [
-    ["writing", "Writing"],
-    ["brainstorming", "Brainstorming"],
-    ["reading", "Reading"],
+    ["info-takeaway", "Info"],
+    ["brainstorm", "Brainstorm"],
+    ["argument-formation", "Argument"],
+    ["decision", "Decision"],
+    ["learning", "Learning"],
   ] as [string, string][]) {
     const btn = document.createElement("button");
-    btn.className =
-      "args-dash-density-btn" +
-      (value === "brainstorming" ? " args-dash-density-active" : "");
+    btn.className = "args-dash-density-btn";
     btn.dataset.intensity = value;
     btn.textContent = label;
     const tooltip = document.createElement("span");
     tooltip.className = "args-dash-density-tooltip";
-    tooltip.textContent = personaDescs[value] ?? "";
+    tooltip.textContent = contextModeDescs[value] ?? "";
     btn.appendChild(tooltip);
     btn.addEventListener("click", () => {
-      // Gate: Reading mode requires Standard plan
-      if (value === "reading" && dashUserTier !== "standard") {
-        showArgToast("Reading mode requires a Standard plan");
-        return;
-      }
-
       dashDensityBtns.forEach((b) =>
         b.classList.remove("args-dash-density-active"),
       );
       btn.classList.add("args-dash-density-active");
 
-      // Sync the top avatar, persona selector, and bubble logo
+      // Sync the top persona selector label
       if (dashPersonaSelect) dashPersonaSelect.textContent = label;
-      if (dashPersonaAvatarImgEl) {
-        dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${label}.png`);
-        dashPersonaAvatarImgEl.alt = label;
-      }
-      if (dashPersonaCircleEl)
-        dashPersonaCircleEl.style.background =
-          label === "Jerry" ? "#FDCB24" : "#fff";
-      if (bubbleLogoImgEl) {
-        bubbleLogoImgEl.src = chrome.runtime.getURL(`${label}.png`);
-        bubbleLogoImgEl.alt = label;
-      }
 
       chrome.storage.local.get("preferences").then((stored) => {
         const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
         chrome.storage.local.set({
-          preferences: { ...prefs, depth_personality: value },
+          preferences: { ...prefs, depth_context_mode: value },
         });
       });
     });
     dashDensityBtns.push(btn);
-    personalityGroup.appendChild(btn);
+    contextModeGroup.appendChild(btn);
   }
-  personalityRow.appendChild(personalityLabel);
-  personalityRow.appendChild(personalityGroup);
-  section.appendChild(personalityRow);
+  contextModeRow.appendChild(contextModeLabel);
+  contextModeRow.appendChild(contextModeGroup);
+  section.appendChild(contextModeRow);
 
   // Font row
   const fontRow = document.createElement("div");
@@ -2369,11 +2319,18 @@ function buildDashboardFace(): HTMLDivElement {
 async function loadDashboardPrefs(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-  const personality = (prefs.depth_personality as string) ?? "writing";
+  const contextMode = (prefs.depth_context_mode as string) ?? "";
+  const MODE_LABELS: Record<string, string> = {
+    "info-takeaway": "Info",
+    "brainstorm": "Brainstorm",
+    "argument-formation": "Argument",
+    "decision": "Decision",
+    "learning": "Learning",
+  };
   dashDensityBtns.forEach((btn) => {
     btn.classList.toggle(
       "args-dash-density-active",
-      btn.dataset.intensity === personality,
+      btn.dataset.intensity === contextMode,
     );
   });
   if (dashFontSelect)
@@ -2389,20 +2346,11 @@ async function loadDashboardPrefs(): Promise<void> {
       | import("@oddity/shared").AnnotationFontSize
       | undefined,
   );
-  // Derive display name from depth_personality (single source of truth)
-  const persona = personality.charAt(0).toUpperCase() + personality.slice(1);
-  if (dashPersonaSelect) dashPersonaSelect.textContent = persona;
-  if (dashPersonaAvatarImgEl) {
-    dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
-    dashPersonaAvatarImgEl.alt = persona;
-  }
-  if (bubbleLogoImgEl) {
-    bubbleLogoImgEl.src = chrome.runtime.getURL(`${persona}.png`);
-    bubbleLogoImgEl.alt = persona;
-  }
+  // Derive display name from depth_context_mode
+  const modeLabel = contextMode ? (MODE_LABELS[contextMode] ?? "Default") : "Default";
+  if (dashPersonaSelect) dashPersonaSelect.textContent = modeLabel;
   if (dashPersonaCircleEl)
-    dashPersonaCircleEl.style.background =
-      persona === "Jerry" ? "#FDCB24" : "#fff";
+    dashPersonaCircleEl.style.background = "#fff";
   // If the site is not enabled (dimmed), force toggle to OFF
   const enabled = dimmed ? false : prefs.enabled !== false;
   if (dashToggleInput) dashToggleInput.checked = enabled;
@@ -4046,6 +3994,9 @@ function initModeToggleOverlay(): void {
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
     modeToggleEl.dataset.active = mode;
     syncModeToggleSlider();
+    if (contextLinkEl) {
+      contextLinkEl.style.display = mode === "depth" || mode === "all" ? "" : "none";
+    }
     document.dispatchEvent(
       new CustomEvent("oddity:modeChange", { detail: { mode } }),
     );
@@ -4070,7 +4021,18 @@ function initModeToggleOverlay(): void {
   modeToggleEl.appendChild(modeToggleOverviewBtn);
   modeToggleEl.appendChild(modeToggleDepthBtn);
   modeToggleEl.appendChild(modeCloseBtnEl);
+  // "Change context" link — visible only in depth/all mode
+  contextLinkEl = document.createElement("button");
+  contextLinkEl.className = "context-link";
+  contextLinkEl.textContent = "Set context";
+  contextLinkEl.style.display = "none";
+  contextLinkEl.addEventListener("click", (e: MouseEvent) => {
+    e.stopPropagation();
+    document.dispatchEvent(new CustomEvent("oddity:openContextPopup"));
+  });
+
   modeToggleWrapperEl.appendChild(modeToggleEl);
+  modeToggleWrapperEl.appendChild(contextLinkEl);
 
   // Insert before containerEl so it appears to its left when collapsed
   outerWrapperEl.insertBefore(modeToggleWrapperEl, containerEl);
@@ -4255,6 +4217,28 @@ const ARGUMENTS_BOX_CSS = `
   :host([data-theme="light"]) .mode-toggle.with-close .mode-btn:hover:not(.mode-active) { color: #696F77; }
   :host([data-theme="light"]) .mode-toggle.with-close .mode-close-btn { color: #858E97; }
   :host([data-theme="light"]) .mode-toggle.with-close .mode-close-btn:hover { color: #696F77; background: rgba(0,0,0,0.06); }
+
+  /* ── Context link ── */
+  .context-link {
+    all: unset;
+    display: block;
+    text-align: center;
+    font-size: 10px;
+    font-family: var(--oddity-note-font);
+    color: #787A7D;
+    cursor: pointer;
+    padding: 3px 0 0;
+    transition: color 0.15s;
+  }
+  .context-link:hover {
+    color: #4ade80;
+  }
+  :host([data-theme="light"]) .context-link {
+    color: #858E97;
+  }
+  :host([data-theme="light"]) .context-link:hover {
+    color: #16a34a;
+  }
 
   /* ── Morphing container ── */
 

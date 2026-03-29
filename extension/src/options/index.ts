@@ -1,6 +1,6 @@
 import type {
   AnnotationType,
-  DepthPersonality,
+  UserContextMode,
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
@@ -44,7 +44,8 @@ let deleteConfirmShown = false;
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   annotation_mode: "overview",
-  depth_personality: "writing",
+  depth_context_mode: undefined as unknown as UserContextMode,
+  depth_context_note: "",
   visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
   enabled_sites: [],
   annotation_font: "fraunces",
@@ -58,16 +59,11 @@ async function init(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   if (stored["preferences"]) {
     const prefs = stored["preferences"] as UserPreferences;
-    // Migrate legacy personality names
-    let personality = prefs.depth_personality ?? "writing";
-    const legacyMap: Record<string, DepthPersonality> = {
-      terry: "writing", jerry: "brainstorming", sally: "reading", gary: "reading",
-    };
-    if (personality in legacyMap) personality = legacyMap[personality as string]!;
     currentPrefs = {
       enabled: prefs.enabled ?? true,
       annotation_mode: prefs.annotation_mode ?? "overview",
-      depth_personality: personality,
+      depth_context_mode: prefs.depth_context_mode as UserContextMode,
+      depth_context_note: prefs.depth_context_note ?? "",
       visible_types: prefs.visible_types ?? [
         ...ALL_OVERVIEW_TYPES,
         "user_written",
@@ -97,13 +93,13 @@ async function init(): Promise<void> {
 }
 
 function applyPrefsToUI(): void {
-  // Personality buttons
+  // Context mode buttons
   for (const btn of intensityGroup.querySelectorAll<HTMLButtonElement>(
     ".radio-btn",
   )) {
     btn.classList.toggle(
       "active",
-      btn.dataset["intensity"] === currentPrefs.depth_personality,
+      btn.dataset["intensity"] === (currentPrefs.depth_context_mode ?? ""),
     );
   }
 
@@ -216,17 +212,17 @@ function renderSiteList(): void {
 
 // ─── Event Handlers ───
 
-// Personality buttons
+// Context mode buttons
 intensityGroup.addEventListener("click", (e) => {
   const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
     ".radio-btn",
   );
   if (!btn) return;
 
-  const personality = btn.dataset["intensity"] as DepthPersonality | undefined;
-  if (!personality) return;
+  const contextMode = btn.dataset["intensity"] as UserContextMode | undefined;
+  if (!contextMode) return;
 
-  currentPrefs.depth_personality = personality;
+  currentPrefs.depth_context_mode = contextMode;
 
   for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(
     ".radio-btn",

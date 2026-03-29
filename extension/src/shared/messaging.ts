@@ -16,14 +16,14 @@ function isContextValid(): boolean {
  * Type-safe wrapper around chrome.runtime.sendMessage.
  * Returns a typed response. Silently fails if extension context is invalidated.
  */
-export function sendMessage<T = unknown>(
+export async function sendMessage<T = unknown>(
   message: ExtensionMessage,
 ): Promise<T> {
-  if (!isContextValid()) return Promise.resolve(undefined as T);
+  if (!isContextValid()) return undefined as T;
   try {
-    return chrome.runtime.sendMessage(message);
+    return await chrome.runtime.sendMessage(message);
   } catch {
-    return Promise.resolve(undefined as T);
+    return undefined as T;
   }
 }
 
@@ -62,14 +62,14 @@ export function onMessage(
 /**
  * Send a message to a specific tab's content script.
  */
-export function sendToTab<T = unknown>(
+export async function sendToTab<T = unknown>(
   tabId: number,
   message: ExtensionMessage,
 ): Promise<T> {
-  if (!isContextValid()) return Promise.resolve(undefined as T);
+  if (!isContextValid()) return undefined as T;
   try {
-    return chrome.tabs.sendMessage(tabId, message);
+    return await chrome.tabs.sendMessage(tabId, message);
   } catch {
-    return Promise.resolve(undefined as T);
+    return undefined as T;
   }
 }

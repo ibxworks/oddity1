@@ -1,7 +1,7 @@
 import type {
   AnnotationFont,
   AnnotationFontSize,
-  DepthPersonality,
+  UserContextMode,
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
@@ -14,7 +14,6 @@ const enabledToggle = document.getElementById(
   "enabled-toggle",
 ) as HTMLInputElement;
 const toggleLabel = document.getElementById("toggle-label")!;
-const intensityGroup = document.getElementById("intensity-group")!;
 const exportBtn = document.getElementById("export-btn")!;
 const openOptions = document.getElementById("open-options")!;
 const totalCountNumber = document.getElementById("total-count-number")!;
@@ -93,7 +92,8 @@ let isSignUpMode = true;
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   annotation_mode: "overview",
-  depth_personality: "writing",
+  depth_context_mode: undefined as unknown as UserContextMode,
+  depth_context_note: "",
   visible_types: [],
   enabled_sites: [],
   annotation_font: "fraunces",
@@ -136,16 +136,11 @@ async function init(): Promise<void> {
   const stored = await chrome.storage.local.get("preferences");
   if (stored["preferences"]) {
     const prefs = stored["preferences"] as UserPreferences;
-    // Migrate legacy personality names
-    let personality = prefs.depth_personality ?? "writing";
-    const legacyMap: Record<string, DepthPersonality> = {
-      terry: "writing", jerry: "brainstorming", sally: "reading", gary: "reading",
-    };
-    if (personality in legacyMap) personality = legacyMap[personality as string]!;
     currentPrefs = {
       enabled: prefs.enabled ?? true,
       annotation_mode: prefs.annotation_mode ?? "overview",
-      depth_personality: personality,
+      depth_context_mode: prefs.depth_context_mode as UserContextMode,
+      depth_context_note: prefs.depth_context_note ?? "",
       visible_types: [],
       enabled_sites: prefs.enabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "fraunces",
@@ -168,22 +163,30 @@ function applyPrefsToUI(): void {
   enabledToggle.checked = currentPrefs.enabled;
   toggleLabel.textContent = currentPrefs.enabled ? "On" : "Off";
 
-  // Personality buttons (depth mode)
-  for (const btn of intensityGroup.querySelectorAll<HTMLButtonElement>(
-    ".density-btn",
-  )) {
-    btn.classList.toggle(
-      "active",
-      btn.dataset["intensity"] === currentPrefs.depth_personality,
-    );
+  // Context mode dropdown
+  const contextModeSelect = document.getElementById("context-mode-select") as HTMLSelectElement | null;
+  if (contextModeSelect) {
+    contextModeSelect.value = currentPrefs.depth_context_mode ?? "";
+  }
+
+  // Context note input
+  const contextNoteInput = document.getElementById("context-note-input") as HTMLInputElement | null;
+  if (contextNoteInput) {
+    contextNoteInput.value = currentPrefs.depth_context_note ?? "";
   }
 
   // Sync top label with mode
-  const displayName =
-    (currentPrefs.depth_personality ?? "writing").charAt(0).toUpperCase() +
-    (currentPrefs.depth_personality ?? "writing").slice(1);
-  profilePersonaSelect.textContent = displayName;
-  applyPersonaVisuals(displayName);
+  const MODE_LABELS: Record<string, string> = {
+    "info-takeaway": "Info Takeaway",
+    "brainstorm": "Brainstorm",
+    "argument-formation": "Argument",
+    "decision": "Decision",
+    "learning": "Learning",
+  };
+  const modeLabel = currentPrefs.depth_context_mode
+    ? MODE_LABELS[currentPrefs.depth_context_mode] ?? "Default"
+    : "Default";
+  profilePersonaSelect.textContent = modeLabel;
 
   // Font select
   fontSelect.value = currentPrefs.annotation_font;
@@ -235,14 +238,6 @@ function showAuthenticatedUI(user: {
   // Total annotation count
   totalCountNumber.textContent = String(user.annotation_count ?? 0);
 
-  // Reading mode gating: no visual dimming — upgrade toast shown on click
-  const readingBtn = intensityGroup.querySelector<HTMLButtonElement>(
-    '.density-btn[data-intensity="reading"]',
-  );
-  if (readingBtn) {
-    readingBtn.style.opacity = "";
-    readingBtn.title = "";
-  }
 }
 
 function showUnauthenticatedUI(): void {
@@ -399,38 +394,39 @@ enabledToggle.addEventListener("change", () => {
   savePrefs();
 });
 
-// Personality selection (depth mode)
-intensityGroup.addEventListener("click", (e) => {
-  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-    ".density-btn",
-  );
-  if (!btn) return;
+// Context mode selection (depth mode)
+const contextModeSelect = document.getElementById("context-mode-select") as HTMLSelectElement | null;
+if (contextModeSelect) {
+  contextModeSelect.addEventListener("change", () => {
+    const value = contextModeSelect.value;
+    currentPrefs.depth_context_mode = (value || undefined) as UserContextMode;
 
-  const personality = btn.dataset["intensity"] as DepthPersonality | undefined;
-  if (!personality) return;
+    // Sync the top persona selector label
+    const MODE_LABELS: Record<string, string> = {
+      "info-takeaway": "Info Takeaway",
+      "brainstorm": "Brainstorm",
+      "argument-formation": "Argument",
+      "decision": "Decision",
+      "learning": "Learning",
+    };
+    profilePersonaSelect.textContent = value ? (MODE_LABELS[value] ?? "Default") : "Default";
 
-  // Gate: Reading mode requires Standard plan
-  if (personality === "reading" && currentUser?.tier !== "standard") {
-    showUpgradeToast("Reading mode requires a Standard plan");
-    return;
-  }
+    savePrefs();
+  });
+}
 
-  currentPrefs.depth_personality = personality;
-
-  for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(
-    ".density-btn",
-  )) {
-    b.classList.toggle("active", b === btn);
-  }
-
-  // Sync the top avatar and persona selector with the selected personality
-  const displayName =
-    personality.charAt(0).toUpperCase() + personality.slice(1);
-  profilePersonaSelect.textContent = displayName;
-  applyPersonaVisuals(displayName);
-
-  savePrefs();
-});
+// Context note input (depth mode)
+const contextNoteInput = document.getElementById("context-note-input") as HTMLInputElement | null;
+if (contextNoteInput) {
+  let noteDebounce: number | null = null;
+  contextNoteInput.addEventListener("input", () => {
+    if (noteDebounce !== null) window.clearTimeout(noteDebounce);
+    noteDebounce = window.setTimeout(() => {
+      currentPrefs.depth_context_note = contextNoteInput.value.slice(0, 500);
+      savePrefs();
+    }, 400);
+  });
+}
 
 // Font select
 fontSelect.addEventListener("change", () => {
@@ -538,25 +534,6 @@ openOptions.addEventListener("click", (e) => {
   chrome.runtime.openOptionsPage();
 });
 
-// ─── Persona Picker ───
-
-const profileAvatarImg = document.getElementById(
-  "profile-avatar-img",
-) as HTMLImageElement;
-const profileCircleEl = profileAvatarImg.closest(
-  ".profile-circle",
-) as HTMLElement;
-
-function applyPersonaVisuals(name: string): void {
-  profileAvatarImg.src = `/${name}.png`;
-  profileAvatarImg.alt = name;
-  const bgMap: Record<string, string> = {
-    Brainstorming: "#FDCB24",
-    Writing: "#fff",
-    Reading: "#fff",
-  };
-  profileCircleEl.style.background = bgMap[name] ?? "#fff";
-}
 
 // ─── Profile Popover (bottom bar) ───
 
