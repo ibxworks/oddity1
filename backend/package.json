@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file=.env --import tsx/esm api/dev-supervisor.ts",
+    "dev": "node --env-file=.env --import tsx/esm routes/dev-supervisor.ts",
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "test": "vitest run"
