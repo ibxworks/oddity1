@@ -13,6 +13,7 @@ const SUPABASE_URL = "https://gmmektzvvrtttszdgiai.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtbWVrdHp2dnJ0dHRzemRnaWFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MzQyNzYsImV4cCI6MjA4NzMxMDI3Nn0.aFzJcKC4dHgSz7TuQFR-4ZjnVMNQZAycWYkXg1UHKKY";
 const EXTENSION_REDIRECT_URL = `https://${chrome.runtime.id}.chromiumapp.org/`;
+const RESET_PASSWORD_REDIRECT_URL = "https://app.oddity1.com/reset-password";
 
 // ─── Chrome Storage Adapter for Service Workers ───
 // Service workers have NO localStorage. We use chrome.storage.session
@@ -107,7 +108,7 @@ export async function signOut() {
 
 export async function resetPassword(email: string): Promise<void> {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: "https://app.oddity1.com",
+    redirectTo: RESET_PASSWORD_REDIRECT_URL,
   });
   if (error) throw error;
 }
