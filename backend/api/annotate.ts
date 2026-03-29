@@ -196,6 +196,14 @@ router.post("/", async (req, res) => {
           content_hash,
           authToken,
         );
+        if (req.user?.id && merged.annotations.length > 0) {
+          serviceClient.rpc("increment_annotation_count", {
+            p_user_id: req.user.id,
+            p_count: merged.annotations.length,
+          }).then(({ error }) => {
+            if (error) console.error("[annotate] annotation_count increment failed:", error.message);
+          });
+        }
         res.json({
           success: true,
           cached: true,
@@ -247,6 +255,14 @@ router.post("/", async (req, res) => {
       content_hash,
       authToken,
     );
+    if (req.user?.id && merged.annotations.length > 0) {
+      serviceClient.rpc("increment_annotation_count", {
+        p_user_id: req.user.id,
+        p_count: merged.annotations.length,
+      }).then(({ error }) => {
+        if (error) console.error("[annotate] annotation_count increment failed:", error.message);
+      });
+    }
     res.json({
       success: true,
       cached: false,
@@ -311,6 +327,14 @@ async function handleStreamingAnnotation(
         content_hash,
         authToken,
       );
+      if (req.user?.id && merged.annotations.length > 0) {
+        serviceClient.rpc("increment_annotation_count", {
+          p_user_id: req.user.id,
+          p_count: merged.annotations.length,
+        }).then(({ error }) => {
+          if (error) console.error("[annotate/stream] annotation_count increment failed:", error.message);
+        });
+      }
       for (const ann of merged.annotations) {
         res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
       }
@@ -392,6 +416,14 @@ async function handleStreamingAnnotation(
       );
     }
     if (signal.aborted || res.writableEnded) return;
+    if (req.user?.id && merged.annotations.length > 0) {
+      serviceClient.rpc("increment_annotation_count", {
+        p_user_id: req.user.id,
+        p_count: merged.annotations.length,
+      }).then(({ error }) => {
+        if (error) console.error("[annotate/stream] annotation_count increment failed:", error.message);
+      });
+    }
     res.write(
       `data: ${JSON.stringify({
         done: true,
