@@ -52,6 +52,28 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// Temporary diagnostic — remove after deployment is verified
+app.get("/api/debug-env", (_req, res) => {
+  const envKeys = [
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_STANDARD_PRODUCT_ID",
+    "GEMINI_API_KEY",
+    "DASHBOARD_URL",
+    "FREE_PLAN_LIMIT_PER_MONTH",
+    "STANDARD_PLAN_LIMIT_PER_MONTH",
+  ];
+  const status: Record<string, string> = {};
+  for (const k of envKeys) {
+    const v = process.env[k];
+    status[k] = v ? `set (${v.length} chars)` : "MISSING";
+  }
+  res.json(status);
+});
+
 // Public routes (no auth)
 app.use("/api/adapters", adaptersRouter);
 app.use("/api/prices", pricesRouter);
