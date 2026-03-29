@@ -16,10 +16,10 @@ describe("@oddity/shared exports", () => {
   });
 
   it("exports plan features and canUseFeature helper", () => {
-    expect(shared.PLAN_FEATURES.free.readingPersonality).toBe(false);
-    expect(shared.PLAN_FEATURES.standard.readingPersonality).toBe(true);
-    expect(shared.canUseFeature("free", "readingPersonality")).toBe(false);
-    expect(shared.canUseFeature("standard", "readingPersonality")).toBe(true);
+    expect(shared.PLAN_FEATURES.free.customPdfSubtitle).toBe(false);
+    expect(shared.PLAN_FEATURES.standard.customPdfSubtitle).toBe(true);
+    expect(shared.canUseFeature("free", "customPdfSubtitle")).toBe(false);
+    expect(shared.canUseFeature("standard", "customPdfSubtitle")).toBe(true);
   });
 
   it("exports request limit constants", () => {
@@ -47,7 +47,7 @@ describe("@oddity/shared exports", () => {
     const keys = Object.keys(shared.ANNOTATION_LABELS);
     expect(keys.length).toBeGreaterThanOrEqual(17);
     expect(shared.ANNOTATION_LABELS.core_claim).toBe("CORE CLAIM");
-    expect(shared.ANNOTATION_LABELS.counterargument).toBe("COUNTERARGUMENT");
+    expect(shared.ANNOTATION_LABELS.counterargument).toBe("DEPTH");
     expect(shared.ANNOTATION_LABELS.user_written).toBe("MY NOTE");
   });
 

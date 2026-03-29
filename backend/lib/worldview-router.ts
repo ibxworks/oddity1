@@ -1,7 +1,9 @@
+import type { UserContext } from "@oddity/shared";
 import {
   WORLDVIEWS,
   VALID_WORLDVIEW_KEYS,
 } from "./worldview-registry.js";
+import { buildRouterContextBlock } from "./context-modes.js";
 
 // ─── Types ───
 
@@ -11,7 +13,6 @@ export interface RouterAssignment {
   prefix: string;
   suffix: string;
   worldview: string;
-  match_reason: string;
   ai_introduced: boolean;
 }
 
@@ -21,7 +22,7 @@ export interface PlannerResult {
 
 // ─── Router Prompt ───
 
-export function buildRouterPrompt(): string {
+export function buildRouterPrompt(userContext?: UserContext): string {
   const summaries = WORLDVIEWS.map((w) => ({
     name: w.name,
     core_commitments: w.core_commitments,
@@ -41,10 +42,19 @@ Only return [] when the input has no substantive prose at all.
 ---
 ## Worldview Summaries
 ${JSON.stringify(summaries, null, 2)}
----
+${buildRouterContextBlock(userContext)}---
 ## Instructions
 
-### Step 1: Identify Anchors
+### Step 1: Select Worldviews (max 3)
+Read the full text. Identify the dominant themes, claims, and assumptions. Then select exactly 1 to 3 worldviews from the summaries above whose characteristic_objections and signature_concepts produce the sharpest, most specific friction with the text's core arguments.
+
+Selection rules:
+- Pick worldviews that challenge different aspects of the text. Do not pick two worldviews that would make the same type of objection.
+- Prefer worldviews whose signature_concepts directly contradict, complicate, or expose hidden costs in the text's claims.
+- Do not pick a worldview just because the text's topic overlaps with the thinker's domain. Pick based on friction, not affinity.
+- You MUST use only the worldviews selected in this step for all subsequent routing. No other worldviews may appear in the output.
+
+### Step 2: Identify Anchors
 Read the full text. Identify anchors — sentences or claims worth provoking. Not every sentence is an anchor.
 
 A sentence IS an anchor if it:
@@ -63,8 +73,8 @@ A sentence is NOT an anchor if it:
 
 Do not anchor more than ~40% of sentences. If you are selecting more, your threshold is too low.
 
-### Step 2: Route Each Anchor to a Worldview
-For each anchor, scan the worldview summaries. Select the one worldview whose characteristic_objections and signature_concepts produce the most specific, non-generic friction with that particular claim.
+### Step 3: Route Each Anchor to a Worldview
+For each anchor, select the one worldview — from the worldviews chosen in Step 1 only — whose characteristic_objections and signature_concepts produce the most specific, non-generic friction with that particular claim.
 
 Routing rules:
 - Match on characteristic_objections first. If a thinker characteristically challenges the type of claim this anchor makes, that's a strong match signal.
@@ -72,9 +82,10 @@ Routing rules:
 - Specificity over agreement. Do not pick the worldview that agrees with or deepens the claim. Pick the one that exposes a precise weakness, hidden cost, or unstated assumption.
 - Non-generic friction. The selected worldview must produce an objection that could NOT apply to any other anchor in the text.
 - One worldview per anchor. Do not split. Pick the single sharpest lens.
+- Only use worldviews selected in Step 1. If none of the selected worldviews produces specific friction with an anchor, drop the anchor.
 - If no worldview summary produces specific friction with an anchor, drop the anchor. A forced match is worse than no match.
 
-### Step 3: Flag AI-Introduced Claims
+### Step 4: Flag AI-Introduced Claims
 If the text appears to be an AI-generated response, mark any anchor where the AI introduced a claim not directly asked about by setting ai_introduced to true. Default false.
 ---
 ## Output Format
@@ -86,7 +97,6 @@ Return a JSON array. Each element represents one anchor.
     "prefix": "The few words immediately before the anchor.",
     "suffix": "The few words immediately after the anchor.",
     "worldview": "Name of the assigned thinker",
-    "match_reason": "One phrase naming the specific concept or friction point.",
     "ai_introduced": false
   }
 ]
@@ -97,7 +107,6 @@ Field rules:
 - prefix: 3-5 words immediately before the anchor_text in the source. Helps disambiguate repeated phrases.
 - suffix: 3-5 words immediately after the anchor_text in the source. Helps disambiguate repeated phrases.
 - worldview: The name field from the matching worldview summary. Exact match.
-- match_reason: Maximum 10 words. Name the specific concept from signature_concepts or the specific objection type from characteristic_objections that creates friction.
 - ai_introduced: Boolean. Default false.
 
 If the input fails the input guard, return: []
@@ -108,7 +117,6 @@ If the input fails the input guard, return: []
 - Do not write provocations. That is the annotator's job.
 - Do not exceed ~40% of sentences as anchors.
 - Do not force matches. Drop anchors that have no sharp worldview fit.
-- match_reason must be 10 words or fewer.
 - Output valid JSON only. No markdown wrapping, no commentary.`;
 }
 
@@ -119,8 +127,9 @@ const EMPTY_RESULT: PlannerResult = { assignments: [] };
 export async function planAnnotations(
   text: string,
   callPlanner: (systemPrompt: string, userMessage: string) => Promise<string>,
+  userContext?: UserContext,
 ): Promise<PlannerResult> {
-  const systemPrompt = buildRouterPrompt();
+  const systemPrompt = buildRouterPrompt(userContext);
 
   let raw: string;
   try {
@@ -158,7 +167,6 @@ export async function planAnnotations(
     const prefix = typeof a.prefix === "string" ? a.prefix : "";
     const suffix = typeof a.suffix === "string" ? a.suffix : "";
     const worldviewName = typeof a.worldview === "string" ? a.worldview : "";
-    const match_reason = typeof a.match_reason === "string" ? a.match_reason : "";
     const anchor_index = typeof a.anchor_index === "number" ? a.anchor_index : 0;
     const ai_introduced = typeof a.ai_introduced === "boolean" ? a.ai_introduced : false;
 
@@ -177,12 +185,29 @@ export async function planAnnotations(
       prefix,
       suffix,
       worldview: key,
-      match_reason,
       ai_introduced,
     });
   }
 
   if (assignments.length === 0) return EMPTY_RESULT;
+
+  // Hard cap: keep at most 3 worldviews, ranked by assignment count
+  const MAX_WORLDVIEWS = 3;
+  const countByWorldview = new Map<string, number>();
+  for (const a of assignments) {
+    countByWorldview.set(a.worldview, (countByWorldview.get(a.worldview) ?? 0) + 1);
+  }
+
+  if (countByWorldview.size > MAX_WORLDVIEWS) {
+    const topKeys = new Set(
+      [...countByWorldview.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, MAX_WORLDVIEWS)
+        .map(([key]) => key),
+    );
+    const filtered = assignments.filter((a) => topKeys.has(a.worldview));
+    return { assignments: filtered };
+  }
 
   return { assignments };
 }

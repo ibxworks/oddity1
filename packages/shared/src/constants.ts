@@ -37,13 +37,11 @@ export type PlanFeatureKey = keyof typeof PLAN_FEATURES.free;
 
 export const PLAN_FEATURES = {
   free: {
-    readingPersonality: false,
     customPdfSubtitle: false,
     pdfAnnotation: false,
     sketchPad: false,
   },
   standard: {
-    readingPersonality: true,
     customPdfSubtitle: true,
     pdfAnnotation: true,
     sketchPad: true,
@@ -111,28 +109,30 @@ export const DEPTH_COLORS: Record<DepthType, string> = {
   vocabulary: "#578E6C",
 };
 
+// All depth annotations use LLM-generated labels now.
+// This map provides a generic fallback for cached annotations that predate the label field.
 export const DEPTH_LABELS: Record<DepthType, string> = {
-  caveat: "CAVEAT",
-  counterargument: "COUNTERARGUMENT",
-  alternative: "ALTERNATIVE",
-  fallacy: "FALLACY",
-  criteria: "CRITERIA",
-  perspective: "PERSPECTIVE",
-  consequence: "CONSEQUENCE",
-  decision_making: "DECISION MAKING",
-  insight: "INSIGHT",
-  recall: "RECALL",
-  translation: "TRANSLATION",
-  juxtaposition: "JUXTAPOSITION",
-  outsider: "OUTSIDER",
-  fixation_breaker: "FIXATION BREAKER",
-  incomplete_move: "INCOMPLETE MOVE",
-  personal_hook: "PERSONAL HOOK",
-  role_assignment: "ROLE ASSIGNMENT",
-  exaggeration: "EXAGGERATION",
-  reverse_brainstorm: "REVERSE BRAINSTORM",
-  study: "STUDY",
-  vocabulary: "VOCABULARY",
+  insight: "DEPTH",
+  caveat: "DEPTH",
+  counterargument: "DEPTH",
+  alternative: "DEPTH",
+  fallacy: "DEPTH",
+  criteria: "DEPTH",
+  perspective: "DEPTH",
+  consequence: "DEPTH",
+  decision_making: "DEPTH",
+  recall: "DEPTH",
+  translation: "DEPTH",
+  juxtaposition: "DEPTH",
+  outsider: "DEPTH",
+  fixation_breaker: "DEPTH",
+  incomplete_move: "DEPTH",
+  personal_hook: "DEPTH",
+  role_assignment: "DEPTH",
+  exaggeration: "DEPTH",
+  reverse_brainstorm: "DEPTH",
+  study: "DEPTH",
+  vocabulary: "DEPTH",
 };
 
 // ─── Unified Annotation Colors & Labels (used by rendering pipeline) ───

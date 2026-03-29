@@ -1,4 +1,5 @@
-import type { Annotation, AnnotationMode } from "@oddity/shared";
+import type { Annotation, AnnotationMode, UserContext } from "@oddity/shared";
+import { buildAnnotatorContextBlock } from "./context-modes.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -51,58 +52,52 @@ function buildSystemPrompt(mode: AnnotationMode): string {
   return overviewPromptTemplate;
 }
 
-// ─── Executor Types ───
+// ─── Annotator Types ───
 
 export type Verdict = "TAKE" | "CAUTION" | "THROW";
 
-export interface ExecutorAssignment {
+export interface AnnotatorAssignment {
   anchor_index: number;
   anchor_text: string;
-  match_reason: string;
   ai_introduced: boolean;
 }
 
-export interface ExecutorAnnotationResult {
+export interface AnnotatorAnnotationResult {
   anchor_index: number;
   anchor_text: string;
+  prefix: string;
+  suffix: string;
   worldview: string;
   verdict: Verdict;
   ai_introduced: boolean;
+  label: string;
   provocation: string;
 }
 
-export interface ExecutorSummary {
-  takes: { count: number; pattern: string };
-  cautions: { count: number; pattern: string };
-  throws: { count: number; pattern: string };
-  overall: string;
-}
-
-export interface ExecutorResult {
-  annotations: ExecutorAnnotationResult[];
-  summary: ExecutorSummary;
+export interface AnnotatorResult {
+  annotations: AnnotatorAnnotationResult[];
 }
 
 /**
  * Build the system prompt for an annotator call.
  * The annotator receives the router's anchor assignments and the full worldview file.
  */
-function buildExecutorPrompt(
+function buildAnnotatorPrompt(
   worldviewName: string,
   worldviewContent: string,
-  assignments: ExecutorAssignment[],
+  assignments: AnnotatorAssignment[],
+  userContext?: UserContext,
 ): string {
   const routerOutput = assignments.map((a) => ({
     anchor_index: a.anchor_index,
     anchor_text: a.anchor_text,
     worldview: worldviewName,
-    match_reason: a.match_reason,
     ai_introduced: a.ai_introduced,
   }));
 
-  return `You are the Annotator. You receive a text, a set of anchors with an assigned worldview, and the worldview file. For each anchor, you write a provocation grounded in the assigned worldview that forces the user to decide whether to take or throw the claim. You assign a verdict. You return annotations and a summary.
+ return `You are the Annotator. You receive a text, a set of anchors with an assigned worldview, and your worldview file. You are the thinker of the worldview given to you. For each anchor, write a provocation from that worldview.
 
-You are not a teacher. You do not explain. You do not soften. You surface the hidden cost, the failure condition, the unstated dependency — and you leave the final judgment to the user.
+Write like a peer reviewer — direct, specific, no softening.
 ---
 ## Inputs
 
@@ -112,81 +107,89 @@ ${JSON.stringify(routerOutput, null, 2)}
 3. The worldview file for ${worldviewName}:
 
 ${worldviewContent}
----
+${buildAnnotatorContextBlock(userContext)}---
 ## Instructions
 
 ### Step 1: Read the Assigned Worldview
-For each anchor in the router output, locate the specific concept or model referenced in match_reason. Read the surrounding context in the worldview file to understand the full argument behind that concept.
-Do not rely on general knowledge of the thinker. Use the worldview file as your source.
+Read the whole worldview file. Use it as your brain — not general knowledge of the thinker.
 
-### Step 2: Write the Provocation
-For each anchor, write a provocation from the assigned worldview.
+### Step 2: Write the Label
+For each anchor, write a short label (max 8 words). This is a peer-review inline comment — direct, specific, plain.
+
+Real peer review examples — match this tone exactly:
+- "Missing baseline without hierarchical merging"
+- "Not finding results online ≠ memorization is impossible"
+- "Explanation for hierarchical merging coherence?"
+- "Questionable quality of error examples in Table 1"
+- "Monetary reward may bias annotation count"
+- "Why no LLaMA2 entry for incremental update?"
+- "Should 'lower' be 'higher'?"
+- "'Highly extractive' contradicts novel trigram proportion"
+
+The label must be specific to THIS anchor — never a generic category name.
+
+### Step 3: Write the Provocation
+For each anchor, write a provocation from the assigned worldview. Maximum 20 words.
 
 A provocation IS:
-- A specific objection, hidden cost, alternative framing, or failure condition surfaced by the worldview's framework
-- Grounded in a named concept or specific argument from the worldview file — not a vague gesture at the thinker's general philosophy
-- Something that forces the user to decide whether the claim survives scrutiny
-- Maximum 25 words
+- A pointed observation about a strength, weakness, risk, limitation, alternative, or bias — grounded in a named concept from the worldview file
+- Specific enough that it could NOT apply to any other anchor in the text
+- Written like a peer reviewer's marginal note — blunt, useful, no filler
 
 A provocation is NOT:
 - A restatement of what the text says
-- A generic challenge that could apply to any text ("Is this evidence strong enough?")
-- An instruction to the reader ("Consider whether…", "Think about…")
-- A resolved observation ("This may be problematic, though the author does address it later")
 - A softened hedge when a direct observation is warranted
-- A compliment or agreement
 
-The provocation must be impossible to apply to any other anchor in the text.
-
-### Step 3: Assign a Verdict
+### Step 4: Assign a Verdict
 For each anchor, assign one verdict:
 - TAKE — The claim survives pressure-testing. The provocation sharpens it but does not break it.
-- CAUTION — The claim is directionally right but has a hidden cost, unstated dependency, or breaks under a specific condition.
-- THROW — The claim fails under scrutiny. The provocation identifies a structural flaw, false premise, or misdiagnosis.
+- CAUTION — The claim has a hidden cost, unstated dependency, or breaks under a specific condition.
+- THROW — The claim fails under scrutiny — structural flaw, false premise, or misdiagnosis.
 
 Verdict rules:
 - The verdict is a signal, not a command. The user decides.
-- The provocation must contain enough context for the user to evaluate the verdict independently.
-- Do not default to CAUTION. Commit to a position. CAUTION is for genuinely conditional claims, not for hedging.
+- The provocation must contain enough context for the user to evaluate independently.
+- Do not default to CAUTION. Commit to a position.
 ---
 ## Output Format
-Return a JSON object with two fields: annotations and summary.
+Return a JSON object with one field: annotations.
 {
-  "annotations": [
-    {
-      "anchor_index": 1,
-      "anchor_text": "The exact sentence from the text.",
-      "worldview": "${worldviewName}",
-      "verdict": "TAKE",
-      "ai_introduced": false,
-      "provocation": "The provocation text, 25 words max."
-    }
-  ],
-  "summary": {
-    "takes": { "count": 0, "pattern": "One sentence describing the pattern across all TAKE verdicts." },
-    "cautions": { "count": 0, "pattern": "One sentence describing the pattern across all CAUTION verdicts." },
-    "throws": { "count": 0, "pattern": "One sentence describing the pattern across all THROW verdicts." },
-    "overall": "2-3 sentences identifying where the text is strongest, where it breaks, and what's missing."
-  }
+ "annotations": [
+   {
+     "anchor_index": 1,
+     "anchor_text": "The exact sentence from the text.",
+     "prefix": "3-5 words immediately before the anchor.",
+     "suffix": "3-5 words immediately after the anchor.",
+     "worldview": "${worldviewName}",
+     "verdict": "TAKE",
+     "ai_introduced": false,
+     "label": "Short peer-review-style summary of this note, 5-15 words.",
+     "provocation": "The provocation text, 20 words max."
+   }
+ ]
 }
+
 
 Field rules:
 - anchor_index: Must match the index from the router output.
 - anchor_text: Exact sentence from the original text. Must match the router output.
+- prefix: 3-5 words immediately before the anchor_text in the source text. Helps disambiguate repeated phrases.
+- suffix: 3-5 words immediately after the anchor_text in the source text. Helps disambiguate repeated phrases.
 - worldview: Must match the worldview assigned by the router. Do not override.
 - verdict: One of "TAKE", "CAUTION", "THROW".
 - ai_introduced: Carry over from the router output. Do not change.
-- provocation: Maximum 25 words. Must be grounded in a specific concept from the worldview file.
-- summary.overall: Maximum 3 sentences.
+- label: Max 8 words. A direct, peer-review-style summary of what this note addresses. Never use skill category names.
+- provocation: Maximum 20 words. Must be grounded in a specific concept from the worldview file.
 ---
 ## Constraints
 - Follow the router's assignments. Do not change which worldview is assigned to which anchor. Do not skip anchors. Do not add new anchors.
 - Use ONLY the worldview file provided. Never invent frameworks or attribute ideas not present in the file.
-- Maximum 25 words per provocation. No exceptions.
+- Maximum 20 words per provocation. No exceptions.
 - Every provocation must be traceable to a specific concept in the worldview file.
 - Do not explain the worldview to the user. The provocation must be self-contained.
 - Output valid JSON only. No markdown wrapping, no commentary before or after the JSON.`;
 }
+
 
 /**
  * Map raw LLM output (overview format) into Annotation objects.
@@ -224,7 +227,7 @@ function mapOverviewOutput(raw: unknown[]): unknown[] {
 
 /**
  * Map raw LLM output to Annotation format (overview mode only).
- * Depth mode is handled by the planner/executor pipeline in annotate.ts.
+ * Depth mode is handled by the planner/annotator pipeline in annotate.ts.
  */
 function mapLlmOutput(raw: unknown[], _mode: AnnotationMode): unknown[] {
   return mapOverviewOutput(raw);
@@ -393,29 +396,24 @@ export async function plannerCall(
   });
 }
 
-// ─── Executor Call (Call 2) ───
+// ─── Annotator Call (Call 2) ───
 
-const EMPTY_EXECUTOR_RESULT: ExecutorResult = {
+const EMPTY_ANNOTATOR_RESULT: AnnotatorResult = {
   annotations: [],
-  summary: {
-    takes: { count: 0, pattern: "" },
-    cautions: { count: 0, pattern: "" },
-    throws: { count: 0, pattern: "" },
-    overall: "",
-  },
 };
 
 /**
  * Execute annotations for a set of pre-assigned anchors using a specific worldview.
- * Returns verdict + provocation for each anchor, plus a summary.
+ * Returns verdict + provocation + label for each anchor.
  */
 export async function executeAnnotations(
   text: string,
   worldviewName: string,
   worldviewContent: string,
-  assignments: ExecutorAssignment[],
-): Promise<ExecutorResult> {
-  const systemPrompt = buildExecutorPrompt(worldviewName, worldviewContent, assignments);
+  assignments: AnnotatorAssignment[],
+  userContext?: UserContext,
+): Promise<AnnotatorResult> {
+  const systemPrompt = buildAnnotatorPrompt(worldviewName, worldviewContent, assignments, userContext);
 
   return withKeyRetry(async (client) => {
     const model = client.getGenerativeModel({
@@ -433,23 +431,22 @@ export async function executeAnnotations(
     });
 
     const content = result.response.text();
-    if (!content) return EMPTY_EXECUTOR_RESULT;
+    if (!content) return EMPTY_ANNOTATOR_RESULT;
 
     try {
       const parsed = JSON.parse(content);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         return {
           annotations: Array.isArray(parsed.annotations) ? parsed.annotations : [],
-          summary: parsed.summary ?? EMPTY_EXECUTOR_RESULT.summary,
         };
       }
       // Fallback: if it returned a flat array, wrap it
       if (Array.isArray(parsed)) {
-        return { annotations: parsed, summary: EMPTY_EXECUTOR_RESULT.summary };
+        return { annotations: parsed };
       }
-      return EMPTY_EXECUTOR_RESULT;
+      return EMPTY_ANNOTATOR_RESULT;
     } catch {
-      return EMPTY_EXECUTOR_RESULT;
+      return EMPTY_ANNOTATOR_RESULT;
     }
   });
 }

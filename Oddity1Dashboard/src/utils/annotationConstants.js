@@ -91,12 +91,5 @@ export const ALL_DEPTH_TYPES = [
   "reverse_brainstorm", "study", "vocabulary",
 ];
 
-// ─── Personality descriptions ───
-export const PERSONALITIES = {
-  terry: { name: "Terry", description: "Sharp & critical" },
-  jerry: { name: "Jerry", description: "Creative & curious" },
-  sally: { name: "Sally", description: "Engaging & guiding" },
-};
-
 export const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";

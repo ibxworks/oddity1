@@ -2,7 +2,20 @@
 
 export type AnnotationMode = 'overview' | 'depth';
 export type ViewMode = 'overview' | 'depth' | 'all';
-export type DepthPersonality = 'writing' | 'brainstorming' | 'reading';
+
+// ─── User Context (depth mode) ───
+
+export type UserContextMode =
+  | 'info-takeaway'
+  | 'brainstorm'
+  | 'argument-formation'
+  | 'decision'
+  | 'learning';
+
+export type UserContext = {
+  mode?: UserContextMode;
+  note?: string;
+};
 
 // ─── Overview Labels ───
 
@@ -16,7 +29,8 @@ export type OverviewLabel =
 // ─── Depth Types ───
 
 export type DepthType =
-  // Writing / Reading skills
+  | "insight"
+  // Legacy values kept for backward compat with cached/stored annotations
   | "caveat"
   | "counterargument"
   | "alternative"
@@ -24,11 +38,9 @@ export type DepthType =
   | "criteria"
   | "perspective"
   | "consequence"
-  | "insight"
   | "recall"
   | "translation"
   | "decision_making"
-  // Brainstorming skills
   | "juxtaposition"
   | "outsider"
   | "fixation_breaker"
@@ -37,7 +49,6 @@ export type DepthType =
   | "role_assignment"
   | "exaggeration"
   | "reverse_brainstorm"
-  // Legacy (backward compat)
   | "study"
   | "vocabulary";
 
@@ -81,17 +92,8 @@ export type Annotation = {
   worldviewName?: string;
   /** Verdict assigned by the annotator: TAKE, CAUTION, or THROW. */
   verdict?: Verdict;
-  /** Router's match reason — the specific concept or friction point. */
-  matchReason?: string;
   /** Whether this claim was introduced by the AI rather than requested by the user. */
   aiIntroduced?: boolean;
-};
-
-export type AnnotationSummary = {
-  takes: { count: number; pattern: string };
-  cautions: { count: number; pattern: string };
-  throws: { count: number; pattern: string };
-  overall: string;
 };
 
 export type AnnotationResponse = {
@@ -99,7 +101,6 @@ export type AnnotationResponse = {
   cached: boolean;
   annotations: Annotation[];
   feedback?: AnnotationFeedback[];
-  summary?: AnnotationSummary;
 };
 
 // ─── Feedback ───
@@ -177,7 +178,8 @@ export type UserProfile = {
 export type UserPreferences = {
   enabled?: boolean;
   annotation_mode?: AnnotationMode;
-  depth_personality?: DepthPersonality;
+  depth_context_mode?: UserContextMode;
+  depth_context_note?: string;
   visible_types?: AnnotationType[];
   enabled_sites?: string[];
   annotation_font?: AnnotationFont;
@@ -191,7 +193,7 @@ export type AnnotateRequest = {
   content_hash: string;
   text: string;
   mode: AnnotationMode;
-  personality?: DepthPersonality;
+  user_context?: UserContext;
   word_count: number;
 };
 
@@ -214,7 +216,7 @@ export type ExtensionMessage =
         contentHash: string;
         text: string;
         mode: AnnotationMode;
-        personality?: DepthPersonality;
+        userContext?: UserContext;
         wordCount: number;
       };
     }
@@ -248,7 +250,8 @@ export type ExtensionMessage =
       payload: {
         enabled: boolean;
         annotationMode: AnnotationMode;
-        depthPersonality: DepthPersonality;
+        depthContextMode?: UserContextMode;
+        depthContextNote?: string;
         visibleTypes: AnnotationType[];
         annotationFont?: AnnotationFont;
         annotationFontSize?: AnnotationFontSize;
