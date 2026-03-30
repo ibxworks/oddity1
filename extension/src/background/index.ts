@@ -40,6 +40,7 @@ import {
   updateProfile,
 } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
+import { identify, reset, track, updateProperties } from "./analytics.js";
 import { getFromSessionCache, setInSessionCache } from "./sw-cache.js";
 import { getUrlCache, setUrlCache } from "./url-cache.js";
 
@@ -167,6 +168,11 @@ chrome.runtime.onMessage.addListener(
                 },
               });
             }
+            track("annotation_cache_hit", {
+              mode,
+              personality: personality ?? "terry",
+              $current_url: url,
+            });
             // DON'T return — fall through to fetch fresh merged data from server
           }
 
@@ -233,6 +239,13 @@ chrome.runtime.onMessage.addListener(
 
             // Check if aborted
             if (controller.signal.aborted) return { aborted: true };
+
+            track("annotation_requested", {
+              mode,
+              personality: personality ?? "terry",
+              word_count: validatedWordCount,
+              $current_url: url,
+            });
 
             // Filter out locally deleted items so stale-while-revalidate
             // doesn't re-add them from a concurrent server response.
@@ -397,6 +410,11 @@ chrome.runtime.onMessage.addListener(
             }
           });
 
+          if (data.user) {
+            identify(data.user.id, { tier: signInProfile?.tier ?? "free" });
+            track("sign_in");
+          }
+
           return {
             success: true,
             user: {
@@ -443,6 +461,11 @@ chrome.runtime.onMessage.addListener(
             }
           });
 
+          if (data.user) {
+            identify(data.user.id, { tier: googleProfile?.tier ?? "free" });
+            track("sign_in_with_google");
+          }
+
           return {
             success: true,
             user: {
@@ -484,6 +507,11 @@ chrome.runtime.onMessage.addListener(
             });
           }
 
+          if (!needsConfirmation && data.user) {
+            identify(data.user.id, { tier: "free" });
+            track("sign_up");
+          }
+
           return {
             success: true,
             needsConfirmation,
@@ -494,6 +522,8 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "signOut": {
+          track("sign_out");
+          reset();
           await signOut();
           // Broadcast auth change to all other tabs
           const signOutTabId = sender.tab?.id;
@@ -517,6 +547,8 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "deleteAccount": {
+          track("account_deleted");
+          reset();
           await deleteAccount();
           await signOut();
           // Broadcast sign-out to all tabs
@@ -568,6 +600,7 @@ chrome.runtime.onMessage.addListener(
               action: "sketchChunk",
               payload: { text: "", done: true },
             });
+            track("sketch_requested", { purpose });
           } catch (err) {
             console.error("[Oddity 1] Sketch error:", err);
             const isRateLimit = err instanceof RateLimitError;
@@ -675,6 +708,8 @@ chrome.runtime.onMessage.addListener(
             reply_text: replyText,
             page_title: pageTitle,
           });
+
+          track("feedback_sent", { feedback_type: feedbackType });
 
           // Update session cache so the next page load includes this feedback
           // immediately instead of waiting for the stale-while-revalidate fetch.
@@ -872,6 +907,7 @@ chrome.runtime.onMessage.addListener(
             message.payload.message,
             message.payload.role,
           );
+          track("user_feedback_sent");
           return feedbackResult;
         }
 
@@ -1041,6 +1077,12 @@ chrome.runtime.onMessage.addListener(
           return { success: true };
         }
 
+        case "trackEvent": {
+          const { event, properties: eventProps } = message.payload;
+          track(event, eventProps);
+          return { success: true };
+        }
+
         default:
           return undefined;
       }
@@ -1059,6 +1101,7 @@ chrome.runtime.onMessage.addListener(
           console.warn(
             `[Oddity 1] Rate limited — retry after ${err.retryAfter}s`,
           );
+          track("error_rate_limited", { retry_after: err.retryAfter });
           sendResponse({
             error: `Rate limited. Please wait ~${Math.ceil(err.retryAfter / 60)} min.`,
             rateLimited: true,
@@ -1067,6 +1110,10 @@ chrome.runtime.onMessage.addListener(
         }
 
         if (err instanceof UsageLimitError) {
+          track("error_usage_limit", {
+            usage: err.usage,
+            upgrade: err.upgrade,
+          });
           sendResponse({
             error: err.message,
             limitReached: true,
@@ -1081,8 +1128,11 @@ chrome.runtime.onMessage.addListener(
 
         // Safety net: set badge on any auth failure
         if (err instanceof AuthError) {
+          track("error_auth");
           chrome.action.setBadgeText({ text: "!" });
           chrome.action.setBadgeBackgroundColor({ color: "#DC2626" });
+        } else {
+          track("error_api", { error: String(err).slice(0, 200) });
         }
 
         sendResponse({ error: String(err) });
@@ -1109,7 +1159,35 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const prefs = changes["preferences"].newValue as
       | UserPreferences
       | undefined;
+    const oldPrefs = changes["preferences"].oldValue as
+      | UserPreferences
+      | undefined;
     if (prefs) {
+      // ─── Analytics: track settings changes ───
+      if (prefs.enabled !== undefined && oldPrefs?.enabled !== prefs.enabled) {
+        track("extension_toggled", { enabled: prefs.enabled });
+      }
+      if (
+        prefs.depth_personality &&
+        oldPrefs?.depth_personality !== prefs.depth_personality
+      ) {
+        track("personality_changed", {
+          personality: prefs.depth_personality,
+        });
+        updateProperties({ personality: prefs.depth_personality });
+      }
+      if (prefs.enabled_sites) {
+        updateProperties({
+          enabled_site_count: prefs.enabled_sites.length,
+        });
+      }
+      if (
+        prefs.annotation_font &&
+        oldPrefs?.annotation_font !== prefs.annotation_font
+      ) {
+        updateProperties({ annotation_font: prefs.annotation_font });
+      }
+
       // Update badge based on enabled state
       if (prefs.enabled === false) {
         chrome.action.setBadgeText({ text: "OFF" });
@@ -1154,6 +1232,24 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // MV3 service workers suspend/resume frequently, killing Supabase's
 // autoRefreshToken timer. Re-arm it on every boot so the first API
 // call after wake-up already has a fresh token.
-getSession().catch(() => {});
+// Also re-arms analytics identity so events fire correctly after resume.
+getSession()
+  .then(async (session) => {
+    if (session) {
+      const profile = await getProfile();
+      identify(session.user.id, { tier: profile?.tier ?? "free" }, true);
+      const stored = await chrome.storage.local.get("preferences");
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      if (prefs.depth_personality)
+        updateProperties({ personality: prefs.depth_personality });
+      if (Array.isArray(prefs.enabled_sites))
+        updateProperties({
+          enabled_site_count: (prefs.enabled_sites as string[]).length,
+        });
+      if (prefs.annotation_font)
+        updateProperties({ annotation_font: prefs.annotation_font });
+    }
+  })
+  .catch(() => {});
 
 console.log("[Oddity 1] Service worker loaded");
