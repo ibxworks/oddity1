@@ -133,7 +133,12 @@
       "Bash(grep -r STRIPE_ /Users/realtonypark/Developer/oddity1/backend --include=*.ts --include=*.env*)",
       "Bash(grep -r \"stripe\\\\.customers\\\\|stripe\\\\.subscriptions\\\\|stripe\\\\.invoices\\\\|Sync Engine\\\\|sync engine\" /Users/realtonypark/Developer/oddity1 --include=*.ts --include=*.md)",
       "Bash(find /Users/realtonypark/Developer/oddity1/backend -name *checkout* -o -name *stripe*)",
-      "Bash(grep -r \"prices\\\\|listPrices\\\\|getPrice\" /Users/realtonypark/Developer/oddity1/backend --include=*.ts)"
+      "Bash(grep -r \"prices\\\\|listPrices\\\\|getPrice\" /Users/realtonypark/Developer/oddity1/backend --include=*.ts)",
+      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/projects/\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/environments/\")",
+      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/organizations/\")",
+      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/projects/355832/\")"
     ]
   },
   "enableAllProjectMcpServers": true,

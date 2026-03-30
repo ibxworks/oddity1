@@ -507,6 +507,7 @@ exportDownloadBtn.addEventListener("click", async () => {
     })) as { success: boolean; error?: string };
 
     if (result?.success) {
+      sendMessage({ action: "trackEvent", payload: { event: "export_pdf" } }).catch(() => {});
       exportStatusEl.textContent = "Print dialog opened — choose Save as PDF";
       exportStatusEl.className = "export-status success";
       exportStatusEl.style.display = "block";
