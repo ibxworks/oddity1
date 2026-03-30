@@ -103,8 +103,8 @@ function mapDepthOutput(raw: unknown[]): unknown[] {
     // Already in Annotation format
     if (item.mode && item.anchor?.type === "TextQuoteSelector" && item.content) return item;
 
-    // New prompts use "skill", old prompts used "type"; default to "caveat" when absent
-    const rawType = (item.skill ?? item.type ?? "caveat").replace(/\s+/g, "_").toLowerCase();
+    // New prompts use "skill", old prompts used "type", sally uses "concern_type"; default to "caveat" when absent
+    const rawType = (item.concern_type ?? item.skill ?? item.type ?? "caveat").replace(/\s+/g, "_").toLowerCase();
 
     return {
       id: item.id ?? randomUUID(),
@@ -118,7 +118,8 @@ function mapDepthOutput(raw: unknown[]): unknown[] {
         suffix: item.suffix,
       },
       content: {
-        note: item.provocation ?? item.note ?? "",
+        note: item.annotation ?? item.provocation ?? item.note ?? "",
+        ai_introduced: typeof item.ai_introduced === "boolean" ? item.ai_introduced : undefined,
       },
     };
   });
@@ -129,6 +130,23 @@ function mapDepthOutput(raw: unknown[]): unknown[] {
  */
 function mapLlmOutput(raw: unknown[], mode: AnnotationMode): unknown[] {
   return mode === "overview" ? mapOverviewOutput(raw) : mapDepthOutput(raw);
+}
+
+const DEPTH_NOTE_WORD_LIMIT = 21;
+
+/**
+ * Hard-truncate depth annotation notes to DEPTH_NOTE_WORD_LIMIT words.
+ * LLMs often exceed prompt-level word limits, so we enforce it here.
+ */
+function truncateDepthNotes(annotations: Annotation[]): Annotation[] {
+  for (const ann of annotations) {
+    if (ann.mode !== "depth") continue;
+    const words = ann.content.note.split(/\s+/);
+    if (words.length > DEPTH_NOTE_WORD_LIMIT) {
+      ann.content.note = words.slice(0, DEPTH_NOTE_WORD_LIMIT).join(" ") + "…";
+    }
+  }
+  return annotations;
 }
 
 /**
@@ -203,7 +221,7 @@ export async function generateAnnotations(
     : firstAttempt;
   const { valid, errors } = validateAnnotations(mapped);
 
-  if (errors.length === 0) return assignUniqueIds(valid);
+  if (errors.length === 0) return truncateDepthNotes(assignUniqueIds(valid));
 
   // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
@@ -213,9 +231,9 @@ export async function generateAnnotations(
     : retryAttempt;
   const retryResult = validateAnnotations(retryMapped);
 
-  return assignUniqueIds(
+  return truncateDepthNotes(assignUniqueIds(
     retryResult.valid.length > 0 ? retryResult.valid : valid,
-  );
+  ));
 }
 
 /**
@@ -257,6 +275,7 @@ export async function* generateAnnotationsStream(
         const { valid } = validateAnnotations(mapped);
         if (valid.length > 0) {
           valid[0]!.id = randomUUID();
+          truncateDepthNotes(valid);
           allAnnotations.push(valid[0]!);
           yield valid[0]!;
         }

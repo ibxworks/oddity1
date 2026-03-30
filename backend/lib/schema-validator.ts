@@ -12,6 +12,7 @@ const AnnotationContentSchema = z.object({
   note: z.string().min(1),
   why_it_matters: z.string().optional(),
   question: z.string().optional(),
+  ai_introduced: z.boolean().optional(),
 });
 
 const AnnotationModeSchema = z.enum(['overview', 'depth']);
@@ -23,7 +24,7 @@ const AllAnnotationTypes = z.enum([
   'outcome',
   'background',
   'transition',
-  // Terry/Sally depth skills
+  // Terry depth skills
   'caveat',
   'counterargument',
   'alternative',
@@ -44,6 +45,28 @@ const AllAnnotationTypes = z.enum([
   'role_assignment',
   'exaggeration',
   'reverse_brainstorm',
+  // Sally concern types
+  'unsupported_causal_claim',
+  'correlation_as_causation',
+  'circular_reasoning',
+  'logical_leap',
+  'false_dichotomy',
+  'unsourced_factual_claim',
+  'contested_claim_as_settled',
+  'vague_sourcing',
+  'overgeneralization',
+  'false_precision',
+  'overconfidence',
+  'underconfidence',
+  'missing_trade_offs',
+  'missing_counter_argument',
+  'scope_creep',
+  'question_substitution',
+  'incomplete_framework',
+  'hallucination_risk',
+  'unverified_attribution',
+  'fabrication_risk',
+  'misused_terminology',
   // User-written
   'user_written',
   // Legacy (backward compat for cached data)
