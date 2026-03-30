@@ -32,9 +32,11 @@ function cacheKey(
   contentHash: string,
   mode: string,
   personality?: string,
+  purpose?: string,
 ): string {
   const intensityPart = mode === "overview" ? "terry" : (personality ?? "none");
-  return `${contentHash}:${mode}:${intensityPart}`;
+  const purposePart = mode === "depth" ? `:${purpose ?? "argument_formation"}` : "";
+  return `${contentHash}:${mode}:${intensityPart}${purposePart}`;
 }
 
 const AnnotateRequestSchema = z.object({
@@ -43,6 +45,7 @@ const AnnotateRequestSchema = z.object({
   text: z.string().min(1).max(MAX_TEXT_LENGTH),
   mode: z.enum(["overview", "depth"]),
   personality: z.enum(["terry", "jerry", "sally", "gary"]).optional().transform(p => p === "gary" ? "sally" : p),
+  purpose: z.string().max(500).optional(),
   word_count: z.number().int().positive(),
 });
 
@@ -64,13 +67,13 @@ router.post("/", async (req, res) => {
       return handleStreamingAnnotation(req, res, parsed.data);
     }
 
-    const { url, content_hash, text, mode, personality } = parsed.data;
-    const key = cacheKey(content_hash, mode, personality);
+    const { url, content_hash, text, mode, personality, purpose } = parsed.data;
+    const key = cacheKey(content_hash, mode, personality, purpose);
     const authToken = req.headers.authorization?.slice(7) ?? "";
 
     // ── Layer 1: DB cache (Supabase) ──
-    // Overview is persona-independent; depth varies by personality
-    const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
+    // Overview is persona-independent; depth varies by personality + purpose
+    const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}:${purpose ?? "argument_formation"}`;
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
@@ -104,6 +107,7 @@ router.post("/", async (req, res) => {
         text,
         mode as AnnotationMode,
         personality as DepthPersonality | undefined,
+        purpose,
       );
       return filterAndFixAnnotations(rawAnnotations, text);
     });
@@ -160,7 +164,7 @@ async function handleStreamingAnnotation(
   res: import("express").Response,
   data: z.infer<typeof AnnotateRequestSchema>,
 ): Promise<void> {
-  const { url, content_hash, text, mode, personality } = data;
+  const { url, content_hash, text, mode, personality, purpose } = data;
   const authToken = req.headers.authorization?.slice(7) ?? "";
 
   // SSE headers
@@ -171,8 +175,8 @@ async function handleStreamingAnnotation(
 
   try {
     // Check DB cache first
-    // Overview is persona-independent; depth varies by personality
-    const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
+    // Overview is persona-independent; depth varies by personality + purpose
+    const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}:${purpose ?? "argument_formation"}`;
     const { data: dbCached } = await serviceClient
       .from("annotation_cache")
       .select("annotations, model_version, prompt_version")
@@ -212,6 +216,7 @@ async function handleStreamingAnnotation(
       text,
       mode as AnnotationMode,
       personality as DepthPersonality | undefined,
+      purpose,
     );
 
     for await (const annotation of stream) {

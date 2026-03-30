@@ -1,4 +1,4 @@
-import type { AnnotationType, OverviewLabel, DepthType } from "./types.js";
+import type { AnnotationType, OverviewLabel, DepthType, Verdict, UserPurpose } from "./types.js";
 
 // ─── Blocked Domains ───
 
@@ -242,6 +242,43 @@ export const ANNOTATION_LABELS: Record<AnnotationType, string> = {
   ...DEPTH_LABELS,
   user_written: "MY NOTE",
 };
+
+// ─── Verdict Colors & Labels ───
+
+export const VERDICT_COLORS: Record<Verdict, string> = {
+  take: "#578E6C",
+  caution: "#A78BFA",
+  throw: "#F5574C",
+};
+
+export const VERDICT_COLORS_LIGHT: Record<Verdict, string> = {
+  take: "#578E6C",
+  caution: "#7C3AED",
+  throw: "#F5574C",
+};
+
+export const VERDICT_LABELS: Record<Verdict, string> = {
+  take: "TAKE",
+  caution: "CAUTION",
+  throw: "THROW",
+};
+
+/** Return the correct verdict color for a given theme. */
+export function getVerdictColor(verdict: Verdict, theme: "light" | "dark"): string {
+  return (theme === "light" ? VERDICT_COLORS_LIGHT : VERDICT_COLORS)[verdict];
+}
+
+// ─── User Purpose ───
+
+export const PURPOSE_OPTIONS: { key: UserPurpose; label: string }[] = [
+  { key: "info_takeaway", label: "Info-Takeaway" },
+  { key: "brainstorm", label: "Brainstorm" },
+  { key: "argument_formation", label: "Argument Formation" },
+  { key: "decision_making", label: "Decision-making" },
+  { key: "learning", label: "Learning" },
+];
+
+export const DEFAULT_PURPOSE: UserPurpose = "argument_formation";
 
 // ─── All annotation types by mode ───
 

@@ -141,6 +141,24 @@ export const ALL_DEPTH_TYPES = [
   "study", "vocabulary",
 ];
 
+// ─── Verdict ───
+export const VERDICT_COLORS = {
+  take: "#578E6C",
+  caution: "#A78BFA",
+  throw: "#F5574C",
+};
+
+export const VERDICT_LABELS = {
+  take: "TAKE",
+  caution: "CAUTION",
+  throw: "THROW",
+};
+
+export function getVerdictColor(verdict, theme) {
+  if (theme === "light" && verdict === "caution") return "#7C3AED";
+  return VERDICT_COLORS[verdict] ?? "#888";
+}
+
 // ─── Personality descriptions ───
 export const PERSONALITIES = {
   terry: { name: "Terry", description: "Analytical & structured" },

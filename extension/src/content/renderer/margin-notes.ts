@@ -6,7 +6,7 @@ import type {
   AnnotationType,
   ViewMode,
 } from "@oddity/shared";
-import { ANNOTATION_LABELS, DEPTH_LABELS, getAnnotationColor } from "@oddity/shared";
+import { ANNOTATION_LABELS, DEPTH_LABELS, VERDICT_LABELS, getAnnotationColor, getVerdictColor } from "@oddity/shared";
 import { sendMessage } from "../../shared/messaging.js";
 import { getPageUrl } from "../page-url.js";
 import { renderMiniMarkdown } from "./mini-markdown.js";
@@ -1530,16 +1530,23 @@ function createNoteElement(
   const ENRICHMENT_TYPES = new Set(["insight", "recall", "study", "translation", "vocabulary", "incomplete_move", "personal_hook", "role_assignment", "exaggeration"]);
   const OVERVIEW_TYPES = new Set(["core_claim", "evidence", "outcome", "background", "transition"]);
   const theme = getThemeMode();
-  let color = getAnnotationColor(annotation.type, theme);
-  // Green enrichment notes use a lighter accent in dark mode
-  if (theme === "dark" && ENRICHMENT_TYPES.has(annotation.type)) {
-    color = "#BFF3D3";
+  let color: string;
+  if (annotation.verdict) {
+    color = getVerdictColor(annotation.verdict, theme);
+  } else {
+    color = getAnnotationColor(annotation.type, theme);
+    // Green enrichment notes use a lighter accent in dark mode
+    if (theme === "dark" && ENRICHMENT_TYPES.has(annotation.type)) {
+      color = "#BFF3D3";
+    }
   }
   // Overview notes: deeper yellow label in light mode, but buttons stay #FFDD69
-  const labelColor = (theme === "light" && OVERVIEW_TYPES.has(annotation.type))
+  const labelColor = (!annotation.verdict && theme === "light" && OVERVIEW_TYPES.has(annotation.type))
     ? "#DCAF16"
     : color;
-  const label = annotation.label || ANNOTATION_LABELS[annotation.type];
+  const label = annotation.verdict
+    ? (annotation.label || VERDICT_LABELS[annotation.verdict])
+    : (annotation.label || ANNOTATION_LABELS[annotation.type]);
   const isManual = annotation.id.startsWith("manual-");
 
   const el = document.createElement("div");

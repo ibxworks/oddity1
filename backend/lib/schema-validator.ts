@@ -86,6 +86,7 @@ const AnnotationSchema = z.object({
   mode: AnnotationModeSchema,
   type: AllAnnotationTypes,
   label: z.string().optional(),
+  verdict: z.enum(["take", "caution", "throw"]).optional(),
   anchor: TextQuoteSelectorSchema,
   content: AnnotationContentSchema,
   chunk: ChunkBoundarySchema.optional(),

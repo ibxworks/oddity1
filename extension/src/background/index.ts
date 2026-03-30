@@ -91,7 +91,7 @@ chrome.runtime.onMessage.addListener(
     const handleAsync = async (): Promise<unknown> => {
       switch (message.action) {
         case "requestAnnotations": {
-          const { url, regionId, contentHash, text, mode: rawMode, personality, wordCount } =
+          const { url, regionId, contentHash, text, mode: rawMode, personality, purpose, wordCount } =
             message.payload;
           // Guard against stale content scripts (pre-mode-refactor) sending undefined mode
           const mode = (rawMode === "overview" || rawMode === "depth") ? rawMode : "overview";
@@ -108,7 +108,7 @@ chrome.runtime.onMessage.addListener(
           chrome.action.setBadgeText({ text: "" });
 
           // Build session cache key; overview is persona-independent
-          const sessionCacheKey = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
+          const sessionCacheKey = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}:${purpose ?? "argument_formation"}`;
 
           // ── Session cache: stale-while-revalidate for revisits ──
           const cached = await getFromSessionCache(contentHash, sessionCacheKey);
@@ -164,6 +164,7 @@ chrome.runtime.onMessage.addListener(
               text: validatedText,
               mode,
               personality,
+              purpose,
               word_count: validatedWordCount,
             };
 
@@ -839,6 +840,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
                 enabled: prefs.enabled ?? true,
                 annotationMode: prefs.annotation_mode ?? "overview",
                 depthPersonality: ((prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality) ?? "terry",
+                purpose: prefs.purpose,
                 visibleTypes: prefs.visible_types ?? [],
                 annotationFont: prefs.annotation_font,
                 annotationFontSize: prefs.annotation_font_size,

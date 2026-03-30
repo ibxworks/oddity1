@@ -45,18 +45,30 @@ const promptsConfig = JSON.parse(
 const overviewPromptTemplate: string = promptsConfig.overview_prompt_template ?? promptsConfig.overview_prompt ?? "";
 const depthPrompts: Record<string, string> = promptsConfig.depth_prompts ?? {};
 const overviewPersonalities: Record<string, string> = promptsConfig.overview_personalities ?? {};
+const purposeInstructions: Record<string, string> = promptsConfig.purpose_instructions ?? {};
+const verdictFormatInstruction: string = promptsConfig.verdict_format_instruction ?? "";
 
 /**
  * Build the system prompt for a given mode and personality.
  */
-function buildSystemPrompt(mode: AnnotationMode, personality?: DepthPersonality): string {
+function buildSystemPrompt(mode: AnnotationMode, personality?: DepthPersonality, purpose?: string): string {
   if (mode === "overview") {
     const personalityText = overviewPersonalities[personality ?? "jerry"] ?? overviewPersonalities.jerry ?? "";
     return overviewPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
   }
   // Depth mode: each personality has its own full prompt
   const key = personality ?? "jerry";
-  return depthPrompts[key] ?? depthPrompts.jerry ?? "";
+  let prompt = depthPrompts[key] ?? depthPrompts.jerry ?? "";
+
+  // Append purpose-specific instructions + verdict format
+  const purposeKey = purpose ?? "argument_formation";
+  const purposeBlock = purposeInstructions[purposeKey]
+    ?? `## USER PURPOSE: Custom\nThe user's reading purpose: "${purpose}"\nAnnotate with this purpose in mind.\nVERDICT BEHAVIOR:\n- TAKE = serves the user's stated purpose well\n- CAUTION = relevant but has a flaw the user should know about\n- THROW = fails the user's purpose or is misleading for their goal`;
+  prompt += "\n---\n" + purposeBlock;
+  if (verdictFormatInstruction) {
+    prompt += "\n---\n" + verdictFormatInstruction;
+  }
+  return prompt;
 }
 
 /**
@@ -106,11 +118,14 @@ function mapDepthOutput(raw: unknown[]): unknown[] {
     // New prompts use "skill", old prompts used "type", sally uses "concern_type"; default to "caveat" when absent
     const rawType = (item.concern_type ?? item.skill ?? item.type ?? "caveat").replace(/\s+/g, "_").toLowerCase();
 
+    const verdict = ["take", "caution", "throw"].includes(item.verdict) ? item.verdict : undefined;
+
     return {
       id: item.id ?? randomUUID(),
       mode: "depth",
       type: rawType,
       label: item.label,
+      verdict,
       anchor: {
         type: "TextQuoteSelector",
         exact: item.anchor ?? item.exact ?? "",
@@ -130,23 +145,6 @@ function mapDepthOutput(raw: unknown[]): unknown[] {
  */
 function mapLlmOutput(raw: unknown[], mode: AnnotationMode): unknown[] {
   return mode === "overview" ? mapOverviewOutput(raw) : mapDepthOutput(raw);
-}
-
-const DEPTH_NOTE_WORD_LIMIT = 21;
-
-/**
- * Hard-truncate depth annotation notes to DEPTH_NOTE_WORD_LIMIT words.
- * LLMs often exceed prompt-level word limits, so we enforce it here.
- */
-function truncateDepthNotes(annotations: Annotation[]): Annotation[] {
-  for (const ann of annotations) {
-    if (ann.mode !== "depth") continue;
-    const words = ann.content.note.split(/\s+/);
-    if (words.length > DEPTH_NOTE_WORD_LIMIT) {
-      ann.content.note = words.slice(0, DEPTH_NOTE_WORD_LIMIT).join(" ") + "…";
-    }
-  }
-  return annotations;
 }
 
 /**
@@ -172,9 +170,10 @@ async function callGeminiWithClient(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
+  purpose?: string,
   correctionNote?: string,
 ): Promise<unknown> {
-  const systemPrompt = buildSystemPrompt(mode, personality);
+  const systemPrompt = buildSystemPrompt(mode, personality, purpose);
   const generationConfig = getGenerationConfig();
 
   const model = client.getGenerativeModel({
@@ -203,10 +202,11 @@ async function callGemini(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
+  purpose?: string,
   correctionNote?: string,
 ): Promise<unknown> {
   return withKeyRetry((client) =>
-    callGeminiWithClient(client, text, mode, personality, correctionNote),
+    callGeminiWithClient(client, text, mode, personality, purpose, correctionNote),
   );
 }
 
@@ -214,26 +214,27 @@ export async function generateAnnotations(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
+  purpose?: string,
 ): Promise<Annotation[]> {
-  const firstAttempt = await callGemini(text, mode, personality);
+  const firstAttempt = await callGemini(text, mode, personality, purpose);
   const mapped = Array.isArray(firstAttempt)
     ? mapLlmOutput(firstAttempt, mode)
     : firstAttempt;
   const { valid, errors } = validateAnnotations(mapped);
 
-  if (errors.length === 0) return truncateDepthNotes(assignUniqueIds(valid));
+  if (errors.length === 0) return assignUniqueIds(valid);
 
   // Retry once with corrective prompt
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callGemini(text, mode, personality, correctionPrompt);
+  const retryAttempt = await callGemini(text, mode, personality, purpose, correctionPrompt);
   const retryMapped = Array.isArray(retryAttempt)
     ? mapLlmOutput(retryAttempt, mode)
     : retryAttempt;
   const retryResult = validateAnnotations(retryMapped);
 
-  return truncateDepthNotes(assignUniqueIds(
+  return assignUniqueIds(
     retryResult.valid.length > 0 ? retryResult.valid : valid,
-  ));
+  );
 }
 
 /**
@@ -244,8 +245,9 @@ export async function* generateAnnotationsStream(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
+  purpose?: string,
 ): AsyncGenerator<Annotation, Annotation[], unknown> {
-  const systemPrompt = buildSystemPrompt(mode, personality);
+  const systemPrompt = buildSystemPrompt(mode, personality, purpose);
   const generationConfig = getGenerationConfig();
   const allAnnotations: Annotation[] = [];
 
@@ -275,7 +277,6 @@ export async function* generateAnnotationsStream(
         const { valid } = validateAnnotations(mapped);
         if (valid.length > 0) {
           valid[0]!.id = randomUUID();
-          truncateDepthNotes(valid);
           allAnnotations.push(valid[0]!);
           yield valid[0]!;
         }

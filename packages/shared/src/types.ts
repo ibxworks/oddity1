@@ -4,6 +4,19 @@ export type AnnotationMode = 'overview' | 'depth';
 export type ViewMode = 'overview' | 'depth' | 'all';
 export type DepthPersonality = 'terry' | 'jerry' | 'sally';
 
+// ─── User Purpose ───
+
+export type UserPurpose =
+  | "info_takeaway"
+  | "brainstorm"
+  | "argument_formation"
+  | "decision_making"
+  | "learning";
+
+// ─── Verdict ───
+
+export type Verdict = "take" | "caution" | "throw";
+
 // ─── Overview Labels ───
 
 export type OverviewLabel =
@@ -90,6 +103,8 @@ export type Annotation = {
   type: AnnotationType;
   /** LLM-generated title (overview chunks). Falls back to ANNOTATION_LABELS[type] when absent. */
   label?: string;
+  /** LLM-assigned verdict for depth annotations. Drives margin note / highlight color. */
+  verdict?: Verdict;
   anchor: TextQuoteSelector;
   content: AnnotationContent;
   /** Chunk boundaries for overview mode — marks the start and end of the text chunk this annotation covers. */
@@ -166,6 +181,7 @@ export type UserPreferences = {
   enabled?: boolean;
   annotation_mode?: AnnotationMode;
   depth_personality?: DepthPersonality;
+  purpose?: UserPurpose | string;
   visible_types?: AnnotationType[];
   enabled_sites?: string[];
   annotation_font?: AnnotationFont;
@@ -180,6 +196,7 @@ export type AnnotateRequest = {
   text: string;
   mode: AnnotationMode;
   personality?: DepthPersonality;
+  purpose?: string;
   word_count: number;
 };
 
@@ -203,6 +220,7 @@ export type ExtensionMessage =
         text: string;
         mode: AnnotationMode;
         personality?: DepthPersonality;
+        purpose?: string;
         wordCount: number;
       };
     }
@@ -237,6 +255,7 @@ export type ExtensionMessage =
         enabled: boolean;
         annotationMode: AnnotationMode;
         depthPersonality: DepthPersonality;
+        purpose?: string;
         visibleTypes: AnnotationType[];
         annotationFont?: AnnotationFont;
         annotationFontSize?: AnnotationFontSize;

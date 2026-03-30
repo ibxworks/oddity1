@@ -58,7 +58,7 @@ function createPopover(annotation: Annotation, anchorEl: HTMLElement): void {
   destroy();
 
   currentAnchor = anchorEl;
-  const visual = getVisual(annotation.type, 'dark', annotation.label);
+  const visual = getVisual(annotation.type, 'dark', annotation.label, annotation.verdict);
 
   // Host element
   hostEl = document.createElement('div');

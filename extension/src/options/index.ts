@@ -45,6 +45,7 @@ let currentPrefs: Required<UserPreferences> = {
   enabled: true,
   annotation_mode: "overview",
   depth_personality: "terry",
+  purpose: "argument_formation",
   visible_types: [...ALL_OVERVIEW_TYPES, "user_written"],
   enabled_sites: [],
   annotation_font: "fraunces",
@@ -65,6 +66,7 @@ async function init(): Promise<void> {
       enabled: prefs.enabled ?? true,
       annotation_mode: prefs.annotation_mode ?? "overview",
       depth_personality: personality,
+      purpose: prefs.purpose ?? "argument_formation",
       visible_types: prefs.visible_types ?? [
         ...ALL_OVERVIEW_TYPES,
         "user_written",

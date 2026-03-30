@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ANNOTATION_COLORS, ANNOTATION_LABELS } from '../utils/annotationConstants';
+import { ANNOTATION_COLORS, ANNOTATION_LABELS, VERDICT_COLORS, VERDICT_LABELS } from '../utils/annotationConstants';
 import './MarginNotes.css';
 
 export default function MarginNotes({ annotations, editorRef }) {
@@ -65,8 +65,8 @@ export default function MarginNotes({ annotations, editorRef }) {
       {positions.map((pos, i) => {
         const ann = pos.annotation;
         const side = i % 2 === 0 ? 'right' : 'left';
-        const color = ANNOTATION_COLORS[ann.type] || '#666';
-        const label = ANNOTATION_LABELS[ann.type] || ann.type;
+        const color = ann.verdict ? (VERDICT_COLORS[ann.verdict] || '#666') : (ANNOTATION_COLORS[ann.type] || '#666');
+        const label = ann.verdict ? (VERDICT_LABELS[ann.verdict] || ann.type) : (ANNOTATION_LABELS[ann.type] || ann.type);
         const isHovered = hoveredId === ann.id;
 
         return (

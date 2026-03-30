@@ -4,8 +4,10 @@ import type {
   AnnotationFont,
   AnnotationFontSize,
   AnnotationType,
+  UserPurpose,
+  Verdict,
 } from "@oddity/shared";
-import { getAnnotationColor } from "@oddity/shared";
+import { DEFAULT_PURPOSE, PURPOSE_OPTIONS, getAnnotationColor, getVerdictColor } from "@oddity/shared";
 
 import { getPageUrl } from "../page-url.js";
 import {
@@ -46,6 +48,7 @@ type ArgumentItem = {
   annotation?: Annotation; // Full annotation object for manual type
   contentHash?: string; // region content hash for feedback API calls
   annotationType?: AnnotationType; // source annotation type for color
+  verdict?: Verdict; // verdict for color override
 };
 
 // ─── State ───
@@ -175,6 +178,15 @@ let modeToggleDepthBtn: HTMLButtonElement | null = null;
 let modeToggleSliderEl: HTMLDivElement | null = null;
 let modeToggleEl: HTMLDivElement | null = null;
 
+// ─── Purpose Popup ───
+
+let purposePopupWrapperEl: HTMLDivElement | null = null;
+let purposePopupEl: HTMLDivElement | null = null;
+let purposeChipEls: HTMLButtonElement[] = [];
+let purposeCustomInput: HTMLInputElement | null = null;
+let selectedPurpose: string = DEFAULT_PURPOSE;
+let purposePopupVisible = false;
+
 // ─── Public API ───
 
 export function initArgumentsBox(): void {
@@ -285,6 +297,7 @@ export function initArgumentsBox(): void {
       btnDragStartX = ev.clientX;
       btnDragStartY = ev.clientY;
       syncModeTogglePosition();
+      syncPurposePopupPosition();
     };
 
     btnDragUpHandler = () => {
@@ -393,9 +406,32 @@ export function initArgumentsBox(): void {
   purposeInput.placeholder = "Why are you reading this?";
   purposeInput.rows = 2;
   purposeInput.addEventListener("click", (e) => e.stopPropagation());
+  let purposeInputDebounce: ReturnType<typeof setTimeout> | null = null;
   purposeInput.addEventListener("input", () => {
     purposeInput.classList.remove("args-purpose-error");
     purposeInput.placeholder = "Why are you reading this?";
+    // Debounced sync: update purpose popup + persist to storage after user stops typing
+    if (purposeInputDebounce) clearTimeout(purposeInputDebounce);
+    purposeInputDebounce = setTimeout(() => {
+      const val = purposeInput.value.trim();
+      if (!val) return;
+      // Find matching preset by label, otherwise treat as custom
+      const preset = PURPOSE_OPTIONS.find((o) => o.label.toLowerCase() === val.toLowerCase());
+      const purpose = preset ? preset.key : val;
+      selectedPurpose = purpose;
+      // Update chip highlighting
+      for (const chip of purposeChipEls) {
+        chip.classList.toggle("active", chip.dataset.purpose === purpose);
+      }
+      if (purposeCustomInput && !preset) {
+        purposeCustomInput.value = val;
+      }
+      // Persist → triggers settingsUpdated → content script re-annotates
+      chrome.storage.local.get("preferences").then((stored) => {
+        const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+        chrome.storage.local.set({ preferences: { ...prefs, purpose } });
+      });
+    }, 800);
   });
   purposeInputEl = purposeInput;
 
@@ -721,6 +757,7 @@ export function initArgumentsBox(): void {
   shadowRoot.appendChild(outerWrapperEl);
 
   initModeToggleOverlay();
+  initPurposePopup();
 
   // On init: set auth/site state without requiring user interaction
   chrome.runtime
@@ -897,6 +934,7 @@ function updateModeToggleVisibility(): void {
     requestAnimationFrame(() => {
       syncModeToggleSlider();
       syncModeTogglePosition();
+      syncPurposePopupPosition();
     });
   }
 }
@@ -1119,6 +1157,10 @@ export function destroyArgumentsBox(): void {
   modeToggleDepthBtn = null;
   modeToggleSliderEl = null;
   modeToggleEl = null;
+  purposePopupWrapperEl = null;
+  purposePopupEl = null;
+  purposeChipEls = [];
+  purposeCustomInput = null;
   if (listDragMoveHandler) {
     document.removeEventListener("mousemove", listDragMoveHandler);
     listDragMoveHandler = null;
@@ -1412,6 +1454,7 @@ function toggle(): void {
   toggleBarEl?.classList.toggle("visible", expanded);
   updateModeToggleVisibility();
   syncModeTogglePosition();
+  syncPurposePopupPosition();
   if (!expanded) {
     containerEl?.classList.remove("dashboard");
     if (dashFeedbackViewEl) dashFeedbackViewEl.style.display = "none";
@@ -2512,6 +2555,7 @@ function buildItems(
         annotations,
         fb.annotation_id,
       );
+      const srcVerdict = findAnnotationVerdict(annotations, fb.annotation_id);
       if (fb.feedback_type === "thumbs_up") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
         const anchor = findAnnotationQuote(annotations, fb.annotation_id);
@@ -2528,6 +2572,7 @@ function buildItems(
           annotationId: fb.annotation_id,
           contentHash: fbHash,
           annotationType: srcAnnotationType,
+          verdict: srcVerdict,
         });
       } else if (fb.feedback_type === "thumbs_down") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
@@ -2545,6 +2590,7 @@ function buildItems(
           annotationId: fb.annotation_id,
           contentHash: fbHash,
           annotationType: srcAnnotationType,
+          verdict: srcVerdict,
         });
       } else if (fb.feedback_type === "reply") {
         const note = findAnnotationNote(annotations, fb.annotation_id);
@@ -2562,6 +2608,7 @@ function buildItems(
           annotationId: fb.annotation_id,
           contentHash: fbHash,
           annotationType: srcAnnotationType,
+          verdict: srcVerdict,
         });
       }
     }
@@ -2576,6 +2623,8 @@ function buildItems(
 const annotationNoteCache = new Map<string, string>();
 // In-memory cache of annotation types, keyed by annotation ID.
 const annotationTypeCache = new Map<string, string>();
+// In-memory cache of annotation verdicts, keyed by annotation ID.
+const annotationVerdictCache = new Map<string, string>();
 
 /** Persist the note cache to chrome.storage.local for cross-session survival. */
 function flushNoteCache(): void {
@@ -2625,6 +2674,9 @@ function cacheAnnotationNotes(annotations: Map<string, Annotation[]>): void {
         annotationTypeCache.set(ann.id, ann.type);
         added = true;
       }
+      if (ann.verdict && !annotationVerdictCache.has(ann.id)) {
+        annotationVerdictCache.set(ann.id, ann.verdict);
+      }
     }
   }
   if (added) flushNoteCache();
@@ -2663,6 +2715,17 @@ function findAnnotationType(
   }
   // Fallback: check the persisted type cache
   return annotationTypeCache.get(annotationId) as AnnotationType | undefined;
+}
+
+function findAnnotationVerdict(
+  annotations: Map<string, Annotation[]>,
+  annotationId: string,
+): Verdict | undefined {
+  for (const [, anns] of annotations) {
+    const ann = anns.find((a) => a.id === annotationId);
+    if (ann) return ann.verdict;
+  }
+  return annotationVerdictCache.get(annotationId) as Verdict | undefined;
 }
 
 /** Measure card heights and set absolute top positions. Double rAF ensures layout is settled. */
@@ -3390,9 +3453,11 @@ function renderList(): void {
     if (item.feedbackId) card.dataset.feedbackId = item.feedbackId;
 
     // Apply annotation-specific color for non-manual items
-    if (item.annotationType && item.type !== "manual") {
+    if ((item.annotationType || item.verdict) && item.type !== "manual") {
       const theme = getThemeMode();
-      const color = getAnnotationColor(item.annotationType, theme);
+      const color = item.verdict
+        ? getVerdictColor(item.verdict, theme)
+        : getAnnotationColor(item.annotationType!, theme);
       card.style.setProperty("--arg-card-color", color);
       card.classList.add("arg-card--colored");
       // Yellow notes need dark text for readability
@@ -4044,6 +4109,158 @@ function initModeToggleOverlay(): void {
 
   // Insert before containerEl so it appears to its left when collapsed
   outerWrapperEl.insertBefore(modeToggleWrapperEl, containerEl);
+}
+
+// ─── Purpose Popup ───
+
+function initPurposePopup(): void {
+  if (purposePopupWrapperEl || !outerWrapperEl || !shadowRoot || !containerEl) return;
+
+  purposePopupWrapperEl = document.createElement("div");
+  purposePopupWrapperEl.className = "purpose-popup-wrapper";
+  purposePopupWrapperEl.style.display = "none";
+
+  purposePopupEl = document.createElement("div");
+  purposePopupEl.className = "purpose-popup";
+
+  // Trigger chip (shows current purpose, toggles popup)
+  const triggerBtn = document.createElement("button");
+  triggerBtn.className = "purpose-trigger";
+  triggerBtn.textContent = "Purpose";
+  triggerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    togglePurposePopup();
+  });
+
+  // Chips container
+  const chipsContainer = document.createElement("div");
+  chipsContainer.className = "purpose-chips";
+
+  purposeChipEls = [];
+  for (const opt of PURPOSE_OPTIONS) {
+    const chip = document.createElement("button");
+    chip.className = "purpose-chip";
+    chip.dataset.purpose = opt.key;
+    chip.textContent = opt.label;
+    if (opt.key === selectedPurpose) chip.classList.add("active");
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectPurpose(opt.key);
+    });
+    purposeChipEls.push(chip);
+    chipsContainer.appendChild(chip);
+  }
+
+  // Custom chip + input
+  const customChip = document.createElement("button");
+  customChip.className = "purpose-chip purpose-chip--custom";
+  customChip.textContent = "Custom";
+  customChip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    purposeCustomInput!.style.display = purposeCustomInput!.style.display === "none" ? "" : "none";
+    if (purposeCustomInput!.style.display !== "none") purposeCustomInput!.focus();
+  });
+  chipsContainer.appendChild(customChip);
+
+  purposeCustomInput = document.createElement("input");
+  purposeCustomInput.className = "purpose-custom-input";
+  purposeCustomInput.type = "text";
+  purposeCustomInput.placeholder = "Your reading purpose…";
+  purposeCustomInput.maxLength = 500;
+  purposeCustomInput.style.display = "none";
+  purposeCustomInput.addEventListener("click", (e) => e.stopPropagation());
+  purposeCustomInput.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      const val = purposeCustomInput!.value.trim();
+      if (val) selectPurpose(val);
+    }
+  });
+
+  purposePopupEl.appendChild(chipsContainer);
+  purposePopupEl.appendChild(purposeCustomInput);
+
+  purposePopupWrapperEl.appendChild(triggerBtn);
+  purposePopupWrapperEl.appendChild(purposePopupEl);
+
+  outerWrapperEl.insertBefore(purposePopupWrapperEl, containerEl);
+}
+
+function togglePurposePopup(): void {
+  if (!purposePopupEl) return;
+  purposePopupVisible = !purposePopupVisible;
+  purposePopupEl.classList.toggle("visible", purposePopupVisible);
+}
+
+function selectPurpose(purpose: string): void {
+  selectedPurpose = purpose;
+  // Update chip highlighting
+  for (const chip of purposeChipEls) {
+    chip.classList.toggle("active", chip.dataset.purpose === purpose);
+  }
+  // If it's a preset, hide custom input; if custom, mark no chip active
+  const isPreset = PURPOSE_OPTIONS.some((o) => o.key === purpose);
+  if (isPreset && purposeCustomInput) {
+    purposeCustomInput.style.display = "none";
+    purposeCustomInput.value = "";
+  }
+  // Sync to the purpose textarea in the arguments box panel
+  if (purposeInputEl) {
+    purposeInputEl.value = PURPOSE_OPTIONS.find((o) => o.key === purpose)?.label ?? purpose;
+  }
+  // Persist to storage → triggers settingsUpdated → content script re-annotates
+  chrome.storage.local.get("preferences").then((stored) => {
+    const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+    chrome.storage.local.set({ preferences: { ...prefs, purpose } });
+  });
+  // Close popup
+  purposePopupVisible = false;
+  purposePopupEl?.classList.remove("visible");
+}
+
+/** Called by content script on init to sync purpose state. */
+export function setPurposeFromPreferences(purpose: string): void {
+  selectedPurpose = purpose;
+  // Update chip highlighting
+  for (const chip of purposeChipEls) {
+    chip.classList.toggle("active", chip.dataset.purpose === purpose);
+  }
+  // Sync textarea
+  const isPreset = PURPOSE_OPTIONS.some((o) => o.key === purpose);
+  if (purposeInputEl) {
+    purposeInputEl.value = isPreset ? (PURPOSE_OPTIONS.find((o) => o.key === purpose)?.label ?? purpose) : purpose;
+  }
+  if (!isPreset && purposeCustomInput) {
+    purposeCustomInput.value = purpose;
+  }
+}
+
+/** Show/hide purpose popup based on mode (only relevant in depth mode). */
+export function updatePurposePopupVisibility(show: boolean): void {
+  if (purposePopupWrapperEl) {
+    purposePopupWrapperEl.style.display = show ? "" : "none";
+  }
+}
+
+function syncPurposePopupPosition(): void {
+  if (!purposePopupWrapperEl || !containerEl || !modeToggleWrapperEl) return;
+  if (expanded) {
+    // Hide when panel is expanded (purpose is in the panel itself)
+    purposePopupWrapperEl.style.display = "none";
+  } else {
+    purposePopupWrapperEl.style.display = "";
+    purposePopupWrapperEl.style.position = "absolute";
+    // Position above the mode toggle, right edge aligned with toggle's right edge
+    const toggleTop = parseFloat(modeToggleWrapperEl.style.top || "0");
+    const toggleLeft = parseFloat(modeToggleWrapperEl.style.left || "0");
+    const toggleW = modeToggleWrapperEl.offsetWidth > 0 ? modeToggleWrapperEl.offsetWidth : 150;
+    const popH = purposePopupWrapperEl.offsetHeight > 0 ? purposePopupWrapperEl.offsetHeight : 26;
+    const popW = purposePopupWrapperEl.offsetWidth > 0 ? purposePopupWrapperEl.offsetWidth : 80;
+    purposePopupWrapperEl.style.top = `${toggleTop - popH - 8}px`;
+    // Right edge of purpose = right edge of toggle: toggleLeft + toggleW = purposeLeft + popW
+    purposePopupWrapperEl.style.left = `${toggleLeft + toggleW - popW}px`;
+    purposePopupWrapperEl.style.right = "";
+  }
 }
 
 // ─── CSS ───
@@ -6820,5 +7037,121 @@ const ARGUMENTS_BOX_CSS = `
     color: #444;
     border-color: #ddd;
     box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  }
+
+  /* ── Purpose Popup ── */
+
+  .purpose-popup-wrapper {
+    pointer-events: auto;
+    position: absolute;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .args-outer-wrapper:has(.args-container.dashboard) .purpose-popup-wrapper,
+  .args-outer-wrapper:has(.args-container.oddity-not-enabled) .purpose-popup-wrapper {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .purpose-trigger {
+    all: unset;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+    color: #858E97;
+    background: #E6E6E6;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.08);
+    transition: color 0.2s, background 0.2s;
+  }
+
+  .purpose-trigger:hover {
+    color: #555;
+    background: #DCDCDC;
+  }
+
+  .purpose-popup {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    background: #F0F0F0;
+    border-radius: 10px;
+    padding: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15), 0 0 1px rgba(0,0,0,0.1);
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.95) translateY(4px);
+    transform-origin: bottom right;
+    transition: opacity 0.2s, transform 0.2s;
+    min-width: 180px;
+  }
+
+  .purpose-popup.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1) translateY(0);
+  }
+
+  .purpose-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .purpose-chip {
+    all: unset;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 400;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+    color: #696F77;
+    background: #FFFFFF;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .purpose-chip:hover {
+    background: #E0E0E0;
+  }
+
+  .purpose-chip.active {
+    background: #333;
+    color: #FFF;
+  }
+
+  .purpose-chip--custom {
+    color: #858E97;
+    font-style: italic;
+  }
+
+  .purpose-custom-input {
+    all: unset;
+    display: block;
+    width: calc(100% - 16px);
+    margin: 6px 0 2px;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+    color: #333;
+    background: #FFFFFF;
+    border: 1px solid #DDD;
+    border-radius: 6px;
+  }
+
+  .purpose-custom-input::placeholder {
+    color: #AAA;
+  }
+
+  :host([data-theme="light"]) .purpose-trigger {
+    background: #E6E6E6;
+    color: #858E97;
   }
 `;

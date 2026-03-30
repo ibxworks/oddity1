@@ -43,6 +43,8 @@ import {
   updateDashboardPersonality,
   setArgumentsBoxPdf,
   setPdfRunCallback,
+  setPurposeFromPreferences,
+  updatePurposePopupVisibility,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -315,6 +317,7 @@ let blocked = false;
 let enabled = true;
 let currentMode: ViewMode = "overview";
 let currentPersonality: DepthPersonality = "jerry";
+let currentPurpose: string = "argument_formation";
 let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
@@ -696,6 +699,10 @@ async function init(): Promise<void> {
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
+  if (prefs?.purpose) {
+    currentPurpose = prefs.purpose;
+    setPurposeFromPreferences(prefs.purpose);
+  }
   // currentMode defaults to "overview" (line 315), visibleTypes to overview types (line 317)
   setMarginNoteMode(currentMode);
 
@@ -1039,6 +1046,7 @@ async function handleStableRegion(
         text: extracted.text,
         mode: currentMode as AnnotationMode,
         personality: currentPersonality,
+        purpose: currentPurpose,
         wordCount: extracted.wordCount,
       },
     });
@@ -1141,6 +1149,7 @@ async function handleStableRegionForMode(
         text: extracted.text,
         mode: requestMode,
         personality: currentPersonality,
+        purpose: currentPurpose,
         wordCount: extracted.wordCount,
       },
     });
@@ -1521,6 +1530,7 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   currentMode = newMode;
   setMarginNoteMode(newMode);
   if (newPersonality) currentPersonality = newPersonality;
+  updatePurposePopupVisibility(newMode === "depth" || newMode === "all");
 
   // Update visible types for new mode
   visibleTypes = [
@@ -1889,6 +1899,7 @@ onMessage((message: ExtensionMessage) => {
         enabled: newEnabled,
         annotationMode: newMode,
         depthPersonality: newPersonality,
+        purpose: newPurpose,
         visibleTypes: newVisibleTypes,
         annotationFont,
         annotationFontSize,
@@ -1901,6 +1912,7 @@ onMessage((message: ExtensionMessage) => {
       const viewMode = newMode as ViewMode;
       const modeChanged = viewMode !== currentMode;
       const personalityChanged = newPersonality !== currentPersonality;
+      const purposeChanged = newPurpose != null && newPurpose !== currentPurpose;
       enabled = newEnabled;
       visibleTypes = newVisibleTypes.length > 0 ? newVisibleTypes : [
         ...(viewMode === "all" ? ALL_ANNOTATION_TYPES : viewMode === "overview" ? ALL_OVERVIEW_TYPES : ALL_DEPTH_TYPES),
@@ -1908,7 +1920,7 @@ onMessage((message: ExtensionMessage) => {
       ];
 
       console.log(
-        `[Oddity 1] Settings updated — enabled: ${enabled}, mode: ${viewMode}, personality: ${newPersonality}`,
+        `[Oddity 1] Settings updated — enabled: ${enabled}, mode: ${viewMode}, personality: ${newPersonality}, purpose: ${newPurpose ?? currentPurpose}`,
       );
 
       setArgumentsBoxEnabled(enabled);
@@ -1921,9 +1933,10 @@ onMessage((message: ExtensionMessage) => {
       } else if (modeChanged) {
         // Mode changed: switch annotation display
         switchMode(viewMode, newPersonality);
-      } else if (personalityChanged) {
-        // Personality only affects depth annotations — preserve user-written notes and their feedback
-        currentPersonality = newPersonality;
+      } else if (personalityChanged || purposeChanged) {
+        // Personality/purpose only affect depth annotations — preserve user-written notes and their feedback
+        if (personalityChanged) currentPersonality = newPersonality;
+        if (purposeChanged) currentPurpose = newPurpose!;
         updateDashboardPersonality(newPersonality);
         clearOverlay();
         clearAllAnchors();

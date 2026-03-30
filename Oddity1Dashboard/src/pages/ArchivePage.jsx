@@ -3,6 +3,8 @@ import { useArchive } from "../hooks/useArchive";
 import {
   ANNOTATION_COLORS,
   ANNOTATION_LABELS,
+  VERDICT_COLORS,
+  VERDICT_LABELS,
 } from "../utils/annotationConstants";
 import { formatTimeAgo, groupByTime } from "../utils/mockDocuments";
 import "./ArchivePage.css";
@@ -118,9 +120,9 @@ export default function ArchivePage() {
               <div key={ann.id || i} className="archive-annotation">
                 <span
                   className="archive-annotation-type"
-                  style={{ color: ANNOTATION_COLORS[ann.type] || "#888" }}
+                  style={{ color: ann.verdict ? (VERDICT_COLORS[ann.verdict] || "#888") : (ANNOTATION_COLORS[ann.type] || "#888") }}
                 >
-                  {ANNOTATION_LABELS[ann.type] || ann.type}
+                  {ann.verdict ? (VERDICT_LABELS[ann.verdict] || ann.type) : (ANNOTATION_LABELS[ann.type] || ann.type)}
                 </span>
                 {ann.anchor?.exact && (
                   <span className="archive-annotation-anchor">
