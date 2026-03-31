@@ -30,7 +30,13 @@ const FALLBACK_BILLING = [
 
 function ChevronDown() {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+    >
       <path
         d="M2.5 4.5 6 8l3.5-3.5"
         stroke="currentColor"
@@ -206,7 +212,7 @@ export default function PlansPage({ session }) {
             </a>
             <a
               className="nav-cta"
-              href="https://chromewebstore.google.com/"
+              href="https://chromewebstore.google.com/detail/khcpcihcakkkbglfaegenmlabkghaeea/error?utm_source=item-share-cb"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -242,7 +248,7 @@ export default function PlansPage({ session }) {
               </ul>
               <a
                 className="price-btn"
-                href="https://chromewebstore.google.com/"
+                href="https://chromewebstore.google.com/detail/khcpcihcakkkbglfaegenmlabkghaeea/error?utm_source=item-share-cb"
                 target="_blank"
                 rel="noopener noreferrer"
               >

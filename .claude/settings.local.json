@@ -138,7 +138,15 @@
       "Bash(python3 -m json.tool)",
       "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/environments/\")",
       "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/organizations/\")",
-      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/projects/355832/\")"
+      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/projects/355832/\")",
+      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/projects/355832/dashboards/1410914/\")",
+      "Bash(python3 -c \":*)",
+      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/projects/355832/dashboards/1410930/\")",
+      "Bash(curl -s -H \"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\" \"https://us.posthog.com/api/projects/355832/insights/7626458/\")",
+      "Bash(AUTH=\"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\")",
+      "Bash(__NEW_LINE_0e18ed5e7765075a__ echo:*)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -H \"$AUTH\" \"https://us.posthog.com/api/projects/355832/dashboards/1410914/?refresh=force_blocking\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -H \"$AUTH\" \"https://us.posthog.com/api/projects/355832/dashboards/1410930/?refresh=force_blocking\")"
     ]
   },
   "enableAllProjectMcpServers": true,
