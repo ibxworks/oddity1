@@ -32,7 +32,7 @@ export default function Layout({ session }) {
         </div>
 
         <a
-          href="#"
+          href="https://chromewebstore.google.com/detail/khcpcihcakkkbglfaegenmlabkghaeea/error?utm_source=item-share-cb"
           className="sidebar-get-extension"
           target="_blank"
           rel="noopener noreferrer"
