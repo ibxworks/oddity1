@@ -194,7 +194,7 @@ export function getAnnotationColor(
 
 export const VERDICT_COLORS: Record<Verdict, string> = {
   TAKE: "#578E6C",
-  CAUTION: "#FFDD69",
+  CAUTION: "#A78BFA",
   THROW: "#F5574C",
 };
 

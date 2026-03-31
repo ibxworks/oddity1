@@ -94,6 +94,8 @@ export type Annotation = {
   verdict?: Verdict;
   /** Whether this claim was introduced by the AI rather than requested by the user. */
   aiIntroduced?: boolean;
+  /** True when this is a placeholder from the router, awaiting annotator results. */
+  pending?: boolean;
 };
 
 export type AnnotationResponse = {
@@ -329,6 +331,10 @@ export type ExtensionMessage =
   | {
       action: "annotationReady";
       payload: { regionId: string; annotation: Annotation };
+    }
+  | {
+      action: "anchorReady";
+      payload: { regionId: string; anchor: { anchor_index: number; anchor_text: string; prefix: string; suffix: string; worldview: string; worldviewName: string; ai_introduced: boolean } };
     }
   | { action: "getUrlPrediction"; payload: { url: string } }
   | { action: "getEnabledSites"; payload: Record<string, never> }

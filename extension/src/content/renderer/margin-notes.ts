@@ -10,7 +10,7 @@ import { ANNOTATION_LABELS, getAnnotationColor, getVerdictColor } from "@oddity/
 import { sendMessage } from "../../shared/messaging.js";
 import { getPageUrl } from "../page-url.js";
 import { renderMiniMarkdown } from "./mini-markdown.js";
-import { removeAnchors } from "./anchors.js";
+import { recolorAnchors, removeAnchors } from "./anchors.js";
 import { addLiveFeedback, updateLiveFeedbackId } from "./arguments-box.js";
 import {
   deemphasizeAnnotation,
@@ -1043,6 +1043,86 @@ export function updateMarginNoteText(annotationId: string, newNote: string): voi
   }
 }
 
+/**
+ * Replace a pending (loading) margin note with real annotation content.
+ * Updates the inline popover or margin note in-place, swapping the loading
+ * animation with the actual label, text, and verdict.
+ */
+export function updatePendingMarginNote(pendingId: string, annotation: Annotation): void {
+  // Check inline popovers first (depth mode uses these)
+  const popover = inlinePopovers.get(pendingId);
+  if (popover) {
+    // Update annotation data
+    popover.annotation = annotation;
+    popover.id = annotation.id;
+
+    // Re-key the map
+    inlinePopovers.delete(pendingId);
+    inlinePopovers.set(annotation.id, popover);
+
+    // Update element dataset
+    popover.element.dataset.annotationId = annotation.id;
+
+    // Update label
+    const labelEl = popover.element.querySelector(".note-label") as HTMLElement | null;
+    if (labelEl) {
+      labelEl.textContent = annotation.label || "";
+    }
+
+    // Update worldview tag
+    const wvTag = popover.element.querySelector(".note-worldview-tag") as HTMLElement | null;
+    if (wvTag && annotation.worldviewName) {
+      wvTag.textContent = annotation.worldviewName;
+    }
+
+    // Swap loading animation with real text
+    const textEl = popover.element.querySelector(".note-text") as HTMLElement | null;
+    if (textEl) {
+      textEl.classList.remove("note-text--pending");
+      textEl.innerHTML = renderMiniMarkdown(annotation.content.note);
+    }
+
+    // Update verdict color on popover AND anchor highlight spans
+    if (annotation.verdict) {
+      const color = getVerdictColor(annotation.verdict);
+      popover.element.style.setProperty("--note-color", color);
+      const bracket = popover.element.querySelector(".note-bracket") as HTMLElement | null;
+      if (bracket) bracket.style.borderColor = color;
+    }
+
+    // Recolor the anchor highlight spans in the page DOM (they still have placeholder color)
+    recolorAnchors(pendingId, annotation);
+    return;
+  }
+
+  // Traditional margin notes fallback
+  const note = notes.find((n) => n.id === pendingId);
+  if (note) {
+    note.annotation = annotation;
+    note.id = annotation.id;
+    note.element.dataset.annotationId = annotation.id;
+
+    const labelEl = note.element.querySelector(".note-label") as HTMLElement | null;
+    if (labelEl) labelEl.textContent = annotation.label || "";
+
+    const textEl = note.element.querySelector(".note-text") as HTMLElement | null;
+    if (textEl) {
+      textEl.classList.remove("note-text--pending");
+      textEl.innerHTML = renderMiniMarkdown(annotation.content.note);
+    }
+
+    if (annotation.verdict) {
+      const color = getVerdictColor(annotation.verdict);
+      note.element.style.setProperty("--note-color", color);
+      const bracket = note.element.querySelector(".note-bracket") as HTMLElement | null;
+      if (bracket) bracket.style.borderColor = color;
+    }
+
+    // Recolor the anchor highlight spans in the page DOM
+    recolorAnchors(pendingId, annotation);
+  }
+}
+
 export function clearMarginNotes(): void {
   for (const note of notes) {
     note.element.remove();
@@ -1608,7 +1688,12 @@ function createNoteElement(
   // Note text (collapsed: truncated)
   const textEl = document.createElement("div");
   textEl.className = "note-text";
-  textEl.innerHTML = renderMiniMarkdown(annotation.content.note);
+  if (annotation.pending) {
+    textEl.classList.add("note-text--pending");
+    textEl.innerHTML = `<div class="oddity-pending-loading"><span></span><span></span><span></span></div>`;
+  } else {
+    textEl.innerHTML = renderMiniMarkdown(annotation.content.note);
+  }
 
   // Expanded content (hidden by default, shown on .expanded)
   const expandedContent = document.createElement("div");
@@ -2649,6 +2734,38 @@ const MARGIN_NOTES_CSS = `
     max-height: calc(var(--oddity-note-size) * 1.6 * 3 + 8px);
   }
 
+  .note-text--pending {
+    display: flex !important;
+    -webkit-line-clamp: unset !important;
+    max-height: none !important;
+    align-items: center;
+    min-height: 20px;
+  }
+
+  .oddity-pending-loading {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0;
+  }
+
+  .oddity-pending-loading span {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.5);
+    animation: oddityPendingPulse 1.2s ease-in-out infinite;
+  }
+
+  .oddity-pending-loading span:nth-child(2) { animation-delay: 0.2s; }
+  .oddity-pending-loading span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes oddityPendingPulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1.1); }
+  }
+
   .note-text p {
     margin: 0 0 4px;
   }
@@ -3127,6 +3244,10 @@ const MARGIN_NOTES_CSS = `
   :host([data-theme="light"]) .note-section ul,
   :host([data-theme="light"]) .note-reply-bubble {
     color: #293038;
+  }
+
+  :host([data-theme="light"]) .oddity-pending-loading span {
+    background: rgba(0, 0, 0, 0.4);
   }
 
   :host([data-theme="light"]) .note-edit-textarea {

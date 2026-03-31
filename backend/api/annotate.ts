@@ -19,10 +19,12 @@ import {
   generateAnnotations,
   generateAnnotationsStream,
   plannerCall,
+  plannerCallStream,
   executeAnnotations,
+  executeAnnotationsStream,
 } from "../lib/gemini.js";
 import type { AnnotatorAssignment } from "../lib/gemini.js";
-import { planAnnotations } from "../lib/worldview-router.js";
+import { planAnnotations, planAnnotationsStream } from "../lib/worldview-router.js";
 import type { RouterAssignment } from "../lib/worldview-router.js";
 import { getWorldviewByKey } from "../lib/worldview-registry.js";
 import { createInflightDedup } from "../lib/inflight-dedup.js";
@@ -95,7 +97,7 @@ interface DepthResult {
  * Returns annotations sorted by text position.
  */
 async function generateDepthAnnotations(text: string, userContext?: UserContext): Promise<DepthResult> {
-  const plan = await planAnnotations(text, plannerCall, userContext);
+  const plan = await planAnnotations(text, plannerCall);
 
   // Router returned no assignments (short text or non-prose)
   if (plan.assignments.length === 0) {
@@ -278,7 +280,9 @@ router.post("/", async (req, res) => {
       .single();
 
     if (dbCached) {
-      const currentModel = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
+      const currentModel = mode === "depth"
+        ? process.env.GEMINI_ANNOTATOR_MODEL ?? "gemini-3-flash-preview"
+        : process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview";
       const currentPromptVersion = prompts.version;
 
       if (
@@ -321,7 +325,9 @@ router.post("/", async (req, res) => {
           url,
           intensity: cacheIntensity,
           annotations: aiAnnotations,
-          model_version: process.env.GEMINI_MODEL ?? "gemini-3-flash-preview",
+          model_version: mode === "depth"
+            ? process.env.GEMINI_ANNOTATOR_MODEL ?? "gemini-3-flash-preview"
+            : process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview",
           prompt_version: prompts.version,
           expires_at: expiresAt.toISOString(),
         },
@@ -360,7 +366,12 @@ async function handleStreamingAnnotation(
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // Disable nginx proxy buffering
   res.flushHeaders();
+
+  // Disable Nagle's algorithm — send each SSE event immediately instead of
+  // batching small writes for up to 200ms.
+  res.socket?.setNoDelay(true);
 
   try {
     // Check DB cache first
@@ -373,7 +384,9 @@ async function handleStreamingAnnotation(
       .gt("expires_at", new Date().toISOString())
       .single();
 
-    const currentModel = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
+    const currentModel = mode === "depth"
+      ? process.env.GEMINI_ANNOTATOR_MODEL ?? "gemini-3-flash-preview"
+      : process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview";
     const currentPromptVersion = prompts.version;
 
     if (
@@ -399,13 +412,128 @@ async function handleStreamingAnnotation(
 
     // Generate annotations
     const allAnnotations: Annotation[] = [];
+    let depthAnnotatorCalls = 0;
 
     if (mode === "depth") {
-      // Router/annotator pipeline — wait for all, then stream in order
-      const depthResult = await generateDepthAnnotations(text, user_context);
-      for (const ann of depthResult.annotations) {
-        allAnnotations.push(ann);
-        res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
+      // Phase 1: Stream router anchors as highlights.
+      // Preload worldview files as we see each worldview for the first time,
+      // so they're already in memory when annotators start.
+      const allAssignments: RouterAssignment[] = [];
+      const worldviewContents = new Map<string, { name: string; content: string }>();
+      const routerStream = planAnnotationsStream(text, plannerCallStream);
+
+      for await (const assignment of routerStream) {
+        allAssignments.push(assignment);
+
+        // Preload worldview content on first encounter
+        if (!worldviewContents.has(assignment.worldview)) {
+          const wv = loadWorldviewContent(assignment.worldview);
+          if (wv) worldviewContents.set(assignment.worldview, wv);
+        }
+
+        const wvMeta = getWorldviewByKey(assignment.worldview);
+        res.write(`data: ${JSON.stringify({
+          anchor: {
+            anchor_index: assignment.anchor_index,
+            anchor_text: assignment.anchor_text,
+            prefix: assignment.prefix,
+            suffix: assignment.suffix,
+            worldview: assignment.worldview,
+            worldviewName: wvMeta?.name ?? assignment.worldview,
+            ai_introduced: assignment.ai_introduced,
+          },
+        })}\n\n`);
+      }
+
+      // Apply worldview cap (max 3)
+      const MAX_WORLDVIEWS = 3;
+      const countByWorldview = new Map<string, number>();
+      for (const a of allAssignments) {
+        countByWorldview.set(a.worldview, (countByWorldview.get(a.worldview) ?? 0) + 1);
+      }
+      let finalAssignments = allAssignments;
+      if (countByWorldview.size > MAX_WORLDVIEWS) {
+        const topKeys = new Set(
+          [...countByWorldview.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, MAX_WORLDVIEWS)
+            .map(([key]) => key),
+        );
+        finalAssignments = allAssignments.filter((a) => topKeys.has(a.worldview));
+      }
+
+      // Phase 2+3: Run annotators in parallel, streaming each annotation via SSE as it's produced
+      // Worldview contents are already preloaded from Phase 1
+      if (finalAssignments.length > 0) {
+
+        const grouped = new Map<string, RouterAssignment[]>();
+        for (const assignment of finalAssignments) {
+          if (!worldviewContents.has(assignment.worldview)) continue;
+          const list = grouped.get(assignment.worldview) ?? [];
+          list.push(assignment);
+          grouped.set(assignment.worldview, list);
+        }
+
+        const validVerdicts = new Set(["TAKE", "CAUTION", "THROW"]);
+
+        // Each annotator streams its results via SSE the instant the LLM produces them.
+        // Multiple annotators interleave their SSE events — no waiting for all to finish.
+        const annotatorTasks = Array.from(grouped.entries()).map(
+          async ([wvKey, assignments]) => {
+            await acquireAnnotatorSlot();
+            depthAnnotatorCalls++;
+            try {
+              const wv = worldviewContents.get(wvKey)!;
+              const annotatorAssignments: AnnotatorAssignment[] = assignments.map((a) => ({
+                anchor_index: a.anchor_index,
+                anchor_text: a.anchor_text,
+                ai_introduced: a.ai_introduced,
+              }));
+
+              const stream = executeAnnotationsStream(text, wv.name, wv.content, annotatorAssignments, user_context);
+
+              for await (const annResult of stream) {
+                const routerAssignment = assignments.find(
+                  (a) => a.anchor_index === annResult.anchor_index,
+                ) ?? assignments.find(
+                  (a) => a.anchor_text === annResult.anchor_text,
+                );
+
+                const anchorText = routerAssignment?.anchor_text ?? annResult.anchor_text ?? "";
+                if (!anchorText) continue;
+
+                const ann: Annotation = {
+                  id: randomUUID(),
+                  mode: "depth",
+                  type: "insight",
+                  label: annResult.label || undefined,
+                  anchor: {
+                    type: "TextQuoteSelector",
+                    exact: anchorText,
+                    prefix: routerAssignment?.prefix || undefined,
+                    suffix: routerAssignment?.suffix || undefined,
+                  },
+                  content: {
+                    note: annResult.provocation ?? "",
+                  },
+                  worldview: wvKey,
+                  worldviewName: wv?.name ?? wvKey,
+                  verdict: validVerdicts.has(annResult.verdict) ? annResult.verdict as Annotation["verdict"] : undefined,
+                  aiIntroduced: routerAssignment?.ai_introduced ?? annResult.ai_introduced ?? false,
+                };
+
+                allAnnotations.push(ann);
+                res.write(`data: ${JSON.stringify({ annotation: ann })}\n\n`);
+              }
+            } catch (err) {
+              console.warn("[annotate/stream] Annotator failed:", err);
+            } finally {
+              releaseAnnotatorSlot();
+            }
+          },
+        );
+
+        await Promise.allSettled(annotatorTasks);
       }
     } else {
       // Overview: stream incrementally from single LLM call
@@ -451,7 +579,7 @@ async function handleStreamingAnnotation(
       authToken,
     );
     res.write(
-      `data: ${JSON.stringify({ done: true, cached: false, annotations: merged.annotations, feedback: merged.feedback })}\n\n`,
+      `data: ${JSON.stringify({ done: true, cached: false, annotations: merged.annotations, feedback: merged.feedback, ...(depthAnnotatorCalls > 0 ? { annotator_calls: depthAnnotatorCalls } : {}) })}\n\n`,
     );
     res.end();
   } catch (err) {

@@ -17,6 +17,7 @@ const apiKeys = [
 
 const genAIClients = apiKeys.map((key) => new GoogleGenerativeAI(key));
 const modelName = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview";
+const annotatorModelName = process.env.GEMINI_ANNOTATOR_MODEL ?? "gemini-3-flash-preview";
 
 /**
  * Try an async operation with each API key client in order.
@@ -129,7 +130,7 @@ Real peer review examples — match this tone exactly:
 The label must be specific to THIS anchor — never a generic category name.
 
 ### Step 3: Write the Provocation
-For each anchor, write a provocation from the assigned worldview. Maximum 20 words.
+For each anchor, write a provocation from the assigned worldview. Maximum 15 words.
 
 A provocation IS:
 - A pointed observation about a strength, weakness, risk, limitation, alternative, or bias — grounded in a named concept from the worldview file
@@ -164,7 +165,7 @@ Return a JSON object with one field: annotations.
      "verdict": "TAKE",
      "ai_introduced": false,
      "label": "Short peer-review-style summary of this note, 5-15 words.",
-     "provocation": "The provocation text, 20 words max."
+     "provocation": "The provocation text, 15 words max."
    }
  ]
 }
@@ -179,14 +180,16 @@ Field rules:
 - verdict: One of "TAKE", "CAUTION", "THROW".
 - ai_introduced: Carry over from the router output. Do not change.
 - label: Max 8 words. A direct, peer-review-style summary of what this note addresses. Never use skill category names.
-- provocation: Maximum 20 words. Must be grounded in a specific concept from the worldview file.
+- provocation: Maximum 15 words. Must be grounded in a specific concept from the worldview file.
 ---
 ## Constraints
 - Follow the router's assignments. Do not change which worldview is assigned to which anchor. Do not skip anchors. Do not add new anchors.
 - Use ONLY the worldview file provided. Never invent frameworks or attribute ideas not present in the file.
-- Maximum 20 words per provocation. No exceptions.
+- Maximum 15 words per provocation. No exceptions.
+- All annotations MUST serve the user's purpose.
 - Every provocation must be traceable to a specific concept in the worldview file.
 - Do not explain the worldview to the user. The provocation must be self-contained.
+- These annotations must show the thinker's cognitive signature implicitly.
 - Output valid JSON only. No markdown wrapping, no commentary before or after the JSON.`;
 }
 
@@ -396,6 +399,44 @@ export async function plannerCall(
   });
 }
 
+/**
+ * Streaming planner call. Yields individual JSON objects as they are
+ * parsed from the incremental stream (reuses extractCompleteObjects).
+ */
+export async function* plannerCallStream(
+  systemPrompt: string,
+  userMessage: string,
+): AsyncGenerator<string, void, unknown> {
+  const stream = await withKeyRetry(async (client) => {
+    const model = client.getGenerativeModel({
+      model: modelName,
+      systemInstruction: systemPrompt,
+      generationConfig: {
+        responseMimeType: "application/json" as const,
+        maxOutputTokens: 2048,
+        temperature: 0.2,
+      },
+    });
+    return model.generateContentStream({
+      contents: [{ role: "user", parts: [{ text: userMessage }] }],
+    });
+  });
+
+  let buffer = "";
+
+  for await (const chunk of stream.stream) {
+    const delta = chunk.text();
+    if (!delta) continue;
+    buffer += delta;
+
+    const extracted = extractCompleteObjects(buffer);
+    for (const objStr of extracted.objects) {
+      yield objStr;
+    }
+    buffer = extracted.remaining;
+  }
+}
+
 // ─── Annotator Call (Call 2) ───
 
 const EMPTY_ANNOTATOR_RESULT: AnnotatorResult = {
@@ -417,7 +458,7 @@ export async function executeAnnotations(
 
   return withKeyRetry(async (client) => {
     const model = client.getGenerativeModel({
-      model: modelName,
+      model: annotatorModelName,
       systemInstruction: systemPrompt,
       generationConfig: {
         responseMimeType: "application/json" as const,
@@ -449,6 +490,58 @@ export async function executeAnnotations(
       return EMPTY_ANNOTATOR_RESULT;
     }
   });
+}
+
+/**
+ * Streaming variant of executeAnnotations.
+ * Yields individual AnnotatorAnnotationResult objects as they are parsed
+ * from the incremental JSON stream, enabling per-annotation SSE delivery.
+ */
+export async function* executeAnnotationsStream(
+  text: string,
+  worldviewName: string,
+  worldviewContent: string,
+  assignments: AnnotatorAssignment[],
+  userContext?: UserContext,
+): AsyncGenerator<AnnotatorAnnotationResult, void, unknown> {
+  const systemPrompt = buildAnnotatorPrompt(worldviewName, worldviewContent, assignments, userContext);
+
+  const stream = await withKeyRetry(async (client) => {
+    const model = client.getGenerativeModel({
+      model: annotatorModelName,
+      systemInstruction: systemPrompt,
+      generationConfig: {
+        responseMimeType: "application/json" as const,
+        maxOutputTokens: 4096,
+        temperature: 0.3,
+      },
+    });
+    return model.generateContentStream({
+      contents: [{ role: "user", parts: [{ text }] }],
+    });
+  });
+
+  let buffer = "";
+
+  for await (const chunk of stream.stream) {
+    const delta = chunk.text();
+    if (!delta) continue;
+    buffer += delta;
+
+    const extracted = extractCompleteObjects(buffer);
+    for (const objStr of extracted.objects) {
+      try {
+        const parsed = JSON.parse(objStr);
+        // Validate it looks like an annotation result (has anchor_text or anchor_index)
+        if (parsed && typeof parsed === "object" && (parsed.anchor_text || parsed.anchor_index !== undefined)) {
+          yield parsed as AnnotatorAnnotationResult;
+        }
+      } catch {
+        // Incomplete or malformed — skip
+      }
+    }
+    buffer = extracted.remaining;
+  }
 }
 
 // ─── Sketch Generation ───

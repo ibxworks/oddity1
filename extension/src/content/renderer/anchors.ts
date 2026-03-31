@@ -173,6 +173,39 @@ export function removeAnchors(annotationId: string): void {
 }
 
 /**
+ * Recolor anchor spans when a placeholder annotation is replaced with a real one.
+ * Updates background-color, border-bottom, data-oddity-id, and re-keys the anchorMap.
+ */
+export function recolorAnchors(oldId: string, annotation: Annotation): void {
+  const spans = anchorMap.get(oldId);
+  if (!spans || spans.length === 0) return;
+
+  const visual = getVisual(annotation.type, getThemeMode(), annotation.label, annotation.verdict);
+  const bgColor = visual.backgroundColor;
+  const underlineStyle = visual.underlineStyle;
+
+  for (const span of spans) {
+    span.setAttribute(ATTR, annotation.id);
+    span.setAttribute('data-oddity-type', annotation.type);
+    if (bgColor) span.style.backgroundColor = bgColor;
+    if (underlineStyle) span.style.borderBottom = underlineStyle;
+  }
+
+  // Update tagged inline ancestor backgrounds
+  if (bgColor) {
+    const taggedEls = document.querySelectorAll(`[data-oddity-highlight-bg="${oldId}"]`);
+    for (const el of taggedEls) {
+      (el as HTMLElement).style.backgroundColor = bgColor;
+      (el as HTMLElement).dataset.oddityHighlightBg = annotation.id;
+    }
+  }
+
+  // Re-key the map
+  anchorMap.delete(oldId);
+  anchorMap.set(annotation.id, spans);
+}
+
+/**
  * Remove all injected anchors for every annotation.
  */
 export function clearAllAnchors(): void {

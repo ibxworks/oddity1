@@ -71,6 +71,7 @@ import {
   setMarginNotesVisible,
   updateMarginNoteText,
   updateMarginNotesStyle,
+  updatePendingMarginNote,
 } from "./renderer/margin-notes.js";
 import type { ChunkRange } from "./renderer/margin-notes.js";
 import {
@@ -140,6 +141,13 @@ const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
 /** Regions that received at least one streaming `annotationReady` message. */
 const streamedRegions = new Set<string>();
+
+/**
+ * Pending anchors from the router that haven't received annotator results yet.
+ * Keyed by anchor_text for matching against incoming annotations.
+ * Value is the temporary annotation ID used for the placeholder.
+ */
+const pendingAnchorIds = new Map<string, string>();
 
 // ─── Dual-mode annotation stores ───
 const overviewAnnotations = new Map<string, Annotation[]>();
@@ -316,9 +324,8 @@ let manualRunTriggered = false;
 let blocked = false;
 let enabled = true;
 let currentMode: ViewMode = "overview";
-let currentContextMode: UserContextMode | undefined = undefined;
+let currentContextMode: UserContextMode = "argument-formation";
 let currentContextNote: string = "";
-let hasShownContextPopupThisPage = false;
 let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
@@ -518,7 +525,6 @@ function resetAnnotationState(): void {
   // Reset whitelist state
   manualRunTriggered = false;
   siteWhitelisted = false;
-  hasShownContextPopupThisPage = false;
 
   // Clear in-flight state
   longWaitManager.reset();
@@ -965,130 +971,9 @@ async function handleStableRegion(
 ): Promise<void> {
   if (!enabled) return;
 
-  // In "all" mode, fire requests for both modes
-  if (currentMode === "all") {
-    handleStableRegionForMode(region, _element, "overview");
-    handleStableRegionForMode(region, _element, "depth");
-    return;
-  }
-
-  // Extract text first so we can use contentHash as the dedup key
-  const extracted =
-    region.source === "readability"
-      ? extractWithReadability()
-      : extractText(region);
-
-  if (!extracted || !extracted.text) return;
-
-  // Guard: skip if no real words (whitespace/symbols only)
-  if (extracted.wordCount <= 0) return;
-
-  // Guard: truncate text exceeding backend limit and recalculate word count
-  if (extracted.text.length > MAX_TEXT_LENGTH) {
-    console.log(`[Oddity 1] Text too long (${extracted.text.length} chars), truncating to ${MAX_TEXT_LENGTH}`);
-    extracted.text = extracted.text.slice(0, MAX_TEXT_LENGTH);
-    extracted.wordCount = extracted.text.split(/\s+/).filter(Boolean).length;
-    if (extracted.wordCount <= 0) return;
-  }
-
-  // Compute content hash
-  const contentHash = await sha256(extracted.text);
-
-  // Stale guard: if this region already had a different hash, the content changed.
-  const previousHash = activeHashes.get(region.element);
-  if (previousHash && previousHash !== contentHash) {
-    pendingRegions.delete(`overview:${previousHash}`);
-    pendingRegions.delete(`depth:${previousHash}`);
-    annotatedRegions.delete(previousHash);
-    overviewAnnotations.delete(previousHash);
-    depthAnnotations.delete(previousHash);
-    overviewGenerated.delete(previousHash);
-    depthGenerated.delete(previousHash);
-    regionByHash.delete(previousHash);
-    rerenderAll();
-    syncArgumentsBox();
-  }
-  activeHashes.set(region.element, contentHash);
-
-  // Use mode-prefixed pending key so that a stale-while-revalidate response
-  // from a DIFFERENT mode cannot steal this mode's pending state.
-  const reqMode = currentMode as AnnotationMode;
-  const pendingKey = `${reqMode}:${contentHash}`;
-
-  if (annotatedRegions.has(contentHash) || pendingRegions.has(pendingKey))
-    return;
-
-  // Store hash on the region element so manual annotations can reuse it
-  (region.element as HTMLElement).dataset.oddityHash = contentHash;
-
-  // Map hash → region so renderAnnotations can find the element
-  regionByHash.set(contentHash, region);
-
-  // Request annotations from service worker
-  pendingRegions.add(pendingKey);
-  const modes = pendingModeByHash.get(contentHash) ?? new Set();
-  modes.add(reqMode);
-  pendingModeByHash.set(contentHash, modes);
-  const isLong = isLongRequest(extracted.wordCount);
-  if (isLong) {
-    longWaitManager.start(contentHash);
-  }
-  console.log(
-    `[Oddity 1] Requesting annotations for region ${region.id} (hash: ${contentHash.slice(0, 12)}…)`,
-  );
-
-  try {
-    const result = await sendMessage<{ error?: string }>({
-      action: "requestAnnotations",
-      payload: {
-        url: getPageUrl(),
-        regionId: region.id,
-        contentHash,
-        text: extracted.text,
-        mode: currentMode as AnnotationMode,
-        userContext: { mode: currentContextMode, note: currentContextNote || undefined } as UserContext,
-        wordCount: extracted.wordCount,
-      },
-    });
-
-    // Aborted request — silently ignore (a newer request superseded this one)
-    if (result && "aborted" in result) {
-      if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
-      return;
-    }
-
-    if (result?.error) {
-      if (result.error.includes("Sign in")) {
-        console.warn(
-          "[Oddity 1] Not signed in — open the Oddity extension to sign in",
-        );
-        showAuthToast();
-      } else {
-        console.error(`[Oddity 1] Annotation request failed: ${result.error}`);
-      }
-      pendingRegions.delete(pendingKey);
-      if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
-    }
-  } catch (err) {
-    const errStr = String(err);
-    // Chrome closes the sendMessage channel when the service worker responds
-    // via sendToTab instead of sendResponse. This is expected in our streaming
-    // pattern — annotations still arrive via sendToTab, so don't clean up.
-    if (errStr.includes("message channel closed") || errStr.includes("message port closed")) {
-      console.debug(`[Oddity 1] Message channel closed (expected during streaming)`);
-      return;
-    }
-    if (errStr.includes("Auth") || errStr.includes("401")) {
-      console.warn(
-        "[Oddity 1] Not signed in — open the Oddity extension to sign in",
-      );
-      showAuthToast();
-    } else {
-      console.error(`[Oddity 1] Annotation request error:`, err);
-    }
-    pendingRegions.delete(pendingKey);
-    if (isLong) longWaitManager.completeWithoutAnnotations(contentHash);
-  }
+  // Always fire both overview + depth in parallel so results are pre-cached
+  handleStableRegionForMode(region, _element, "overview");
+  handleStableRegionForMode(region, _element, "depth");
 }
 
 /**
@@ -1537,10 +1422,40 @@ function switchMode(newMode: ViewMode, newContextMode?: UserContextMode, newCont
     "user_written",
   ];
 
-  // Clear pending/annotated tracking (these are per-request, not per-mode)
+  // Clear pending/annotated tracking — but preserve in-flight state for the
+  // target mode so streaming (anchorReady / annotationReady) continues seamlessly.
   annotatedRegions.clear();
-  pendingRegions.clear();
-  pendingModeByHash.clear();
+
+  const targetMode: AnnotationMode | null = newMode === "all" ? null : (newMode as AnnotationMode);
+  for (const key of [...pendingRegions]) {
+    // Keep keys for the target mode (e.g., "depth:{hash}") so stale guards pass
+    if (targetMode && key.startsWith(`${targetMode}:`)) continue;
+    pendingRegions.delete(key);
+  }
+  for (const [hash, modes] of pendingModeByHash) {
+    if (targetMode) {
+      for (const m of modes) {
+        if (m !== targetMode) modes.delete(m);
+      }
+      if (modes.size === 0) pendingModeByHash.delete(hash);
+    } else {
+      pendingModeByHash.delete(hash);
+    }
+  }
+
+  // Clear stale anchor-matching state so new streaming data doesn't collide
+  pendingAnchorIds.clear();
+
+  // Remove pending placeholders from the target mode's store — they'll be
+  // replaced by fresh streaming data or a full re-render from cache.
+  if (newMode === "depth" || newMode === "all") {
+    for (const [hash, anns] of depthAnnotations) {
+      const filtered = anns.filter(a => !a.pending);
+      if (filtered.length > 0) depthAnnotations.set(hash, filtered);
+      else depthAnnotations.delete(hash);
+    }
+  }
+
   streamedRegions.clear();
   longWaitManager.reset();
 
@@ -1677,6 +1592,96 @@ onMessage((message: ExtensionMessage) => {
       appendSketchChunk(text, done);
       break;
     }
+    case "anchorReady": {
+      // Router anchor: render highlight + loading margin note immediately
+      const { regionId: anchorRegionId, anchor } = message.payload;
+
+      // Stale guard
+      const anchorPlainPending = pendingRegions.has(anchorRegionId);
+      const anchorModePending = pendingRegions.has(`depth:${anchorRegionId}`);
+      if (!anchorPlainPending && !anchorModePending) break;
+      streamedRegions.add(anchorRegionId);
+      longWaitManager.handleFirstAnnotation(anchorRegionId);
+      hideEmptyAnnotationsBubble();
+
+      // Build a temporary placeholder annotation
+      const pendingId = `pending-${anchor.anchor_index}-${crypto.randomUUID()}`;
+      const placeholderAnnotation: Annotation = {
+        id: pendingId,
+        mode: "depth",
+        type: "insight",
+        anchor: {
+          type: "TextQuoteSelector",
+          exact: anchor.anchor_text,
+          prefix: anchor.prefix || undefined,
+          suffix: anchor.suffix || undefined,
+        },
+        content: { note: "" },
+        worldview: anchor.worldview,
+        worldviewName: anchor.worldviewName,
+        pending: true,
+      };
+
+      // Track for matching against incoming annotations
+      pendingAnchorIds.set(anchor.anchor_text, pendingId);
+
+      // Store in depth annotations
+      const anchorStore = depthAnnotations.get(anchorRegionId) ?? [];
+      anchorStore.push(placeholderAnnotation);
+      depthAnnotations.set(anchorRegionId, anchorStore);
+
+      // Skip rendering if disabled or type not visible
+      if (!enabled || !visibleTypes.includes("insight")) break;
+
+      const anchorRegion =
+        regionByHash.get(anchorRegionId) ??
+        regions.find((r) => r.id === anchorRegionId);
+      const anchorRoot = anchorRegion?.element ?? document.body;
+      if (anchorRoot !== document.body && !anchorRoot.isConnected) break;
+
+      try {
+        invalidateTextNodeIndex(anchorRoot);
+        const range = resolveSelector(anchorRoot, placeholderAnnotation.anchor);
+        if (range) {
+          if (rangeOverlapsExistingAnchors(range, anchorRoot)) break;
+
+          let anchors = injectAnchors(placeholderAnnotation, range);
+          if (anchors.length === 0) {
+            invalidateTextNodeIndex(anchorRoot);
+            const retryRange = resolveSelector(anchorRoot, placeholderAnnotation.anchor);
+            if (retryRange) {
+              anchors = injectAnchors(placeholderAnnotation, retryRange);
+            }
+          }
+
+          const stableRange = document.createRange();
+          if (anchors.length > 0) {
+            stableRange.setStartBefore(anchors[0]!);
+            stableRange.setEndAfter(anchors[anchors.length - 1]!);
+          } else {
+            stableRange.setStart(range.startContainer, range.startOffset);
+            stableRange.setEnd(range.endContainer, range.endOffset);
+          }
+
+          if (anchors.length > 0) {
+            attachAnchorHoverListeners(anchors, placeholderAnnotation.id);
+          }
+
+          renderAnnotation(placeholderAnnotation, stableRange);
+          addMarginNote(
+            placeholderAnnotation,
+            stableRange,
+            [],
+            handleAnnotationDeleted,
+            anchorRegionId,
+            null,
+          );
+        }
+      } catch (err) {
+        console.warn(`[Oddity 1] Anchor render failed for ${pendingId}:`, err);
+      }
+      break;
+    }
     case "annotationReady": {
       // Progressive rendering: single annotation from streaming pipeline
       const { regionId: streamRegionId, annotation } = message.payload;
@@ -1691,6 +1696,28 @@ onMessage((message: ExtensionMessage) => {
       streamedRegions.add(streamRegionId);
       longWaitManager.handleFirstAnnotation(streamRegionId);
       hideEmptyAnnotationsBubble();
+
+      // ── Match against pending anchors (depth mode) ──
+      // If the router already rendered a placeholder highlight for this anchor,
+      // update the margin note in-place instead of re-rendering everything.
+      const pendingId = pendingAnchorIds.get(annotation.anchor.exact);
+      if (pendingId) {
+        pendingAnchorIds.delete(annotation.anchor.exact);
+
+        // Replace placeholder in the depth store with the real annotation
+        const depthStore = depthAnnotations.get(streamRegionId) ?? [];
+        const placeholderIdx = depthStore.findIndex((a) => a.id === pendingId);
+        if (placeholderIdx !== -1) {
+          depthStore[placeholderIdx] = annotation;
+        } else {
+          depthStore.push(annotation);
+        }
+        depthAnnotations.set(streamRegionId, depthStore);
+
+        // Update the margin note / inline popover content in-place
+        updatePendingMarginNote(pendingId, annotation);
+        break;
+      }
 
       // Always store the annotation regardless of current visible types —
       // it may be needed when the user switches mode later.
@@ -1876,13 +1903,26 @@ onMessage((message: ExtensionMessage) => {
 
       const hadStreaming = streamedRegions.has(regionId);
       streamedRegions.delete(regionId);
+
+      // Check if streamed annotations match the final set (no re-render needed)
+      const prevStreamed = responseAnnStore.get(regionId) ?? [];
+      const prevStreamedIds = new Set(prevStreamed.map((a) => a.id));
       setAnnotationsPreservingUserWritten(responseAnnStore, regionId, annotations);
       syncUserWrittenToBothStores(regionId, annotations, responseMode);
       syncArgumentsBox();
 
-      // Always do a full re-render from effectiveAnnotations to ensure both
-      // stores are merged correctly (critical for "all" mode)
-      if (enabled) {
+      // Determine if the annotations actually changed from what was streamed
+      const annsChanged = !hadStreaming
+        || annotations.length !== prevStreamed.filter((a) => a.type !== "user_written").length
+        || annotations.some((a) => !prevStreamedIds.has(a.id));
+
+      // Check if the other mode still has a pending request for this region.
+      // If so, defer the full re-render to avoid wiping its streaming anchors.
+      const otherMode = responseMode === "overview" ? "depth" : "overview";
+      const otherStillPending = pendingRegions.has(`${otherMode}:${regionId}`);
+
+      if (enabled && annsChanged && !otherStillPending) {
+        // Full re-render needed: annotations differ from streaming or no streaming happened
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
@@ -1933,7 +1973,7 @@ onMessage((message: ExtensionMessage) => {
         switchMode(viewMode, newContextMode, newContextNote);
       } else if (contextChanged) {
         // Context only affects depth annotations — preserve user-written notes and their feedback
-        currentContextMode = newContextMode;
+        if (newContextMode) currentContextMode = newContextMode;
         currentContextNote = newContextNote ?? "";
         clearOverlay();
         clearAllAnchors();
@@ -2290,28 +2330,6 @@ document.addEventListener("oddity:modeChange", async (e) => {
   // Dismiss context popup if switching away while it's open
   hideContextPopup();
 
-  // Show context popup on first depth switch this page
-  if ((mode === "depth" || mode === "all") && !hasShownContextPopupThisPage) {
-    hasShownContextPopupThisPage = true;
-    const result = await showContextPopup(currentContextMode, currentContextNote);
-    if (result) {
-      currentContextMode = result.mode;
-      currentContextNote = result.note;
-      updateContextLink(CONTEXT_MODE_LABELS[result.mode]);
-      // Persist context to storage
-      if (chrome?.storage?.local) {
-        chrome.storage.local.get("preferences", (r) => {
-          const prefs = (r["preferences"] ?? {}) as Record<string, unknown>;
-          chrome.storage.local.set({
-            preferences: { ...prefs, depth_context_mode: result.mode, depth_context_note: result.note },
-          });
-        });
-      }
-    }
-    // Show context link even if skipped
-    updateContextLink(currentContextMode ? CONTEXT_MODE_LABELS[currentContextMode] : undefined);
-  }
-
   // Persist mode to storage so the service worker broadcasts settingsUpdated
   if (chrome?.storage?.local) {
     chrome.storage.local.get("preferences", (result) => {
@@ -2330,9 +2348,10 @@ document.addEventListener("oddity:modeChange", async (e) => {
 
 // ─── Change Context (re-open popup from arguments-box link) ───
 
-document.addEventListener("oddity:openContextPopup", async () => {
+document.addEventListener("oddity:openContextPopup", async (e) => {
   const previousMode = currentContextMode;
-  const result = await showContextPopup(currentContextMode, currentContextNote);
+  const anchorRect = (e as CustomEvent<{ anchorRect?: DOMRect }>).detail?.anchorRect;
+  const result = await showContextPopup(currentContextMode, currentContextNote, anchorRect);
   if (result) {
     currentContextMode = result.mode;
     currentContextNote = result.note;

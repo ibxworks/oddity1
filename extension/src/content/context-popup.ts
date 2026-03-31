@@ -1,5 +1,5 @@
 // ─── Context Popup ───
-// Floating modal that asks the user for their reading context before depth annotations.
+// Compact popover for selecting reading purpose. Positioned near the mode toggle.
 // Self-contained: custom element + closed shadow DOM, appended to document.body.
 
 import type { UserContextMode } from "@oddity/shared";
@@ -26,9 +26,14 @@ export function hideContextPopup(): void {
   resolve(null);
 }
 
+/**
+ * Show compact popover anchored near the given element (the mode toggle wrapper).
+ * If no anchor is provided, falls back to bottom-right fixed positioning.
+ */
 export function showContextPopup(
   currentMode?: UserContextMode,
-  currentNote?: string,
+  _currentNote?: string,
+  anchorRect?: DOMRect,
 ): Promise<ContextPopupResult | null> {
   // If already visible, dismiss the old one first
   if (hostEl) {
@@ -39,7 +44,7 @@ export function showContextPopup(
     pendingResolve = res;
 
     hostEl = document.createElement("oddity-context-popup");
-    hostEl.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:auto;";
+    hostEl.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
 
     // Block keyboard events from leaking to the page
     for (const evt of ["keydown", "keyup", "keypress", "input", "beforeinput"]) {
@@ -48,116 +53,67 @@ export function showContextPopup(
 
     const shadow = hostEl.attachShadow({ mode: "closed" });
 
-    let selected: UserContextMode | null = currentMode ?? null;
-
     const style = document.createElement("style");
     style.textContent = CSS;
     shadow.appendChild(style);
 
-    // Backdrop
-    const backdrop = document.createElement("div");
-    backdrop.className = "backdrop";
-    backdrop.addEventListener("click", () => resolve(null));
-    shadow.appendChild(backdrop);
+    // Invisible click-away layer
+    const clickAway = document.createElement("div");
+    clickAway.className = "click-away";
+    clickAway.addEventListener("click", () => resolve(null));
+    shadow.appendChild(clickAway);
 
-    // Card
-    const card = document.createElement("div");
-    card.className = "card";
-    card.addEventListener("click", (e) => e.stopPropagation());
+    // Popover container
+    const popover = document.createElement("div");
+    popover.className = "popover";
+    popover.addEventListener("click", (e) => e.stopPropagation());
 
-    const title = document.createElement("h2");
-    title.className = "title";
-    title.textContent = "What are you reading for?";
-    card.appendChild(title);
+    // Position near anchor
+    if (anchorRect) {
+      popover.style.position = "fixed";
+      popover.style.right = `${window.innerWidth - anchorRect.right}px`;
+      popover.style.bottom = `${window.innerHeight - anchorRect.top + 8}px`;
+    } else {
+      // Fallback: bottom-right
+      popover.style.position = "fixed";
+      popover.style.right = "24px";
+      popover.style.bottom = "80px";
+    }
 
-    const subtitle = document.createElement("p");
-    subtitle.className = "subtitle";
-    subtitle.textContent = "This shapes how depth annotations respond to the text.";
-    card.appendChild(subtitle);
+    const title = document.createElement("div");
+    title.className = "popover-title";
+    title.textContent = "Reading purpose";
+    popover.appendChild(title);
 
-    // Mode buttons
-    const modeGrid = document.createElement("div");
-    modeGrid.className = "mode-grid";
-
-    const btnEls: HTMLButtonElement[] = [];
+    // Mode options — click to select immediately
     for (const opt of MODE_OPTIONS) {
       const btn = document.createElement("button");
-      btn.className = "mode-btn" + (opt.value === selected ? " active" : "");
-      btn.dataset.value = opt.value;
+      btn.className = "mode-option" + (opt.value === currentMode ? " active" : "");
 
       const label = document.createElement("span");
-      label.className = "mode-label";
+      label.className = "option-label";
       label.textContent = opt.label;
 
       const desc = document.createElement("span");
-      desc.className = "mode-desc";
+      desc.className = "option-desc";
       desc.textContent = opt.desc;
 
       btn.appendChild(label);
       btn.appendChild(desc);
-      btnEls.push(btn);
 
       btn.addEventListener("click", () => {
-        selected = opt.value as UserContextMode;
-        btnEls.forEach((b) => b.classList.toggle("active", b.dataset.value === selected));
-        continueBtn.disabled = false;
-        continueBtn.classList.add("ready");
+        resolve({ mode: opt.value, note: "" });
       });
 
-      modeGrid.appendChild(btn);
+      popover.appendChild(btn);
     }
-    card.appendChild(modeGrid);
 
-    // Note input
-    const noteLabel = document.createElement("label");
-    noteLabel.className = "note-label";
-    noteLabel.textContent = "Anything specific? (optional)";
-    card.appendChild(noteLabel);
-
-    const noteInput = document.createElement("input");
-    noteInput.className = "note-input";
-    noteInput.type = "text";
-    noteInput.placeholder = "e.g. I'm comparing this to last week's report";
-    noteInput.maxLength = 500;
-    noteInput.value = currentNote ?? "";
-    card.appendChild(noteInput);
-
-    // Buttons
-    const btnRow = document.createElement("div");
-    btnRow.className = "btn-row";
-
-    const skipBtn = document.createElement("button");
-    skipBtn.className = "btn skip";
-    skipBtn.textContent = "Skip";
-    skipBtn.addEventListener("click", () => resolve(null));
-
-    const continueBtn = document.createElement("button");
-    continueBtn.className = "btn continue" + (selected ? " ready" : "");
-    continueBtn.textContent = "Continue";
-    continueBtn.disabled = !selected;
-    continueBtn.addEventListener("click", () => {
-      if (!selected) return;
-      resolve({ mode: selected, note: noteInput.value.trim() });
-    });
-
-    // Enter key submits
-    noteInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && selected) {
-        resolve({ mode: selected, note: noteInput.value.trim() });
-      }
-    });
-
-    btnRow.appendChild(skipBtn);
-    btnRow.appendChild(continueBtn);
-    card.appendChild(btnRow);
-
-    shadow.appendChild(card);
+    shadow.appendChild(popover);
     document.body.appendChild(hostEl);
 
     // Animate in
     requestAnimationFrame(() => {
-      backdrop.classList.add("visible");
-      card.classList.add("visible");
+      popover.classList.add("visible");
     });
   });
 }
@@ -167,12 +123,6 @@ function resolve(result: ContextPopupResult | null): void {
   pendingResolve = null;
 
   if (hostEl) {
-    const shadow = hostEl.shadowRoot ?? (hostEl as any).__shadow;
-    // Attempt fade-out, then remove
-    const backdrop = hostEl.shadowRoot
-      ? hostEl.shadowRoot.querySelector(".backdrop")
-      : null;
-    // Since shadow is closed, just remove immediately
     hostEl.remove();
     hostEl = null;
   }
@@ -183,168 +133,81 @@ function resolve(result: ContextPopupResult | null): void {
 // ─── CSS ───
 
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
   :host {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
-  .backdrop {
+  .click-away {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0);
-    transition: background 0.2s ease;
-  }
-  .backdrop.visible {
-    background: rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
   }
 
-  .card {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) scale(0.96);
+  .popover {
+    width: 220px;
+    background: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
     opacity: 0;
-    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
-    width: 400px;
-    max-width: calc(100vw - 32px);
-    background: #fff;
-    border-radius: 16px;
-    padding: 28px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.1);
-    z-index: 1;
+    transform: translateY(6px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
   }
-  .card.visible {
+  .popover.visible {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateY(0);
   }
 
-  .title {
-    font-family: 'Fraunces', Georgia, serif;
-    font-size: 20px;
+  .popover-title {
+    font-size: 11px;
     font-weight: 600;
-    color: #111;
-    margin: 0 0 4px;
-    letter-spacing: -0.3px;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 8px 6px;
   }
 
-  .subtitle {
-    font-size: 13px;
-    color: #888;
-    margin: 0 0 20px;
-  }
-
-  .mode-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 18px;
-  }
-
-  .mode-btn {
+  .mode-option {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 14px;
-    border: 1.5px solid #e8e8e2;
-    border-radius: 10px;
-    background: #fff;
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background 0.1s ease;
     text-align: left;
     font-family: inherit;
   }
-  .mode-btn:hover {
-    border-color: #ccc;
-    background: #fafaf8;
+  .mode-option:hover {
+    background: rgba(255, 255, 255, 0.08);
   }
-  .mode-btn.active {
-    border-color: #111;
-    background: #111;
-  }
-  .mode-btn.active .mode-label {
-    color: #fff;
-    font-weight: 600;
-  }
-  .mode-btn.active .mode-desc {
-    color: rgba(255, 255, 255, 0.6);
+  .mode-option.active {
+    background: rgba(255, 255, 255, 0.12);
   }
 
-  .mode-label {
-    font-size: 13.5px;
-    font-weight: 500;
-    color: #222;
-  }
-  .mode-desc {
-    font-size: 12px;
-    color: #999;
-  }
-
-  .note-label {
-    display: block;
-    font-size: 12px;
-    font-weight: 500;
-    color: #666;
-    margin-bottom: 6px;
-  }
-  .note-input {
-    width: 100%;
-    padding: 9px 12px;
-    border: 1.5px solid #e8e8e2;
-    border-radius: 10px;
-    font-size: 13px;
-    font-family: inherit;
-    outline: none;
-    color: #222;
-    transition: border-color 0.15s;
-    box-sizing: border-box;
-  }
-  .note-input:focus {
-    border-color: #111;
-  }
-  .note-input::placeholder {
-    color: #bbb;
-  }
-
-  .btn-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 18px;
-  }
-
-  .btn {
-    padding: 8px 18px;
-    border-radius: 100px;
+  .option-label {
     font-size: 13px;
     font-weight: 500;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.15s;
-    border: 1.5px solid transparent;
+    color: #e8e8e8;
   }
-  .btn.skip {
-    background: none;
-    color: #888;
-    border-color: #e8e8e2;
+  .option-desc {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.35);
+    flex-shrink: 0;
   }
-  .btn.skip:hover {
-    color: #555;
-    border-color: #ccc;
-  }
-  .btn.continue {
-    background: #ddd;
-    color: #999;
-    border-color: transparent;
-    pointer-events: none;
-  }
-  .btn.continue.ready {
-    background: #111;
+
+  .mode-option.active .option-label {
     color: #fff;
-    pointer-events: auto;
   }
-  .btn.continue.ready:hover {
-    background: #333;
+  .mode-option.active .option-desc {
+    color: rgba(255, 255, 255, 0.5);
   }
 `;

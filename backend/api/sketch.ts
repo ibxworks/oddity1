@@ -35,7 +35,9 @@ router.post("/", async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
+  res.socket?.setNoDelay(true);
 
   try {
     const stream = generateSketchStream(input_text, purpose, user_reactions);

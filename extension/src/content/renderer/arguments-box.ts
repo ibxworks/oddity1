@@ -4024,11 +4024,12 @@ function initModeToggleOverlay(): void {
   // "Change context" link — visible only in depth/all mode
   contextLinkEl = document.createElement("button");
   contextLinkEl.className = "context-link";
-  contextLinkEl.textContent = "Set context";
+  contextLinkEl.textContent = "Context: Argument";
   contextLinkEl.style.display = "none";
   contextLinkEl.addEventListener("click", (e: MouseEvent) => {
     e.stopPropagation();
-    document.dispatchEvent(new CustomEvent("oddity:openContextPopup"));
+    const rect = modeToggleWrapperEl?.getBoundingClientRect();
+    document.dispatchEvent(new CustomEvent("oddity:openContextPopup", { detail: { anchorRect: rect } }));
   });
 
   modeToggleWrapperEl.appendChild(modeToggleEl);

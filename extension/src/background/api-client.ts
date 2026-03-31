@@ -115,10 +115,22 @@ export async function requestAnnotations(
  * Request annotations via SSE streaming. Calls onAnnotation for each
  * annotation as it arrives, then resolves with the complete result.
  */
+/** Lightweight anchor from the router, before annotator has run. */
+export interface StreamedAnchor {
+  anchor_index: number;
+  anchor_text: string;
+  prefix: string;
+  suffix: string;
+  worldview: string;
+  worldviewName: string;
+  ai_introduced: boolean;
+}
+
 export async function requestAnnotationsStreaming(
   req: AnnotateRequest,
   onAnnotation: (annotation: Annotation) => void,
   signal?: AbortSignal,
+  onAnchor?: (anchor: StreamedAnchor) => void,
 ): Promise<AnnotationResponse> {
   // Block if rate-limited (annotation-specific gate)
   if (Date.now() < annotationRateLimitUntil) {
@@ -197,6 +209,10 @@ export async function requestAnnotationsStreaming(
 
           if (event.error) {
             throw new Error(event.error);
+          }
+
+          if (event.anchor && onAnchor) {
+            onAnchor(event.anchor);
           }
 
           if (event.annotation) {

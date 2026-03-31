@@ -184,6 +184,18 @@ chrome.runtime.onMessage.addListener(
                 }
               },
               controller.signal,
+              (anchor) => {
+                // Forward router anchors for immediate highlight rendering
+                if (sender.tab?.id && !controller.signal.aborted) {
+                  sendToTab(sender.tab.id, {
+                    action: "anchorReady",
+                    payload: {
+                      regionId: contentHash,
+                      anchor,
+                    },
+                  }).catch(() => { /* tab may have closed */ });
+                }
+              },
             );
 
             // Check if aborted
