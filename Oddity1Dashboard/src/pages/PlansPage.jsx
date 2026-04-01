@@ -212,7 +212,7 @@ export default function PlansPage({ session }) {
             </a>
             <a
               className="nav-cta"
-              href="https://chromewebstore.google.com/detail/khcpcihcakkkbglfaegenmlabkghaeea/error?utm_source=item-share-cb"
+              href="https://chromewebstore.google.com/detail/oddity1/khcpcihcakkkbglfaegenmlabkghaeea?utm_source=item-share-cb"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -248,7 +248,7 @@ export default function PlansPage({ session }) {
               </ul>
               <a
                 className="price-btn"
-                href="https://chromewebstore.google.com/detail/khcpcihcakkkbglfaegenmlabkghaeea/error?utm_source=item-share-cb"
+                href="https://chromewebstore.google.com/detail/oddity1/khcpcihcakkkbglfaegenmlabkghaeea?utm_source=item-share-cb"
                 target="_blank"
                 rel="noopener noreferrer"
               >
