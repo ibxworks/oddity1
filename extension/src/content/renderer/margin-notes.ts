@@ -1060,6 +1060,11 @@ export function updatePendingMarginNote(pendingId: string, annotation: Annotatio
     inlinePopovers.delete(pendingId);
     inlinePopovers.set(annotation.id, popover);
 
+    // Update pinned state so clicks still work after re-key
+    if (pinnedId === pendingId) {
+      pinnedId = annotation.id;
+    }
+
     // Update element dataset
     popover.element.dataset.annotationId = annotation.id;
 
@@ -1101,6 +1106,11 @@ export function updatePendingMarginNote(pendingId: string, annotation: Annotatio
     note.annotation = annotation;
     note.id = annotation.id;
     note.element.dataset.annotationId = annotation.id;
+
+    // Update expanded state so the note stays open after re-key
+    if (expandedId === pendingId) {
+      expandedId = annotation.id;
+    }
 
     const labelEl = note.element.querySelector(".note-label") as HTMLElement | null;
     if (labelEl) labelEl.textContent = annotation.label || "";

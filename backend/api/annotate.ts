@@ -394,6 +394,7 @@ async function handleStreamingAnnotation(
       dbCached.model_version === currentModel &&
       dbCached.prompt_version === currentPromptVersion
     ) {
+      console.log(`[annotate/stream] Cache HIT for ${mode} ${content_hash.slice(0, 12)}… (${cacheIntensity}, ${dbCached.annotations?.length ?? 0} annotations)`);
       const merged = await mergeAnnotationsAndFeedback(
         dbCached.annotations,
         url,
@@ -408,6 +409,12 @@ async function handleStreamingAnnotation(
       );
       res.end();
       return;
+    }
+
+    if (dbCached) {
+      console.log(`[annotate/stream] Cache STALE for ${mode} ${content_hash.slice(0, 12)}… (model: ${dbCached.model_version} vs ${currentModel}, prompt: ${dbCached.prompt_version} vs ${currentPromptVersion})`);
+    } else {
+      console.log(`[annotate/stream] Cache MISS for ${mode} ${content_hash.slice(0, 12)}… (${cacheIntensity})`);
     }
 
     // Generate annotations
@@ -548,6 +555,8 @@ async function handleStreamingAnnotation(
     }
 
     // Cache the complete result
+    console.log(`[annotate/stream] ${mode} complete: ${allAnnotations.length} annotations${depthAnnotatorCalls > 0 ? `, ${depthAnnotatorCalls} annotator calls` : ""} for ${content_hash.slice(0, 12)}…`);
+
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + CACHE_TTL_DAYS);
 
@@ -570,6 +579,8 @@ async function handleStreamingAnnotation(
         "[annotate/stream] Cache write failed:",
         cacheWriteError.message,
       );
+    } else {
+      console.log(`[annotate/stream] Cache written for ${content_hash.slice(0, 12)}… (${cacheIntensity})`);
     }
 
     const merged = await mergeAnnotationsAndFeedback(

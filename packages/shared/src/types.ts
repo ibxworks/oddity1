@@ -103,6 +103,8 @@ export type AnnotationResponse = {
   cached: boolean;
   annotations: Annotation[];
   feedback?: AnnotationFeedback[];
+  /** Number of depth annotator LLM calls made (max 3). Only present for depth mode. */
+  annotator_calls?: number;
 };
 
 // ─── Feedback ───
@@ -228,6 +230,7 @@ export type ExtensionMessage =
         regionId: string;
         annotations: Annotation[];
         feedback: AnnotationFeedback[];
+        annotator_calls?: number;
       };
     }
   | {

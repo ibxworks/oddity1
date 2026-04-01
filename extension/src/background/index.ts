@@ -222,6 +222,7 @@ chrome.runtime.onMessage.addListener(
                   regionId: contentHash,
                   annotations,
                   feedback,
+                  annotator_calls: result.annotator_calls,
                 },
               });
             }

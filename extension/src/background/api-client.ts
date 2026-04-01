@@ -189,6 +189,7 @@ export async function requestAnnotationsStreaming(
   const annotations: Annotation[] = [];
   let feedback: AnnotationFeedback[] = [];
   let cached = false;
+  let annotatorCalls: number | undefined;
   let buffer = '';
 
   try {
@@ -223,6 +224,7 @@ export async function requestAnnotationsStreaming(
           if (event.done) {
             cached = event.cached ?? false;
             feedback = event.feedback ?? [];
+            annotatorCalls = event.annotator_calls;
             if (event.annotations) {
               annotations.length = 0;
               annotations.push(...event.annotations);
@@ -237,7 +239,7 @@ export async function requestAnnotationsStreaming(
     reader.releaseLock();
   }
 
-  return { success: true, cached, annotations, feedback };
+  return { success: true, cached, annotations, feedback, annotator_calls: annotatorCalls };
 }
 
 /**

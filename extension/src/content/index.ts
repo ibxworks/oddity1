@@ -25,6 +25,7 @@ import {
   destroyManualAnnotations,
   initManualAnnotations,
 } from "./manual.js";
+import { initThemeDetection } from "./renderer/theme-detector.js";
 import {
   destroyArgumentsBox,
   handleRemoteSignIn,
@@ -711,6 +712,7 @@ async function init(): Promise<void> {
     currentContextNote = prefs.depth_context_note;
   }
   // currentMode defaults to "overview" (line 315), visibleTypes to overview types (line 317)
+  initThemeDetection();
   setMarginNoteMode(currentMode);
 
   if (prefs?.enabled === false) {
@@ -1176,9 +1178,12 @@ function attachAnchorHoverListeners(
   annotationId: string,
 ): void {
   for (const span of spans) {
-    span.addEventListener("mouseenter", () => onAnchorHoverStart(annotationId));
-    span.addEventListener("mouseleave", () => onAnchorHoverEnd(annotationId));
-    span.addEventListener("click", (e) => { e.stopPropagation(); onAnchorClick(annotationId); });
+    // Read ID from DOM attribute (updated by recolorAnchors on pending → real
+    // transition) so handlers always use the current annotation ID.
+    const getId = () => span.getAttribute("data-oddity-id") || annotationId;
+    span.addEventListener("mouseenter", () => onAnchorHoverStart(getId()));
+    span.addEventListener("mouseleave", () => onAnchorHoverEnd(getId()));
+    span.addEventListener("click", (e) => { e.stopPropagation(); onAnchorClick(getId()); });
   }
 }
 
@@ -1622,8 +1627,8 @@ onMessage((message: ExtensionMessage) => {
         pending: true,
       };
 
-      // Track for matching against incoming annotations
-      pendingAnchorIds.set(anchor.anchor_text, pendingId);
+      // Track for matching against incoming annotations (normalize key for robust matching)
+      pendingAnchorIds.set(anchor.anchor_text.replace(/\s+/g, ' ').trim(), pendingId);
 
       // Store in depth annotations
       const anchorStore = depthAnnotations.get(anchorRegionId) ?? [];
@@ -1700,9 +1705,10 @@ onMessage((message: ExtensionMessage) => {
       // ── Match against pending anchors (depth mode) ──
       // If the router already rendered a placeholder highlight for this anchor,
       // update the margin note in-place instead of re-rendering everything.
-      const pendingId = pendingAnchorIds.get(annotation.anchor.exact);
+      const normalizedExact = annotation.anchor.exact.replace(/\s+/g, ' ').trim();
+      const pendingId = pendingAnchorIds.get(normalizedExact);
       if (pendingId) {
-        pendingAnchorIds.delete(annotation.anchor.exact);
+        pendingAnchorIds.delete(normalizedExact);
 
         // Replace placeholder in the depth store with the real annotation
         const depthStore = depthAnnotations.get(streamRegionId) ?? [];
@@ -1811,7 +1817,12 @@ onMessage((message: ExtensionMessage) => {
       break;
     }
     case "annotationsReady": {
-      const { regionId, annotations: rawAnnotations, feedback: rawFeedback } = message.payload;
+      const { regionId, annotations: rawAnnotations, feedback: rawFeedback, annotator_calls } = message.payload;
+
+      // Log annotator call count for depth mode visibility
+      if (annotator_calls !== undefined) {
+        console.log(`[Oddity 1] Depth complete: ${annotator_calls} annotator call${annotator_calls !== 1 ? "s" : ""}, ${rawAnnotations.length} annotations`);
+      }
 
       // Filter out annotations and feedback that were locally deleted (prevents re-addition from in-flight responses)
       const annotations = rawAnnotations.filter((a: Annotation) => !deletedAnnotationIds.has(a.id));
@@ -1911,8 +1922,10 @@ onMessage((message: ExtensionMessage) => {
       syncUserWrittenToBothStores(regionId, annotations, responseMode);
       syncArgumentsBox();
 
-      // Determine if the annotations actually changed from what was streamed
-      const annsChanged = !hadStreaming
+      // Determine if the annotations actually changed from what was streamed.
+      // When streaming was active, always force a full re-render to guarantee
+      // any failed pending→real swaps are corrected with clean state.
+      const annsChanged = hadStreaming
         || annotations.length !== prevStreamed.filter((a) => a.type !== "user_written").length
         || annotations.some((a) => !prevStreamedIds.has(a.id));
 

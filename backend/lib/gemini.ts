@@ -412,7 +412,9 @@ export async function* plannerCallStream(
       model: modelName,
       systemInstruction: systemPrompt,
       generationConfig: {
-        responseMimeType: "application/json" as const,
+        // Use text/plain so Gemini streams tokens incrementally instead of
+        // buffering the entire JSON structure before emitting chunks.
+        responseMimeType: "text/plain" as const,
         maxOutputTokens: 2048,
         temperature: 0.2,
       },
@@ -511,7 +513,9 @@ export async function* executeAnnotationsStream(
       model: annotatorModelName,
       systemInstruction: systemPrompt,
       generationConfig: {
-        responseMimeType: "application/json" as const,
+        // Use text/plain so Gemini streams tokens incrementally instead of
+        // buffering the entire JSON structure before emitting chunks.
+        responseMimeType: "text/plain" as const,
         maxOutputTokens: 4096,
         temperature: 0.3,
       },

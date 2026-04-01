@@ -108,8 +108,14 @@ function handlePossibleChange(): void {
   }, 500);
 }
 
-export function getThemeMode(): ThemeMode {
+/**
+ * Run initial theme detection. Call once at startup before any rendering.
+ */
+export function initThemeDetection(): void {
   currentMode = detectMode();
+}
+
+export function getThemeMode(): ThemeMode {
   return currentMode;
 }
 
