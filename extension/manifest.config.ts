@@ -37,6 +37,11 @@ export default defineManifest({
       js: ["src/content/index.ts"],
       run_at: "document_idle",
     },
+    {
+      matches: ["https://docs.google.com/document/*"],
+      js: ["src/content/gdocs.ts"],
+      run_at: "document_idle",
+    },
   ],
   action: {
     default_popup: "src/popup/index.html",

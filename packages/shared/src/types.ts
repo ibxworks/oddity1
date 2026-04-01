@@ -353,4 +353,15 @@ export type ExtensionMessage =
     }
   | { action: "injectNextNewTab"; payload: Record<string, never> }
   | { action: "fetchPdfData"; payload: { url: string } }
-  | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };
+  | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } }
+  | {
+      action: "gdocsChat";
+      payload: {
+        messages: Array<{ role: "user" | "assistant"; content: string }>;
+        mode: "chat" | "tree" | "essay" | "edit";
+      };
+    }
+  | { action: "gdocsChatChunk"; payload: { text: string } }
+  | { action: "gdocsChatDone"; payload: Record<string, never> }
+  | { action: "gdocsChatError"; payload: { error: string } }
+  | { action: "gdocsGetDepthAnnotations"; payload: Record<string, never> };

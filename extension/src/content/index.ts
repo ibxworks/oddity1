@@ -87,6 +87,7 @@ import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
 import { createStabilityWatcher } from "./stability.js";
 import { getPageUrl } from "./page-url.js";
 import { setThemeOverride } from "./renderer/theme-detector.js";
+import { isGoogleDoc, postAnnotationAsGDocsComment, resetPostedAnnotations } from "./gdocs-comments.js";
 
 // ─── Extension context guard ───
 // After extension reload/update, content scripts lose access to chrome.* APIs.
@@ -635,6 +636,8 @@ function resetAnnotationState(): void {
   destroyMarginNotes();
   destroyArgumentsBox();
   destroyManualAnnotations();
+  // Reset GDocs comment deduplication so new doc/tab gets fresh comments
+  resetPostedAnnotations();
 }
 
 // ─── SPA Navigation: URL Change Watcher ───
@@ -1597,14 +1600,24 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
         (f) => f.annotation_id === annotation.id,
       );
       const chunkRng = resolveChunkRange(root, annotation);
-      addMarginNote(
-        annotation,
-        stableRange,
-        noteFeedback,
-        handleAnnotationDeleted,
-        regionId,
-        chunkRng,
-      );
+      // On Google Docs in depth mode, route AI depth annotations to Drive comments
+      // instead of the normal inline popover UI.
+      if (
+        isGoogleDoc() &&
+        annotation.mode === "depth" &&
+        annotation.type !== "user_written"
+      ) {
+        postAnnotationAsGDocsComment(annotation);
+      } else {
+        addMarginNote(
+          annotation,
+          stableRange,
+          noteFeedback,
+          handleAnnotationDeleted,
+          regionId,
+          chunkRng,
+        );
+      }
     } catch (err) {
       console.warn(`[Oddity 1] Render failed for annotation ${annotation.id}:`, err);
     }
@@ -1883,14 +1896,24 @@ onMessage((message: ExtensionMessage) => {
           // chunk boundary selectors can resolve against current DOM.
           invalidateTextNodeIndex(streamRoot);
           const streamChunkRng = resolveChunkRange(streamRoot, annotation);
-          addMarginNote(
-            annotation,
-            stableRange,
-            noteFeedback,
-            handleAnnotationDeleted,
-            streamRegionId,
-            streamChunkRng,
-          );
+          // On Google Docs in depth mode, route AI depth annotations to Drive comments
+          // instead of the normal inline popover UI.
+          if (
+            isGoogleDoc() &&
+            annotation.mode === "depth" &&
+            annotation.type !== "user_written"
+          ) {
+            postAnnotationAsGDocsComment(annotation);
+          } else {
+            addMarginNote(
+              annotation,
+              stableRange,
+              noteFeedback,
+              handleAnnotationDeleted,
+              streamRegionId,
+              streamChunkRng,
+            );
+          }
         }
       } catch (err) {
         console.warn(`[Oddity 1] Stream render failed for annotation ${annotation.id}:`, err);

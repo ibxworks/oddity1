@@ -830,6 +830,122 @@ export async function generateSketchStream(
   throw lastError ?? new Error("Sketch stream failed without attempts");
 }
 
+// ─── GDocs Chat ───
+
+export type GDocsChatMode = "chat" | "tree" | "essay" | "edit";
+
+type GDocsChatMessage = { role: "user" | "assistant"; content: string };
+
+type GDocsChatStreamOptions = GeminiRequestOptions & {
+  onChunk?: (text: string) => void;
+};
+
+const _gdocsPrompts = promptsConfig as Record<string, unknown>;
+const gdocsPromptMap: Record<GDocsChatMode, string> = {
+  chat: (_gdocsPrompts.gdocs_chat_prompt as string) ?? "",
+  tree: (_gdocsPrompts.gdocs_tree_prompt as string) ?? "",
+  essay: (_gdocsPrompts.gdocs_essay_prompt as string) ?? "",
+  edit: (_gdocsPrompts.gdocs_edit_prompt as string) ?? "",
+};
+
+async function consumeGDocsChatStreamAttempt(
+  entry: ClientEntry,
+  messages: GDocsChatMessage[],
+  mode: GDocsChatMode,
+  options: GDocsChatStreamOptions,
+): Promise<string> {
+  const systemPrompt = gdocsPromptMap[mode];
+  const model = entry.client.getGenerativeModel({
+    model: modelName,
+    systemInstruction: systemPrompt,
+    generationConfig: {
+      responseMimeType: "text/plain" as const,
+      maxOutputTokens: 2048,
+      temperature: 0.7,
+    },
+  });
+
+  // Gemini uses role "model" instead of "assistant"
+  const contents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  const streamResult = await model.generateContentStream(
+    { contents },
+    getRequestOptions(options.signal),
+  );
+
+  let responseError: unknown = null;
+  const responseSettled = streamResult.response
+    .then(() => undefined)
+    .catch((error) => { responseError = error; });
+
+  let fullText = "";
+  try {
+    for await (const chunk of streamResult.stream) {
+      const delta = chunk.text();
+      if (!delta) continue;
+      fullText += delta;
+      options.onChunk?.(delta);
+    }
+  } catch (error) {
+    await responseSettled;
+    throw error;
+  }
+
+  await responseSettled;
+  if (responseError) throw responseError;
+  return fullText;
+}
+
+export async function generateGDocsChatStream(
+  messages: GDocsChatMessage[],
+  mode: GDocsChatMode,
+  options: GDocsChatStreamOptions = {},
+): Promise<string> {
+  const attempts = buildClientAttemptPlan();
+  let lastError: GeminiOperationError | null = null;
+  let emittedText = false;
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const entry = attempts[index]!;
+    const attemptNumber = index + 1;
+
+    try {
+      return await consumeGDocsChatStreamAttempt(entry, messages, mode, {
+        ...options,
+        onChunk: (chunk) => {
+          emittedText = true;
+          options.onChunk?.(chunk);
+        },
+      });
+    } catch (error) {
+      const operationError = toGeminiOperationError(
+        error,
+        entry.keyIndex,
+        attemptNumber,
+        options.signal,
+      );
+      lastError = operationError;
+
+      if (!operationError.retryable || options.signal?.aborted || emittedText) {
+        throw operationError;
+      }
+
+      if (index >= attempts.length - 1) break;
+
+      incrementCounter("retries");
+      const nextEntry = attempts[index + 1]!;
+      if (nextEntry.keyIndex !== entry.keyIndex) incrementCounter("key_rotations");
+
+      await waitBeforeRetry(attemptNumber, options.signal);
+    }
+  }
+
+  throw lastError ?? new Error("GDocs chat stream failed without attempts");
+}
+
 function extractCompleteObjects(buffer: string): {
   objects: string[];
   remaining: string;
