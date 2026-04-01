@@ -3,7 +3,7 @@ import { defineManifest } from "@crxjs/vite-plugin";
 export default defineManifest({
   manifest_version: 3,
   name: "Oddity1",
-  version: "0.1.0",
+  version: "0.1.1",
   description:
     "Annotation layer on top of your LLM conversation, amplifying your critical thinking.",
   icons: {
