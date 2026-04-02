@@ -47,6 +47,9 @@ import {
   setArgumentsBoxPdf,
   setPdfRunCallback,
   setDashUserTier,
+  setArgumentsBoxGDocs,
+  setGDocsRunCallback,
+  clearGDocsOverlay,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -707,6 +710,19 @@ function isPdfPage(): boolean {
   return false;
 }
 
+let gdocsOverlayInitialized = false;
+function initGDocsOverlayIfNeeded(): void {
+  if (gdocsOverlayInitialized || !isGoogleDoc()) return;
+  gdocsOverlayInitialized = true;
+  setArgumentsBoxGDocs(true);
+  setGDocsRunCallback(() => {
+    document.dispatchEvent(new CustomEvent("oddity:gdocs:activate"));
+  });
+  document.addEventListener("oddity:gdocs:activated", () => {
+    clearGDocsOverlay();
+  }, { once: true });
+}
+
 async function handlePdfConversion(): Promise<void> {
   const pdfUrl = window.location.href;
   try {
@@ -810,6 +826,7 @@ async function init(): Promise<void> {
     enabled = false;
     console.log("[Oddity 1] Extension is disabled — skipping initialization");
     initArgumentsBox();
+    initGDocsOverlayIfNeeded();
     setArgumentsBoxEnabled(false);
     setManualRunCallback(manualRun);
     setInputTextProvider(collectInputText);
@@ -826,6 +843,7 @@ async function init(): Promise<void> {
     console.log("[Oddity 1] Not signed in — showing auth toast");
     showAuthToast();
     initArgumentsBox();
+    initGDocsOverlayIfNeeded();
     setArgumentsBoxEnabled(enabled);
     setManualRunCallback(manualRun);
     setInputTextProvider(collectInputText);
@@ -851,6 +869,7 @@ async function init(): Promise<void> {
     siteWhitelisted = false;
     console.log(`[Oddity 1] Site not whitelisted: ${currentDomain} — waiting for manual run`);
     initArgumentsBox();
+    initGDocsOverlayIfNeeded();
     setInputTextProvider(collectInputText);
     setArgumentsBoxEnabled(enabled);
     setArgumentsBoxDimmed(true);
@@ -889,6 +908,7 @@ async function startPipeline(): Promise<void> {
     initManualAnnotations();
     initKeyboardNav();
     initArgumentsBox();
+    initGDocsOverlayIfNeeded();
     setArgumentsBoxEnabled(enabled);
     setInputTextProvider(collectInputText);
 
@@ -948,6 +968,7 @@ async function startPipeline(): Promise<void> {
   initManualAnnotations();
   initKeyboardNav();
   initArgumentsBox();
+  initGDocsOverlayIfNeeded();
   setInputTextProvider(collectInputText);
   setArgumentsBoxEnabled(enabled);
 

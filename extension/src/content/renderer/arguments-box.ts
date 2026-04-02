@@ -96,6 +96,8 @@ let blockedPanelEl: HTMLDivElement | null = null;
 let pdfDetected = false;
 let pdfPanelEl: HTMLDivElement | null = null;
 let pdfRunCb: (() => void) | null = null;
+let gdocsPanelEl: HTMLDivElement | null = null;
+let gdocsRunCb: (() => void) | null = null;
 let dashCloseBtnEl: HTMLButtonElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
@@ -977,6 +979,28 @@ export function setPdfRunCallback(cb: () => void): void {
   pdfRunCb = cb;
 }
 
+export function setArgumentsBoxGDocs(isGDocs: boolean): void {
+  if (isGDocs) {
+    dimmed = true;
+    containerEl?.classList.add("oddity-not-enabled");
+    showGDocsOverlay();
+  }
+}
+
+export function setGDocsRunCallback(cb: () => void): void {
+  gdocsRunCb = cb;
+}
+
+export function clearGDocsOverlay(): void {
+  gdocsPanelEl?.remove();
+  gdocsPanelEl = null;
+  dimmed = false;
+  containerEl?.classList.remove("oddity-not-enabled", "oddity-gdocs");
+  expanded = false;
+  containerEl?.classList.remove("expanded");
+  toggleBarEl?.classList.remove("visible");
+}
+
 export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
 }
@@ -1172,6 +1196,8 @@ export function destroyArgumentsBox(): void {
   pdfDetected = false;
   pdfPanelEl = null;
   pdfRunCb = null;
+  gdocsPanelEl = null;
+  gdocsRunCb = null;
   enableBubbleEl = null;
   canonicalItems = [];
   liveItems = [];
@@ -1392,6 +1418,55 @@ function showPdfOverlay(): void {
   contentClip.appendChild(pdfPanelEl);
 
   // Auto-expand so the PDF overlay is visible
+  expanded = true;
+  containerEl?.classList.add("expanded");
+  toggleBarEl?.classList.add("visible");
+}
+
+function showGDocsOverlay(): void {
+  if (gdocsPanelEl) return;
+  containerEl?.classList.add("oddity-gdocs");
+  containerEl?.classList.remove("dashboard");
+  const contentClip = shadowRoot?.querySelector(".args-content-clip");
+  if (!contentClip) return;
+
+  gdocsPanelEl = document.createElement("div");
+  gdocsPanelEl.className = "args-not-enabled-overlay";
+
+  const logo = document.createElement("img");
+  logo.className = "args-gdocs-logo";
+  logo.src = chrome.runtime.getURL("Oddity1-Logo.png");
+  logo.alt = "Oddity 1";
+
+  const title = document.createElement("div");
+  title.className = "args-gdocs-title";
+  title.textContent = "First Principles Thinking";
+
+  const tagline = document.createElement("div");
+  tagline.className = "args-gdocs-tagline";
+  tagline.textContent = "for Google Docs";
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "args-not-enabled-btn-row";
+
+  const startBtn = document.createElement("button");
+  startBtn.className = "args-run-btn";
+  startBtn.textContent = "Start Oddity";
+  startBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    startBtn.disabled = true;
+    startBtn.textContent = "Starting…";
+    gdocsRunCb?.();
+  });
+  btnRow.appendChild(startBtn);
+
+  gdocsPanelEl.appendChild(logo);
+  gdocsPanelEl.appendChild(title);
+  gdocsPanelEl.appendChild(tagline);
+  gdocsPanelEl.appendChild(btnRow);
+  gdocsPanelEl.addEventListener("click", (e) => e.stopPropagation());
+  contentClip.appendChild(gdocsPanelEl);
+
   expanded = true;
   containerEl?.classList.add("expanded");
   toggleBarEl?.classList.add("visible");
@@ -6882,5 +6957,42 @@ const ARGUMENTS_BOX_CSS = `
     color: #444;
     border-color: #ddd;
     box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  }
+
+  /* ── GDocs overlay ── */
+
+  .args-gdocs-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    object-fit: contain;
+    margin-bottom: 2px;
+  }
+
+  .args-gdocs-title {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    text-align: center;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
+  }
+
+  .args-gdocs-tagline {
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    margin-top: -10px;
+    letter-spacing: 0.02em;
+  }
+
+  :host([data-theme="light"]) .args-gdocs-title {
+    color: rgba(26, 26, 26, 0.9);
+  }
+
+  :host([data-theme="light"]) .args-gdocs-tagline {
+    color: rgba(26, 26, 26, 0.45);
   }
 `;

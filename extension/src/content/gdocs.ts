@@ -37,6 +37,8 @@ let essayTabId = '';
 let treeTabId = '';
 let pendingEditMode = false;
 let activeSession: OddityGDocsSession | null = null;
+let loadingOverlayEl: HTMLElement | null = null;
+let loadingStatusEl: HTMLElement | null = null;
 
 // ─── URL parsing ─────────────────────────────────────────────────────────────
 function parseGDocsLocation(): { docId: string; tabId: string } {
@@ -81,11 +83,13 @@ chrome.runtime.onMessage.addListener((message) => {
       .then(() => handleResponseActions(response))
       .then(() => {
         streaming = false;
+        hideLoadingOverlay();
         setInputEnabled(true);
       })
       .catch((err) => {
         console.error('[Oddity GDocs] Response handling error:', err);
         streaming = false;
+        hideLoadingOverlay();
         setInputEnabled(true);
       });
   } else if (message.action === 'gdocsChatError') {
@@ -94,6 +98,7 @@ chrome.runtime.onMessage.addListener((message) => {
     currentStreamText = '';
     streaming = false;
     pendingEditMode = false;
+    hideLoadingOverlay();
     setInputEnabled(true);
     if (gdocsTextarea) {
       gdocsTextarea.placeholder = `Error: ${errMsg.slice(0, 60)}`;
@@ -611,6 +616,7 @@ async function addDepthAnnotationsAsComments(): Promise<void> {
   if (commentBtn) commentBtn.disabled = true;
   setInputEnabled(false);
   if (gdocsTextarea) gdocsTextarea.placeholder = `Adding ${annotations.length} comments…`;
+  showLoadingOverlay(`Adding ${annotations.length} depth comments…`);
 
   for (const ann of annotations) {
     const label = ann.type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -618,6 +624,7 @@ async function addDepthAnnotationsAsComments(): Promise<void> {
     await addSingleGDocsComment(ann.anchor.exact, commentText);
   }
 
+  hideLoadingOverlay();
   if (commentBtn) commentBtn.disabled = false;
   setInputEnabled(true);
 }
@@ -645,15 +652,101 @@ async function handleResponseActions(response: string): Promise<void> {
     const treeContent = treeMatch[1].trim();
     const followup = response.replace(/<<<TREE>>>[\s\S]+?<<<END_TREE>>>/, '').trim();
     await buildArgumentTreeTab(treeContent);
-    if (followup) await pasteIntoDoc(`Oddity: ${followup}\n\n`);
+    if (followup) await pasteIntoDoc(`Oddity 1: ${followup}\n\n`);
   } else if (essayMatch?.[1]) {
     const essayContent = essayMatch[1].trim();
     const followup = response.replace(/<<<ESSAY>>>[\s\S]+?<<<END_ESSAY>>>/, '').trim();
     await buildEssayTab(essayContent);
-    if (followup) await pasteIntoDoc(`Oddity: ${followup}\n\n`);
+    if (followup) await pasteIntoDoc(`Oddity 1: ${followup}\n\n`);
   } else {
-    await pasteIntoDoc(`Oddity: ${response}\n\n`);
+    await pasteIntoDoc(`Oddity 1: ${response}\n\n`);
   }
+}
+
+// ─── Loading overlay ──────────────────────────────────────────────────────────
+function showLoadingOverlay(status: string): void {
+  if (loadingOverlayEl) {
+    if (loadingStatusEl) loadingStatusEl.textContent = status;
+    return;
+  }
+
+  const host = document.createElement('div');
+  host.id = 'oddity-gdocs-loading-host';
+  host.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483645; pointer-events: all;';
+  document.body.appendChild(host);
+  loadingOverlayEl = host;
+
+  const shadow = host.attachShadow({ mode: 'open' });
+
+  const style = document.createElement('style');
+  style.textContent = `
+    *, *::before, *::after { box-sizing: border-box; }
+    .overlay {
+      position: fixed; inset: 0;
+      backdrop-filter: blur(6px) saturate(0.8);
+      -webkit-backdrop-filter: blur(6px) saturate(0.8);
+      background: rgba(255, 255, 255, 0.18);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 28px 32px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06);
+      border: 0.5px solid #e8e8e2;
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      min-width: 220px;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .logo {
+      width: 36px; height: 36px; border-radius: 8px; object-fit: contain;
+    }
+    .spinner {
+      width: 28px; height: 28px;
+      border: 2.5px solid #e8e8e2;
+      border-top-color: #111;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status {
+      font-size: 13px; font-weight: 500; color: #1a1a1a;
+      text-align: center; line-height: 1.4;
+      letter-spacing: 0.01em;
+    }
+  `;
+  shadow.appendChild(style);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const logo = document.createElement('img');
+  logo.className = 'logo';
+  logo.src = chrome.runtime.getURL('Oddity1-Logo.png');
+  logo.alt = 'Oddity';
+
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+
+  const statusEl = document.createElement('div');
+  statusEl.className = 'status';
+  statusEl.textContent = status;
+  loadingStatusEl = statusEl;
+
+  card.appendChild(logo);
+  card.appendChild(spinner);
+  card.appendChild(statusEl);
+  overlay.appendChild(card);
+  shadow.appendChild(overlay);
+}
+
+function hideLoadingOverlay(): void {
+  loadingOverlayEl?.remove();
+  loadingOverlayEl = null;
+  loadingStatusEl = null;
 }
 
 function setInputEnabled(enabled: boolean) {
@@ -676,6 +769,7 @@ function handleTreeRequest(btn: HTMLButtonElement) {
   btn.disabled = true;
   if (sendBtn) sendBtn.disabled = true;
   if (gdocsTextarea) { gdocsTextarea.disabled = true; gdocsTextarea.placeholder = 'Building tree…'; }
+  showLoadingOverlay('Building your argument tree…');
 
   const messages: GDocsMessage[] = [];
   if (docContext) {
@@ -697,6 +791,7 @@ function handleEssayRequest(btn: HTMLButtonElement) {
   if (sendBtn) sendBtn.disabled = true;
   if (treeBtn) treeBtn.disabled = true;
   if (gdocsTextarea) { gdocsTextarea.disabled = true; gdocsTextarea.placeholder = 'Drafting essay…'; }
+  showLoadingOverlay('Drafting your essay…');
 
   const messages: GDocsMessage[] = [];
   if (docContext) {
@@ -722,6 +817,7 @@ async function handleSend(text: string) {
     pendingUserPaste = Promise.resolve();
     setInputEnabled(false);
     if (gdocsTextarea) gdocsTextarea.placeholder = 'Editing…';
+    showLoadingOverlay('Editing your essay…');
 
     chatHistory.push({ role: 'user', content: text });
     void saveSessionAfterMessage();
@@ -769,45 +865,64 @@ function createInputBar() {
 
   const style = document.createElement('style');
   style.textContent = `
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
     *, *::before, *::after { box-sizing: border-box; }
+    .wrapper {
+      display: flex; flex-direction: column; gap: 8px;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
     .bar {
-      display: flex; align-items: flex-end; gap: 8px;
-      background: #ffffff; border-radius: 14px; padding: 10px 12px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.08);
-      border: 1px solid #e5e7eb;
+      display: flex; align-items: center; gap: 8px;
+      background: #ffffff; border-radius: 9999px; padding: 8px 8px 8px 18px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06);
+      border: 0.5px solid #e8e8e2;
     }
     textarea {
       flex: 1; resize: none; border: none; outline: none;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 14px; line-height: 1.5; color: #111827;
-      background: transparent; max-height: 120px; overflow-y: auto; padding: 0;
+      font-family: inherit; font-size: 13px; line-height: 1.4; color: #1a1a1a;
+      background: transparent; max-height: 120px; overflow-y: auto;
+      padding: 0; margin: 0; display: block;
     }
-    textarea::placeholder { color: #9ca3af; }
-    textarea:disabled { opacity: 0.5; }
+    textarea::placeholder { color: #9aa0a6; }
+    textarea:disabled { opacity: 0.45; }
     .send {
-      width: 34px; height: 34px; border-radius: 8px; border: none;
-      background: #2563eb; color: #fff; font-size: 16px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    .send:disabled { background: #e5e7eb; color: #9ca3af; cursor: default; }
-    .close {
-      width: 28px; height: 28px; border-radius: 6px; border: none;
-      background: none; color: #9ca3af; font-size: 18px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-      line-height: 1; padding: 0;
-    }
-    .close:hover { color: #6b7280; }
-    .icon-btn {
-      width: 34px; height: 34px; border-radius: 8px; border: none;
-      background: #f3f4f6; color: #374151; font-size: 16px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      width: 34px; height: 34px; border-radius: 9999px; border: none;
+      background: #111; color: #fff; cursor: pointer; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
       transition: background 0.15s;
     }
-    .icon-btn:hover { background: #e5e7eb; }
-    .icon-btn:disabled { opacity: 0.4; cursor: default; }
+    .send:hover { background: #333; }
+    .send:disabled { background: #e8e8e2; color: #9aa0a6; cursor: default; }
+    .close {
+      width: 0; height: 28px; border-radius: 9999px; border: none;
+      background: none; color: #9aa0a6; font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      line-height: 1; padding: 0; overflow: hidden;
+      opacity: 0; pointer-events: none;
+      transition: width 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease;
+    }
+    .close:hover { color: #374151; }
+    .show-close .close { width: 28px; opacity: 1; pointer-events: all; }
+    .actions {
+      display: flex; align-items: center; gap: 6px; padding: 0 4px;
+    }
+    .action-btn {
+      height: 30px; padding: 0 12px; border-radius: 9999px; border: none;
+      background: #f0f2f5; color: #374151; font-size: 11px; font-weight: 600;
+      font-family: inherit; letter-spacing: 0.02em; cursor: pointer;
+      display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+      transition: background 0.15s; white-space: nowrap;
+    }
+    .action-btn:hover { background: #e5e7eb; }
+    .action-btn:disabled { opacity: 0.4; cursor: default; }
+    .action-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
   `;
   shadow.appendChild(style);
 
+  const wrapper = document.createElement('div');
+  wrapper.className = 'wrapper';
+
+  // ── Input pill row ──
   const bar = document.createElement('div');
   bar.className = 'bar';
 
@@ -828,29 +943,12 @@ function createInputBar() {
 
   sendBtn = document.createElement('button');
   sendBtn.className = 'send';
-  sendBtn.textContent = '↑';
+  sendBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 12V4M8 4L4.5 7.5M8 4L11.5 7.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  sendBtn.title = 'Send';
   sendBtn.addEventListener('click', () => {
     const val = gdocsTextarea!.value.trim();
     if (val) { gdocsTextarea!.value = ''; gdocsTextarea!.style.height = 'auto'; void handleSend(val); }
   });
-
-  treeBtn = document.createElement('button');
-  treeBtn.className = 'icon-btn';
-  treeBtn.textContent = '🌳';
-  treeBtn.title = 'Build argument tree';
-  treeBtn.addEventListener('click', () => handleTreeRequest(treeBtn!));
-
-  essayBtn = document.createElement('button');
-  essayBtn.className = 'icon-btn';
-  essayBtn.textContent = '📝';
-  essayBtn.title = 'Draft essay from conversation';
-  essayBtn.addEventListener('click', () => handleEssayRequest(essayBtn!));
-
-  commentBtn = document.createElement('button');
-  commentBtn.className = 'icon-btn';
-  commentBtn.textContent = '💬';
-  commentBtn.title = 'Add depth margin notes as GDocs comments';
-  commentBtn.addEventListener('click', () => void addDepthAnnotationsAsComments());
 
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
@@ -859,12 +957,44 @@ function createInputBar() {
   closeBtn.addEventListener('click', deactivate);
 
   bar.appendChild(gdocsTextarea);
-  bar.appendChild(treeBtn);
-  bar.appendChild(essayBtn);
-  bar.appendChild(commentBtn);
   bar.appendChild(sendBtn);
   bar.appendChild(closeBtn);
-  shadow.appendChild(bar);
+
+  bar.addEventListener('mousemove', (e) => {
+    const rect = bar.getBoundingClientRect();
+    wrapper.classList.toggle('show-close', e.clientX - rect.left > rect.width * 0.75);
+  });
+  bar.addEventListener('mouseleave', () => wrapper.classList.remove('show-close'));
+
+  // ── Actions row (below the pill) ──
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'actions';
+
+  treeBtn = document.createElement('button');
+  treeBtn.className = 'action-btn';
+  treeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="2" r="1.5" stroke="currentColor" stroke-width="1.25"/><circle cx="2" cy="9" r="1.5" stroke="currentColor" stroke-width="1.25"/><circle cx="10" cy="9" r="1.5" stroke="currentColor" stroke-width="1.25"/><path d="M6 3.5V6M6 6L2 7.5M6 6L10 7.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>Tree`;
+  treeBtn.title = 'Build argument tree';
+  treeBtn.addEventListener('click', () => handleTreeRequest(treeBtn!));
+
+  essayBtn = document.createElement('button');
+  essayBtn.className = 'action-btn';
+  essayBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 10h8M2 7.5h5M2 5h8M2 2.5h5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>Essay`;
+  essayBtn.title = 'Draft essay from conversation';
+  essayBtn.addEventListener('click', () => handleEssayRequest(essayBtn!));
+
+  commentBtn = document.createElement('button');
+  commentBtn.className = 'action-btn';
+  commentBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M10 2H2a1 1 0 00-1 1v5a1 1 0 001 1h2l2 2 2-2h2a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>Notes`;
+  commentBtn.title = 'Add depth margin notes as GDocs comments';
+  commentBtn.addEventListener('click', () => void addDepthAnnotationsAsComments());
+
+  actionsRow.appendChild(treeBtn);
+  actionsRow.appendChild(essayBtn);
+  actionsRow.appendChild(commentBtn);
+
+  wrapper.appendChild(actionsRow);
+  wrapper.appendChild(bar);
+  shadow.appendChild(wrapper);
 
   setTimeout(() => gdocsTextarea?.focus(), 100);
 }
@@ -873,8 +1003,8 @@ function createInputBar() {
 async function activate() {
   if (inputBar) return;
 
-  const fab = document.getElementById('oddity-gdocs-fab') as HTMLButtonElement | null;
-  if (fab) fab.style.display = 'none';
+  // Signal to index.ts that GDocs has been activated so the args box overlay dismisses
+  document.dispatchEvent(new CustomEvent('oddity:gdocs:activated'));
 
   const { docId, tabId } = parseGDocsLocation();
   activeDocId = docId;
@@ -890,12 +1020,14 @@ async function activate() {
     activeSession = existingSession;
     essayTabId = existingSession.essayTabId ?? '';
     treeTabId = existingSession.treeTabId ?? '';
-    await pasteIntoDoc('Oddity: [Resuming — Brainstorming]\n\n');
+    await pasteIntoDoc('Oddity 1: [Resuming — Brainstorming]\n\n');
   } else {
-    activeSession = { docId, tabId, chatHistory: [], createdAt: Date.now() };
+    const welcomeMsg = "What's the topic, idea, or problem you want to think through?";
+    chatHistory.push({ role: 'assistant', content: welcomeMsg });
+    activeSession = { docId, tabId, chatHistory: [...chatHistory], createdAt: Date.now() };
     await saveSession(activeSession);
     const renamePromise = renameGDocsTabWithRetry('Brainstorming', tabId);
-    await pasteIntoDoc("Oddity: What's the topic, idea, or problem you want to think through?\n\n");
+    await pasteIntoDoc(`Oddity 1: ${welcomeMsg}\n\n`);
     await renamePromise;
   }
 }
@@ -911,26 +1043,7 @@ function deactivate() {
   treeTabId = '';
   pendingEditMode = false;
   activeSession = null;
-
-  const fab = document.getElementById('oddity-gdocs-fab') as HTMLButtonElement | null;
-  if (fab) fab.style.display = 'flex';
 }
 
-// ─── FAB ──────────────────────────────────────────────────────────────────────
-function injectFAB() {
-  const fab = document.createElement('button');
-  fab.id = 'oddity-gdocs-fab';
-  fab.textContent = 'On';
-  fab.style.cssText = `
-    all: initial; position: fixed; bottom: 24px; right: 24px; z-index: 2147483647;
-    width: 52px; height: 52px; border-radius: 50%; background: #2563eb; color: #ffffff;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 13px; font-weight: 600; border: none; cursor: pointer;
-    box-shadow: 0 4px 16px rgba(37,99,235,0.4), 0 2px 6px rgba(0,0,0,0.12);
-    display: flex; align-items: center; justify-content: center;
-  `;
-  fab.addEventListener('click', () => void activate());
-  document.body.appendChild(fab);
-}
-
-injectFAB();
+// ─── Entry point ──────────────────────────────────────────────────────────────
+document.addEventListener('oddity:gdocs:activate', () => void activate());
