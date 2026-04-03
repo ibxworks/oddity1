@@ -419,4 +419,6 @@ export type ExtensionMessage =
         pageTitle?: string;
       };
     }
+  | { action: "fetchUrl"; payload: { url: string } }
+  | { action: "injectNextNewTab"; payload: Record<string, never> }
   | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };
