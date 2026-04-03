@@ -27,6 +27,7 @@ export const DEFAULT_ENABLED_SITES: string[] = [
   "nytimes.com",
   "washingtonpost.com",
   "theatlantic.com",
+  "docs.google.com",
 ];
 
 // ─── Backend URL ───

@@ -355,4 +355,5 @@ export type ExtensionMessage =
     }
   | { action: "fetchPdfData"; payload: { url: string } }
   | { action: "convertPdfToHtml"; payload: { pdfData: number[] } }
+  | { action: "fetchUrl"; payload: { url: string } }
   | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };
