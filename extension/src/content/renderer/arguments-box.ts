@@ -2171,6 +2171,7 @@ function buildDashboardFace(): HTMLDivElement {
           containerEl.style.width = "";
         }
         if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
+        await loadDashboardData();
         const prefsStored = await chrome.storage.local.get("preferences");
         const enabledSites = (
           prefsStored["preferences"] as Record<string, unknown>
@@ -2183,8 +2184,6 @@ function buildDashboardFace(): HTMLDivElement {
           );
         if (!siteEnabled) {
           showNotEnabledOverlay();
-        } else {
-          await loadDashboardData();
         }
         updateModeToggleVisibility();
         document.dispatchEvent(new CustomEvent("oddity:localSignIn"));
@@ -2300,6 +2299,7 @@ function buildDashboardFace(): HTMLDivElement {
           containerEl.style.width = "";
         }
         if (footerTextEl) footerTextEl.textContent = "Go to Dashboard";
+        await loadDashboardData();
         const prefsStored = await chrome.storage.local.get("preferences");
         const enabledSites = (
           prefsStored["preferences"] as Record<string, unknown>
@@ -2312,8 +2312,6 @@ function buildDashboardFace(): HTMLDivElement {
           );
         if (!siteEnabled) {
           showNotEnabledOverlay();
-        } else {
-          await loadDashboardData();
         }
         updateModeToggleVisibility();
         // Notify index.ts so it can start the annotation pipeline on this tab
@@ -3310,18 +3308,21 @@ function showOnboardingSlideshow(onComplete: () => void): void {
     delay(() => animStarters[index]!(), 350);
   }
 
+  let dismissed = false;
   function dismiss(): void {
+    if (dismissed) return;
+    dismissed = true;
     clearAnimTimers();
+    const finish = () => {
+      overlay.remove();
+      onboardingOverlayEl = null;
+      onComplete();
+    };
     overlay.style.opacity = "0";
-    overlay.addEventListener(
-      "transitionend",
-      () => {
-        overlay.remove();
-        onboardingOverlayEl = null;
-        onComplete();
-      },
-      { once: true },
-    );
+    let done = false;
+    overlay.addEventListener("transitionend", () => { if (!done) { done = true; finish(); } }, { once: true });
+    // Fallback: if transitionend never fires (e.g., overlay not yet visible), force finish
+    setTimeout(() => { if (!done) { done = true; finish(); } }, 400);
   }
 
   // ── Keyboard nav ──
