@@ -1778,6 +1778,8 @@ function createNoteElement(
         const liveSortKey = addLiveFeedback("↳", "I agree", {
           type: "reply",
           replyHeader: noteExcerpt,
+          replyFullNote: annotation.content.note,
+          replyAnchor: annotation.anchor.exact,
           annotationType: annotation.type,
           annotationId: annotation.id,
           contentHash: contentHash,
@@ -1842,6 +1844,8 @@ function createNoteElement(
         const liveSortKeyDown = addLiveFeedback("↳", "I don't think so", {
           type: "reply",
           replyHeader: noteExcerptDown,
+          replyFullNote: annotation.content.note,
+          replyAnchor: annotation.anchor.exact,
           annotationType: annotation.type,
           annotationId: annotation.id,
           contentHash: contentHash,
@@ -2034,6 +2038,8 @@ function submitReply(
   const liveSortKeyReply = addLiveFeedback("↳", text, {
     type: "reply",
     replyHeader: excerpt,
+    replyFullNote: annotation.content.note,
+    replyAnchor: annotation.anchor.exact,
     annotationType: annotation.type,
     annotationId: annotation.id,
     contentHash: hash,

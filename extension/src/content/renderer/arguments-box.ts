@@ -551,6 +551,8 @@ export function initArgumentsBox(): void {
   bubbleClose.addEventListener("click", (e) => {
     e.stopPropagation();
     enableBubbleEl?.remove();
+    // Snooze the bubble for the next 3 non-listed sites
+    chrome.storage.local.set({ enableBubbleSnoozeRemaining: 3 });
   });
 
   enableBubbleEl.appendChild(bubbleTextWrapper);
@@ -844,6 +846,8 @@ export function addLiveFeedback(
     quote?: string;
     type?: ArgumentItem["type"];
     replyHeader?: string;
+    replyFullNote?: string;
+    replyAnchor?: string;
     annotationType?: AnnotationType;
     annotationId?: string;
     contentHash?: string;
@@ -856,6 +860,8 @@ export function addLiveFeedback(
     text,
     quote: opts?.quote,
     replyHeader: opts?.replyHeader,
+    replyFullNote: opts?.replyFullNote,
+    replyAnchor: opts?.replyAnchor,
     sortKey,
     type: opts?.type ?? "reaction",
     annotationType: opts?.annotationType,
@@ -925,6 +931,14 @@ export function setArgumentsBoxDimmed(isDimmed: boolean): void {
     if (panelToggleLabelEl) panelToggleLabelEl.textContent = "Off";
     if (dashToggleInput) dashToggleInput.checked = false;
     if (dashToggleLabelEl) dashToggleLabelEl.textContent = "Off";
+    // Hide the enable bubble if snoozed (dismissed within last 3 non-listed sites)
+    chrome.storage.local.get("enableBubbleSnoozeRemaining").then((result) => {
+      const remaining = result.enableBubbleSnoozeRemaining;
+      if (typeof remaining === "number" && remaining > 0) {
+        enableBubbleEl?.remove();
+        chrome.storage.local.set({ enableBubbleSnoozeRemaining: remaining - 1 });
+      }
+    });
   }
   updateModeToggleVisibility();
 }
@@ -1668,9 +1682,9 @@ function buildDashboardFace(): HTMLDivElement {
   const personalityGroup = document.createElement("div");
   personalityGroup.className = "args-dash-density-group";
   const personaDescs: Record<string, string> = {
-    terry: "Balanced & clear",
-    jerry: "Sharp & critical",
-    sally: "Warm & curious",
+    terry: "Sharp & critical",
+    jerry: "Creative & curious",
+    sally: "Engaging & guiding",
   };
   dashDensityBtns = [];
   for (const [value, label] of [
@@ -2071,16 +2085,20 @@ function buildDashboardFace(): HTMLDivElement {
   dashSignInNameEl.className = "args-dash-signin-input";
   dashSignInNameEl.type = "text";
   dashSignInNameEl.placeholder = "Name";
+  dashSignInNameEl.autocomplete = "off";
 
   dashSignInEmailEl = document.createElement("input");
   dashSignInEmailEl.className = "args-dash-signin-input";
-  dashSignInEmailEl.type = "email";
+  dashSignInEmailEl.type = "text";
   dashSignInEmailEl.placeholder = "Email";
+  dashSignInEmailEl.autocomplete = "off";
 
   dashSignInPasswordEl = document.createElement("input");
   dashSignInPasswordEl.className = "args-dash-signin-input";
-  dashSignInPasswordEl.type = "password";
+  dashSignInPasswordEl.type = "text";
   dashSignInPasswordEl.placeholder = "Password";
+  dashSignInPasswordEl.autocomplete = "off";
+  (dashSignInPasswordEl.style as any).webkitTextSecurity = "disc";
 
   dashSignInStatusEl = document.createElement("div");
   dashSignInStatusEl.className = "args-dash-feedback-status";
@@ -2899,19 +2917,19 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   const personaData = [
     {
       name: "Terry",
-      desc: "Balanced & clear",
+      desc: "Sharp & critical",
       img: "Terry.png",
       quote: "\u201cClear and well-supported.\u201d",
     },
     {
       name: "Jerry",
-      desc: "Sharp & critical",
+      desc: "Creative & curious",
       img: "Jerry.png",
       quote: "\u201cBut what about the counter-evidence?\u201d",
     },
     {
       name: "Sally",
-      desc: "Warm & curious",
+      desc: "Engaging & guiding",
       img: "Sally.png",
       quote: "\u201cThis reminds me of\u2026\u201d",
     },
@@ -3287,7 +3305,7 @@ function showOnboardingSlideshow(onComplete: () => void): void {
     currentSlide = index;
     track.style.setProperty("--slide-index", String(index));
     dotEls.forEach((d, i) => d.classList.toggle("active", i === index));
-    nextBtn.textContent = index === TOTAL_SLIDES - 1 ? "Start Reading" : "Next";
+    nextBtn.textContent = index === TOTAL_SLIDES - 1 ? "Start Thinking" : "Next";
     // Start animation for new slide (slight delay to let slide transition finish)
     delay(() => animStarters[index]!(), 350);
   }
