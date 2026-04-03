@@ -11,7 +11,7 @@ let emphasizedId: string | null = null;
 
 // ─── Position Cache ───
 // Store absolute (page-level) rects so we never call getClientRects() on scroll.
-type AbsoluteRect = { left: number; top: number; width: number; height: number };
+export type AbsoluteRect = { left: number; top: number; width: number; height: number };
 let cachedRects: Map<string, AbsoluteRect[]> = new Map();
 
 // Baseline scroll offsets recorded when the cache was last built.
@@ -103,6 +103,20 @@ export function renderAnnotation(annotation: Annotation, range: Range): void {
   if (!overlayEl) initOverlay();
   activeRanges.push({ annotation, range });
   cacheAnnotationRects(annotation, range);
+  pendingBatch.push({ annotation });
+  scheduleBatchFlush();
+}
+
+/**
+ * Render an annotation using pre-computed absolute rects (no Range needed).
+ * Used for Google Docs where Range.getClientRects() is unreliable on canvas-rendered text.
+ * Rects are stored as-is; resize recalculation is skipped for these entries
+ * (positions are refreshed on next full re-render via rerenderAll).
+ */
+export function renderAnnotationWithRects(annotation: Annotation, rects: AbsoluteRect[]): void {
+  if (!overlayEl) initOverlay();
+  activeRanges.push({ annotation, range: null as unknown as Range });
+  cachedRects.set(annotation.id, rects);
   pendingBatch.push({ annotation });
   scheduleBatchFlush();
 }
@@ -300,8 +314,8 @@ function recalculateCache(): void {
   baseContainerScrollLeft = scrollContainer?.scrollLeft ?? 0;
   baseContainerScrollTop = scrollContainer?.scrollTop ?? 0;
 
-  cachedRects.clear();
   for (const { annotation, range } of activeRanges) {
+    if (!range) continue; // Pre-computed rects (e.g. Google Docs) — keep as-is
     cacheAnnotationRects(annotation, range);
   }
   redraw();

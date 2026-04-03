@@ -85,9 +85,18 @@ import {
   filterByTypes,
   initOverlay,
   renderAnnotation,
+  renderAnnotationWithRects,
   setOverlayVisible,
 } from "./renderer/overlay.js";
 import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
+import {
+  isGoogleDocs,
+  detectGoogleDocsRegions,
+  extractGoogleDocsText,
+  findAnnotationRects,
+  createRangeFromNode,
+  isGoogleDocsEditorReady,
+} from "./google-docs.js";
 import { createStabilityWatcher } from "./stability.js";
 import { getPageUrl } from "./page-url.js";
 import { setThemeOverride } from "./renderer/theme-detector.js";
@@ -950,9 +959,145 @@ async function init(): Promise<void> {
   }
 }
 
+// ─── Google Docs Pipeline ───
+
+async function startGoogleDocsPipeline(): Promise<void> {
+  console.log('[Oddity 1] Google Docs detected — using canvas-compatible pipeline');
+
+  // Disconnect any previous observer to avoid duplicates on re-init (e.g. manual run)
+  activeBodyObserver?.disconnect();
+  activeBodyObserver = null;
+
+  initOverlay();
+  initManualAnnotations();
+  initKeyboardNav();
+  initArgumentsBox();
+  setInputTextProvider(collectInputText);
+  setArgumentsBoxEnabled(enabled);
+  setOverlayVisible(true);
+  setMarginNotesVisible(true);
+  initMarginNotes(document.body);
+
+  // Poll for the editor to be ready — Google Docs loads its content asynchronously.
+  // Once paragraphs appear, run detection and then watch for further changes.
+  await waitForGoogleDocsEditor();
+
+  regions = detectGoogleDocsRegions();
+  console.log(`[Oddity 1] GDocs: detected ${regions.length} region(s) after editor ready`);
+
+  if (regions.length > 0 && !marginNotesInitFromBody) {
+    initMarginNotes(regions[0]!.element);
+    marginNotesInitFromBody = true;
+  }
+
+  for (const region of regions) {
+    handleStableRegion(region, region.element);
+  }
+
+  // Watch for new content appearing (lazy loading, SPA navigation within Docs).
+  // Debounced — GDocs makes hundreds of DOM mutations per second during editing.
+  const knownRegions = new WeakSet<Element>(regions.map(r => r.element));
+  let rescanTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const pageObserver = new MutationObserver(() => {
+    if (rescanTimer) return;
+    rescanTimer = setTimeout(() => {
+      rescanTimer = null;
+      const newRegions = detectGoogleDocsRegions();
+      for (const region of newRegions) {
+        if (knownRegions.has(region.element)) continue;
+        knownRegions.add(region.element);
+        regions.push(region);
+        console.log(`[Oddity 1] GDocs: new region detected ${region.id}`);
+
+        if (!marginNotesInitFromBody) {
+          initMarginNotes(region.element);
+          marginNotesInitFromBody = true;
+        }
+
+        handleStableRegion(region, region.element);
+      }
+    }, 1500);
+  });
+
+  pageObserver.observe(document.body, { childList: true, subtree: true });
+  activeBodyObserver = pageObserver;
+}
+
+/**
+ * Wait until the Google Docs editor shell is in the DOM.
+ * We only need the container element — text is fetched via export URL, not DOM scraping.
+ * Polls every 300ms for up to 8s, then proceeds regardless.
+ */
+function waitForGoogleDocsEditor(): Promise<void> {
+  return new Promise((resolve) => {
+    if (isGoogleDocsEditorReady()) {
+      resolve();
+      return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 27; // ~8s max (27 × 300ms)
+    const interval = setInterval(() => {
+      attempts++;
+      // Also accept if any known editor selector is present, even without paragraph content
+      const editorPresent = !!document.querySelector('.kix-appview-editor, .kix-page');
+      if (isGoogleDocsEditorReady() || editorPresent || attempts >= maxAttempts) {
+        clearInterval(interval);
+        console.log(`[Oddity 1] GDocs: editor ready after ~${attempts * 300}ms`);
+        resolve();
+      }
+    }, 300);
+  });
+}
+
+function renderGoogleDocsAnnotations(regionId: string, annotations: Annotation[]): void {
+  const region =
+    regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
+  if (!region) return;
+
+  if (!region.element.isConnected) return;
+
+  const feedback = effectiveFeedbackMap().get(regionId) ?? [];
+
+  const visible = annotations.filter((a) => visibleTypes.includes(a.type));
+  const backgroundTypes = new Set<AnnotationType>(['core_claim', 'insight']);
+  visible.sort((a, b) => {
+    if (a.type === 'user_written' && b.type !== 'user_written') return 1;
+    if (b.type === 'user_written' && a.type !== 'user_written') return -1;
+    return (backgroundTypes.has(a.type) ? 0 : 1) - (backgroundTypes.has(b.type) ? 0 : 1);
+  });
+
+  for (const annotation of visible) {
+    try {
+      const { rects, anchorNode } = findAnnotationRects(region, annotation);
+      if (rects.length === 0) {
+        console.debug(`[Oddity 1] GDocs: no rects for annotation ${annotation.id}`);
+        continue;
+      }
+
+      renderAnnotationWithRects(annotation, rects);
+
+      const noteFeedback = feedback.filter(f => f.annotation_id === annotation.id);
+      const anchorRange = anchorNode ? createRangeFromNode(anchorNode) : null;
+      if (anchorRange) {
+        addMarginNote(annotation, anchorRange, noteFeedback, handleAnnotationDeleted, regionId, null);
+      }
+    } catch (err) {
+      console.warn(`[Oddity 1] GDocs render failed for annotation ${annotation.id}:`, err);
+    }
+  }
+}
+
 async function startPipeline(): Promise<void> {
   if (pipelineInitialized) return;
   pipelineInitialized = true;
+
+  // ── Google Docs fast-path ──
+  if (isGoogleDocs()) {
+    await startGoogleDocsPipeline();
+    return;
+  }
 
   // Fetch adapters from service worker
   const response = await sendMessage<{ adapters: SiteAdapter[] }>({
@@ -1177,8 +1322,9 @@ async function handleStableRegion(
   }
 
   // Extract text first so we can use contentHash as the dedup key
-  const extracted =
-    region.source === "readability"
+  const extracted = isGoogleDocs()
+    ? await extractGoogleDocsText(region)
+    : region.source === "readability"
       ? extractWithReadability()
       : extractText(region);
 
@@ -1312,8 +1458,9 @@ async function handleStableRegionForMode(
 
   const generated = requestMode === "overview" ? overviewGenerated : depthGenerated;
 
-  const extracted =
-    region.source === "readability"
+  const extracted = isGoogleDocs()
+    ? await extractGoogleDocsText(region)
+    : region.source === "readability"
       ? extractWithReadability()
       : extractText(region);
 
@@ -1604,6 +1751,12 @@ function resolveChunkRange(root: Element, annotation: Annotation): ChunkRange | 
 }
 
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
+  // Google Docs uses canvas rendering — skip DOM anchor injection and use pretext-based rects
+  if (isGoogleDocs()) {
+    renderGoogleDocsAnnotations(regionId, annotations);
+    return;
+  }
+
   const region =
     regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
