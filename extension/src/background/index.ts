@@ -99,6 +99,35 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
+// ─── PDF tab detection ───
+// Content scripts with <all_urls> don't inject into file:// PDFs unless the user
+// enables "Allow access to file URLs". Programmatic injection handles that case
+// and also catches edge-case https:// PDFs where the match pattern fires but
+// isPdfPage() detection fails in Chrome's built-in PDF viewer.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete" || !tab.url) return;
+
+  const url = tab.url.toLowerCase();
+  const isPdf =
+    url.endsWith(".pdf") ||
+    url.includes(".pdf?") ||
+    url.includes(".pdf#");
+  if (!isPdf) return;
+
+  const manifest = chrome.runtime.getManifest();
+  const scripts = manifest.content_scripts ?? [];
+  const cs =
+    scripts.find((s) => (s as { world?: string }).world !== "MAIN") ??
+    scripts[1] ??
+    scripts[0];
+  const file = cs?.js?.[0];
+  if (!file) return;
+
+  chrome.scripting
+    .executeScript({ target: { tabId }, files: [file] })
+    .catch(() => {}); // Silently fail if not allowed (e.g., file:// without permission)
+});
+
 // ─── Message Router ───
 
 chrome.runtime.onMessage.addListener(

@@ -739,6 +739,9 @@ async function init(): Promise<void> {
   // Bail out immediately if the extension context is dead (reload/update)
   if (!isContextValid()) return;
 
+  // Prevent double-initialization from programmatic injection (PDF tab detection)
+  if (document.querySelector('oddity-arguments-box')) return;
+
   console.log("[Oddity 1] Content script initializing");
 
   // Keep URL in sync (used by SPA navigation watcher)
@@ -814,10 +817,15 @@ async function init(): Promise<void> {
   }
 
   // Auth check — require sign-in before any whitelist/manual-run functionality
-  const authStatus = await sendMessage<{ authenticated: boolean }>({
+  const authStatus = await sendMessage<{ authenticated: boolean; user?: { email: string; display_name: string | null; tier: string; annotation_count: number } }>({
     action: "getAuthStatus",
     payload: {},
   });
+
+  // Set tier immediately so all tier-gated features work without opening dashboard
+  if (authStatus?.user?.tier) {
+    setDashUserTier(authStatus.user.tier);
+  }
 
   if (!authStatus?.authenticated) {
     console.log("[Oddity 1] Not signed in — showing auth toast");

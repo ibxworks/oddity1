@@ -19,6 +19,7 @@ export default defineManifest({
     "scripting",
     "alarms",
     "identity",
+    "tabs",
   ],
   host_permissions: ["<all_urls>"],
   background: {
