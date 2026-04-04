@@ -1018,14 +1018,33 @@ function pasteIntoChatbot(selector: string, text: string): void {
   const el = document.querySelector(selector) as HTMLElement | null;
   if (!el) return;
 
+  el.focus();
+
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
     el.value = text;
     el.dispatchEvent(new Event("input", { bubbles: true }));
   } else if (el.isContentEditable) {
-    el.focus();
-    el.textContent = "";
-    document.execCommand("insertText", false, text);
-    el.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
+    // Clear via execCommand (not textContent) so the editor's Parchment/internal
+    // model stays in sync with the DOM.
+    document.execCommand("selectAll", false);
+    document.execCommand("delete", false);
+    // Insert as a single insertHTML call — one atomic DOM operation.
+    // The loop-based approach (insertText + insertParagraph per line) is
+    // unreliable with Quill: its MutationObserver fires between each execCommand
+    // call and desynchronises the internal Selection, silently dropping lines 2+.
+    // insertHTML delivers the entire content at once; Quill processes it in one
+    // MutationObserver batch and normalises correctly.
+    const html = text
+      .split("\n")
+      .map((line) => {
+        const escaped = line
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        return `<p>${escaped || "<br>"}</p>`;
+      })
+      .join("");
+    document.execCommand("insertHTML", false, html);
   }
 }
 
