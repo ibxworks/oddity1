@@ -39,6 +39,7 @@ import {
   setSignOutCallback,
   setInputTextProvider,
   appendSketchChunk,
+  setChatbotMode,
   showEmptyAnnotationsBubble,
   hideEmptyAnnotationsBubble,
   updateArgumentsBox,
@@ -894,6 +895,9 @@ async function startPipeline(): Promise<void> {
     initManualAnnotations();
     initKeyboardNav();
     initArgumentsBox();
+    if (matchedAdapter.input_selector) {
+      setChatbotMode(matchedAdapter.input_selector);
+    }
     setArgumentsBoxEnabled(enabled);
     setInputTextProvider(collectInputText);
 

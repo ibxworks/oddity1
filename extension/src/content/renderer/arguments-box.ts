@@ -89,6 +89,8 @@ let sketchLoading = false;
 let sketchBtnEl: HTMLButtonElement | null = null;
 let footerEl: HTMLDivElement | null = null;
 let purposeInputEl: HTMLTextAreaElement | null = null;
+let isChatbotMode = false;
+let chatbotInputSelector: string | null = null;
 let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
@@ -391,12 +393,12 @@ export function initArgumentsBox(): void {
 
   const purposeInput = document.createElement("textarea");
   purposeInput.className = "args-purpose-input";
-  purposeInput.placeholder = "Why are you reading this?";
+  purposeInput.placeholder = isChatbotMode ? "What is this prompt for?" : "Why are you reading this?";
   purposeInput.rows = 2;
   purposeInput.addEventListener("click", (e) => e.stopPropagation());
   purposeInput.addEventListener("input", () => {
     purposeInput.classList.remove("args-purpose-error");
-    purposeInput.placeholder = "Why are you reading this?";
+    purposeInput.placeholder = isChatbotMode ? "What is this prompt for?" : "Why are you reading this?";
   });
   purposeInputEl = purposeInput;
 
@@ -418,7 +420,7 @@ export function initArgumentsBox(): void {
 
   sketchTabBtn = document.createElement("button");
   sketchTabBtn.className = "args-tab";
-  sketchTabBtn.textContent = "Sketch";
+  sketchTabBtn.textContent = isChatbotMode ? "Prompt" : "Sketch";
   sketchTabBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     switchTab("sketch");
@@ -476,7 +478,7 @@ export function initArgumentsBox(): void {
 
   const sketchBtn = document.createElement("button");
   sketchBtn.className = "args-sketch-btn";
-  sketchBtn.textContent = "Sketch my Argument";
+  sketchBtn.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
   sketchBtnEl = sketchBtn;
   sketchBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -996,8 +998,34 @@ export function appendSketchChunk(text: string, done: boolean): void {
     sketchLoading = false;
     if (sketchBtnEl) {
       sketchBtnEl.disabled = false;
-      sketchBtnEl.textContent = "Sketch my Argument";
+      sketchBtnEl.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
     }
+    if (isChatbotMode && chatbotInputSelector && sketchBuffer) {
+      pasteIntoChatbot(chatbotInputSelector, sketchBuffer);
+    }
+  }
+}
+
+export function setChatbotMode(inputSelector: string): void {
+  isChatbotMode = true;
+  chatbotInputSelector = inputSelector;
+  if (sketchTabBtn) sketchTabBtn.textContent = "Prompt";
+  if (sketchBtnEl) sketchBtnEl.textContent = "Make a Prompt";
+  if (purposeInputEl) purposeInputEl.placeholder = "What is this prompt for?";
+}
+
+function pasteIntoChatbot(selector: string, text: string): void {
+  const el = document.querySelector(selector) as HTMLElement | null;
+  if (!el) return;
+
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+    el.value = text;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  } else if (el.isContentEditable) {
+    el.focus();
+    el.textContent = "";
+    document.execCommand("insertText", false, text);
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
   }
 }
 
@@ -3169,7 +3197,7 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   // Sketch button
   const sketchBtn = document.createElement("div");
   sketchBtn.className = "args-onboarding-sketch-btn";
-  sketchBtn.textContent = "Sketch my Argument";
+  sketchBtn.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
 
   // Sketch output
   const sketchOutput = document.createElement("div");
@@ -3845,7 +3873,7 @@ function handleSketch(): void {
   sketchBuffer = "";
   if (sketchBtnEl) {
     sketchBtnEl.disabled = true;
-    sketchBtnEl.textContent = "Sketching...";
+    sketchBtnEl.textContent = isChatbotMode ? "Making prompt..." : "Sketching...";
   }
   if (sketchContentEl) {
     sketchContentEl.innerHTML =
@@ -3857,17 +3885,21 @@ function handleSketch(): void {
   chrome.runtime
     .sendMessage({
       action: "requestSketch",
-      payload: { inputText, purpose, userReactions },
+      payload: { inputText, purpose, userReactions, mode: isChatbotMode ? "prompt" : "sketch" },
     })
     .catch(() => {
       sketchLoading = false;
       if (sketchBtnEl) {
         sketchBtnEl.disabled = false;
-        sketchBtnEl.textContent = "Sketch my Argument";
+        sketchBtnEl.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
       }
       if (sketchContentEl) {
-        sketchContentEl.innerHTML =
-          '<div class="args-sketch-error">Failed to generate sketch. Please try again.</div>';
+        const errorDiv = document.createElement("div");
+        errorDiv.className = "args-sketch-error";
+        errorDiv.textContent = isChatbotMode
+          ? "Failed to generate prompt. Please try again."
+          : "Failed to generate sketch. Please try again.";
+        sketchContentEl.replaceChildren(errorDiv);
       }
     });
 }

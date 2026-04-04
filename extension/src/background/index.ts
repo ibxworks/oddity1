@@ -607,7 +607,7 @@ chrome.runtime.onMessage.addListener(
         }
 
         case "requestSketch": {
-          const { inputText, purpose, userReactions } = message.payload;
+          const { inputText, purpose, userReactions, mode } = message.payload;
           const tabId = sender.tab?.id;
           if (!tabId) return { error: "No tab" };
 
@@ -617,6 +617,7 @@ chrome.runtime.onMessage.addListener(
                 input_text: inputText,
                 purpose,
                 user_reactions: userReactions,
+                mode: mode ?? "sketch",
               },
               (text) => {
                 sendToTab(tabId, {
@@ -629,7 +630,7 @@ chrome.runtime.onMessage.addListener(
               action: "sketchChunk",
               payload: { text: "", done: true },
             });
-            track("sketch_requested", { purpose });
+            track("sketch_requested", { purpose, mode: mode ?? "sketch" });
           } catch (err) {
             console.error("[Oddity 1] Sketch error:", err);
             const isRateLimit = err instanceof RateLimitError;

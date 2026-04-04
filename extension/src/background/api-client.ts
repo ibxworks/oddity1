@@ -319,7 +319,7 @@ export async function requestAnnotationsStreaming(
  * then resolves with the full assembled text.
  */
 export async function requestSketchStreaming(
-  payload: { input_text: string; purpose: string; user_reactions: string },
+  payload: { input_text: string; purpose: string; user_reactions: string; mode?: "sketch" | "prompt" },
   onChunk: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
