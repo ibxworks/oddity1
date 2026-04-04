@@ -65,6 +65,7 @@ import {
   clearMarginNotes,
   collapseAllMarginNotes,
   destroyMarginNotes,
+  refreshMarginNotePositions,
   expandMarginNote,
   filterMarginNotesByTypes,
   initMarginNotes,
@@ -87,6 +88,9 @@ import {
   renderAnnotation,
   renderAnnotationWithRects,
   setOverlayVisible,
+  setOverlayEventCallbacks,
+  setScrollContainer,
+  type AbsoluteRect,
 } from "./renderer/overlay.js";
 import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
 import {
@@ -151,6 +155,11 @@ window.addEventListener("unhandledrejection", (e) => {
 });
 
 // ─── State ───
+
+/** Canvas-mode synthetic anchor elements, keyed by annotation id. */
+const gdocsAnchors = new Map<string, { el: HTMLSpanElement; rect: AbsoluteRect }>();
+/** Unlisten fn for the GDocs scroll container scroll listener. */
+let gdocsScrollUnlisten: (() => void) | null = null;
 
 const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
@@ -549,6 +558,7 @@ function startAnchorGuard(): void {
       clearAllAnchors();
       clearOverlay();
       clearMarginNotes();
+      clearGdocsAnchors();
       for (const r of regions) invalidateTextNodeIndex(r.element);
       for (const r of regionByHash.values()) invalidateTextNodeIndex(r.element);
 
@@ -959,6 +969,27 @@ async function init(): Promise<void> {
   }
 }
 
+// ─── Google Docs Canvas Anchor Helpers ───
+
+/** Remove all synthetic anchor spans from the DOM and clear the map. */
+function clearGdocsAnchors(): void {
+  for (const { el } of gdocsAnchors.values()) el.remove();
+  gdocsAnchors.clear();
+}
+
+/**
+ * Update a synthetic anchor's fixed viewport position from its stored absolute rect
+ * and the scroll container's current scroll offsets.
+ * Call just before triggering hover/click so positionInlinePopover gets a fresh rect.
+ */
+function updateGdocsAnchorPosition(id: string, scrollEl: HTMLElement): void {
+  const entry = gdocsAnchors.get(id);
+  if (!entry) return;
+  const { el, rect } = entry;
+  el.style.top = `${rect.top - scrollEl.scrollTop}px`;
+  el.style.left = `${rect.left - scrollEl.scrollLeft}px`;
+}
+
 // ─── Google Docs Pipeline ───
 
 async function startGoogleDocsPipeline(): Promise<void> {
@@ -989,6 +1020,33 @@ async function startGoogleDocsPipeline(): Promise<void> {
     initMarginNotes(regions[0]!.element);
     marginNotesInitFromBody = true;
   }
+
+  // Register GDocs scroll container so overlay highlights move with document scroll
+  const scrollEl = regions.length > 0 ? (regions[0]!.element as HTMLElement) : null;
+  if (scrollEl) {
+    setScrollContainer(scrollEl);
+
+    // On each scroll, refresh all synthetic anchor viewport positions and re-run
+    // margin-note vertical positioning so cards track their highlights.
+    gdocsScrollUnlisten?.();
+    const onGdocsScroll = () => {
+      for (const id of gdocsAnchors.keys()) {
+        updateGdocsAnchorPosition(id, scrollEl);
+      }
+      refreshMarginNotePositions();
+    };
+    scrollEl.addEventListener('scroll', onGdocsScroll, { passive: true });
+    gdocsScrollUnlisten = () => scrollEl.removeEventListener('scroll', onGdocsScroll);
+  }
+
+  // Register overlay event callbacks so canvas-mode highlight rects are interactive.
+  // Refresh anchor position just before triggering hover/click so positionInlinePopover
+  // sees the correct current viewport coordinates.
+  setOverlayEventCallbacks({
+    onHoverStart: (id) => { if (scrollEl) updateGdocsAnchorPosition(id, scrollEl); onAnchorHoverStart(id); },
+    onHoverEnd: (id) => onAnchorHoverEnd(id),
+    onClick: (id) => { if (scrollEl) updateGdocsAnchorPosition(id, scrollEl); onAnchorClick(id); },
+  });
 
   for (const region of regions) {
     handleStableRegion(region, region.element);
@@ -1072,14 +1130,38 @@ function renderGoogleDocsAnnotations(regionId: string, annotations: Annotation[]
     try {
       const { rects, anchorNode } = findAnnotationRects(region, annotation);
       if (rects.length === 0) {
-        console.debug(`[Oddity 1] GDocs: no rects for annotation ${annotation.id}`);
+        console.debug(`[Oddity 1] GDocs: no rects for "${annotation.anchor?.exact?.slice(0, 40)}"`);
         continue;
       }
 
       renderAnnotationWithRects(annotation, rects);
 
       const noteFeedback = feedback.filter(f => f.annotation_id === annotation.id);
-      const anchorRange = anchorNode ? createRangeFromNode(anchorNode) : null;
+      // Use DOM anchorNode if available (DOM mode), otherwise create a synthetic
+      // fixed-position element at the rect location for margin note anchoring (canvas mode).
+      let anchorRange: Range | null = anchorNode ? createRangeFromNode(anchorNode) : null;
+      if (!anchorRange && rects.length > 0 && region) {
+        const rect = rects[0]!;
+        const scrollTop = (region.element as HTMLElement).scrollTop;
+        const scrollLeft = (region.element as HTMLElement).scrollLeft;
+        const viewportTop = rect.top - scrollTop;
+        const viewportLeft = rect.left - scrollLeft;
+
+        // Remove any existing anchor for this annotation (re-render case)
+        gdocsAnchors.get(annotation.id)?.el.remove();
+
+        // Use a non-breaking space so getClientRects() returns a valid rect.
+        // Font-size matches rect height so the rect geometry is accurate.
+        const syntheticAnchor = document.createElement('span');
+        syntheticAnchor.textContent = '\u00A0';
+        syntheticAnchor.style.cssText = `position:fixed;left:${viewportLeft}px;top:${viewportTop}px;width:${rect.width}px;height:${rect.height}px;font-size:${rect.height}px;line-height:1;pointer-events:none;overflow:hidden;`;
+        document.body.appendChild(syntheticAnchor);
+
+        gdocsAnchors.set(annotation.id, { el: syntheticAnchor, rect });
+
+        anchorRange = document.createRange();
+        anchorRange.selectNodeContents(syntheticAnchor);
+      }
       if (anchorRange) {
         addMarginNote(annotation, anchorRange, noteFeedback, handleAnnotationDeleted, regionId, null);
       }
@@ -1865,6 +1947,7 @@ function rerenderAll(): void {
   clearOverlay();
   clearAllAnchors();
   clearMarginNotes();
+  clearGdocsAnchors();
 
   for (const [regionId, annotations] of effectiveAnnotations()) {
     renderAnnotations(regionId, annotations);
@@ -1884,6 +1967,7 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   clearOverlay();
   clearAllAnchors();
   clearMarginNotes();
+  clearGdocsAnchors();
 
   // Invalidate text-node index for all regions — clearAllAnchors mutates the
   // DOM (unwraps spans, normalizes text nodes) which makes cached indices stale.
@@ -2048,10 +2132,11 @@ onMessage((message: ExtensionMessage) => {
       // Skip annotations that were locally deleted (in-flight response race)
       if (deletedAnnotationIds.has(annotation.id)) break;
 
-      // Stale guard — check both plain and mode-prefixed pending keys
+      // Stale guard — check both plain and mode-prefixed pending keys.
+      // Also accept if the region is known (regionByHash) to handle mode-switch races.
       const plainPending = pendingRegions.has(streamRegionId);
       const modePending = pendingRegions.has(`${annotation.mode}:${streamRegionId}`);
-      if (!plainPending && !modePending) break;
+      if (!plainPending && !modePending && !regionByHash.has(streamRegionId)) break;
       streamedRegions.add(streamRegionId);
       longWaitManager.handleFirstAnnotation(streamRegionId);
       hideEmptyAnnotationsBubble();
@@ -2176,11 +2261,14 @@ onMessage((message: ExtensionMessage) => {
       const responseFbStore = responseMode === "overview" ? overviewFeedback : depthFeedback;
       const responseGenerated = responseMode === "overview" ? overviewGenerated : depthGenerated;
 
-      // Stale response guard — check both plain and mode-prefixed pending keys
+      // Stale response guard — check both plain and mode-prefixed pending keys.
+      // Also accept if the region hash is known (regionByHash) — this handles the case
+      // where pendingRegions was cleared by a mode switch while a request was in-flight.
       const modePendingKey = `${responseMode}:${regionId}`;
       const isPlainPending = pendingRegions.has(regionId);
       const isModePending = pendingRegions.has(modePendingKey);
-      if (!isPlainPending && !isModePending && !responseGenerated.has(regionId)) {
+      const isKnownRegion = regionByHash.has(regionId);
+      if (!isPlainPending && !isModePending && !responseGenerated.has(regionId) && !isKnownRegion) {
         console.log(
           `[Oddity 1] Ignoring stale ${responseMode} response for ${regionId.slice(0, 12)}…`,
         );
@@ -2218,6 +2306,7 @@ onMessage((message: ExtensionMessage) => {
           clearOverlay();
           clearAllAnchors();
           clearMarginNotes();
+          clearGdocsAnchors();
           for (const [rid, anns] of effectiveAnnotations()) {
             renderAnnotations(rid, anns);
           }
@@ -2250,6 +2339,7 @@ onMessage((message: ExtensionMessage) => {
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
+        clearGdocsAnchors();
         for (const [rid, anns] of effectiveAnnotations()) {
           renderAnnotations(rid, anns);
         }
@@ -2301,6 +2391,7 @@ onMessage((message: ExtensionMessage) => {
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
+        clearGdocsAnchors();
 
         // Preserve user-written annotations and their feedback before clearing
         const savedUserWritten = new Map<string, Annotation[]>();

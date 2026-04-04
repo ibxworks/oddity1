@@ -2389,6 +2389,10 @@ function applyPositions(): void {
  * live viewport rects.  This keeps scroll tracking at 60 fps even on
  * pages with many annotations.
  */
+export function refreshMarginNotePositions(): void {
+  applyScrollPositions();
+}
+
 function applyScrollPositions(): void {
   const scrollY = window.scrollY;
 

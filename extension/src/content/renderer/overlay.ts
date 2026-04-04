@@ -1,4 +1,6 @@
 import type { Annotation, AnnotationType } from '@oddity/shared';
+import { getVisual } from './styles.js';
+import { getThemeMode } from './theme-detector.js';
 
 const OVERLAY_ID = 'oddity-overlay';
 const Z_INDEX = 2147483646;
@@ -93,6 +95,34 @@ export function initOverlay(): HTMLDivElement {
   return overlayEl;
 }
 
+type OverlayEventCallbacks = {
+  onHoverStart: (annotationId: string) => void;
+  onHoverEnd: (annotationId: string) => void;
+  onClick: (annotationId: string) => void;
+};
+let overlayCallbacks: OverlayEventCallbacks | null = null;
+
+/**
+ * Register hover/click callbacks for canvas-mode overlay divs.
+ * Called once after initOverlay() to enable interactivity on overlay rects.
+ */
+export function setOverlayEventCallbacks(cbs: OverlayEventCallbacks): void {
+  overlayCallbacks = cbs;
+  // Event delegation on the wrapper using mouseover/mouseout (these bubble, mouseenter/leave don't)
+  wrapperEl?.addEventListener('mouseover', (e) => {
+    const id = (e.target as HTMLElement)?.dataset?.annotationId;
+    if (id) overlayCallbacks?.onHoverStart(id);
+  });
+  wrapperEl?.addEventListener('mouseout', (e) => {
+    const id = (e.target as HTMLElement)?.dataset?.annotationId;
+    if (id) overlayCallbacks?.onHoverEnd(id);
+  });
+  wrapperEl?.addEventListener('click', (e) => {
+    const id = (e.target as HTMLElement)?.dataset?.annotationId;
+    if (id) { e.stopPropagation(); overlayCallbacks?.onClick(id); }
+  });
+}
+
 /**
  * Render highlight/underline rectangles for an annotation's resolved range.
  * Rects are cached at absolute (page-level) coordinates and the wrapper's
@@ -148,6 +178,16 @@ export function setOverlayVisible(visible: boolean): void {
   if (overlayEl) {
     overlayEl.style.display = visible ? '' : 'none';
   }
+}
+
+/**
+ * Register a custom scroll container (e.g. Google Docs' internal scroller).
+ * Call once after init so the wrapper transform tracks the container's scroll.
+ */
+export function setScrollContainer(el: Element): void {
+  scrollContainer = el;
+  baseContainerScrollLeft = el.scrollLeft;
+  baseContainerScrollTop = el.scrollTop;
 }
 
 /**
@@ -262,15 +302,24 @@ function drawCachedAnnotationInto(parent: Node, annotation: Annotation): void {
 
     // Rects are stored at absolute page coordinates; the wrapper's transform
     // shifts them into the viewport.
+    const visual = getVisual(annotation.type, getThemeMode(), annotation.label);
+    const bgCss = visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : '';
+    const borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';
+    // Canvas-mode rects need pointer-events to be interactive (no underlying span)
+    const pointerEvents = bgCss || borderCss ? 'auto' : 'none';
     el.style.cssText = `
       position: absolute;
       left: ${rect.left}px;
       top: ${rect.top}px;
       width: ${rect.width}px;
       height: ${rect.height}px;
-      pointer-events: none;
+      pointer-events: ${pointerEvents};
+      cursor: pointer;
       transition: filter 0.15s;
       z-index: 1;
+      box-sizing: border-box;
+      ${bgCss}
+      ${borderCss}
       ${isEmphasized ? 'filter: brightness(1.4);' : ''}
     `;
 

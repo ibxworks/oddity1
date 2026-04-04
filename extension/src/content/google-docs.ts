@@ -4,6 +4,7 @@ import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 import type { DetectedRegion } from './detector.js';
 import type { ExtractedContent } from './extractor.js';
 import type { AbsoluteRect } from './renderer/overlay.js';
+import { sendMessage } from '../shared/messaging.js';
 
 // ─── Detection ───
 
@@ -28,13 +29,12 @@ export function getGoogleDocsId(): string | null {
 export async function fetchGoogleDocsText(docId: string): Promise<string | null> {
   try {
     const url = `https://docs.google.com/document/d/${docId}/export?format=txt`;
-    const response = await fetch(url, { credentials: 'include' });
-    if (!response.ok) {
-      console.warn(`[Oddity 1] GDocs: export fetch failed with status ${response.status}`);
+    const result = await sendMessage<{ text?: string; error?: string }>({ action: 'fetchUrl', payload: { url } });
+    if (!result || result.error) {
+      console.warn(`[Oddity 1] GDocs: export fetch failed: ${result?.error}`);
       return null;
     }
-    const text = await response.text();
-    return text.trim();
+    return result.text?.trim() ?? null;
   } catch (err) {
     console.warn('[Oddity 1] GDocs: export fetch error', err);
     return null;
@@ -47,8 +47,9 @@ export async function fetchGoogleDocsText(docId: string): Promise<string | null>
  * We want the container that holds paragraph text, not the canvas overlay.
  */
 const GDOCS_REGION_SELECTORS = [
-  '.kix-appview-editor',     // Confirmed working 2024 — main editor viewport
-  '.kix-page',               // Per-page container (may not exist in canvas mode)
+  '.kix-paginateddocumentplugin', // Canvas mode: paginated document container
+  '.kix-appview-editor',          // Legacy DOM mode: main editor viewport
+  '.kix-page',                    // Per-page container
   '.docs-texteventtarget-iframe', // Inner iframe fallback
 ];
 
@@ -80,18 +81,23 @@ export function detectGoogleDocsRegions(): DetectedRegion[] {
     const els = document.querySelectorAll(selector);
     if (els.length === 0) continue;
 
-    // Verify the element has actual text content (not just structure)
+    // Accept elements that have canvas tiles (canvas mode) OR paragraph text (DOM mode).
     const withContent = Array.from(els).filter(el => {
+      if (el.querySelectorAll('canvas').length > 0) return true;
+      if (el.querySelectorAll('.kix-paragraphrenderer, [class*="paragraphrenderer"]').length > 0) return true;
       const text = el.textContent?.trim() ?? '';
       return text.length > 20;
     });
 
     if (withContent.length > 0) {
+      // Prefer the element with the most canvas tiles (actual document, not sidebar)
+      const best = withContent.reduce((a, b) =>
+        b.querySelectorAll('canvas').length > a.querySelectorAll('canvas').length ? b : a
+      );
       console.log(`[Oddity 1] GDocs: found editor via selector "${selector}"`);
-      // Use the first matching element as the single document region
       return [{
         id: 'google-docs-document',
-        element: withContent[0]!,
+        element: best,
         source: 'adapter' as const,
       }];
     }
@@ -150,6 +156,7 @@ export async function extractGoogleDocsText(region: DetectedRegion): Promise<Ext
       const wordCount = text.split(/\s+/).filter(Boolean).length;
       if (wordCount > 0) {
         console.log(`[Oddity 1] GDocs: exported ${wordCount} words via export URL`);
+        _cachedDocText = text; // Cache for canvas-mode positioning
         return { regionId: region.id, text, wordCount, element: region.element };
       }
     }
@@ -178,6 +185,109 @@ export async function extractGoogleDocsText(region: DetectedRegion): Promise<Ext
   return { regionId: region.id, text, wordCount, element: region.element };
 }
 
+// ─── Canvas Mode Positioning ───
+
+/** Cached full document text from the export URL, used for canvas-mode positioning. */
+let _cachedDocText: string | null = null;
+
+/**
+ * GDocs canvas mode: text is painted on <canvas> tiles, no DOM text nodes.
+ * Uses the cached export text + pretext line layout to estimate screen positions.
+ *
+ * Strategy:
+ *  1. Find char offset of anchor in the full doc text
+ *  2. Split text into paragraphs; layout each with pretext to count lines
+ *  3. Sum lines before the target paragraph to get its Y offset
+ *  4. Find target line within paragraph; compute rect from canvas top + margins
+ */
+function findAnnotationRectsCanvasMode(
+  canvasEl: HTMLElement,
+  scrollContainer: HTMLElement,
+  annotation: Annotation,
+): { rects: AbsoluteRect[]; anchorNode: Element | null } {
+  if (!_cachedDocText) return { rects: [], anchorNode: null };
+
+  const fullText = _cachedDocText;
+  const exact = annotation.anchor.exact;
+
+  // Find where the annotation text lives in the full document
+  const charOffset = fullText.toLowerCase().indexOf(exact.toLowerCase());
+  if (charOffset === -1) return { rects: [], anchorNode: null };
+
+  const cr = canvasEl.getBoundingClientRect();
+  // GDocs scrolls its container, not window — use container scroll for absolute coords
+  const sx = scrollContainer.scrollLeft;
+  const sy = scrollContainer.scrollTop;
+
+  // Standard GDocs US Letter page: 816px wide, 1056px tall at 96dpi (100% zoom)
+  // Margins: 1 inch = 96px. Text area: 624px wide, 864px tall.
+  const leftMarginPx = Math.round(cr.width * (96 / 816));
+  const topMarginPx = Math.round(cr.height * (96 / 1056));
+  const textWidthPx = cr.width - 2 * leftMarginPx;
+
+  // GDocs default: 11pt Arial, 1.15 line spacing. 11pt ≈ 14.67px at 96dpi.
+  const fontSize = Math.round(cr.width * (14.67 / 816));
+  const lineHeight = Math.round(fontSize * 1.15);
+  const font = `${fontSize}px Arial`;
+
+  // Split by paragraphs — each \n in the export text is a paragraph break
+  const paragraphs = fullText.split('\n');
+  let cumChars = 0;
+  let cumLines = 0;
+  let targetLineInPara = 0;
+
+  for (const para of paragraphs) {
+    const paraLen = para.length + 1; // +1 for the \n
+    if (cumChars + paraLen > charOffset) {
+      // Annotation is in this paragraph
+      const offsetInPara = charOffset - cumChars;
+      try {
+        const prepared = prepareWithSegments(para || ' ', font);
+        const result = layoutWithLines(prepared, textWidthPx, lineHeight);
+        // Find which line the offset falls on
+        for (let i = 0; i < result.lines.length; i++) {
+          const line = result.lines[i]!;
+          const lineStartChar = para.indexOf(line.text.trimStart());
+          const lineEndChar = lineStartChar + line.text.length;
+          if (offsetInPara >= lineStartChar && offsetInPara < lineEndChar) {
+            targetLineInPara = i;
+            break;
+          }
+          if (i === result.lines.length - 1) targetLineInPara = i;
+        }
+      } catch {
+        // pretext failed — use character ratio as fallback
+        const charsPerLine = Math.max(1, Math.floor(textWidthPx / (fontSize * 0.55)));
+        targetLineInPara = Math.floor((charOffset - cumChars) / charsPerLine);
+      }
+      break;
+    }
+    cumChars += paraLen;
+    // Count lines this paragraph takes
+    try {
+      const prepared = prepareWithSegments(para || ' ', font);
+      const result = layoutWithLines(prepared, textWidthPx, lineHeight);
+      cumLines += result.lineCount;
+    } catch {
+      const charsPerLine = Math.max(1, Math.floor(textWidthPx / (fontSize * 0.55)));
+      cumLines += Math.max(1, Math.ceil(para.length / charsPerLine));
+    }
+    cumLines += 0.5; // approximate paragraph spacing
+  }
+
+  const totalLines = cumLines + targetLineInPara;
+  const top = cr.top + sy + topMarginPx + totalLines * lineHeight;
+  const left = cr.left + sx + leftMarginPx;
+
+  // Estimate width of the highlighted text (rough: chars × avg char width)
+  const approxWidth = Math.min(exact.length * fontSize * 0.55, textWidthPx);
+
+  return {
+    rects: [{ left, top, width: approxWidth, height: lineHeight }],
+    anchorNode: null,
+  };
+}
+
 // ─── Position Resolution ───
 
 interface WordNodeEntry {
@@ -196,13 +306,13 @@ function buildWordNodeIndex(region: Element): { entries: WordNodeEntry[]; fullTe
   let offset = 0;
 
   for (const node of nodes) {
-    const t = node.textContent ?? '';
+    const t = (node.textContent ?? '').trimEnd();
     if (t.length === 0) continue;
     entries.push({ node, start: offset, end: offset + t.length });
-    offset += t.length;
+    offset += t.length + 1; // +1 for the space between words
   }
 
-  const fullText = entries.map(e => e.node.textContent ?? '').join('');
+  const fullText = entries.map(e => e.node.textContent?.trimEnd() ?? '').join(' ');
   return { entries, fullText };
 }
 
@@ -357,21 +467,35 @@ function validateWithPretext(paragraphEl: Element, matchingNodes: WordNodeEntry[
  * For annotations where rects are zero (canvas rendering without text layer): falls back to
  * the containing paragraph's rect as a rough line-level position.
  */
+let _gdocsDiagLogged = false;
+
 export function findAnnotationRects(
   region: DetectedRegion,
   annotation: Annotation,
 ): { rects: AbsoluteRect[]; anchorNode: Element | null } {
   const { entries, fullText } = buildWordNodeIndex(region.element);
 
-  // If no word nodes exist, fall back to paragraph-level positioning
+  // One-time log: confirm rendering mode
+  if (!_gdocsDiagLogged) {
+    _gdocsDiagLogged = true;
+    const canvasCount = region.element.querySelectorAll('canvas').length;
+    const mode = canvasCount > 0 ? `canvas mode (${canvasCount} tiles)` : 'DOM mode';
+    console.log(`[Oddity 1] GDocs: positioning mode = ${mode}`);
+  }
+
+  // Canvas mode: no DOM text nodes — use text-offset + pretext layout for positioning
   if (entries.length === 0) {
+    const canvases = region.element.querySelectorAll('canvas');
+    if (canvases.length > 0) {
+      return findAnnotationRectsCanvasMode(canvases[0] as HTMLElement, region.element as HTMLElement, annotation);
+    }
     return findAnnotationRectsByParagraph(region, annotation);
   }
 
   const matchStart = findMatchOffset(fullText, annotation.anchor);
   if (matchStart === -1) {
-    console.debug(`[Oddity 1] GDocs: no match for "${annotation.anchor.exact.slice(0, 40)}…"`);
-    return { rects: [], anchorNode: null };
+    // Word node text didn't match (e.g. spaces stripped) — fall back to paragraph positioning
+    return findAnnotationRectsByParagraph(region, annotation);
   }
   const matchEnd = matchStart + annotation.anchor.exact.length;
 
@@ -382,7 +506,7 @@ export function findAnnotationRects(
   if (containingParagraph) {
     const valid = validateWithPretext(containingParagraph, matchingNodes);
     if (!valid) {
-      console.debug(`[Oddity 1] GDocs: pretext validation failed for annotation ${annotation.id}`);
+      console.log(`[Oddity 1] GDocs: pretext validation failed for annotation ${annotation.id}`);
       return { rects: [], anchorNode: null };
     }
   }
@@ -423,11 +547,11 @@ function findAnnotationRectsByParagraph(
   if (paragraphs.length === 0) return { rects: [], anchorNode: null };
 
   const exact = annotation.anchor.exact.slice(0, 60);
+  const searchStr = exact.toLowerCase().slice(0, 30);
 
-  // Find the paragraph that contains the annotation text
   for (const para of paragraphs) {
     const text = (para.textContent ?? '').replace(/\s+/g, ' ');
-    if (!text.toLowerCase().includes(exact.toLowerCase().slice(0, 30))) continue;
+    if (!text.toLowerCase().includes(searchStr)) continue;
 
     const r = (para as HTMLElement).getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
