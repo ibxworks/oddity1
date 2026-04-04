@@ -139,6 +139,7 @@ Key runtime events:
 - `runtime.onMessage` with `action: "saveManualAnnotation"` → persist user annotation.
 - `storage.onChanged` → sync settings updates.
 - `alarms` API → periodic adapter registry refresh.
+- `tabs.onUpdated` (status `"complete"`) → detect PDF URLs (`.pdf`, `.pdf?`, `.pdf#`) and programmatically inject the content script via `chrome.scripting.executeScript`. Handles both `https://` PDFs and `file://` PDFs (the latter requires "Allow access to file URLs" enabled in `chrome://extensions`). Requires the `tabs` permission in the manifest to read `tab.url`.
 
 ### 6.2 Content Script
 
@@ -156,6 +157,8 @@ Responsibilities:
 - Apply annotation-type-adaptive visual styles.
 - **Detect and apply dark mode**: Automatically adjusts annotation colors based on page theme (light/dark). Margin notes also adapt to theme.
 - Track scroll and resize to reposition overlay rectangles and margin notes.
+- **Initialize tier at startup**: Immediately after `getAuthStatus` at content script init, calls `setDashUserTier(authStatus.user.tier)` so tier-gated features (Sketch Pad, Sally personality, etc.) are available without the user needing to open the dashboard first.
+- **Double-init guard**: Checks for an existing `<oddity-arguments-box>` element at the top of `init()` and returns early if found, preventing duplicate initialization when the background service worker injects the content script programmatically (e.g., for PDF tabs).
 
 #### Content Detection Pipeline
 
@@ -243,6 +246,8 @@ Responsibilities:
 - **Export button**: Download current page's annotations as PDF. PDF includes original content interleaved with both AI-generated and user-added annotations.
 - **Profile bar**: Bottom section showing clickable profile button (avatar initial + first name) and tier badge (FREE / PRO). Click profile → popover with full name, email, subscription tier, and sign-out button.
 - **Sign-up/Sign-in form**: When not authenticated, show email/password form (+ name field when signing up). Auto-switches to sign-in mode after successful sign-up confirmation email.
+- **Post-auth tier initialization**: After both Google OAuth and email sign-in callbacks complete, `loadDashboardData()` is called before the whitelist check. This ensures the user's tier is set on all sites immediately after auth — not just on whitelisted sites — so tier-gated features are immediately available.
+- **Onboarding dismiss robustness**: The dismiss function uses a `dismissed` guard to prevent `onComplete()` from being called twice. A 400ms `setTimeout` fallback ensures `onComplete()` always fires even if the CSS `transitionend` event never triggers (e.g., if the overlay wasn't yet visible when dismissed).
 - **Link to settings**: "Settings & Options" footer link opens the options page.
 
 **Visual design**: Refined, professional Supabase-style aesthetic — light background (`#f8f9fa`), subtle borders, pill-shaped buttons, purple accent color (`#7c3aed`), tighter spacing, smaller typography. Gradient theme on "Oddity 1" title and Export PDF button (purple-to-amber: `linear-gradient(135deg, #c4b5fd, #7c3aed, #f59e0b)`).

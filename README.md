@@ -128,6 +128,19 @@ The built extension lands in `extension/dist/`.
 
 After changes, click the refresh icon on the extension card (or it auto-reloads in `dev` mode with CRXJS).
 
+**Required permissions** (`manifest.config.ts`):
+
+| Permission      | Why it's needed                                                              |
+| --------------- | ---------------------------------------------------------------------------- |
+| `activeTab`     | Read the current tab's URL and inject scripts on demand                      |
+| `storage`       | Persist preferences, auth tokens, and cached data                            |
+| `contextMenus`  | "Add Oddity Annotation" right-click menu entry                               |
+| `scripting`     | Programmatically inject content scripts (used for PDF tab detection)         |
+| `alarms`        | Periodic site adapter registry refresh                                        |
+| `identity`      | Chrome identity API for Google OAuth flow                                    |
+| `tabs`          | Read `tab.url` in `tabs.onUpdated` to detect PDF tabs for programmatic injection |
+| `host_permissions: <all_urls>` | Inject content script on any page the user visits              |
+
 ---
 
 ### 7. Auth setup
@@ -192,6 +205,8 @@ After deployment, update `BACKEND_URL` in `packages/shared/src/constants.ts` to 
 
 - **Smart text extraction** via Readability, site-specific adapters, or custom heuristics
 - **Streaming support** for real-time chatbot pages (ChatGPT, Claude) with stability detection
+- **Programmatic PDF injection**: Service worker detects PDF tabs via `tabs` permission and injects the content script programmatically, handling both `https://` and `file://` PDFs
+- **Tier initialized at startup**: `dashUserTier` is set immediately from `getAuthStatus` when the content script loads, so tier-gated features (Sketch Pad, Sally personality, etc.) work without requiring the user to open the dashboard first
 - **In-place overlays**: highlights, underlines, and margin-note annotations with type-specific visuals
 - **Dark mode support**: Automatically detects system theme; annotations adapt colors for readability
 - **Margin notes system**: All annotations (AI + user) appear in right-side margin as expandable cards
@@ -266,6 +281,16 @@ Make sure you're running from the repo root (`oddity1/`), not inside a workspace
 - If you see a red "!" badge on the extension icon, you're not signed in — click it to sign in.
 - If you see `Requesting annotations for region...` but nothing comes back, check the backend logs for errors.
 - Long articles are requested immediately. If generation is slow, a top-right "generating annotations" toast appears until the first result arrives.
+
+**Annotations don't appear on local PDF files (`file://`)**
+
+The content script cannot auto-inject into `file://` URLs unless you explicitly allow it:
+
+1. Go to `chrome://extensions`
+2. Click **Details** on the Oddity1 card
+3. Enable **Allow access to file URLs**
+
+Without this, `file://` PDFs will silently skip injection. `https://` PDFs (served over the web) work without any extra step.
 
 **Supabase auth not working**
 

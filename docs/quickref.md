@@ -230,6 +230,23 @@ If none of the three tiers finds a reading region, no annotations are requested.
 
 ---
 
+## PDF support
+
+The content script is injected into PDF tabs in two ways:
+
+1. **Automatic via `<all_urls>` match** — works for most `https://` PDFs.
+2. **Programmatic injection via `tabs.onUpdated`** — the service worker watches for URLs ending in `.pdf` (or containing `.pdf?` / `.pdf#`) and calls `chrome.scripting.executeScript` directly. This handles edge cases where the automatic match fires but Chrome's built-in PDF viewer prevents normal injection.
+
+**`file://` PDFs require an extra step:**
+
+1. Go to `chrome://extensions`
+2. Click **Details** on the Oddity1 card
+3. Enable **Allow access to file URLs**
+
+Without this, `file://` PDFs are silently skipped. `https://` PDFs work without any extra configuration.
+
+---
+
 ## Badge & UI states
 
 **Extension icon badge:**
