@@ -1,6 +1,6 @@
 import type { Annotation, TextQuoteSelector } from '@oddity/shared';
 import { MAX_TEXT_LENGTH } from '@oddity/shared';
-import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
+import { prepareWithSegments, layout, layoutWithLines } from '@chenglou/pretext';
 import type { DetectedRegion } from './detector.js';
 import type { ExtractedContent } from './extractor.js';
 import type { AbsoluteRect } from './renderer/overlay.js';
@@ -82,7 +82,10 @@ export function detectGoogleDocsRegions(): DetectedRegion[] {
     if (els.length === 0) continue;
 
     // Accept elements that have canvas tiles (canvas mode) OR paragraph text (DOM mode).
+    // Also require the element to be visible — hidden tab panels have zero dimensions.
     const withContent = Array.from(els).filter(el => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return false; // Hidden/inactive tab
       if (el.querySelectorAll('canvas').length > 0) return true;
       if (el.querySelectorAll('.kix-paragraphrenderer, [class*="paragraphrenderer"]').length > 0) return true;
       const text = el.textContent?.trim() ?? '';
@@ -201,7 +204,7 @@ let _cachedDocText: string | null = null;
  *  4. Find target line within paragraph; compute rect from canvas top + margins
  */
 function findAnnotationRectsCanvasMode(
-  canvasEl: HTMLElement,
+  _ignored: HTMLElement, // kept for call-site compat; we resolve canvases from scrollContainer
   scrollContainer: HTMLElement,
   annotation: Annotation,
 ): { rects: AbsoluteRect[]; anchorNode: Element | null } {
@@ -210,27 +213,68 @@ function findAnnotationRectsCanvasMode(
   const fullText = _cachedDocText;
   const exact = annotation.anchor.exact;
 
-  // Find where the annotation text lives in the full document
   const charOffset = fullText.toLowerCase().indexOf(exact.toLowerCase());
   if (charOffset === -1) return { rects: [], anchorNode: null };
 
-  const cr = canvasEl.getBoundingClientRect();
-  // GDocs scrolls its container, not window — use container scroll for absolute coords
-  const sx = scrollContainer.scrollLeft;
   const sy = scrollContainer.scrollTop;
+  const sx = scrollContainer.scrollLeft;
 
-  // Standard GDocs US Letter page: 816px wide, 1056px tall at 96dpi (100% zoom)
-  // Margins: 1 inch = 96px. Text area: 624px wide, 864px tall.
-  const leftMarginPx = Math.round(cr.width * (96 / 816));
-  const topMarginPx = Math.round(cr.height * (96 / 1056));
-  const textWidthPx = cr.width - 2 * leftMarginPx;
+  // Build a deduplicated list of page-level elements: one entry per visual page.
+  // GDocs stacks multiple canvas layers per page (content + selection + cursor),
+  // so we must deduplicate — otherwise pageIndex math will be wrong.
+  //
+  // Prefer .kix-page wrapper divs (always one per page). Fall back to canvases
+  // deduplicated by offsetTop proximity (layers on the same page share the same top).
+  let pageEls: HTMLElement[];
+  const kixPages = Array.from(scrollContainer.querySelectorAll<HTMLElement>('.kix-page'))
+    .filter(el => {
+      const r = el.getBoundingClientRect();
+      return r.width > 400 && r.height > 600;
+    });
 
-  // GDocs default: 11pt Arial, 1.15 line spacing. 11pt ≈ 14.67px at 96dpi.
-  const fontSize = Math.round(cr.width * (14.67 / 816));
-  const lineHeight = Math.round(fontSize * 1.15);
-  const font = `${fontSize}px Arial`;
+  if (kixPages.length > 0) {
+    pageEls = kixPages.sort((a, b) => a.offsetTop - b.offsetTop);
+  } else {
+    // No .kix-page elements — deduplicate canvas tiles by offsetTop.
+    const sorted = Array.from(scrollContainer.querySelectorAll<HTMLElement>('canvas'))
+      .filter(c => {
+        const r = c.getBoundingClientRect();
+        return r.width > 400 && r.height > 600;
+      })
+      .sort((a, b) => a.offsetTop - b.offsetTop);
 
-  // Split by paragraphs — each \n in the export text is a paragraph break
+    // Keep only the first canvas of each page (others are stacked layers at same offsetTop).
+    pageEls = [];
+    let lastTop = -Infinity;
+    for (const c of sorted) {
+      if (c.offsetTop - lastTop > 200) { // gap > 200px means a new page
+        pageEls.push(c);
+        lastTop = c.offsetTop;
+      }
+    }
+  }
+
+  if (pageEls.length === 0) return { rects: [], anchorNode: null };
+
+  // Use the first page element to derive page dimensions (all pages share same size).
+  const cr0 = pageEls[0]!.getBoundingClientRect();
+  const pageW = cr0.width;
+  const pageH = cr0.height;
+
+  // Standard GDocs US Letter: 816×1056 at 96dpi. Margins: 1 inch = 96px.
+  // Use floating-point arithmetic throughout — rounding per-line accumulates
+  // to 10-25px error over 50 lines, which is visually very noticeable.
+  const leftMarginPx = pageW * (96 / 816);
+  const topMarginPx = pageH * (96 / 1056);
+  const textWidthPx = pageW - 2 * leftMarginPx;
+
+  // GDocs default: 11pt Arial, 1.15 line spacing. 11pt = 14.667px at 96dpi.
+  const fontSize = pageW * (14.667 / 816);
+  const lineHeight = fontSize * 1.15;
+  const font = `${Math.round(fontSize)}px Arial`;
+  const linesPerPage = (pageH - 2 * topMarginPx) / lineHeight;
+
+  // Walk paragraphs, accumulating line count until we reach the annotation.
   const paragraphs = fullText.split('\n');
   let cumChars = 0;
   let cumLines = 0;
@@ -239,47 +283,53 @@ function findAnnotationRectsCanvasMode(
   for (const para of paragraphs) {
     const paraLen = para.length + 1; // +1 for the \n
     if (cumChars + paraLen > charOffset) {
-      // Annotation is in this paragraph
+      // Annotation is in this paragraph — find which line within it.
       const offsetInPara = charOffset - cumChars;
       try {
         const prepared = prepareWithSegments(para || ' ', font);
         const result = layoutWithLines(prepared, textWidthPx, lineHeight);
-        // Find which line the offset falls on
+        let charsSeen = 0;
         for (let i = 0; i < result.lines.length; i++) {
-          const line = result.lines[i]!;
-          const lineStartChar = para.indexOf(line.text.trimStart());
-          const lineEndChar = lineStartChar + line.text.length;
-          if (offsetInPara >= lineStartChar && offsetInPara < lineEndChar) {
+          const lineLen = result.lines[i]!.text.length;
+          if (offsetInPara <= charsSeen + lineLen) {
             targetLineInPara = i;
             break;
           }
+          charsSeen += lineLen;
           if (i === result.lines.length - 1) targetLineInPara = i;
         }
       } catch {
-        // pretext failed — use character ratio as fallback
         const charsPerLine = Math.max(1, Math.floor(textWidthPx / (fontSize * 0.55)));
-        targetLineInPara = Math.floor((charOffset - cumChars) / charsPerLine);
+        targetLineInPara = Math.floor(offsetInPara / charsPerLine);
       }
       break;
     }
     cumChars += paraLen;
-    // Count lines this paragraph takes
     try {
+      // Use layout() (not layoutWithLines) — we only need lineCount, not line text.
       const prepared = prepareWithSegments(para || ' ', font);
-      const result = layoutWithLines(prepared, textWidthPx, lineHeight);
-      cumLines += result.lineCount;
+      cumLines += layout(prepared, textWidthPx, lineHeight).lineCount;
     } catch {
-      const charsPerLine = Math.max(1, Math.floor(textWidthPx / (fontSize * 0.55)));
+      const charsPerLine = Math.max(1, textWidthPx / (fontSize * 0.55));
       cumLines += Math.max(1, Math.ceil(para.length / charsPerLine));
     }
-    cumLines += 0.5; // approximate paragraph spacing
   }
 
   const totalLines = cumLines + targetLineInPara;
-  const top = cr.top + sy + topMarginPx + totalLines * lineHeight;
-  const left = cr.left + sx + leftMarginPx;
 
-  // Estimate width of the highlighted text (rough: chars × avg char width)
+  // Map total line count to (page index, line within page) so we can use the
+  // correct per-page canvas as the vertical anchor. This accounts for inter-page
+  // gaps that would otherwise accumulate error for page 2+ annotations.
+  const pageIndex = Math.min(
+    Math.floor(totalLines / linesPerPage),
+    pageEls.length - 1,
+  );
+  const lineInPage = totalLines - pageIndex * linesPerPage;
+
+  const pageCr = pageEls[pageIndex]!.getBoundingClientRect();
+  const top = pageCr.top + sy + topMarginPx + lineInPage * lineHeight;
+  const left = pageCr.left + sx + leftMarginPx;
+
   const approxWidth = Math.min(exact.length * fontSize * 0.55, textWidthPx);
 
   return {

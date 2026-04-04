@@ -3,7 +3,8 @@ import { getVisual } from './styles.js';
 import { getThemeMode } from './theme-detector.js';
 
 const OVERLAY_ID = 'oddity-overlay';
-const Z_INDEX = 2147483646;
+// Overlay highlights sit below annotation cards (2147483645) and page-dim (2147483644)
+const Z_INDEX = 2147483643;
 
 let overlayEl: HTMLDivElement | null = null;
 /** Inner wrapper whose transform is updated on scroll instead of recreating DOM. */
