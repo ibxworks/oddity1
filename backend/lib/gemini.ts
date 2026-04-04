@@ -95,6 +95,7 @@ const depthPrompts: Record<string, string> = promptsConfig.depth_prompts ?? {};
 const overviewPersonalities: Record<string, string> =
   (promptsConfig as Record<string, unknown>).overview_personalities as Record<string, string> ?? {};
 const sketchPrompt: string = promptsConfig.sketch_prompt ?? "";
+const promptPrompt: string = (promptsConfig as Record<string, unknown>).prompt_prompt as string ?? "";
 
 export class GeminiOperationError extends Error {
   readonly kind: GeminiFailureKind;
@@ -577,12 +578,16 @@ async function consumeSketchStreamAttempt(
   inputText: string,
   purpose: string,
   userReactions: string,
+  mode: "sketch" | "prompt",
   options: SketchStreamOptions,
 ): Promise<string> {
-  const userMessage = `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${userReactions}`;
+  const systemPrompt = mode === "prompt" ? promptPrompt : sketchPrompt;
+  const userMessage = mode === "prompt"
+    ? `Source Text:\n${inputText}\n\nPrompt Purpose:\n${purpose}\n\nUser's Notes and Reactions:\n${userReactions}`
+    : `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${userReactions}`;
   const model = entry.client.getGenerativeModel({
     model: modelName,
-    systemInstruction: sketchPrompt,
+    systemInstruction: systemPrompt,
     generationConfig: {
       responseMimeType: "text/plain" as const,
       maxOutputTokens: 2048,
@@ -766,6 +771,7 @@ export async function generateSketchStream(
   inputText: string,
   purpose: string,
   userReactions: string,
+  mode: "sketch" | "prompt" = "sketch",
   options: SketchStreamOptions = {},
 ): Promise<string> {
   const attempts = buildClientAttemptPlan();
@@ -782,6 +788,7 @@ export async function generateSketchStream(
         inputText,
         purpose,
         userReactions,
+        mode,
         {
           ...options,
           onChunk: (chunk) => {

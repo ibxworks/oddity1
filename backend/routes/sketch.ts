@@ -10,6 +10,7 @@ const SketchRequestSchema = z.object({
   input_text: z.string().min(1).max(MAX_TEXT_LENGTH),
   purpose: z.string().min(1),
   user_reactions: z.string().min(1),
+  mode: z.enum(["sketch", "prompt"]).default("sketch"),
 });
 
 const router = Router();
@@ -31,7 +32,7 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  const { input_text, purpose, user_reactions } = parsed.data;
+  const { input_text, purpose, user_reactions, mode } = parsed.data;
 
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -43,7 +44,7 @@ router.post("/", async (req, res) => {
   const { signal, cleanup } = createRequestAbortSignal(req, res);
 
   try {
-    await generateSketchStream(input_text, purpose, user_reactions, {
+    await generateSketchStream(input_text, purpose, user_reactions, mode, {
       signal,
       logContext: {
         route: "sketch",

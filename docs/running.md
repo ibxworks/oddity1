@@ -173,6 +173,16 @@ Make sure you're running from the repo root (`oddity1/`), not inside a workspace
 - If you see `[Oddity] No reading regions detected`, the site isn't supported yet — add an adapter.
 - If you see `Requesting annotations for region...` but nothing comes back, check the backend logs for errors.
 
+**Annotations don't appear on local PDF files (`file://`)**
+
+The content script cannot auto-inject into `file://` URLs unless you explicitly allow it:
+
+1. Go to `chrome://extensions`
+2. Click **Details** on the Oddity1 card
+3. Enable **Allow access to file URLs**
+
+Without this, `file://` PDFs will silently skip injection. `https://` PDFs (served over the web) work without any extra step.
+
 **Supabase auth not working**
 
 - Confirm Google OAuth is enabled in Supabase Dashboard.
