@@ -192,6 +192,271 @@ export async function extractGoogleDocsText(region: DetectedRegion): Promise<Ext
 
 /** Cached full document text from the export URL, used for canvas-mode positioning. */
 let _cachedDocText: string | null = null;
+let _debugUnderlineEnabled = false;
+
+export function setGDocsDebugUnderline(enabled: boolean): void {
+  _debugUnderlineEnabled = enabled;
+}
+
+// ─── Cursor-based Position Correction ───
+
+interface CorrectionJob {
+  id: string;
+  exact: string;
+  scrollContainer: HTMLElement;
+  left: number;
+  width: number;
+  height: number;
+}
+let _correctionQueue: CorrectionJob[] = [];
+let _correctionRunning = false;
+
+function enqueueCursorCorrection(job: CorrectionJob): void {
+  if (_correctionQueue.some(j => j.id === job.id)) return;
+  _correctionQueue.push(job);
+  if (!_correctionRunning) drainCorrectionQueue();
+}
+
+function drainCorrectionQueue(): void {
+  const job = _correctionQueue.shift();
+  if (!job) { _correctionRunning = false; return; }
+  _correctionRunning = true;
+  runCursorCorrection(job).finally(drainCorrectionQueue);
+}
+
+/** Snapshot ImageData for all currently-visible canvas tiles. */
+function snapshotVisibleCanvases(): Map<HTMLCanvasElement, ImageData> {
+  const snap = new Map<HTMLCanvasElement, ImageData>();
+  for (const canvas of document.querySelectorAll<HTMLCanvasElement>('canvas')) {
+    const r = canvas.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0 || r.top >= window.innerHeight || r.bottom <= 0) continue;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    try { snap.set(canvas, ctx.getImageData(0, 0, canvas.width, canvas.height)); }
+    catch { /* tainted */ }
+  }
+  return snap;
+}
+
+/**
+ * Scan visible canvas tiles for pixels that newly match a colour predicate
+ * compared to a before-snapshot. Only pixels that changed TO the colour are counted,
+ * so pre-existing highlights of the same colour are ignored.
+ */
+function scanCanvasForColour(
+  predicate: (r: number, g: number, b: number, a: number) => boolean,
+  before?: Map<HTMLCanvasElement, ImageData>,
+): { left: number; top: number; width: number; height: number } | null {
+  let canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>('canvas'));
+
+  // Only look at tiles in the current viewport
+  canvases = canvases.filter((c) => {
+    const r = c.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.top < window.innerHeight && r.bottom > 0;
+  });
+
+  for (const canvas of canvases) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    const { width, height } = canvas;
+    if (!width || !height) continue;
+
+    let pixels: ImageData;
+    try { pixels = ctx.getImageData(0, 0, width, height); }
+    catch { continue; }
+
+    const beforeData = before?.get(canvas)?.data;
+    const { data } = pixels;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!, a = data[i + 3]!;
+      if (a < 40) continue;
+      if (!predicate(r, g, b, a)) continue;
+      // If a before-snapshot exists, skip pixels that were already matching
+      if (beforeData) {
+        const br = beforeData[i]!, bg = beforeData[i + 1]!, bb = beforeData[i + 2]!, ba = beforeData[i + 3]!;
+        if (predicate(br, bg, bb, ba)) continue;
+      }
+      const px = (i >>> 2) % width;
+      const py = (i >>> 2) / width | 0;
+      if (px < x0) x0 = px;
+      if (px > x1) x1 = px;
+      if (py < y0) y0 = py;
+      if (py > y1) y1 = py;
+    }
+
+    if (x0 === Infinity) continue;
+
+    const bcr = canvas.getBoundingClientRect();
+    const sx = bcr.width / width;
+    const sy = bcr.height / height;
+    return {
+      left:   bcr.left + x0 * sx,
+      top:    bcr.top  + y0 * sy,
+      width:  (x1 - x0 + 1) * sx,
+      height: (y1 - y0 + 1) * sy,
+    };
+  }
+
+  return null;
+}
+
+// GDocs blue selection colour: ~rgba(25,103,210,0.2) blended over white ≈ rgb(200,220,243)
+// In canvas mode GDocs renders a clearly blue tinted band. Predicate: blue dominant, not too dark.
+const isSelectionBlue = (r: number, g: number, b: number, a: number) =>
+  b > r + 10 && b > g && b > 100 && a > 30 && r < 240;
+
+function runCursorCorrection({ id, exact, scrollContainer, left, width, height }: CorrectionJob): Promise<void> {
+  return new Promise((resolve) => {
+    const iframe = document.querySelector<HTMLIFrameElement>('.docs-texteventtarget-iframe');
+    const iframeDoc = iframe?.contentDocument;
+    if (!iframeDoc) { resolve(); return; }
+
+    const editorKey = (key: string, code: string, extra?: KeyboardEventInit) => {
+      const evt = new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...extra });
+      iframeDoc.dispatchEvent(evt);
+      iframeDoc.body?.dispatchEvent(evt);
+    };
+
+    const mouseClick = (el: HTMLElement) => {
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+      el.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+    };
+
+    // Snapshot canvas state before Cmd+F so we can diff out pre-existing highlights
+    const beforeSnapshot = snapshotVisibleCanvases();
+
+    // Step 1: Cmd+F
+    editorKey('f', 'KeyF', { metaKey: true });
+
+    setTimeout(() => {
+      // Step 2: find input
+      const findInput = (
+        document.activeElement instanceof HTMLInputElement
+          ? document.activeElement
+          : document.querySelector<HTMLInputElement>('[class*="findinput"] input, .docs-find-bar input')
+      );
+      if (!findInput) { resolve(); return; }
+
+      // Step 3: type anchor text
+      findInput.focus();
+      findInput.select?.();
+      const inserted = document.execCommand('insertText', false, exact);
+      if (!inserted) {
+        findInput.value = '';
+        for (const char of exact) {
+          findInput.dispatchEvent(new KeyboardEvent('keydown',  { key: char, bubbles: true }));
+          findInput.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+          findInput.value += char;
+          findInput.dispatchEvent(new InputEvent('input', { data: char, bubbles: true }));
+          findInput.dispatchEvent(new KeyboardEvent('keyup',    { key: char, bubbles: true }));
+        }
+      }
+
+      setTimeout(() => {
+        // Step 4: close find bar → GDocs leaves found text selected (gray/inactive)
+        const closeIcon = document.querySelector<HTMLElement>('.docs-icon-close');
+        const closeBtn = closeIcon?.closest<HTMLElement>('[class~="goog-flat-button"]') ?? closeIcon?.parentElement?.parentElement?.parentElement;
+        console.log(`[Oddity1] step 4: closeBtn=${closeBtn?.className?.slice(0, 50)}`);
+        if (closeBtn) {
+          mouseClick(closeBtn);
+          if (closeIcon && closeIcon !== closeBtn) mouseClick(closeIcon);
+        }
+
+        setTimeout(() => {
+          // Step 5: restore focus to editor → selection turns BLUE (active)
+          iframe.contentWindow?.focus();
+          iframeDoc.body?.focus();
+
+          setTimeout(() => {
+            // Step 6: scan all visible canvas tiles for blue selection pixels.
+            // GDocs draws the active selection directly on kix-canvas-tile-content.
+            const rect = scanCanvasForColour(isSelectionBlue, beforeSnapshot);
+            console.log(`[Oddity1] step 6: scan=${JSON.stringify(rect)}`);
+
+            if (rect && rect.height > 0) {
+              document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', {
+                detail: {
+                  id,
+                  rect: {
+                    top:    rect.top    + scrollContainer.scrollTop,
+                    left:   rect.left   + scrollContainer.scrollLeft,
+                    width:  rect.width  > 0 ? rect.width  : width,
+                    height: rect.height > 0 ? rect.height : height,
+                  },
+                },
+              }));
+            } else {
+              console.log(`[Oddity1] step 6: no blue selection found, skipping`);
+            }
+
+            setTimeout(resolve, 200);
+          }, 500); // wait for blue selection to render
+        }, 500); // wait for close to take effect
+      }, 1000); // wait for live search
+    }, 1000); // wait for find bar to open
+  });
+}
+
+/**
+ * Find the paragraph renderer that best matches a given exported-text paragraph.
+ * Searches a window around the expected index so index drift from blank lines,
+ * headings, or list items doesn't silently pick the wrong renderer.
+ *
+ * Scoring: prefix-overlap fraction (0–1) weighted against distance from expected index.
+ * Falls back to closest-by-index if no text content is available (canvas mode with
+ * hidden word nodes).
+ */
+function findMatchingParaRenderer(
+  renderers: HTMLElement[],
+  expectedIndex: number,
+  paraText: string,
+  searchWindow = 8,
+): HTMLElement | null {
+  if (renderers.length === 0) return null;
+
+  const normalize = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const target = normalize(paraText);
+
+  const start = Math.max(0, expectedIndex - searchWindow);
+  const end   = Math.min(renderers.length - 1, expectedIndex + searchWindow);
+
+  let bestEl    = renderers[Math.min(expectedIndex, renderers.length - 1)]!;
+  let bestScore = -Infinity;
+
+  for (let i = start; i <= end; i++) {
+    const el = renderers[i]!;
+    const rendText = normalize(el.textContent ?? '');
+    const distancePenalty = Math.abs(i - expectedIndex);
+
+    let textScore: number;
+    if (target === '' && rendText === '') {
+      // Both empty — good match, prefer closest to expected index.
+      textScore = 1;
+    } else if (target === '' || rendText === '') {
+      // One empty, one not — poor match.
+      textScore = 0;
+    } else {
+      // Fraction of the shorter string that overlaps as a prefix.
+      const shorter = target.length <= rendText.length ? target : rendText;
+      const longer  = target.length <= rendText.length ? rendText : target;
+      let overlap = 0;
+      while (overlap < shorter.length && shorter[overlap] === longer[overlap]) overlap++;
+      textScore = overlap / shorter.length;
+    }
+
+    // Weight: text match matters most; distance is a tiebreaker.
+    const score = textScore * 100 - distancePenalty;
+    if (score > bestScore) {
+      bestScore = score;
+      bestEl = el;
+    }
+  }
+
+  return bestEl;
+}
 
 /**
  * GDocs canvas mode: text is painted on <canvas> tiles, no DOM text nodes.
@@ -261,29 +526,68 @@ function findAnnotationRectsCanvasMode(
   const pageW = cr0.width;
   const pageH = cr0.height;
 
-  // Standard GDocs US Letter: 816×1056 at 96dpi. Margins: 1 inch = 96px.
   // Use floating-point arithmetic throughout — rounding per-line accumulates
   // to 10-25px error over 50 lines, which is visually very noticeable.
-  const leftMarginPx = pageW * (96 / 816);
-  const topMarginPx = pageH * (96 / 1056);
-  const textWidthPx = pageW - 2 * leftMarginPx;
 
-  // GDocs default: 11pt Arial, 1.15 line spacing. 11pt = 14.667px at 96dpi.
-  const fontSize = pageW * (14.667 / 816);
+  // Read margins and text width from the first paragraph renderer's position
+  // relative to the page — these reflect the user's actual document margins.
+  let leftMarginPx = pageW * (96 / 816);
+  let topMarginPx = pageH * (96 / 1056);
+  let textWidthPx = pageW - 2 * leftMarginPx;
+  const firstPara = pageEls[0]!.querySelector<HTMLElement>('.kix-paragraphrenderer, [class*="paragraphrenderer"]');
+  if (firstPara) {
+    const paraRect = firstPara.getBoundingClientRect();
+    const measuredLeft = paraRect.left - cr0.left;
+    const measuredTop = paraRect.top - cr0.top + scrollContainer.scrollTop;
+    if (measuredLeft > 0 && measuredLeft < pageW * 0.4) leftMarginPx = measuredLeft;
+    if (measuredTop > 0 && measuredTop < pageH * 0.4) topMarginPx = measuredTop;
+    if (paraRect.width > pageW * 0.3) textWidthPx = paraRect.width;
+  }
+
+  // Read font and size from a word node's computed style; fall back to GDocs default (11pt Arial).
+  let fontSize = pageW * (14.667 / 816);
+  let fontFamily = 'Arial';
+  const wordNode = scrollContainer.querySelector<HTMLElement>('.kix-wordhtmlgenerator-word-node, [class*="word-node"]');
+  if (wordNode) {
+    const style = window.getComputedStyle(wordNode);
+    const parsed = parseFloat(style.fontSize);
+    if (parsed > 0) fontSize = parsed;
+    const family = style.fontFamily?.split(',')[0]?.replace(/['"]/g, '').trim();
+    if (family) fontFamily = family;
+  }
+
   const lineHeight = fontSize * 1.15;
-  const font = `${Math.round(fontSize)}px Arial`;
+  const font = `${fontSize}px ${fontFamily}`;
   const linesPerPage = (pageH - 2 * topMarginPx) / lineHeight;
 
-  // Walk paragraphs, accumulating line count until we reach the annotation.
+  // Shared canvas context for measuring text widths (same font as layout engine).
+  const measureCtx = (() => {
+    const c = document.createElement('canvas').getContext('2d')!;
+    c.font = font;
+    return c;
+  })();
+
+  // Collect paragraph renderers sorted by their document position.
+  // Use getBoundingClientRect().top (viewport-relative) for sorting — offsetTop is
+  // relative to each element's offsetParent, which resets per page and makes
+  // cross-page comparisons wrong. getBoundingClientRect() is always viewport-relative.
+  const paraRenderers = Array.from(
+    scrollContainer.querySelectorAll<HTMLElement>('.kix-paragraphrenderer, [class*="paragraphrenderer"]')
+  ).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+  console.log(`[Oddity1 debug] paraRenderers.length=${paraRenderers.length} scrollContainer=${scrollContainer.className} allParaInDoc=${document.querySelectorAll('.kix-paragraphrenderer, [class*="paragraphrenderer"]').length}`);
+
+  // Walk exported text paragraphs to find which one contains the annotation.
   const paragraphs = fullText.split('\n');
   let cumChars = 0;
-  let cumLines = 0;
+  let targetParaIndex = 0;
   let targetLineInPara = 0;
+  let xOffsetInLine = 0;
 
-  for (const para of paragraphs) {
+  for (let pi = 0; pi < paragraphs.length; pi++) {
+    const para = paragraphs[pi]!;
     const paraLen = para.length + 1; // +1 for the \n
     if (cumChars + paraLen > charOffset) {
-      // Annotation is in this paragraph — find which line within it.
+      targetParaIndex = pi;
       const offsetInPara = charOffset - cumChars;
       try {
         const prepared = prepareWithSegments(para || ' ', font);
@@ -293,6 +597,8 @@ function findAnnotationRectsCanvasMode(
           const lineLen = result.lines[i]!.text.length;
           if (offsetInPara <= charsSeen + lineLen) {
             targetLineInPara = i;
+            const prefixText = result.lines[i]!.text.slice(0, offsetInPara - charsSeen);
+            xOffsetInLine = measureCtx.measureText(prefixText).width;
             break;
           }
           charsSeen += lineLen;
@@ -301,41 +607,149 @@ function findAnnotationRectsCanvasMode(
       } catch {
         const charsPerLine = Math.max(1, Math.floor(textWidthPx / (fontSize * 0.55)));
         targetLineInPara = Math.floor(offsetInPara / charsPerLine);
+        xOffsetInLine = (offsetInPara % charsPerLine) * (fontSize * 0.55);
       }
       break;
     }
     cumChars += paraLen;
-    try {
-      // Use layout() (not layoutWithLines) — we only need lineCount, not line text.
-      const prepared = prepareWithSegments(para || ' ', font);
-      cumLines += layout(prepared, textWidthPx, lineHeight).lineCount;
-    } catch {
-      const charsPerLine = Math.max(1, textWidthPx / (fontSize * 0.55));
-      cumLines += Math.max(1, Math.ceil(para.length / charsPerLine));
-    }
   }
 
-  const totalLines = cumLines + targetLineInPara;
+  // Use the paragraph renderer's actual offsetTop as the Y base — this eliminates
+  // all accumulated simulation error from paragraph counting. Only the within-paragraph
+  // line offset is simulated, so error is bounded to a single paragraph's height.
+  //
+  // We fuzzy-match the target paragraph's text against renderer textContent rather
+  // than assuming 1:1 index alignment, which breaks when blank lines, headings, or
+  // list items cause the DOM and exported text to diverge.
+  const paraEl = findMatchingParaRenderer(paraRenderers, targetParaIndex, paragraphs[targetParaIndex] ?? '');
+  let top: number;
+  let left: number;
 
-  // Map total line count to (page index, line within page) so we can use the
-  // correct per-page canvas as the vertical anchor. This accounts for inter-page
-  // gaps that would otherwise accumulate error for page 2+ annotations.
-  const pageIndex = Math.min(
-    Math.floor(totalLines / linesPerPage),
-    pageEls.length - 1,
-  );
-  const lineInPage = totalLines - pageIndex * linesPerPage;
+  if (paraEl) {
+    const paraBcr = paraEl.getBoundingClientRect();
+    console.log(`[Oddity1 debug] anchor="${exact.slice(0,30)}" targetParaIndex=${targetParaIndex} paraRenderers.length=${paraRenderers.length} paraEl.bcr.top=${paraBcr.top} sy=${sy} targetLineInPara=${targetLineInPara} lineHeight=${lineHeight} paraEl.textContent.length=${paraEl.textContent?.length}`);
+    top  = paraBcr.top + sy + targetLineInPara * lineHeight;
+    left = cr0.left + sx + leftMarginPx + xOffsetInLine;
+  } else {
+    // Fallback: no paragraph renderers found — use page-based calculation.
+    const linesPerPage = (pageH - 2 * topMarginPx) / lineHeight;
+    // Recompute cumLines by simulating all paragraphs (legacy path).
+    let cumLines = 0;
+    for (let pi = 0; pi < targetParaIndex; pi++) {
+      const para = paragraphs[pi]!;
+      try {
+        const prepared = prepareWithSegments(para || ' ', font);
+        cumLines += layout(prepared, textWidthPx, lineHeight).lineCount;
+      } catch {
+        cumLines += Math.max(1, Math.ceil(para.length / (textWidthPx / (fontSize * 0.55))));
+      }
+    }
+    const totalLines = cumLines + targetLineInPara;
+    const pageIndex = Math.min(Math.floor(totalLines / linesPerPage), pageEls.length - 1);
+    const lineInPage = totalLines - pageIndex * linesPerPage;
+    const pageCr = pageEls[pageIndex]!.getBoundingClientRect();
+    top  = pageCr.top + sy + topMarginPx + lineInPage * lineHeight;
+    left = pageCr.left + sx + leftMarginPx + xOffsetInLine;
+  }
 
-  const pageCr = pageEls[pageIndex]!.getBoundingClientRect();
-  const top = pageCr.top + sy + topMarginPx + lineInPage * lineHeight;
-  const left = pageCr.left + sx + leftMarginPx;
+  const approxWidth = Math.min(measureCtx.measureText(exact).width, textWidthPx - xOffsetInLine);
 
-  const approxWidth = Math.min(exact.length * fontSize * 0.55, textWidthPx);
+  // Queue cursor-based positioning — don't render until the real Y is known.
+  enqueueCursorCorrection({ id: annotation.id, exact, scrollContainer, left, width: approxWidth, height: lineHeight });
 
-  return {
-    rects: [{ left, top, width: approxWidth, height: lineHeight }],
-    anchorNode: null,
-  };
+  // Return empty so the caller defers rendering until cursor correction fires.
+  return { rects: [], anchorNode: null };
+}
+
+/**
+ * Debug helper: opens the Google Docs find bar (Cmd+F), types the anchor text,
+ * presses Enter to select it, Escape to close the bar (keeps selection), then
+ * fires Cmd+U to underline it. Shows exactly where the real text is vs the overlay.
+ */
+// Serialize debug underline calls — only one runs at a time so annotations
+// don't race each other in the find bar.
+let _debugQueue: string[] = [];
+let _debugRunning = false;
+
+function debugUnderlineViaFind(text: string): void {
+  _debugQueue.push(text);
+  if (!_debugRunning) processDebugQueue();
+}
+
+function processDebugQueue(): void {
+  const text = _debugQueue.shift();
+  if (!text) { _debugRunning = false; return; }
+  _debugRunning = true;
+  runDebugUnderline(text).finally(processDebugQueue);
+}
+
+function runDebugUnderline(text: string): Promise<void> {
+  return new Promise((resolve) => {
+    const iframe = document.querySelector<HTMLIFrameElement>('.docs-texteventtarget-iframe');
+    const iframeDoc = iframe?.contentDocument;
+    if (!iframeDoc) { resolve(); return; }
+
+    const iframeKey = (k: string, code: string, extra?: KeyboardEventInit) =>
+      iframeDoc.dispatchEvent(new KeyboardEvent('keydown', {
+        key: k, code, bubbles: true, cancelable: true, ...extra,
+      }));
+
+    // Step 1: Cmd+F to open find bar
+    iframeKey('f', 'KeyF', { metaKey: true });
+
+    setTimeout(() => {
+      // Step 2: locate the find input (it gets auto-focused by GDocs)
+      const findInput = (
+        document.activeElement instanceof HTMLInputElement
+          ? document.activeElement
+          : document.querySelector<HTMLInputElement>('.docs-find-bar input, [class*="find-bar"] input')
+      );
+
+      if (!findInput) { resolve(); return; }
+
+      findInput.focus();
+      findInput.select?.();
+      const inserted = document.execCommand('insertText', false, text);
+      if (!inserted) {
+        findInput.value = '';
+        for (const char of text) {
+          findInput.dispatchEvent(new KeyboardEvent('keydown',  { key: char, bubbles: true }));
+          findInput.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+          findInput.value += char;
+          findInput.dispatchEvent(new InputEvent('input', { data: char, bubbles: true }));
+          findInput.dispatchEvent(new KeyboardEvent('keyup',    { key: char, bubbles: true }));
+        }
+      }
+
+      setTimeout(() => {
+        // Step 3: Enter to jump to match
+        findInput.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+        }));
+
+        setTimeout(() => {
+          // Step 4: Escape — fire on the input, its container, and document
+          // so whichever level GDocs' find bar controller listens on gets it.
+          const escEvt = () => new KeyboardEvent('keydown', {
+            key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+          });
+          findInput.dispatchEvent(escEvt());
+          findInput.closest('[class*="find"]')?.dispatchEvent(escEvt());
+          document.dispatchEvent(escEvt());
+
+          setTimeout(() => {
+            // Step 5: click the underline toolbar button directly.
+            // DOM clicks work without isTrusted — keyboard events for formatting are blocked.
+            const underlineBtn = document.querySelector<HTMLElement>(
+              '[data-tooltip*="Underline"], [aria-label*="Underline"], [title*="Underline"]'
+            );
+            underlineBtn?.click();
+            setTimeout(resolve, 100);
+          }, 300);
+        }, 150);
+      }, 200);
+    }, 300);
+  });
 }
 
 // ─── Position Resolution ───

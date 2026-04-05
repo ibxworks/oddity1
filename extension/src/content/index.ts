@@ -87,6 +87,7 @@ import {
   initOverlay,
   renderAnnotation,
   renderAnnotationWithRects,
+  removeAnnotation,
   setOverlayVisible,
   setOverlayEventCallbacks,
   setScrollContainer,
@@ -100,6 +101,7 @@ import {
   findAnnotationRects,
   createRangeFromNode,
   isGoogleDocsEditorReady,
+  setGDocsDebugUnderline,
 } from "./google-docs.js";
 import { createStabilityWatcher } from "./stability.js";
 import { getPageUrl } from "./page-url.js";
@@ -158,6 +160,10 @@ window.addEventListener("unhandledrejection", (e) => {
 
 /** Canvas-mode synthetic anchor elements, keyed by annotation id. */
 const gdocsAnchors = new Map<string, { el: HTMLSpanElement; rect: AbsoluteRect }>();
+/** Annotation objects keyed by id, populated during GDocs rendering for cursor correction. */
+const gdocsAnnotationCache = new Map<string, Annotation>();
+/** Pending GDocs canvas annotations awaiting cursor-based position correction. */
+const gdocsRenderPending = new Map<string, { annotation: Annotation; noteFeedback: ReturnType<typeof Array.prototype.filter>; regionId: string }>();
 /** Unlisten fn for the GDocs scroll container scroll listener. */
 let gdocsScrollUnlisten: (() => void) | null = null;
 
@@ -340,9 +346,9 @@ let siteWhitelisted = false;
 let manualRunTriggered = false;
 let blocked = false;
 let enabled = true;
-let currentMode: ViewMode = "overview";
+let currentMode: ViewMode = "depth";
 let currentPersonality: DepthPersonality = "jerry";
-let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
+let visibleTypes: AnnotationType[] = [...ALL_DEPTH_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
 const longWaitManager = new LongWaitManager(
@@ -899,13 +905,11 @@ async function init(): Promise<void> {
   }
   const prefs = stored?.preferences;
 
-  // Always start in overview mode on page load for stability.
-  // Mode is not restored from storage — the user switches manually after load.
-  // (Restoring caused cross-tab interference and unpredictable state on refresh.)
+  // Overview mode is disabled — always start in depth mode.
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
-  // currentMode defaults to "overview" (line 315), visibleTypes to overview types (line 317)
+  // currentMode defaults to "depth" (see declaration above), visibleTypes to depth types
   setMarginNoteMode(currentMode);
 
   if (prefs?.enabled === false) {
@@ -1039,6 +1043,36 @@ async function startGoogleDocsPipeline(): Promise<void> {
     gdocsScrollUnlisten = () => scrollEl.removeEventListener('scroll', onGdocsScroll);
   }
 
+  // Render annotations at their cursor-corrected positions as the find queue processes.
+  document.addEventListener('oddity-gdocs-corrected', (e: Event) => {
+    const { id, rect } = (e as CustomEvent<{ id: string; rect: AbsoluteRect }>).detail;
+    const pending = gdocsRenderPending.get(id);
+    if (!pending) return;
+    gdocsRenderPending.delete(id);
+
+    const { annotation, noteFeedback, regionId: pendingRegionId } = pending;
+    const scrollEl = regions[0]?.element as HTMLElement | undefined;
+    const scrollTop  = scrollEl?.scrollTop  ?? 0;
+    const scrollLeft = scrollEl?.scrollLeft ?? 0;
+
+    // Render highlight overlay at the real position
+    removeAnnotation(id);
+    renderAnnotationWithRects(annotation, [rect]);
+    gdocsAnnotationCache.set(id, annotation);
+
+    // Create synthetic anchor for margin note positioning
+    gdocsAnchors.get(id)?.el.remove();
+    const syntheticAnchor = document.createElement('span');
+    syntheticAnchor.textContent = '\u00A0';
+    syntheticAnchor.style.cssText = `position:fixed;left:${rect.left - scrollLeft}px;top:${rect.top - scrollTop}px;width:${rect.width}px;height:${rect.height}px;font-size:${rect.height}px;line-height:1;pointer-events:none;overflow:hidden;`;
+    document.body.appendChild(syntheticAnchor);
+    gdocsAnchors.set(id, { el: syntheticAnchor, rect });
+
+    const anchorRange = document.createRange();
+    anchorRange.selectNodeContents(syntheticAnchor);
+    addMarginNote(annotation, anchorRange, noteFeedback, handleAnnotationDeleted, pendingRegionId, null);
+  });
+
   // Register overlay event callbacks so canvas-mode highlight rects are interactive.
   // Refresh anchor position just before triggering hover/click so positionInlinePopover
   // sees the correct current viewport coordinates.
@@ -1130,11 +1164,18 @@ function renderGoogleDocsAnnotations(regionId: string, annotations: Annotation[]
     try {
       const { rects, anchorNode } = findAnnotationRects(region, annotation);
       if (rects.length === 0) {
-        console.debug(`[Oddity 1] GDocs: no rects for "${annotation.anchor?.exact?.slice(0, 40)}"`);
+        // Canvas mode: position not yet known — store for deferred render when cursor correction fires.
+        if (isGoogleDocs()) {
+          const noteFeedback = feedback.filter(f => f.annotation_id === annotation.id);
+          gdocsRenderPending.set(annotation.id, { annotation, noteFeedback, regionId });
+        } else {
+          console.debug(`[Oddity 1] GDocs: no rects for "${annotation.anchor?.exact?.slice(0, 40)}"`);
+        }
         continue;
       }
 
       renderAnnotationWithRects(annotation, rects);
+      gdocsAnnotationCache.set(annotation.id, annotation);
 
       const noteFeedback = feedback.filter(f => f.annotation_id === annotation.id);
       // Use DOM anchorNode if available (DOM mode), otherwise create a synthetic
@@ -1978,6 +2019,7 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   currentMode = newMode;
   setMarginNoteMode(newMode);
   if (newPersonality) currentPersonality = newPersonality;
+  if (isGoogleDocs()) setGDocsDebugUnderline(newMode === 'depth');
 
   // Update visible types for new mode
   visibleTypes = [
