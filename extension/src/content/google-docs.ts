@@ -210,6 +210,83 @@ interface CorrectionJob {
 }
 let _correctionQueue: CorrectionJob[] = [];
 let _correctionRunning = false;
+/** Jobs that completed successfully — kept for reference. */
+const _completedJobs: CorrectionJob[] = [];
+
+/**
+ * Predicate for the cyan tracking highlight GDocs applies to anchor text.
+ * rgb(0, 255, 255) rendered on canvas — pure cyan, high B+G, near-zero R.
+ */
+const isAnchorHighlight = (r: number, g: number, b: number, _a: number): boolean =>
+  b > 200 && g > 200 && b > r + 50 && r < 100;
+
+/** Last-known absolute rect for each annotation's cyan tracking highlight. */
+const _anchorRects = new Map<string, AbsoluteRect>();
+
+/**
+ * Scan all visible (deduplicated) canvas tiles for the cyan tracking highlight.
+ * Returns one AbsoluteRect per distinct vertical cluster — one per annotation span.
+ * All coordinates are absolute (viewport-relative + scrollContainer offsets).
+ */
+function scanCanvasForAllHighlightRects(scrollContainer: HTMLElement): AbsoluteRect[] {
+  interface RowData { y: number; xMin: number; xMax: number; }
+  const allRows: RowData[] = [];
+  const seenTops = new Set<number>();
+
+  for (const canvas of document.querySelectorAll<HTMLCanvasElement>('canvas')) {
+    const bcr = canvas.getBoundingClientRect();
+    if (bcr.width < 400 || bcr.height <= 0 || bcr.top >= window.innerHeight || bcr.bottom <= 0) continue;
+    const topKey = Math.round(bcr.top);
+    if (seenTops.has(topKey)) continue;
+    seenTops.add(topKey);
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    const { width, height } = canvas;
+    if (!width || !height) continue;
+    let pixels: ImageData;
+    try { pixels = ctx.getImageData(0, 0, width, height); } catch { continue; }
+
+    const { data } = pixels;
+    const sx = bcr.width  / width;
+    const sy = bcr.height / height;
+
+    for (let py = 0; py < height; py++) {
+      let xMin = Infinity, xMax = -Infinity;
+      for (let px = 0; px < width; px++) {
+        const i = (py * width + px) * 4;
+        if (isAnchorHighlight(data[i]!, data[i + 1]!, data[i + 2]!, data[i + 3]!)) {
+          if (px < xMin) xMin = px;
+          if (px > xMax) xMax = px;
+        }
+      }
+      if (xMin !== Infinity) {
+        allRows.push({
+          y:    bcr.top  + py * sy + scrollContainer.scrollTop,
+          xMin: bcr.left + xMin * sx + scrollContainer.scrollLeft,
+          xMax: bcr.left + xMax * sx + scrollContainer.scrollLeft,
+        });
+      }
+    }
+  }
+
+  if (allRows.length === 0) return [];
+  allRows.sort((a, b) => a.y - b.y);
+
+  interface Cluster { top: number; bottom: number; left: number; right: number; }
+  const clusters: Cluster[] = [];
+  for (const row of allRows) {
+    const last = clusters[clusters.length - 1];
+    if (last && row.y - last.bottom <= 4) {
+      last.bottom = row.y;
+      last.left   = Math.min(last.left,  row.xMin);
+      last.right  = Math.max(last.right, row.xMax);
+    } else {
+      clusters.push({ top: row.y, bottom: row.y, left: row.xMin, right: row.xMax });
+    }
+  }
+  return clusters.map(c => ({ left: c.left, top: c.top, width: c.right - c.left, height: c.bottom - c.top + 1 }));
+}
 
 function enqueueCursorCorrection(job: CorrectionJob): void {
   if (_correctionQueue.some(j => j.id === job.id)) return;
@@ -307,11 +384,51 @@ function scanCanvasForColour(
 const isSelectionBlue = (r: number, g: number, b: number, a: number) =>
   b > r + 10 && b > g && b > 100 && a > 30 && r < 240;
 
-function runCursorCorrection({ id, exact, scrollContainer, left, width, height }: CorrectionJob): Promise<void> {
+/**
+ * Apply our tracking highlight (cyan) to the currently-selected text.
+ * Uses the correct GDocs button (#bgColorButton) and targets the palette cell,
+ * not the inner swatch div.
+ */
+async function applyHighlightToSelection(): Promise<void> {
+  const btn = document.querySelector<HTMLElement>('#bgColorButton');
+  if (!btn) return;
+
+  const bOpts: MouseEventInit = { bubbles: true, cancelable: true, view: window };
+  btn.dispatchEvent(new MouseEvent('mousedown', bOpts));
+  btn.dispatchEvent(new MouseEvent('mouseup',   bOpts));
+  btn.dispatchEvent(new MouseEvent('click',     bOpts));
+
+  await new Promise<void>(r => setTimeout(r, 400));
+
+  // The palette cell wraps the swatch div — GDocs listens on the cell, not the swatch.
+  // Cell IDs are like "docs-material-colorpalette-cell-N".
+  const swatch = document.querySelector<HTMLElement>('[title="cyan"], [title="Cyan"]');
+  const cell   = swatch?.closest<HTMLElement>('[id*="colorpalette-cell"]') ?? swatch;
+  if (!cell) return;
+
+  const cr = cell.getBoundingClientRect();
+  const cx = cr.left + cr.width  / 2;
+  const cy = cr.top  + cr.height / 2;
+  const cOpts: MouseEventInit = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+
+  cell.dispatchEvent(new MouseEvent('mousedown', cOpts));
+  cell.dispatchEvent(new MouseEvent('mouseup',   cOpts));
+  cell.dispatchEvent(new MouseEvent('click',     cOpts));
+}
+
+
+function runCursorCorrection(job: CorrectionJob): Promise<void> {
+  const { id, exact, scrollContainer, left, width, height } = job;
+  // Hide the find bar for the duration of this correction so the user never sees it flash.
+  const hideStyle = document.createElement('style');
+  hideStyle.textContent = '.docs-find-bar { opacity: 0 !important; pointer-events: none !important; }';
+  document.head.appendChild(hideStyle);
+
   return new Promise((resolve) => {
+    const finish = () => { hideStyle.remove(); resolve(); };
     const iframe = document.querySelector<HTMLIFrameElement>('.docs-texteventtarget-iframe');
     const iframeDoc = iframe?.contentDocument;
-    if (!iframeDoc) { resolve(); return; }
+    if (!iframeDoc) { finish(); return; }
 
     const editorKey = (key: string, code: string, extra?: KeyboardEventInit) => {
       const evt = new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...extra });
@@ -338,7 +455,7 @@ function runCursorCorrection({ id, exact, scrollContainer, left, width, height }
           ? document.activeElement
           : document.querySelector<HTMLInputElement>('[class*="findinput"] input, .docs-find-bar input')
       );
-      if (!findInput) { resolve(); return; }
+      if (!findInput) { finish(); return; }
 
       // Step 3: type anchor text
       findInput.focus();
@@ -377,22 +494,30 @@ function runCursorCorrection({ id, exact, scrollContainer, left, width, height }
             console.log(`[Oddity1] step 6: scan=${JSON.stringify(rect)}`);
 
             if (rect && rect.height > 0) {
+              const absRect: AbsoluteRect = {
+                top:    rect.top    + scrollContainer.scrollTop,
+                left:   rect.left   + scrollContainer.scrollLeft,
+                width:  rect.width  > 0 ? rect.width  : width,
+                height: rect.height > 0 ? rect.height : height,
+              };
+
+              // Store last-known position for canvas-scan proximity matching.
+              _anchorRects.set(id, absRect);
+
+              // Record completed job (kept for reference).
+              const idx = _completedJobs.findIndex(j => j.id === id);
+              if (idx >= 0) _completedJobs[idx] = job; else _completedJobs.push(job);
+
               document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', {
-                detail: {
-                  id,
-                  rect: {
-                    top:    rect.top    + scrollContainer.scrollTop,
-                    left:   rect.left   + scrollContainer.scrollLeft,
-                    width:  rect.width  > 0 ? rect.width  : width,
-                    height: rect.height > 0 ? rect.height : height,
-                  },
-                },
+                detail: { id, rect: absRect },
               }));
+
+              // Apply tracking highlight while selection is still active, then finish.
+              applyHighlightToSelection().then(() => setTimeout(finish, 100));
             } else {
               console.log(`[Oddity1] step 6: no blue selection found, skipping`);
+              setTimeout(finish, 200);
             }
-
-            setTimeout(resolve, 200);
           }, 500); // wait for blue selection to render
         }, 500); // wait for close to take effect
       }, 1000); // wait for live search
@@ -662,6 +787,98 @@ function findAnnotationRectsCanvasMode(
 }
 
 /**
+ * Set up live overlay position tracking for GDocs editing.
+ *
+ * - Enter / Delete / Backspace: immediately shift rects below the cursor by ±lineHeight
+ *   via `oddity-gdocs-line-shift` so overlays follow text as the user types.
+ * - Debounced (2 s after last keystroke): silently re-run all completed cursor corrections
+ *   so accumulated drift (word wrap, multi-line paste) is corrected when the user pauses.
+ *   The find bar is already hidden during corrections via CSS injection in runCursorCorrection.
+ *
+ * Returns a cleanup function.
+ */
+export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void {
+  const iframe = document.querySelector<HTMLIFrameElement>('.docs-texteventtarget-iframe');
+  const iframeDoc = iframe?.contentDocument;
+  if (!iframeDoc) return () => {};
+
+  const getCaretAbsY = (): { y: number; h: number } | null => {
+    const caret = document.querySelector<HTMLElement>('.kix-cursor-caret');
+    const bcr = caret?.getBoundingClientRect();
+    return bcr && bcr.height > 0
+      ? { y: bcr.top + scrollContainer.scrollTop, h: bcr.height }
+      : null;
+  };
+
+  // Live tracking: after each text-modifying key, wait for GDocs to repaint the canvas
+  // (≈150 ms), then scan for the cyan tracking highlights and update any that moved.
+  let trackTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleParaCheck = () => {
+    if (_anchorRects.size === 0) return;
+    if (trackTimer) clearTimeout(trackTimer);
+    trackTimer = setTimeout(() => {
+      trackTimer = null;
+      const found = scanCanvasForAllHighlightRects(scrollContainer);
+      if (found.length === 0) return;
+
+      for (const [id, lastRect] of _anchorRects) {
+        // Match to the closest found highlight by vertical + horizontal proximity.
+        let closest: AbsoluteRect | null = null;
+        let minDist = Infinity;
+        for (const r of found) {
+          const dist = Math.abs(r.top - lastRect.top) + Math.abs(r.left - lastRect.left) * 0.5;
+          if (dist < minDist) { minDist = dist; closest = r; }
+        }
+        if (!closest || minDist > 500) continue;
+        if (Math.abs(closest.top - lastRect.top) < 1 && Math.abs(closest.left - lastRect.left) < 1) continue;
+
+        _anchorRects.set(id, closest);
+        document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', {
+          detail: { id, rect: closest },
+        }));
+      }
+    }, 150);
+  };
+
+  const onKeydown = (e: KeyboardEvent) => {
+    const pos = getCaretAbsY();
+
+    if (pos) {
+      if (e.key === 'Enter') {
+        requestAnimationFrame(() => {
+          document.dispatchEvent(new CustomEvent('oddity-gdocs-line-shift', {
+            detail: { thresholdAbsY: pos.y, dyPx: pos.h },
+          }));
+        });
+      } else if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.ctrlKey) {
+        requestAnimationFrame(() => {
+          const after = getCaretAbsY();
+          if (after && pos.y - after.y > pos.h * 0.5) {
+            document.dispatchEvent(new CustomEvent('oddity-gdocs-line-shift', {
+              detail: { thresholdAbsY: pos.y, dyPx: -pos.h },
+            }));
+          }
+        });
+      }
+    }
+
+    // Schedule a para-renderer position check after any text-modifying key.
+    // (input events don't fire on the GDocs iframe in canvas mode.)
+    const isModifier = e.metaKey || e.ctrlKey || e.altKey;
+    const changesText = !isModifier && (e.key.length === 1 ||
+      e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete');
+    if (changesText) scheduleParaCheck();
+  };
+
+  iframeDoc.addEventListener('keydown', onKeydown, true);
+
+  return () => {
+    iframeDoc.removeEventListener('keydown', onKeydown, true);
+    if (trackTimer) clearTimeout(trackTimer);
+  };
+}
+
+/**
  * Debug helper: opens the Google Docs find bar (Cmd+F), types the anchor text,
  * presses Enter to select it, Escape to close the bar (keeps selection), then
  * fires Cmd+U to underline it. Shows exactly where the real text is vs the overlay.
@@ -705,7 +922,7 @@ function runDebugUnderline(text: string): Promise<void> {
           : document.querySelector<HTMLInputElement>('.docs-find-bar input, [class*="find-bar"] input')
       );
 
-      if (!findInput) { resolve(); return; }
+      if (!findInput) { finish(); return; }
 
       findInput.focus();
       findInput.select?.();

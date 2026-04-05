@@ -274,6 +274,19 @@ export function deemphasizeAnnotation(): void {
 }
 
 /**
+ * Shift all cached rects whose absolute top is below thresholdAbsY by dyPx.
+ * Used for live position updates when the user inserts or deletes lines in GDocs.
+ */
+export function shiftRectsBelow(thresholdAbsY: number, dyPx: number): void {
+  for (const [id, rects] of cachedRects) {
+    cachedRects.set(id, rects.map(r =>
+      r.top > thresholdAbsY ? { ...r, top: r.top + dyPx } : r
+    ));
+  }
+  redraw();
+}
+
+/**
  * Destroy the overlay completely.
  */
 export function destroyOverlay(): void {

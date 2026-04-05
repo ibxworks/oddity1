@@ -91,6 +91,7 @@ import {
   setOverlayVisible,
   setOverlayEventCallbacks,
   setScrollContainer,
+  shiftRectsBelow,
   type AbsoluteRect,
 } from "./renderer/overlay.js";
 import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
@@ -102,6 +103,7 @@ import {
   createRangeFromNode,
   isGoogleDocsEditorReady,
   setGDocsDebugUnderline,
+  setupGDocsEditTracking,
 } from "./google-docs.js";
 import { createStabilityWatcher } from "./stability.js";
 import { getPageUrl } from "./page-url.js";
@@ -1041,36 +1043,79 @@ async function startGoogleDocsPipeline(): Promise<void> {
     };
     scrollEl.addEventListener('scroll', onGdocsScroll, { passive: true });
     gdocsScrollUnlisten = () => scrollEl.removeEventListener('scroll', onGdocsScroll);
+
+    // Live position tracking: immediately shift overlays on Enter/Delete, and
+    // silently re-run Cmd+F corrections after the user pauses typing.
+    setupGDocsEditTracking(scrollEl);
   }
 
   // Render annotations at their cursor-corrected positions as the find queue processes.
+  // Also handles re-corrections when the document is edited (pending will be null).
   document.addEventListener('oddity-gdocs-corrected', (e: Event) => {
     const { id, rect } = (e as CustomEvent<{ id: string; rect: AbsoluteRect }>).detail;
-    const pending = gdocsRenderPending.get(id);
-    if (!pending) return;
-    gdocsRenderPending.delete(id);
-
-    const { annotation, noteFeedback, regionId: pendingRegionId } = pending;
     const scrollEl = regions[0]?.element as HTMLElement | undefined;
     const scrollTop  = scrollEl?.scrollTop  ?? 0;
     const scrollLeft = scrollEl?.scrollLeft ?? 0;
 
-    // Render highlight overlay at the real position
-    removeAnnotation(id);
-    renderAnnotationWithRects(annotation, [rect]);
-    gdocsAnnotationCache.set(id, annotation);
+    const pending = gdocsRenderPending.get(id);
+    if (pending) {
+      // First-time render
+      gdocsRenderPending.delete(id);
+      const { annotation, noteFeedback, regionId: pendingRegionId } = pending;
 
-    // Create synthetic anchor for margin note positioning
-    gdocsAnchors.get(id)?.el.remove();
-    const syntheticAnchor = document.createElement('span');
-    syntheticAnchor.textContent = '\u00A0';
-    syntheticAnchor.style.cssText = `position:fixed;left:${rect.left - scrollLeft}px;top:${rect.top - scrollTop}px;width:${rect.width}px;height:${rect.height}px;font-size:${rect.height}px;line-height:1;pointer-events:none;overflow:hidden;`;
-    document.body.appendChild(syntheticAnchor);
-    gdocsAnchors.set(id, { el: syntheticAnchor, rect });
+      removeAnnotation(id);
+      renderAnnotationWithRects(annotation, [rect]);
+      gdocsAnnotationCache.set(id, annotation);
 
-    const anchorRange = document.createRange();
-    anchorRange.selectNodeContents(syntheticAnchor);
-    addMarginNote(annotation, anchorRange, noteFeedback, handleAnnotationDeleted, pendingRegionId, null);
+      gdocsAnchors.get(id)?.el.remove();
+      const syntheticAnchor = document.createElement('span');
+      syntheticAnchor.textContent = '\u00A0';
+      syntheticAnchor.style.cssText = `position:fixed;left:${rect.left - scrollLeft}px;top:${rect.top - scrollTop}px;width:${rect.width}px;height:${rect.height}px;font-size:${rect.height}px;line-height:1;pointer-events:none;overflow:hidden;`;
+      document.body.appendChild(syntheticAnchor);
+      gdocsAnchors.set(id, { el: syntheticAnchor, rect });
+
+      const anchorRange = document.createRange();
+      anchorRange.selectNodeContents(syntheticAnchor);
+      addMarginNote(annotation, anchorRange, noteFeedback, handleAnnotationDeleted, pendingRegionId, null);
+    } else {
+      // Re-correction after edit — update position without recreating the margin note.
+      const annotation = gdocsAnnotationCache.get(id);
+      if (!annotation) return;
+
+      removeAnnotation(id);
+      renderAnnotationWithRects(annotation, [rect]);
+
+      const anchor = gdocsAnchors.get(id);
+      if (anchor) {
+        anchor.rect = rect;
+        anchor.el.style.left = `${rect.left - scrollLeft}px`;
+        anchor.el.style.top  = `${rect.top  - scrollTop}px`;
+        anchor.el.style.width  = `${rect.width}px`;
+        anchor.el.style.height = `${rect.height}px`;
+        anchor.el.style.fontSize = `${rect.height}px`;
+      }
+      refreshMarginNotePositions();
+    }
+  });
+
+  // Immediate line-shift updates: when the user presses Enter or deletes a line,
+  // shift all overlay rects and synthetic anchors below the cursor by ±lineHeight.
+  document.addEventListener('oddity-gdocs-line-shift', (e: Event) => {
+    const { thresholdAbsY, dyPx } = (e as CustomEvent<{ thresholdAbsY: number; dyPx: number }>).detail;
+    const scrollEl2 = regions[0]?.element as HTMLElement | undefined;
+    const scrollTop2  = scrollEl2?.scrollTop  ?? 0;
+    const scrollLeft2 = scrollEl2?.scrollLeft ?? 0;
+
+    shiftRectsBelow(thresholdAbsY, dyPx);
+
+    for (const entry of gdocsAnchors.values()) {
+      if (entry.rect.top > thresholdAbsY) {
+        entry.rect = { ...entry.rect, top: entry.rect.top + dyPx };
+        entry.el.style.top = `${entry.rect.top - scrollTop2}px`;
+        entry.el.style.left = `${entry.rect.left - scrollLeft2}px`;
+      }
+    }
+    refreshMarginNotePositions();
   });
 
   // Register overlay event callbacks so canvas-mode highlight rects are interactive.
