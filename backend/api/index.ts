@@ -15,6 +15,7 @@ import checkoutRouter from "../routes/checkout.js";
 import subscriptionRouter from "../routes/subscription.js";
 import portalRouter from "../routes/portal.js";
 import pricesRouter from "../routes/prices.js";
+import convertPdfRouter from "../routes/convert-pdf.js";
 
 if (process.env.ODDITY_PROCESS_ROLE !== "worker") {
   registerProcessGuards({ role: "app", exitOnFatal: false });
@@ -44,6 +45,9 @@ app.use(
 
 // Stripe webhook must receive raw body BEFORE express.json() parses it
 app.use("/api/webhook/stripe", express.raw({ type: "application/json" }), webhookStripeRouter);
+
+// PDF conversion needs a higher body limit — mount before the global 2mb parser
+app.use("/api/convert-pdf", express.json({ limit: "4.5mb" }), authMiddleware, convertPdfRouter);
 
 app.use(express.json({ limit: "2mb" }));
 

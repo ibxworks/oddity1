@@ -979,6 +979,23 @@ export function setPdfRunCallback(cb: () => void): void {
   pdfRunCb = cb;
 }
 
+/** Reset the PDF overlay button to its initial state (e.g. after an error). */
+export function resetPdfButton(errorMsg?: string): void {
+  if (!pdfPanelEl) return;
+  const btn = pdfPanelEl.querySelector<HTMLButtonElement>(".args-run-btn");
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = "Run as HTML";
+  }
+  if (errorMsg) {
+    const hint = pdfPanelEl.querySelector<HTMLDivElement>(".args-not-enabled-hint");
+    if (hint) {
+      hint.textContent = errorMsg;
+      hint.style.color = "#ef4444";
+    }
+  }
+}
+
 export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
 }

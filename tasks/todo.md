@@ -155,6 +155,17 @@ On LLM sites (ChatGPT, Claude), loading a fresh chat and generating the first re
 - `extension/src/content/index.ts` — removed 6s fallback, parallel detection, eager margin init, `chatTrackedElements` WeakSet
 - `extension/src/content/chat-observer.ts` — added `onTrack` callback to `ChatObserverConfig`
 
+## PDF-to-HTML Upgrade: Datalab Marker API (Apr 4, 2026)
+
+- [x] 1. Create backend route `backend/routes/convert-pdf.ts`
+- [x] 2. Register route in `backend/api/index.ts` (with 4.5mb body limit, mounted before global parser)
+- [x] 3. Update `backend/.env.example` (FIRECRAWL → MARKER_API_KEY, already done by user)
+- [x] 4. Add shared message type in `packages/shared/src/types.ts`
+- [x] 5. Add API client function in `extension/src/background/api-client.ts`
+- [x] 6. Add background message handler in `extension/src/background/index.ts`
+- [x] 7. Update `handlePdfConversion()` in `extension/src/content/index.ts`
+- [x] 8. Build & verify no TypeScript errors — all 3 packages clean
+
 ## SPA Navigation Fix (Mar 7, 2026)
 
 ### Problem

@@ -18,6 +18,7 @@ import {
   updateAnnotation as apiUpdateAnnotation,
   updateFeedback as apiUpdateFeedback,
   AuthError,
+  convertPdfViaMarker,
   deleteAccount,
   RateLimitError,
   requestAnnotationsStreaming,
@@ -1051,6 +1052,16 @@ chrome.runtime.onMessage.addListener(
             return { data: Array.from(new Uint8Array(buf)) };
           } catch (err) {
             return { error: `Failed to fetch PDF: ${err}` };
+          }
+        }
+
+        case "convertPdfToHtml": {
+          try {
+            const pdfBytes = new Uint8Array(message.payload.pdfData);
+            const html = await convertPdfViaMarker(pdfBytes);
+            return { html };
+          } catch (err) {
+            return { error: `PDF conversion failed: ${err instanceof Error ? err.message : String(err)}` };
           }
         }
 
