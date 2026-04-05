@@ -1025,6 +1025,9 @@ async function init(): Promise<void> {
   const prefs = (stored?.preferences ?? {}) as Record<string, unknown>;
 
   // Overview mode is disabled — always start in depth mode.
+  if (isGoogleDocs()) {
+    currentMode = "depth";
+  }
   if (prefs?.depth_personality) {
     currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
   }
