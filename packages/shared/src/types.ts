@@ -356,4 +356,5 @@ export type ExtensionMessage =
   | { action: "fetchPdfData"; payload: { url: string } }
   | { action: "convertPdfToHtml"; payload: { pdfData: number[] } }
   | { action: "fetchUrl"; payload: { url: string } }
+  | { action: "gdocsFindAndHighlight"; payload: { docId: string; anchorText: string; color?: { red: number; green: number; blue: number } } }
   | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };

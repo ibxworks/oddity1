@@ -1,5 +1,5 @@
-import type { Annotation, TextQuoteSelector } from '@oddity/shared';
-import { MAX_TEXT_LENGTH } from '@oddity/shared';
+import type { Annotation, AnnotationType, TextQuoteSelector } from '@oddity/shared';
+import { MAX_TEXT_LENGTH, getAnnotationColor } from '@oddity/shared';
 import { prepareWithSegments, layout, layoutWithLines } from '@chenglou/pretext';
 import type { DetectedRegion } from './detector.js';
 import type { ExtractedContent } from './extractor.js';
@@ -207,6 +207,21 @@ interface CorrectionJob {
   left: number;
   width: number;
   height: number;
+  annotationType: AnnotationType;
+}
+
+const GDOCS_HIGHLIGHT_GREEN = '#c7eec9';
+const GDOCS_HIGHLIGHT_RED   = '#ffd4d1';
+
+/** Map an annotation type to its GDocs native highlight color. */
+function getGDocsHighlightColor(type: AnnotationType): { red: number; green: number; blue: number } {
+  const annotColor = getAnnotationColor(type, 'light');
+  const hex = annotColor === '#F5574C' ? GDOCS_HIGHLIGHT_RED : GDOCS_HIGHLIGHT_GREEN;
+  return {
+    red:   parseInt(hex.slice(1, 3), 16) / 255,
+    green: parseInt(hex.slice(3, 5), 16) / 255,
+    blue:  parseInt(hex.slice(5, 7), 16) / 255,
+  };
 }
 let _correctionQueue: CorrectionJob[] = [];
 let _correctionRunning = false;
@@ -214,13 +229,24 @@ let _correctionRunning = false;
 const _completedJobs: CorrectionJob[] = [];
 
 /**
- * Predicate for the cyan tracking highlight GDocs applies to anchor text.
- * rgb(0, 255, 255) rendered on canvas — pure cyan, high B+G, near-zero R.
+ * Build a canvas pixel predicate for a given hex highlight color.
+ * Uses tolerance=15 against the 100% RGB values — this covers both 100% opacity
+ * and GDocs' ~40% blended rendering while reliably excluding pure white (255,255,255).
  */
-// Semi-transparent cyan blended over white: r ≈ (1-alpha)*255, g=255, b=255.
-// At GDocs default highlight opacity (~40%) r ≈ 153; use r < 220 with margin.
-const isAnchorHighlight = (r: number, g: number, b: number, _a: number): boolean =>
-  g > 200 && b > 200 && g > r + 30 && b > r + 30 && r < 220;
+function makeHighlightPredicate(hexColor: string): (r: number, g: number, b: number, a: number) => boolean {
+  const r0 = parseInt(hexColor.slice(1, 3), 16);
+  const g0 = parseInt(hexColor.slice(3, 5), 16);
+  const b0 = parseInt(hexColor.slice(5, 7), 16);
+  const tol = 15;
+  return (r, g, b, _a) =>
+    Math.abs(r - r0) <= tol && Math.abs(g - g0) <= tol && Math.abs(b - b0) <= tol;
+}
+
+const _isGreenHighlight = makeHighlightPredicate(GDOCS_HIGHLIGHT_GREEN);
+const _isRedHighlight   = makeHighlightPredicate(GDOCS_HIGHLIGHT_RED);
+/** Combined predicate matching either annotation highlight color. */
+const isAnchorHighlight = (r: number, g: number, b: number, a: number): boolean =>
+  _isGreenHighlight(r, g, b, a) || _isRedHighlight(r, g, b, a);
 
 /** Last-known rects (one per line) for each annotation's cyan tracking highlight. */
 const _anchorRects = new Map<string, AbsoluteRect[]>();
@@ -442,226 +468,56 @@ function snapshotVisibleCanvases(): Map<HTMLCanvasElement, ImageData> {
   return snap;
 }
 
-/**
- * Scan visible canvas tiles for pixels that newly match a colour predicate
- * compared to a before-snapshot. Only pixels that changed TO the colour are counted,
- * so pre-existing highlights of the same colour are ignored.
- */
-function scanCanvasForColour(
-  predicate: (r: number, g: number, b: number, a: number) => boolean,
-  before?: Map<HTMLCanvasElement, ImageData>,
-): { left: number; top: number; width: number; height: number } | null {
-  let canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>('canvas'));
 
-  // Only look at tiles in the current viewport
-  canvases = canvases.filter((c) => {
-    const r = c.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && r.top < window.innerHeight && r.bottom > 0;
+
+async function runCursorCorrection(job: CorrectionJob): Promise<void> {
+  const { id, exact, scrollContainer, left, annotationType } = job;
+
+  const docId = getGoogleDocsId();
+  if (!docId) { console.warn('[Oddity1] runCursorCorrection: no docId'); return; }
+
+  console.log(`[Oddity1] runCursorCorrection: start id=${id} text="${exact.slice(0, 40)}"`);
+
+  // Snapshot before the API call so scanCanvasRects can diff out pre-existing highlight pixels.
+  const beforeSnapshot = snapshotVisibleCanvases();
+
+  const result = await sendMessage<{ error?: string }>({
+    action: 'gdocsFindAndHighlight',
+    payload: { docId, anchorText: exact, color: getGDocsHighlightColor(annotationType) },
   });
 
-  for (const canvas of canvases) {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) continue;
-    const { width, height } = canvas;
-    if (!width || !height) continue;
+  console.log(`[Oddity1] gdocsFindAndHighlight result:`, result);
 
-    let pixels: ImageData;
-    try { pixels = ctx.getImageData(0, 0, width, height); }
-    catch { continue; }
-
-    const beforeData = before?.get(canvas)?.data;
-    const { data } = pixels;
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!, a = data[i + 3]!;
-      if (a < 40) continue;
-      if (!predicate(r, g, b, a)) continue;
-      // If a before-snapshot exists, skip pixels that were already matching
-      if (beforeData) {
-        const br = beforeData[i]!, bg = beforeData[i + 1]!, bb = beforeData[i + 2]!, ba = beforeData[i + 3]!;
-        if (predicate(br, bg, bb, ba)) continue;
-      }
-      const px = (i >>> 2) % width;
-      const py = (i >>> 2) / width | 0;
-      if (px < x0) x0 = px;
-      if (px > x1) x1 = px;
-      if (py < y0) y0 = py;
-      if (py > y1) y1 = py;
-    }
-
-    if (x0 === Infinity) continue;
-
-    const bcr = canvas.getBoundingClientRect();
-    const sx = bcr.width / width;
-    const sy = bcr.height / height;
-    return {
-      left:   bcr.left + x0 * sx,
-      top:    bcr.top  + y0 * sy,
-      width:  (x1 - x0 + 1) * sx,
-      height: (y1 - y0 + 1) * sy,
-    };
+  if (result?.error) {
+    console.warn(`[Oddity1] gdocsFindAndHighlight failed: ${result.error}`);
+    return;
   }
 
-  return null;
-}
+  // Wait for GDocs canvas to repaint with the new highlight.
+  await new Promise<void>(r => setTimeout(r, 600));
 
-// GDocs blue selection colour: ~rgba(25,103,210,0.2) blended over white ≈ rgb(200,220,243)
-// In canvas mode GDocs renders a clearly blue tinted band. Predicate: blue dominant, not too dark.
-const isSelectionBlue = (r: number, g: number, b: number, a: number) =>
-  b > r + 10 && b > g && b > 100 && a > 30 && r < 240;
+  const isHighlight = makeHighlightPredicate(
+    getAnnotationColor(annotationType, 'light') === '#F5574C' ? GDOCS_HIGHLIGHT_RED : GDOCS_HIGHLIGHT_GREEN
+  );
+  const clusters = scanCanvasRects(isHighlight, scrollContainer, beforeSnapshot);
+  console.log(`[Oddity1] scanCanvasRects clusters=${clusters.length}`);
+  if (clusters.length === 0) return;
 
-/**
- * Apply our tracking highlight (cyan) to the currently-selected text.
- * Uses the correct GDocs button (#bgColorButton) and targets the palette cell,
- * not the inner swatch div.
- */
-async function applyHighlightToSelection(): Promise<void> {
-  const btn = document.querySelector<HTMLElement>('#bgColorButton');
-  if (!btn) return;
+  // Pick the cluster whose first rect is horizontally closest to the expected position.
+  let best = clusters[0]!;
+  let bestDist = Math.abs(best[0]!.left - left);
+  for (const cl of clusters.slice(1)) {
+    const d = Math.abs(cl[0]!.left - left);
+    if (d < bestDist) { bestDist = d; best = cl; }
+  }
+  if (bestDist >= 200) return;
 
-  const bOpts: MouseEventInit = { bubbles: true, cancelable: true, view: window };
-  btn.dispatchEvent(new MouseEvent('mousedown', bOpts));
-  btn.dispatchEvent(new MouseEvent('mouseup',   bOpts));
-  btn.dispatchEvent(new MouseEvent('click',     bOpts));
+  const idx = _completedJobs.findIndex(j => j.id === id);
+  if (idx >= 0) _completedJobs[idx] = job; else _completedJobs.push(job);
 
-  await new Promise<void>(r => setTimeout(r, 400));
-
-  // The palette cell wraps the swatch div — GDocs listens on the cell, not the swatch.
-  // Cell IDs are like "docs-material-colorpalette-cell-N".
-  const swatch = document.querySelector<HTMLElement>('[title="cyan"], [title="Cyan"]');
-  const cell   = swatch?.closest<HTMLElement>('[id*="colorpalette-cell"]') ?? swatch;
-  if (!cell) return;
-
-  const cr = cell.getBoundingClientRect();
-  const cx = cr.left + cr.width  / 2;
-  const cy = cr.top  + cr.height / 2;
-  const cOpts: MouseEventInit = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
-
-  cell.dispatchEvent(new MouseEvent('mousedown', cOpts));
-  cell.dispatchEvent(new MouseEvent('mouseup',   cOpts));
-  cell.dispatchEvent(new MouseEvent('click',     cOpts));
-}
-
-
-function runCursorCorrection(job: CorrectionJob): Promise<void> {
-  const { id, exact, scrollContainer, left, width, height } = job;
-  // Hide the find bar for the duration of this correction so the user never sees it flash.
-  const hideStyle = document.createElement('style');
-  hideStyle.textContent = '.docs-find-bar { opacity: 0 !important; pointer-events: none !important; }';
-  document.head.appendChild(hideStyle);
-
-  return new Promise((resolve) => {
-    const finish = () => { hideStyle.remove(); resolve(); };
-    const iframe = document.querySelector<HTMLIFrameElement>('.docs-texteventtarget-iframe');
-    const iframeDoc = iframe?.contentDocument;
-    if (!iframeDoc) { finish(); return; }
-
-    const editorKey = (key: string, code: string, extra?: KeyboardEventInit) => {
-      const evt = new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...extra });
-      iframeDoc.dispatchEvent(evt);
-      iframeDoc.body?.dispatchEvent(evt);
-    };
-
-    const mouseClick = (el: HTMLElement) => {
-      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-      el.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
-    };
-
-    // Snapshot canvas state before Cmd+F so we can diff out pre-existing highlights
-    const beforeSnapshot = snapshotVisibleCanvases();
-
-    // Step 1: Cmd+F
-    editorKey('f', 'KeyF', { metaKey: true });
-
-    setTimeout(() => {
-      // Step 2: find input
-      const findInput = (
-        document.activeElement instanceof HTMLInputElement
-          ? document.activeElement
-          : document.querySelector<HTMLInputElement>('[class*="findinput"] input, .docs-find-bar input')
-      );
-      if (!findInput) { finish(); return; }
-
-      // Step 3: type anchor text
-      findInput.focus();
-      findInput.select?.();
-      const inserted = document.execCommand('insertText', false, exact);
-      if (!inserted) {
-        findInput.value = '';
-        for (const char of exact) {
-          findInput.dispatchEvent(new KeyboardEvent('keydown',  { key: char, bubbles: true }));
-          findInput.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
-          findInput.value += char;
-          findInput.dispatchEvent(new InputEvent('input', { data: char, bubbles: true }));
-          findInput.dispatchEvent(new KeyboardEvent('keyup',    { key: char, bubbles: true }));
-        }
-      }
-
-      setTimeout(() => {
-        // Step 4: close find bar → GDocs leaves found text selected (gray/inactive)
-        const closeIcon = document.querySelector<HTMLElement>('.docs-icon-close');
-        const closeBtn = closeIcon?.closest<HTMLElement>('[class~="goog-flat-button"]') ?? closeIcon?.parentElement?.parentElement?.parentElement;
-        console.log(`[Oddity1] step 4: closeBtn=${closeBtn?.className?.slice(0, 50)}`);
-        if (closeBtn) {
-          mouseClick(closeBtn);
-          if (closeIcon && closeIcon !== closeBtn) mouseClick(closeIcon);
-        }
-
-        setTimeout(() => {
-          // Step 5: restore focus to editor → selection turns BLUE (active)
-          iframe.contentWindow?.focus();
-          iframeDoc.body?.focus();
-
-          setTimeout(() => {
-            // Step 6: scan all visible canvas tiles for blue selection pixels.
-            // GDocs draws the active selection directly on kix-canvas-tile-content.
-            const rect = scanCanvasForColour(isSelectionBlue, beforeSnapshot);
-            console.log(`[Oddity1] step 6: scan=${JSON.stringify(rect)}`);
-
-            if (rect && rect.height > 0) {
-              const absRect: AbsoluteRect = {
-                top:    rect.top    + scrollContainer.scrollTop,
-                left:   rect.left   + scrollContainer.scrollLeft,
-                width:  rect.width  > 0 ? rect.width  : width,
-                height: rect.height > 0 ? rect.height : height,
-              };
-
-              const idx = _completedJobs.findIndex(j => j.id === id);
-              if (idx >= 0) _completedJobs[idx] = job; else _completedJobs.push(job);
-
-              // Apply the cyan tracking highlight, wait for GDocs to repaint the canvas,
-              // then scan for per-line rects.  This gives correct multi-line overlays from
-              // the first render.  Falls back to the bounding-box rect if scan finds nothing.
-              applyHighlightToSelection().then(() => {
-                setTimeout(() => {
-                  const clusters = scanCanvasRects(isAnchorHighlight, scrollContainer);
-                  let rects: AbsoluteRect[] = [absRect];
-                  if (clusters.length > 0) {
-                    let best = clusters[0]!;
-                    let bestDist = Math.abs(best[0]!.top - absRect.top) + Math.abs(best[0]!.left - absRect.left);
-                    for (const cl of clusters.slice(1)) {
-                      const d = Math.abs(cl[0]!.top - absRect.top) + Math.abs(cl[0]!.left - absRect.left);
-                      if (d < bestDist) { bestDist = d; best = cl; }
-                    }
-                    if (bestDist < 200) rects = best;
-                  }
-                  _anchorRects.set(id, rects);
-                  saveGDocsRectsToStorage();
-                  document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', { detail: { id, rects } }));
-                  setTimeout(finish, 100);
-                }, 600);
-              });
-            } else {
-              console.log(`[Oddity1] step 6: no blue selection found, skipping`);
-              setTimeout(finish, 200);
-            }
-          }, 500); // wait for blue selection to render
-        }, 500); // wait for close to take effect
-      }, 1000); // wait for live search
-    }, 1000); // wait for find bar to open
-  });
+  _anchorRects.set(id, best);
+  saveGDocsRectsToStorage();
+  document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', { detail: { id, rects: best } }));
 }
 
 /**
@@ -919,7 +775,7 @@ function findAnnotationRectsCanvasMode(
   const approxWidth = Math.min(measureCtx.measureText(exact).width, textWidthPx - xOffsetInLine);
 
   // Queue cursor-based positioning — don't render until the real Y is known.
-  enqueueCursorCorrection({ id: annotation.id, exact, scrollContainer, left, width: approxWidth, height: lineHeight });
+  enqueueCursorCorrection({ id: annotation.id, exact, scrollContainer, left, width: approxWidth, height: lineHeight, annotationType: annotation.type });
 
   // Return empty so the caller defers rendering until cursor correction fires.
   return { rects: [], anchorNode: null };

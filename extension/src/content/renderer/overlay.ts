@@ -378,7 +378,7 @@ function drawCachedAnnotationInto(parent: Node, annotation: Annotation): void {
     // Rects are stored at absolute page coordinates; the wrapper's transform
     // shifts them into the viewport.
     const visual = getVisual(annotation.type, getThemeMode(), annotation.label);
-    const bgCss = visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : '';
+    const bgCss = gdocsMode ? 'background-color: transparent;' : (visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : '');
     const borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';
     // In GDocs mode all rects are pointer-events:none so editing clicks reach the canvas.
     // On other sites rects need auto so hover/click work (no underlying span to listen on).

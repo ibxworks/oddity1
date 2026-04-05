@@ -129,6 +129,47 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     .catch(() => {}); // Silently fail if not allowed (e.g., file:// without permission)
 });
 
+// ─── Google Docs API Helpers ───
+
+function findTextRange(
+  doc: any,
+  searchText: string,
+): { start: number; end: number } | null {
+  const chars: { index: number; char: string }[] = [];
+
+  function extractContent(elements: any[]): void {
+    for (const el of elements ?? []) {
+      if (el.paragraph) {
+        for (const pe of el.paragraph.elements ?? []) {
+          if (pe.textRun) {
+            const content: string = pe.textRun.content;
+            for (let i = 0; i < content.length; i++) {
+              chars.push({ index: pe.startIndex + i, char: content[i]! });
+            }
+          }
+        }
+      } else if (el.table) {
+        for (const row of el.table.tableRows ?? []) {
+          for (const cell of row.tableCells ?? []) {
+            extractContent(cell.content);
+          }
+        }
+      }
+    }
+  }
+
+  extractContent(doc.body?.content ?? []);
+
+  const fullText = chars.map((c) => c.char).join("");
+  const idx = fullText.indexOf(searchText);
+  if (idx === -1) return null;
+
+  return {
+    start: chars[idx]!.index,
+    end: chars[idx + searchText.length - 1]!.index + 1,
+  };
+}
+
 // ─── Message Router ───
 
 chrome.runtime.onMessage.addListener(
@@ -1079,6 +1120,62 @@ chrome.runtime.onMessage.addListener(
           }
         }
 
+        case "gdocsFindAndHighlight": {
+          const { docId, anchorText, color } = message.payload;
+          try {
+            // Get a Google OAuth token with the documents scope.
+            const token = await new Promise<string>((resolve, reject) => {
+              chrome.identity.getAuthToken({ interactive: true }, (t) => {
+                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+                else resolve(t!);
+              });
+            });
+
+            // Fetch the document to find the anchor text's character range.
+            const docRes = await fetch(
+              `https://docs.googleapis.com/v1/documents/${docId}`,
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
+            if (!docRes.ok) return { error: `docs.get HTTP ${docRes.status}` };
+            const doc = await docRes.json();
+
+            const range = findTextRange(doc, anchorText);
+            if (!range) return { error: "text not found in document" };
+
+            // Apply the annotation highlight color (defaults to green if not specified).
+            const rgbColor = color ?? { red: 0.780, green: 0.933, blue: 0.788 }; // #c7eec9
+            const updateRes = await fetch(
+              `https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  requests: [
+                    {
+                      updateTextStyle: {
+                        range: { startIndex: range.start, endIndex: range.end },
+                        textStyle: {
+                          backgroundColor: {
+                            color: { rgbColor },
+                          },
+                        },
+                        fields: "backgroundColor",
+                      },
+                    },
+                  ],
+                }),
+              },
+            );
+            if (!updateRes.ok) return { error: `batchUpdate HTTP ${updateRes.status}` };
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
         case "injectNextNewTab": {
           // Listen for the next new tab and inject the content script into it.
           // Used for PDF→HTML conversion: content script opens a blob tab,
@@ -1102,7 +1199,7 @@ chrome.runtime.onMessage.addListener(
               // which is the MAIN world dom-guard that has no argbox logic.
               const scripts = manifest.content_scripts ?? [];
               const cs =
-                scripts.find((s) => (s as any).world !== "MAIN") ??
+                scripts.find((s) => (s as { world?: string }).world !== "MAIN") ??
                 scripts[1] ??
                 scripts[0];
               const file = cs?.js?.[0];
