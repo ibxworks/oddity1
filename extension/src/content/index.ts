@@ -48,6 +48,7 @@ import {
   setArgumentsBoxPdf,
   setPdfRunCallback,
   resetPdfButton,
+  setPdfCachedLabel,
   setDashUserTier,
 } from "./renderer/arguments-box.js";
 import {
@@ -697,6 +698,11 @@ function isDomainWhitelisted(domain: string, sites: string[]): boolean {
 }
 
 function isPdfPage(): boolean {
+  // After PDF→HTML conversion, the meta tag marks the page as already converted.
+  // Without this guard, the URL still ends in .pdf and contentType is still
+  // application/pdf, so we'd loop back to showing the PDF overlay.
+  if (document.querySelector('meta[name="oddity-source-pdf"]')) return false;
+
   // Most reliable: browser sets contentType for PDF responses
   if (document.contentType === "application/pdf") return true;
   // Fallback: URL ends in .pdf
@@ -732,11 +738,37 @@ async function handlePdfConversion(): Promise<void> {
       cachePdfHtml(cacheKey, html);
     }
 
-    // Step 3: Open converted HTML in a new tab
-    await sendMessage({ action: "injectNextNewTab", payload: {} });
-    const blob = new Blob([html], { type: "text/html" });
-    const blobUrl = URL.createObjectURL(blob);
-    window.open(blobUrl, "_blank");
+    // Step 3: Replace current page DOM in-place (keeps original URL for annotation persistence)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    // Inject meta tag so getPageUrl() returns the original PDF URL
+    // and isPdfPage() knows this is already a converted page
+    const meta = doc.createElement("meta");
+    meta.setAttribute("name", "oddity-source-pdf");
+    meta.setAttribute("content", pdfUrl);
+    doc.head.prepend(meta);
+
+    // Clean up stale state before replacing DOM
+    resetAnnotationState();
+
+    // Replace head and body content using safe DOM adoption
+    while (document.head.firstChild) document.head.firstChild.remove();
+    for (const child of Array.from(doc.head.childNodes)) {
+      document.head.appendChild(document.adoptNode(child));
+    }
+    while (document.body.firstChild) document.body.firstChild.remove();
+    for (const attr of Array.from(doc.body.attributes)) {
+      document.body.setAttribute(attr.name, attr.value);
+    }
+    for (const child of Array.from(doc.body.childNodes)) {
+      document.body.appendChild(document.adoptNode(child));
+    }
+
+    // Re-initialize — will find meta tag, skip PDF detection, run annotation pipeline
+    init().catch((err) => {
+      console.error("[Oddity 1] Post-PDF-conversion init error:", err);
+    });
   } catch (err) {
     console.error("[Oddity 1] PDF conversion failed:", err);
     const msg = err instanceof Error ? err.message : "Conversion failed";
@@ -824,6 +856,12 @@ async function init(): Promise<void> {
     if (pdfAuthStatus?.user?.tier) {
       setDashUserTier(pdfAuthStatus.user.tier);
     }
+
+    // Check cache to show appropriate button label
+    const pdfCacheKey = `pdf_html:${window.location.href}`;
+    const pdfCached = await chrome.storage.local.get(pdfCacheKey);
+    const hasCachedHtml = !!(pdfCached[pdfCacheKey] as { html: string; ts: number } | undefined)?.html;
+    setPdfCachedLabel(hasCachedHtml);
 
     setArgumentsBoxPdf(true);
     setPdfRunCallback(handlePdfConversion);

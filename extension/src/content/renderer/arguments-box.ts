@@ -98,6 +98,7 @@ let blockedPanelEl: HTMLDivElement | null = null;
 let pdfDetected = false;
 let pdfPanelEl: HTMLDivElement | null = null;
 let pdfRunCb: (() => void) | null = null;
+let pdfCachedLabel = false;
 let dashCloseBtnEl: HTMLButtonElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
@@ -979,13 +980,17 @@ export function setPdfRunCallback(cb: () => void): void {
   pdfRunCb = cb;
 }
 
+export function setPdfCachedLabel(cached: boolean): void {
+  pdfCachedLabel = cached;
+}
+
 /** Reset the PDF overlay button to its initial state (e.g. after an error). */
 export function resetPdfButton(errorMsg?: string): void {
   if (!pdfPanelEl) return;
   const btn = pdfPanelEl.querySelector<HTMLButtonElement>(".args-run-btn");
   if (btn) {
     btn.disabled = false;
-    btn.textContent = "Run as HTML";
+    btn.textContent = pdfCachedLabel ? "Load cached version" : "Run as HTML";
   }
   if (errorMsg) {
     const hint = pdfPanelEl.querySelector<HTMLDivElement>(".args-not-enabled-hint");
@@ -1236,6 +1241,7 @@ export function destroyArgumentsBox(): void {
   pdfDetected = false;
   pdfPanelEl = null;
   pdfRunCb = null;
+  pdfCachedLabel = false;
   enableBubbleEl = null;
   canonicalItems = [];
   liveItems = [];
@@ -1439,7 +1445,7 @@ function showPdfOverlay(): void {
     hint.textContent = "Convert to HTML to enable Oddity 1";
     const runBtn = document.createElement("button");
     runBtn.className = "args-run-btn";
-    runBtn.textContent = "Run as HTML";
+    runBtn.textContent = pdfCachedLabel ? "Load cached version" : "Run as HTML";
     runBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       runBtn.disabled = true;

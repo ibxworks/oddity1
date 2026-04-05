@@ -37,6 +37,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     removeAnchors(annotation.id);
   }
 
+  const isPdf = !!document.querySelector('meta[name="oddity-source-pdf"]');
   const spans: HTMLSpanElement[] = [];
 
   // Collect text nodes within the range
@@ -96,7 +97,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     const span = document.createElement('span');
     span.setAttribute(ATTR, annotation.id);
     span.setAttribute('data-oddity-type', annotation.type);
-    const visual = getVisual(annotation.type, getThemeMode(), annotation.label);
+    const visual = getVisual(annotation.type, getThemeMode(), annotation.label, isPdf);
     let bgColor = visual.backgroundColor;
     let underlineStyle = visual.underlineStyle;
     const bgCss = bgColor ? `background-color: ${bgColor};` : '';
@@ -114,7 +115,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
   // <em>, <strong>) that sit between two highlighted spans.  Without this the
   // ancestor's own inline box creates a visible gap in the highlight.
   if (spans.length > 0) {
-    const bgColor = getVisual(annotation.type, getThemeMode(), annotation.label).backgroundColor;
+    const bgColor = getVisual(annotation.type, getThemeMode(), annotation.label, isPdf).backgroundColor;
     if (bgColor) {
       const tagged = new Set<Element>();
       for (const span of spans) {
