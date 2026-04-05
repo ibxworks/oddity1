@@ -15,6 +15,7 @@ import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
 import { createChatObserver, type ChatObserver } from "./chat-observer.js";
+import { getChatbotDisplayName } from "./chatbot-ui.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
 import { handleExportPdf } from "./export-pdf.js";
 import { extractText, extractWithReadability } from "./extractor.js";
@@ -977,7 +978,10 @@ async function startPipeline(): Promise<void> {
     initKeyboardNav();
     initArgumentsBox();
     if (matchedAdapter.input_selector) {
-      setChatbotMode(matchedAdapter.input_selector);
+      const chatbotDisplayName =
+        getChatbotDisplayName(matchedAdapter.hostname_pattern) ??
+        getChatbotDisplayName(hostname);
+      setChatbotMode(matchedAdapter.input_selector, chatbotDisplayName);
     }
     setArgumentsBoxEnabled(enabled);
     setInputTextProvider(collectInputText);

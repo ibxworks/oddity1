@@ -8,6 +8,17 @@ import type {
 import { getAnnotationColor } from "@oddity/shared";
 
 import { getPageUrl } from "../page-url.js";
+import {
+  getChatbotBuildPromptLabel,
+  getChatbotOnboardingBody,
+  getChatbotOnboardingTitle,
+  getChatbotPromptEmptyStateBody,
+  getChatbotPromptEmptyStateTitle,
+  getChatbotPromptErrorText,
+  getChatbotPromptGoalHelper,
+  getChatbotPromptGoalPlaceholder,
+  getChatbotPromptLoadingLabel,
+} from "../chatbot-ui.js";
 import { showNoticeToast } from "../notice-toast.js";
 import {
   getThemeMode,
@@ -89,8 +100,12 @@ let sketchLoading = false;
 let sketchBtnEl: HTMLButtonElement | null = null;
 let footerEl: HTMLDivElement | null = null;
 let purposeInputEl: HTMLTextAreaElement | null = null;
+let purposeLabelEl: HTMLSpanElement | null = null;
+let purposeHelperEl: HTMLDivElement | null = null;
 let isChatbotMode = false;
+let chatbotDisplayName: string | null = null;
 let chatbotInputSelector: string | null = null;
+let sketchViewState: "idle" | "loading" | "ready" | "error" = "idle";
 let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
@@ -390,21 +405,28 @@ export function initArgumentsBox(): void {
 
   const purposeLabel = document.createElement("span");
   purposeLabel.className = "args-purpose-label";
-  purposeLabel.textContent = "Purpose:";
+  purposeLabel.textContent = getPurposeLabelText();
+  purposeLabelEl = purposeLabel;
 
   const purposeInput = document.createElement("textarea");
   purposeInput.className = "args-purpose-input";
-  purposeInput.placeholder = isChatbotMode ? "What is this prompt for?" : "Why are you reading this?";
+  purposeInput.placeholder = getPurposePlaceholderText();
   purposeInput.rows = 2;
   purposeInput.addEventListener("click", (e) => e.stopPropagation());
   purposeInput.addEventListener("input", () => {
     purposeInput.classList.remove("args-purpose-error");
-    purposeInput.placeholder = isChatbotMode ? "What is this prompt for?" : "Why are you reading this?";
+    purposeInput.placeholder = getPurposePlaceholderText();
   });
   purposeInputEl = purposeInput;
 
+  const purposeHelper = document.createElement("div");
+  purposeHelper.className = "args-purpose-helper";
+  purposeHelper.style.display = "none";
+  purposeHelperEl = purposeHelper;
+
   purposeSection.appendChild(purposeLabel);
   purposeSection.appendChild(purposeInput);
+  purposeSection.appendChild(purposeHelper);
   panelFace.appendChild(purposeSection);
 
   // ── Tab Bar ──
@@ -479,7 +501,7 @@ export function initArgumentsBox(): void {
 
   const sketchBtn = document.createElement("button");
   sketchBtn.className = "args-sketch-btn";
-  sketchBtn.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
+  sketchBtn.textContent = getSketchActionLabel();
   sketchBtnEl = sketchBtn;
   sketchBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1012,18 +1034,100 @@ export function setInputTextProvider(cb: () => string): void {
   inputTextProviderCb = cb;
 }
 
+function getPurposeLabelText(): string {
+  return isChatbotMode ? "Prompt goal" : "Purpose:";
+}
+
+function getPurposePlaceholderText(): string {
+  return isChatbotMode
+    ? getChatbotPromptGoalPlaceholder(chatbotDisplayName)
+    : "Why are you reading this?";
+}
+
+function getPurposeValidationPlaceholderText(): string {
+  return isChatbotMode
+    ? "Please enter your prompt goal"
+    : "Please fill in your purpose first";
+}
+
+function getSketchActionLabel(): string {
+  return isChatbotMode
+    ? getChatbotBuildPromptLabel(chatbotDisplayName)
+    : "Sketch my Argument";
+}
+
+function getSketchLoadingLabel(): string {
+  return isChatbotMode
+    ? getChatbotPromptLoadingLabel(chatbotDisplayName)
+    : "Sketching...";
+}
+
+function getSketchErrorText(): string {
+  return isChatbotMode
+    ? getChatbotPromptErrorText(chatbotDisplayName)
+    : "Failed to generate sketch. Please try again.";
+}
+
+function renderPromptEmptyState(): void {
+  if (!sketchContentEl || !isChatbotMode || sketchViewState !== "idle") return;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "args-prompt-empty";
+
+  const title = document.createElement("div");
+  title.className = "args-prompt-empty-title";
+  title.textContent = getChatbotPromptEmptyStateTitle(chatbotDisplayName);
+
+  const body = document.createElement("div");
+  body.className = "args-prompt-empty-body";
+  body.textContent = getChatbotPromptEmptyStateBody(chatbotDisplayName);
+
+  wrapper.appendChild(title);
+  wrapper.appendChild(body);
+  sketchContentEl.replaceChildren(wrapper);
+}
+
+function syncChatbotUi(): void {
+  if (purposeLabelEl) {
+    purposeLabelEl.textContent = getPurposeLabelText();
+  }
+  if (purposeInputEl) {
+    purposeInputEl.placeholder = getPurposePlaceholderText();
+  }
+  if (purposeHelperEl) {
+    if (isChatbotMode) {
+      purposeHelperEl.textContent = getChatbotPromptGoalHelper(chatbotDisplayName);
+      purposeHelperEl.style.display = "";
+    } else {
+      purposeHelperEl.textContent = "";
+      purposeHelperEl.style.display = "none";
+    }
+  }
+  if (sketchBtnEl) {
+    sketchBtnEl.textContent = getSketchActionLabel();
+  }
+  if (sketchTabBtn) {
+    sketchTabBtn.textContent = isChatbotMode ? "Prompt" : "Sketch";
+  }
+  if (isChatbotMode && sketchViewState === "idle" && !sketchBuffer) {
+    renderPromptEmptyState();
+  }
+}
+
 export function appendSketchChunk(text: string, done: boolean): void {
   if (!sketchContentEl) return;
   if (text) {
+    sketchViewState = "ready";
     sketchBuffer += text;
     sketchContentEl.innerHTML = renderMarkdown(sketchBuffer);
     sketchContentEl.scrollTop = sketchContentEl.scrollHeight;
   }
   if (done) {
+    sketchViewState = "ready";
     sketchLoading = false;
     if (sketchBtnEl) {
       sketchBtnEl.disabled = false;
-      sketchBtnEl.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
+      sketchBtnEl.textContent = getSketchActionLabel();
     }
     if (isChatbotMode && chatbotInputSelector && sketchBuffer) {
       pasteIntoChatbot(chatbotInputSelector, sketchBuffer);
@@ -1031,12 +1135,17 @@ export function appendSketchChunk(text: string, done: boolean): void {
   }
 }
 
-export function setChatbotMode(inputSelector: string): void {
+export function setChatbotMode(
+  inputSelector: string,
+  displayName: string | null = null,
+): void {
   isChatbotMode = true;
   chatbotInputSelector = inputSelector;
-  if (sketchTabBtn) sketchTabBtn.textContent = "Prompt";
-  if (sketchBtnEl) sketchBtnEl.textContent = "Make a Prompt";
-  if (purposeInputEl) purposeInputEl.placeholder = "What is this prompt for?";
+  chatbotDisplayName = displayName;
+  if (!sketchBuffer) {
+    sketchViewState = "idle";
+  }
+  syncChatbotUi();
 }
 
 function pasteIntoChatbot(selector: string, text: string): void {
@@ -3242,17 +3351,23 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   // Sketch button
   const sketchBtn = document.createElement("div");
   sketchBtn.className = "args-onboarding-sketch-btn";
-  sketchBtn.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
+  sketchBtn.textContent = getSketchActionLabel();
 
   // Sketch output
   const sketchOutput = document.createElement("div");
   sketchOutput.className = "args-onboarding-sketch-output";
 
-  const sketchLines = [
-    "The article argues that renewable energy adoption has accelerated beyond projections.",
-    "You agreed with the core claim but flagged that infrastructure costs remain a barrier.",
-    "You also noted the small sample size, suggesting cautious optimism over the findings.",
-  ];
+  const sketchLines = isChatbotMode
+    ? [
+        "Help me evaluate the article's main claim using the reading below.",
+        "Use my notes and replies to identify the strongest evidence and the biggest limitation.",
+        "Ground every point in the text and say when the evidence is uncertain.",
+      ]
+    : [
+        "The article argues that renewable energy adoption has accelerated beyond projections.",
+        "You agreed with the core claim but flagged that infrastructure costs remain a barrier.",
+        "You also noted the small sample size, suggesting cautious optimism over the findings.",
+      ];
   const sketchInner = document.createElement("div");
   sketchInner.className = "args-onboarding-sketch-inner";
   const sketchLineEls: HTMLElement[] = [];
@@ -3271,11 +3386,14 @@ function showOnboardingSlideshow(onComplete: () => void): void {
 
   const title4 = document.createElement("div");
   title4.className = "args-onboarding-slide-title";
-  title4.textContent = "Sketch Your Argument";
+  title4.textContent = isChatbotMode
+    ? getChatbotOnboardingTitle(chatbotDisplayName)
+    : "Sketch Your Argument";
   const body4 = document.createElement("div");
   body4.className = "args-onboarding-slide-body";
-  body4.textContent =
-    "Your reactions and replies compile into a coherent argument.";
+  body4.textContent = isChatbotMode
+    ? getChatbotOnboardingBody(chatbotDisplayName)
+    : "Your reactions and replies compile into a coherent argument.";
 
   slide4.appendChild(vis4);
   slide4.appendChild(title4);
@@ -3865,6 +3983,9 @@ function switchTab(tab: "notes" | "sketch"): void {
   if (footerEl) footerEl.style.display = tab === "notes" ? "" : "none";
   if (sketchContentEl)
     sketchContentEl.style.display = tab === "sketch" ? "" : "none";
+  if (tab === "sketch" && isChatbotMode && sketchViewState === "idle" && !sketchBuffer) {
+    renderPromptEmptyState();
+  }
 }
 
 // ─── Sketch Handler ───
@@ -3874,6 +3995,7 @@ function handleSketch(): void {
 
   // Gate: Sketch Pad requires Standard plan
   if (dashUserTier !== "standard") {
+    sketchViewState = "error";
     if (sketchContentEl) {
       switchTab("sketch");
       const errorDiv = document.createElement("div");
@@ -3899,7 +4021,7 @@ function handleSketch(): void {
   if (!purpose) {
     if (purposeInputEl) {
       purposeInputEl.classList.add("args-purpose-error");
-      purposeInputEl.placeholder = "Please fill in your purpose first";
+      purposeInputEl.placeholder = getPurposeValidationPlaceholderText();
       purposeInputEl.focus();
     }
     return;
@@ -3915,10 +4037,11 @@ function handleSketch(): void {
 
   // Disable button, switch to sketch tab, show loading
   sketchLoading = true;
+  sketchViewState = "loading";
   sketchBuffer = "";
   if (sketchBtnEl) {
     sketchBtnEl.disabled = true;
-    sketchBtnEl.textContent = isChatbotMode ? "Making prompt..." : "Sketching...";
+    sketchBtnEl.textContent = getSketchLoadingLabel();
   }
   if (sketchContentEl) {
     sketchContentEl.innerHTML =
@@ -3933,17 +4056,16 @@ function handleSketch(): void {
       payload: { inputText, purpose, userReactions, mode: isChatbotMode ? "prompt" : "sketch" },
     })
     .catch(() => {
+      sketchViewState = "error";
       sketchLoading = false;
       if (sketchBtnEl) {
         sketchBtnEl.disabled = false;
-        sketchBtnEl.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
+        sketchBtnEl.textContent = getSketchActionLabel();
       }
       if (sketchContentEl) {
         const errorDiv = document.createElement("div");
         errorDiv.className = "args-sketch-error";
-        errorDiv.textContent = isChatbotMode
-          ? "Failed to generate prompt. Please try again."
-          : "Failed to generate sketch. Please try again.";
+        errorDiv.textContent = getSketchErrorText();
         sketchContentEl.replaceChildren(errorDiv);
       }
     });
@@ -4708,6 +4830,13 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(255, 255, 255, 0.3);
   }
 
+  .args-purpose-helper {
+    font-size: 10px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
   /* ── List ── */
 
   .args-list {
@@ -5217,6 +5346,25 @@ const ARGUMENTS_BOX_CSS = `
     margin-bottom: 4px;
   }
 
+  .args-prompt-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 2px;
+  }
+
+  .args-prompt-empty-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .args-prompt-empty-body {
+    font-size: 12px;
+    line-height: 1.55;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
   .args-sketch-loading {
     display: flex;
     justify-content: center;
@@ -5369,6 +5517,10 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(0, 0, 0, 0.25);
   }
 
+  :host([data-theme="light"]) .args-purpose-helper {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
   :host([data-theme="light"]) .arg-card {
     background: rgba(255, 255, 255, 0.82);
     backdrop-filter: blur(10px);
@@ -5455,6 +5607,14 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .args-sketch-content strong {
     color: #111;
+  }
+
+  :host([data-theme="light"]) .args-prompt-empty-title {
+    color: #111;
+  }
+
+  :host([data-theme="light"]) .args-prompt-empty-body {
+    color: rgba(0, 0, 0, 0.58);
   }
 
   :host([data-theme="light"]) .args-sketch-loading span {
