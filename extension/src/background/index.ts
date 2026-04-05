@@ -1407,6 +1407,62 @@ chrome.runtime.onMessage.addListener(
           }
         }
 
+        case "gdocsFindAndHighlight": {
+          const { docId, anchorText, color } = message.payload;
+          try {
+            // Get a Google OAuth token with the documents scope.
+            const token = await new Promise<string>((resolve, reject) => {
+              chrome.identity.getAuthToken({ interactive: true }, (t) => {
+                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+                else resolve(t!);
+              });
+            });
+
+            // Fetch the document to find the anchor text's character range.
+            const docRes = await fetch(
+              `https://docs.googleapis.com/v1/documents/${docId}`,
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
+            if (!docRes.ok) return { error: `docs.get HTTP ${docRes.status}` };
+            const doc = await docRes.json();
+
+            const range = findTextRange(doc, anchorText);
+            if (!range) return { error: "text not found in document" };
+
+            // Apply the annotation highlight color (defaults to green if not specified).
+            const rgbColor = color ?? { red: 0.780, green: 0.933, blue: 0.788 }; // #c7eec9
+            const updateRes = await fetch(
+              `https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  requests: [
+                    {
+                      updateTextStyle: {
+                        range: { startIndex: range.start, endIndex: range.end },
+                        textStyle: {
+                          backgroundColor: {
+                            color: { rgbColor },
+                          },
+                        },
+                        fields: "backgroundColor",
+                      },
+                    },
+                  ],
+                }),
+              },
+            );
+            if (!updateRes.ok) return { error: `batchUpdate HTTP ${updateRes.status}` };
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
         case "injectNextNewTab": {
           // Listen for the next new tab and inject the content script into it.
           // Used for PDF→HTML conversion: content script opens a blob tab,
@@ -1430,7 +1486,7 @@ chrome.runtime.onMessage.addListener(
               // which is the MAIN world dom-guard that has no argbox logic.
               const scripts = manifest.content_scripts ?? [];
               const cs =
-                scripts.find((s) => (s as any).world !== "MAIN") ??
+                scripts.find((s) => (s as { world?: string }).world !== "MAIN") ??
                 scripts[1] ??
                 scripts[0];
               const file = cs?.js?.[0];
