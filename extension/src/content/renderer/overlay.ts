@@ -104,6 +104,13 @@ type OverlayEventCallbacks = {
 let overlayCallbacks: OverlayEventCallbacks | null = null;
 
 /**
+ * In GDocs mode all rects are pointer-events:none so editing clicks reach the canvas.
+ * Hover/click are instead detected via document-level listeners that hit-test against
+ * the cached absolute rects.
+ */
+let gdocsMode = false;
+
+/**
  * Register hover/click callbacks for canvas-mode overlay divs.
  * Called once after initOverlay() to enable interactivity on overlay rects.
  */
@@ -122,6 +129,60 @@ export function setOverlayEventCallbacks(cbs: OverlayEventCallbacks): void {
     const id = (e.target as HTMLElement)?.dataset?.annotationId;
     if (id) { e.stopPropagation(); overlayCallbacks?.onClick(id); }
   });
+}
+
+/**
+ * Switch to GDocs interaction mode.
+ *
+ * All overlay rects become pointer-events:none so clicks reach the GDocs canvas
+ * for text editing. Hover and click on annotations are detected via document-level
+ * listeners that hit-test against the cached absolute rects.
+ *
+ * Returns a cleanup function.
+ */
+export function enableGDocsInteractionMode(scrollContainer: HTMLElement): () => void {
+  gdocsMode = true;
+  redraw(); // repaint rects as pointer-events:none
+
+  const hitTest = (clientX: number, clientY: number): string | null => {
+    const scrollTop  = scrollContainer.scrollTop;
+    const scrollLeft = scrollContainer.scrollLeft;
+    for (const [id, rects] of cachedRects) {
+      for (const r of rects) {
+        const vLeft = r.left - scrollLeft;
+        const vTop  = r.top  - scrollTop;
+        if (clientX >= vLeft && clientX <= vLeft + r.width &&
+            clientY >= vTop  && clientY <= vTop  + r.height) {
+          return id;
+        }
+      }
+    }
+    return null;
+  };
+
+  let hoveredId: string | null = null;
+
+  const onMouseMove = (e: MouseEvent) => {
+    const id = hitTest(e.clientX, e.clientY);
+    if (id === hoveredId) return;
+    if (hoveredId) overlayCallbacks?.onHoverEnd(hoveredId);
+    if (id) overlayCallbacks?.onHoverStart(id);
+    hoveredId = id;
+  };
+
+  const onClick = (e: MouseEvent) => {
+    const id = hitTest(e.clientX, e.clientY);
+    if (id) overlayCallbacks?.onClick(id);
+  };
+
+  document.addEventListener('mousemove', onMouseMove, { passive: true });
+  document.addEventListener('click',     onClick,     { passive: true });
+
+  return () => {
+    gdocsMode = false;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('click',     onClick);
+  };
 }
 
 /**
@@ -319,8 +380,9 @@ function drawCachedAnnotationInto(parent: Node, annotation: Annotation): void {
     const visual = getVisual(annotation.type, getThemeMode(), annotation.label);
     const bgCss = visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : '';
     const borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';
-    // Canvas-mode rects need pointer-events to be interactive (no underlying span)
-    const pointerEvents = bgCss || borderCss ? 'auto' : 'none';
+    // In GDocs mode all rects are pointer-events:none so editing clicks reach the canvas.
+    // On other sites rects need auto so hover/click work (no underlying span to listen on).
+    const pointerEvents = (!gdocsMode && (bgCss || borderCss)) ? 'auto' : 'none';
     el.style.cssText = `
       position: absolute;
       left: ${rect.left}px;

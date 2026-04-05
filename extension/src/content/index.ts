@@ -92,18 +92,24 @@ import {
   setOverlayEventCallbacks,
   setScrollContainer,
   shiftRectsBelow,
+  enableGDocsInteractionMode,
   type AbsoluteRect,
 } from "./renderer/overlay.js";
 import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
 import {
   isGoogleDocs,
+  isGoogleDocsEditorReady,
+  getGoogleDocsId,
   detectGoogleDocsRegions,
   extractGoogleDocsText,
   findAnnotationRects,
   createRangeFromNode,
-  isGoogleDocsEditorReady,
   setGDocsDebugUnderline,
   setupGDocsEditTracking,
+  initGDocsRectCache,
+  getGDocsAnchorRects,
+  deleteGDocsRect,
+  saveGDocsAnnotationsToStorage,
 } from "./google-docs.js";
 import { createStabilityWatcher } from "./stability.js";
 import { getPageUrl } from "./page-url.js";
@@ -1015,6 +1021,11 @@ async function startGoogleDocsPipeline(): Promise<void> {
   setMarginNotesVisible(true);
   initMarginNotes(document.body);
 
+  // Load persisted state (rects + annotations) from storage.
+  // If found, restore immediately without hitting the API.
+  const _gdocsDocId = getGoogleDocsId();
+  const _cachedState = _gdocsDocId ? await initGDocsRectCache(_gdocsDocId) : null;
+
   // Poll for the editor to be ready — Google Docs loads its content asynchronously.
   // Once paragraphs appear, run detection and then watch for further changes.
   await waitForGoogleDocsEditor();
@@ -1047,12 +1058,18 @@ async function startGoogleDocsPipeline(): Promise<void> {
     // Live position tracking: immediately shift overlays on Enter/Delete, and
     // silently re-run Cmd+F corrections after the user pauses typing.
     setupGDocsEditTracking(scrollEl);
+
+    // GDocs interaction mode: overlay rects are pointer-events:none so editing
+    // clicks reach the canvas; hover/click are detected via document-level hit-testing.
+    enableGDocsInteractionMode(scrollEl);
   }
 
   // Render annotations at their cursor-corrected positions as the find queue processes.
   // Also handles re-corrections when the document is edited (pending will be null).
   document.addEventListener('oddity-gdocs-corrected', (e: Event) => {
-    const { id, rect } = (e as CustomEvent<{ id: string; rect: AbsoluteRect }>).detail;
+    const { id, rects } = (e as CustomEvent<{ id: string; rects: AbsoluteRect[] }>).detail;
+    // Use the first rect for anchor-span positioning (top-left of first line).
+    const rect = rects[0]!;
     const scrollEl = regions[0]?.element as HTMLElement | undefined;
     const scrollTop  = scrollEl?.scrollTop  ?? 0;
     const scrollLeft = scrollEl?.scrollLeft ?? 0;
@@ -1064,7 +1081,7 @@ async function startGoogleDocsPipeline(): Promise<void> {
       const { annotation, noteFeedback, regionId: pendingRegionId } = pending;
 
       removeAnnotation(id);
-      renderAnnotationWithRects(annotation, [rect]);
+      renderAnnotationWithRects(annotation, rects);
       gdocsAnnotationCache.set(id, annotation);
 
       gdocsAnchors.get(id)?.el.remove();
@@ -1083,7 +1100,7 @@ async function startGoogleDocsPipeline(): Promise<void> {
       if (!annotation) return;
 
       removeAnnotation(id);
-      renderAnnotationWithRects(annotation, [rect]);
+      renderAnnotationWithRects(annotation, rects);
 
       const anchor = gdocsAnchors.get(id);
       if (anchor) {
@@ -1127,9 +1144,42 @@ async function startGoogleDocsPipeline(): Promise<void> {
     onClick: (id) => { if (scrollEl) updateGdocsAnchorPosition(id, scrollEl); onAnchorClick(id); },
   });
 
-  for (const region of regions) {
-    handleStableRegion(region, region.element);
+  // If cached state exists, restore annotations directly without fetching doc text or API.
+  // We bypass findAnnotationRects (which needs _cachedDocText) and directly populate
+  // gdocsRenderPending + dispatch oddity-gdocs-corrected for each annotation with known rects.
+  if (_cachedState?.annotations?.length && regions.length > 0) {
+    const { annotations: cachedAnns, regionId: cachedRegionId } = _cachedState;
+    regionByHash.set(cachedRegionId, regions[0]!);
+    activeHashes.set(regions[0]!.element, cachedRegionId);
+    const store = currentMode === 'overview' ? overviewAnnotations : depthAnnotations;
+    setAnnotationsPreservingUserWritten(store, cachedRegionId, cachedAnns);
+
+    const feedback = effectiveFeedbackMap().get(cachedRegionId) ?? [];
+    for (const annotation of cachedAnns) {
+      const rects = getGDocsAnchorRects(annotation.id);
+      if (!rects) continue;
+      const noteFeedback = feedback.filter(f => f.annotation_id === annotation.id);
+      gdocsRenderPending.set(annotation.id, { annotation, noteFeedback, regionId: cachedRegionId });
+      // Dispatch after this synchronous block so the oddity-gdocs-corrected listener is ready.
+      const id = annotation.id;
+      setTimeout(() => {
+        document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', { detail: { id, rects } }));
+      }, 0);
+    }
+    syncArgumentsBox();
   }
+
+  // Inject "Annotate" button — triggers a fresh API call, replacing current annotations.
+  injectGDocsAnnotateButton(() => {
+    annotatedRegions.clear();
+    pendingRegions.clear();
+    overviewGenerated.clear();
+    depthGenerated.clear();
+    activeHashes.clear();
+    for (const region of regions) {
+      handleStableRegion(region, region.element);
+    }
+  });
 
   // Watch for new content appearing (lazy loading, SPA navigation within Docs).
   // Debounced — GDocs makes hundreds of DOM mutations per second during editing.
@@ -1151,14 +1201,42 @@ async function startGoogleDocsPipeline(): Promise<void> {
           initMarginNotes(region.element);
           marginNotesInitFromBody = true;
         }
-
-        handleStableRegion(region, region.element);
       }
     }, 1500);
   });
 
   pageObserver.observe(document.body, { childList: true, subtree: true });
   activeBodyObserver = pageObserver;
+}
+
+function injectGDocsAnnotateButton(onAnnotate: () => void): void {
+  // Remove any existing button (re-init case)
+  document.getElementById('oddity-gdocs-annotate-btn')?.remove();
+
+  const btn = document.createElement('button');
+  btn.id = 'oddity-gdocs-annotate-btn';
+  btn.textContent = 'Annotate';
+  btn.style.cssText = `
+    position: fixed;
+    top: 8px;
+    right: 60px;
+    z-index: 9999;
+    padding: 6px 14px;
+    background: #1a73e8;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: 'Google Sans', Roboto, Arial, sans-serif;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    line-height: 20px;
+  `;
+  btn.addEventListener('mouseenter', () => { btn.style.background = '#1765cc'; });
+  btn.addEventListener('mouseleave', () => { btn.style.background = '#1a73e8'; });
+  btn.addEventListener('click', () => { onAnnotate(); });
+  document.body.appendChild(btn);
 }
 
 /**
@@ -1803,6 +1881,10 @@ function handleAnnotationDeleted(annotationId: string): void {
     },
   });
 
+  // Remove persisted anchor rect for this annotation (GDocs only)
+  const docId = getGoogleDocsId();
+  if (docId) deleteGDocsRect(docId, annotationId);
+
   // Remove from DOM
   removeAnchors(annotationId);
   removeMarginNote(annotationId);
@@ -1922,6 +2004,11 @@ function renderAnnotations(regionId: string, annotations: Annotation[]): void {
   // Google Docs uses canvas rendering — skip DOM anchor injection and use pretext-based rects
   if (isGoogleDocs()) {
     renderGoogleDocsAnnotations(regionId, annotations);
+    // Persist annotations so they survive service worker restarts between page loads.
+    const docId = getGoogleDocsId();
+    if (docId && annotations.length > 0) {
+      saveGDocsAnnotationsToStorage(docId, regionId, annotations);
+    }
     return;
   }
 

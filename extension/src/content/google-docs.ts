@@ -217,28 +217,121 @@ const _completedJobs: CorrectionJob[] = [];
  * Predicate for the cyan tracking highlight GDocs applies to anchor text.
  * rgb(0, 255, 255) rendered on canvas — pure cyan, high B+G, near-zero R.
  */
+// Semi-transparent cyan blended over white: r ≈ (1-alpha)*255, g=255, b=255.
+// At GDocs default highlight opacity (~40%) r ≈ 153; use r < 220 with margin.
 const isAnchorHighlight = (r: number, g: number, b: number, _a: number): boolean =>
-  b > 200 && g > 200 && b > r + 50 && r < 100;
+  g > 200 && b > 200 && g > r + 30 && b > r + 30 && r < 220;
 
-/** Last-known absolute rect for each annotation's cyan tracking highlight. */
-const _anchorRects = new Map<string, AbsoluteRect>();
+/** Last-known rects (one per line) for each annotation's cyan tracking highlight. */
+const _anchorRects = new Map<string, AbsoluteRect[]>();
+
+/** Returns the cached rects for an annotation, or null if not found. */
+export function getGDocsAnchorRects(annotationId: string): AbsoluteRect[] | null {
+  return _anchorRects.get(annotationId) ?? null;
+}
+
+// ─── GDocs State Persistence ───
+
+const GDOCS_STATE_KEY_PREFIX = 'gdocs-state:';
+let _gdocsDocId: string | null = null;
+/** True if state was loaded from storage (skip Cmd+F and API call on this load). */
+let _cachedRectsLoaded = false;
+
+interface GDocsPersistedState {
+  rects: Record<string, AbsoluteRect[]>;
+  annotations: import('@oddity/shared').Annotation[];
+  regionId: string;
+}
 
 /**
- * Scan all visible (deduplicated) canvas tiles for the cyan tracking highlight.
- * Returns one AbsoluteRect per distinct vertical cluster — one per annotation span.
- * All coordinates are absolute (viewport-relative + scrollContainer offsets).
+ * Load persisted GDocs state (rects + annotations) from chrome.storage.local.
+ * Returns the persisted state if found, null otherwise.
  */
-function scanCanvasForAllHighlightRects(scrollContainer: HTMLElement): AbsoluteRect[] {
+export async function initGDocsRectCache(docId: string): Promise<GDocsPersistedState | null> {
+  _gdocsDocId = docId;
+  if (!chrome?.storage?.local) return null;
+  const key = GDOCS_STATE_KEY_PREFIX + docId;
+  try {
+    const result = await chrome.storage.local.get(key);
+    const stored = result[key] as GDocsPersistedState | undefined;
+    if (!stored?.rects || Object.keys(stored.rects).length === 0) return null;
+    for (const [id, rects] of Object.entries(stored.rects)) {
+      _anchorRects.set(id, rects);
+    }
+    _cachedRectsLoaded = true;
+    console.log(`[Oddity 1] GDocs: restored ${_anchorRects.size} anchor rect(s) from storage`);
+    return stored;
+  } catch (err) {
+    console.warn('[Oddity 1] GDocs: failed to load cached state', err);
+    return null;
+  }
+}
+
+function saveGDocsRectsToStorage(): void {
+  if (!_gdocsDocId || !chrome?.storage?.local) return;
+  const key = GDOCS_STATE_KEY_PREFIX + _gdocsDocId;
+  // Merge rects into existing stored state (preserve annotations)
+  chrome.storage.local.get(key).then(result => {
+    const existing = (result[key] ?? {}) as Partial<GDocsPersistedState>;
+    const rects: Record<string, AbsoluteRect[]> = {};
+    for (const [id, r] of _anchorRects) rects[id] = r;
+    return chrome.storage.local.set({ [key]: { ...existing, rects } });
+  }).catch(() => {});
+}
+
+/** Persist annotations alongside rects so they survive service worker restarts. */
+export function saveGDocsAnnotationsToStorage(
+  docId: string,
+  regionId: string,
+  annotations: import('@oddity/shared').Annotation[],
+): void {
+  if (!chrome?.storage?.local) return;
+  const key = GDOCS_STATE_KEY_PREFIX + docId;
+  chrome.storage.local.get(key).then(result => {
+    const existing = (result[key] ?? {}) as Partial<GDocsPersistedState>;
+    return chrome.storage.local.set({ [key]: { ...existing, annotations, regionId } });
+  }).catch(() => {});
+}
+
+/** Remove a single annotation's stored rects (call when annotation is deleted). */
+export function deleteGDocsRect(docId: string, annotationId: string): void {
+  _anchorRects.delete(annotationId);
+  if (!chrome?.storage?.local) return;
+  const key = GDOCS_STATE_KEY_PREFIX + docId;
+  chrome.storage.local.get(key).then(result => {
+    const stored = result[key] as GDocsPersistedState | undefined;
+    if (!stored?.rects) return;
+    delete stored.rects[annotationId];
+    // Also remove from annotations array
+    if (stored.annotations) {
+      stored.annotations = stored.annotations.filter(a => a.id !== annotationId);
+    }
+    return chrome.storage.local.set({ [key]: stored });
+  }).catch(() => {});
+}
+
+/**
+ * Scan visible canvas tiles for pixels matching `predicate`.
+ * Optionally diffs against a before-snapshot so only newly-appeared pixels count.
+ *
+ * Returns AbsoluteRect[][] — one inner array per annotation span, each inner array
+ * containing one rect per visual line (not a merged bounding box).
+ *
+ * Two-pass clustering:
+ *   Pass 1: pixel rows within 1 px → same text line (strict to split adjacent lines).
+ *   Pass 2: line runs within 40 px → same annotation span.
+ */
+function scanCanvasRects(
+  predicate: (r: number, g: number, b: number, a: number) => boolean,
+  scrollContainer: HTMLElement,
+  before?: Map<HTMLCanvasElement, ImageData>,
+): AbsoluteRect[][] {
   interface RowData { y: number; xMin: number; xMax: number; }
   const allRows: RowData[] = [];
-  const seenTops = new Set<number>();
 
   for (const canvas of document.querySelectorAll<HTMLCanvasElement>('canvas')) {
     const bcr = canvas.getBoundingClientRect();
     if (bcr.width < 400 || bcr.height <= 0 || bcr.top >= window.innerHeight || bcr.bottom <= 0) continue;
-    const topKey = Math.round(bcr.top);
-    if (seenTops.has(topKey)) continue;
-    seenTops.add(topKey);
 
     const ctx = canvas.getContext('2d');
     if (!ctx) continue;
@@ -248,6 +341,7 @@ function scanCanvasForAllHighlightRects(scrollContainer: HTMLElement): AbsoluteR
     try { pixels = ctx.getImageData(0, 0, width, height); } catch { continue; }
 
     const { data } = pixels;
+    const beforeData = before?.get(canvas)?.data;
     const sx = bcr.width  / width;
     const sy = bcr.height / height;
 
@@ -255,10 +349,14 @@ function scanCanvasForAllHighlightRects(scrollContainer: HTMLElement): AbsoluteR
       let xMin = Infinity, xMax = -Infinity;
       for (let px = 0; px < width; px++) {
         const i = (py * width + px) * 4;
-        if (isAnchorHighlight(data[i]!, data[i + 1]!, data[i + 2]!, data[i + 3]!)) {
-          if (px < xMin) xMin = px;
-          if (px > xMax) xMax = px;
+        const r = data[i]!, g = data[i+1]!, b = data[i+2]!, a = data[i+3]!;
+        if (!predicate(r, g, b, a)) continue;
+        if (beforeData) {
+          const br = beforeData[i]!, bg = beforeData[i+1]!, bb = beforeData[i+2]!, ba = beforeData[i+3]!;
+          if (predicate(br, bg, bb, ba)) continue; // pixel was already matching before — skip
         }
+        if (px < xMin) xMin = px;
+        if (px > xMax) xMax = px;
       }
       if (xMin !== Infinity) {
         allRows.push({
@@ -273,23 +371,52 @@ function scanCanvasForAllHighlightRects(scrollContainer: HTMLElement): AbsoluteR
   if (allRows.length === 0) return [];
   allRows.sort((a, b) => a.y - b.y);
 
-  interface Cluster { top: number; bottom: number; left: number; right: number; }
-  const clusters: Cluster[] = [];
+  // Pass 1 — merge pixel rows within 1 px into a single line run.
+  // Using 1 px (not 2) so adjacent highlighted lines don't collapse into one rect.
+  interface LineRun { top: number; bottom: number; left: number; right: number; }
+  const lineRuns: LineRun[] = [];
   for (const row of allRows) {
-    const last = clusters[clusters.length - 1];
-    if (last && row.y - last.bottom <= 4) {
+    const last = lineRuns[lineRuns.length - 1];
+    if (last && row.y - last.bottom <= 1) {
       last.bottom = row.y;
       last.left   = Math.min(last.left,  row.xMin);
       last.right  = Math.max(last.right, row.xMax);
     } else {
-      clusters.push({ top: row.y, bottom: row.y, left: row.xMin, right: row.xMax });
+      lineRuns.push({ top: row.y, bottom: row.y, left: row.xMin, right: row.xMax });
     }
   }
-  return clusters.map(c => ({ left: c.left, top: c.top, width: c.right - c.left, height: c.bottom - c.top + 1 }));
+
+  // Pass 2 — group line runs within 8 px into one annotation cluster.
+  // Keep this tight: intra-annotation line gap is ~2–4 px; inter-annotation gap
+  // (paragraph spacing) is typically ≥ 10 px, so 8 px keeps them separate.
+  const clusters: LineRun[][] = [];
+  for (const run of lineRuns) {
+    const last = clusters[clusters.length - 1];
+    const lastRun = last?.[last.length - 1];
+    if (lastRun && run.top - lastRun.bottom <= 8) {
+      last!.push(run);
+    } else {
+      clusters.push([run]);
+    }
+  }
+
+  return clusters.map(lines =>
+    lines.map(lr => ({ left: lr.left, top: lr.top, width: lr.right - lr.left, height: lr.bottom - lr.top + 1 })),
+  );
 }
 
 function enqueueCursorCorrection(job: CorrectionJob): void {
   if (_correctionQueue.some(j => j.id === job.id)) return;
+
+  // Cached document: use stored rects directly — never run Cmd+F.
+  if (_cachedRectsLoaded && _anchorRects.has(job.id)) {
+    const rects = _anchorRects.get(job.id)!;
+    setTimeout(() => {
+      document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', { detail: { id: job.id, rects } }));
+    }, 0);
+    return;
+  }
+
   _correctionQueue.push(job);
   if (!_correctionRunning) drainCorrectionQueue();
 }
@@ -501,19 +628,31 @@ function runCursorCorrection(job: CorrectionJob): Promise<void> {
                 height: rect.height > 0 ? rect.height : height,
               };
 
-              // Store last-known position for canvas-scan proximity matching.
-              _anchorRects.set(id, absRect);
-
-              // Record completed job (kept for reference).
               const idx = _completedJobs.findIndex(j => j.id === id);
               if (idx >= 0) _completedJobs[idx] = job; else _completedJobs.push(job);
 
-              document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', {
-                detail: { id, rect: absRect },
-              }));
-
-              // Apply tracking highlight while selection is still active, then finish.
-              applyHighlightToSelection().then(() => setTimeout(finish, 100));
+              // Apply the cyan tracking highlight, wait for GDocs to repaint the canvas,
+              // then scan for per-line rects.  This gives correct multi-line overlays from
+              // the first render.  Falls back to the bounding-box rect if scan finds nothing.
+              applyHighlightToSelection().then(() => {
+                setTimeout(() => {
+                  const clusters = scanCanvasRects(isAnchorHighlight, scrollContainer);
+                  let rects: AbsoluteRect[] = [absRect];
+                  if (clusters.length > 0) {
+                    let best = clusters[0]!;
+                    let bestDist = Math.abs(best[0]!.top - absRect.top) + Math.abs(best[0]!.left - absRect.left);
+                    for (const cl of clusters.slice(1)) {
+                      const d = Math.abs(cl[0]!.top - absRect.top) + Math.abs(cl[0]!.left - absRect.left);
+                      if (d < bestDist) { bestDist = d; best = cl; }
+                    }
+                    if (bestDist < 200) rects = best;
+                  }
+                  _anchorRects.set(id, rects);
+                  saveGDocsRectsToStorage();
+                  document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', { detail: { id, rects } }));
+                  setTimeout(finish, 100);
+                }, 600);
+              });
             } else {
               console.log(`[Oddity1] step 6: no blue selection found, skipping`);
               setTimeout(finish, 200);
@@ -818,25 +957,49 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
     if (trackTimer) clearTimeout(trackTimer);
     trackTimer = setTimeout(() => {
       trackTimer = null;
-      const found = scanCanvasForAllHighlightRects(scrollContainer);
+      const found = scanCanvasRects(isAnchorHighlight, scrollContainer); // AbsoluteRect[][]
       if (found.length === 0) return;
 
-      for (const [id, lastRect] of _anchorRects) {
-        // Match to the closest found highlight by vertical + horizontal proximity.
-        let closest: AbsoluteRect | null = null;
-        let minDist = Infinity;
-        for (const r of found) {
-          const dist = Math.abs(r.top - lastRect.top) + Math.abs(r.left - lastRect.left) * 0.5;
-          if (dist < minDist) { minDist = dist; closest = r; }
+      // Build all (annotation, cluster, distance) pairs and sort by distance.
+      // Distance = min distance from any stored line of the annotation to cluster[0].
+      // Greedily assign each cluster to at most one annotation (and vice versa).
+      const pairs: { id: string; cluster: AbsoluteRect[]; dist: number }[] = [];
+      for (const [id, lastRects] of _anchorRects) {
+        for (const cluster of found) {
+          let minDist = Infinity;
+          for (const lr of lastRects) {
+            const d = Math.abs(cluster[0]!.top  - lr.top)
+                    + Math.abs(cluster[0]!.left - lr.left) * 0.5;
+            if (d < minDist) minDist = d;
+          }
+          pairs.push({ id, cluster, dist: minDist });
         }
-        if (!closest || minDist > 500) continue;
-        if (Math.abs(closest.top - lastRect.top) < 1 && Math.abs(closest.left - lastRect.left) < 1) continue;
+      }
+      pairs.sort((a, b) => a.dist - b.dist);
 
-        _anchorRects.set(id, closest);
+      const assignedIds      = new Set<string>();
+      const assignedClusters = new Set<AbsoluteRect[]>();
+
+      for (const { id, cluster, dist } of pairs) {
+        if (dist > 500) break;
+        if (assignedIds.has(id) || assignedClusters.has(cluster)) continue;
+        assignedIds.add(id);
+        assignedClusters.add(cluster);
+
+        const lastRects = _anchorRects.get(id)!;
+        const posUnchanged  = Math.abs(cluster[0]!.top  - lastRects[0]!.top)  < 1
+                           && Math.abs(cluster[0]!.left - lastRects[0]!.left) < 1;
+        const shapeUnchanged = cluster.length === lastRects.length
+                            && cluster.every((r, i) => Math.abs(r.width - (lastRects[i]?.width ?? 0)) < 2);
+        if (posUnchanged && shapeUnchanged) continue;
+
+        _anchorRects.set(id, cluster);
         document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', {
-          detail: { id, rect: closest },
+          detail: { id, rects: cluster },
         }));
       }
+      // Scan complete — save updated positions so next reload restores them.
+      saveGDocsRectsToStorage();
     }, 150);
   };
 
