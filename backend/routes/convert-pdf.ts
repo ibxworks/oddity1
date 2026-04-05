@@ -2,15 +2,43 @@ import type { UserTier } from "@oddity/shared";
 import { canUseFeature } from "@oddity/shared";
 import { Router } from "express";
 
-const DATALAB_API_URL = "https://www.datalab.to/api/v1/marker";
+const FC_BASE = "https://api.freeconvert.com/v1";
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 55_000; // Leave margin within Vercel's 60s limit
 const MAX_PDF_SIZE = 3 * 1024 * 1024; // 3MB raw PDF
 
 const router = Router();
 
+// ─── FreeConvert API helper ───
+
+async function fcFetch<T = unknown>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const apiKey = process.env.FREECONVERT_API_KEY!;
+  const res = await fetch(`${FC_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`FreeConvert ${method} ${path} failed (${res.status}): ${text}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+// ─── Route ───
+
 router.post("/", async (req, res) => {
-  const apiKey = process.env.MARKER_API_KEY;
+  const apiKey = process.env.FREECONVERT_API_KEY;
   if (!apiKey) {
     res.status(500).json({ error: "PDF conversion is not configured" });
     return;
@@ -42,125 +70,101 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    // ── Submit to Marker API ──
+    // ── Step 1: Create upload task to get pre-signed URL ──
+    const uploadTask = await fcFetch<{
+      id: string;
+      result: {
+        form: {
+          url: string;
+          parameters: Record<string, string>;
+        };
+      };
+    }>("POST", "/process/import/upload");
+
+    // ── Step 2: Upload PDF to pre-signed URL ──
+    const form = uploadTask.result.form;
     const formData = new FormData();
+    for (const [key, val] of Object.entries(form.parameters)) {
+      formData.append(key, val as string);
+    }
     formData.append(
       "file",
       new Blob([pdfBuffer], { type: "application/pdf" }),
       "document.pdf",
     );
-    formData.append("output_format", "html");
-    formData.append("mode", "fast");
 
-    const submitRes = await fetch(DATALAB_API_URL, {
+    const uploadRes = await fetch(form.url, {
       method: "POST",
-      headers: { "X-API-Key": apiKey },
       body: formData,
     });
-
-    if (!submitRes.ok) {
-      const errBody = await submitRes.text();
-      console.error("[convert-pdf] Marker submit failed:", submitRes.status, errBody);
-      res.status(502).json({ error: "PDF conversion service error" });
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      console.error("[convert-pdf] File upload failed:", uploadRes.status, errText);
+      res.status(502).json({ error: "Failed to upload PDF for conversion" });
       return;
     }
 
-    const submitData = (await submitRes.json()) as {
-      success: boolean;
-      request_check_url?: string;
-      request_id?: string;
-    };
+    // ── Step 3: Create conversion job (convert → export) ──
+    const job = await fcFetch<{
+      id: string;
+      status: string;
+      tasks: Array<{ id: string; name: string; status: string; result?: { url?: string } }>;
+    }>("POST", "/process/jobs", {
+      tasks: {
+        convert: {
+          operation: "convert",
+          input: uploadTask.id,
+          output_format: "html",
+        },
+        export: {
+          operation: "export/url",
+          input: "convert",
+          filename: "converted.html",
+        },
+      },
+    });
 
-    if (!submitData.success || !submitData.request_check_url) {
-      console.error("[convert-pdf] Marker submit rejected:", submitData);
-      res.status(502).json({ error: "PDF conversion service rejected the request" });
-      return;
-    }
-
-    // ── Poll for result ──
-    const checkUrl = submitData.request_check_url;
+    // ── Step 4: Poll job until complete ──
     const startTime = Date.now();
+    let completedJob = job;
 
     while (Date.now() - startTime < POLL_TIMEOUT_MS) {
+      if (completedJob.status === "completed") break;
+      if (completedJob.status === "failed") {
+        res.status(502).json({ error: "PDF conversion failed" });
+        return;
+      }
+
       await sleep(POLL_INTERVAL_MS);
 
-      const pollRes = await fetch(checkUrl, {
-        headers: { "X-API-Key": apiKey },
-      });
-
-      if (!pollRes.ok) {
-        console.error("[convert-pdf] Marker poll failed:", pollRes.status);
-        continue;
-      }
-
-      const pollData = (await pollRes.json()) as {
-        status: string;
-        success?: boolean;
-        html?: string;
-        images?: Record<string, string>;
-        error?: string;
-      };
-
-      if (pollData.status === "complete") {
-        if (!pollData.success || !pollData.html) {
-          res.status(502).json({
-            error: pollData.error ?? "PDF conversion failed",
-          });
-          return;
-        }
-
-        // Inline base64 images into the HTML
-        const html = inlineImages(pollData.html, pollData.images ?? {});
-        res.json({ html });
-        return;
-      }
-
-      if (pollData.status === "failed") {
-        res.status(502).json({
-          error: pollData.error ?? "PDF conversion failed",
-        });
-        return;
-      }
-
-      // status is "processing" — keep polling
+      completedJob = await fcFetch<typeof job>("GET", `/process/jobs/${job.id}`);
     }
 
-    // Timeout
-    res.status(504).json({ error: "PDF conversion timed out. Please try again." });
+    if (completedJob.status !== "completed") {
+      res.status(504).json({ error: "PDF conversion timed out. Please try again." });
+      return;
+    }
+
+    // ── Step 5: Download HTML from export task's result URL ──
+    const exportTask = completedJob.tasks.find((t) => t.name === "export");
+    if (!exportTask?.result?.url) {
+      res.status(502).json({ error: "Conversion completed but no download URL found" });
+      return;
+    }
+
+    const htmlRes = await fetch(exportTask.result.url);
+    if (!htmlRes.ok) {
+      res.status(502).json({ error: "Failed to download converted HTML" });
+      return;
+    }
+
+    const html = await htmlRes.text();
+    res.json({ html });
   } catch (err) {
     console.error("[convert-pdf] Unexpected error:", err);
     res.status(500).json({ error: "Internal server error during PDF conversion" });
   }
 });
-
-/**
- * Replace `<img src="filename.png">` references with inline base64 data URIs.
- * Marker returns images as `{ "filename.png": "base64data..." }`.
- */
-function inlineImages(html: string, images: Record<string, string>): string {
-  if (Object.keys(images).length === 0) return html;
-
-  return html.replace(
-    /<img\s+([^>]*?)src=["']([^"']+)["']/gi,
-    (match, before: string, src: string) => {
-      const base64 = images[src];
-      if (!base64) return match;
-
-      // Detect MIME from filename extension
-      const ext = src.split(".").pop()?.toLowerCase() ?? "png";
-      const mime =
-        ext === "jpg" || ext === "jpeg"
-          ? "image/jpeg"
-          : ext === "gif"
-            ? "image/gif"
-            : ext === "webp"
-              ? "image/webp"
-              : "image/png";
-
-      return `<img ${before}src="data:${mime};base64,${base64}"`;
-    },
-  );
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
