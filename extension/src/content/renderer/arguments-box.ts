@@ -979,6 +979,23 @@ export function setPdfRunCallback(cb: () => void): void {
   pdfRunCb = cb;
 }
 
+/** Reset the PDF overlay button to its initial state (e.g. after an error). */
+export function resetPdfButton(errorMsg?: string): void {
+  if (!pdfPanelEl) return;
+  const btn = pdfPanelEl.querySelector<HTMLButtonElement>(".args-run-btn");
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = "Run as HTML";
+  }
+  if (errorMsg) {
+    const hint = pdfPanelEl.querySelector<HTMLDivElement>(".args-not-enabled-hint");
+    if (hint) {
+      hint.textContent = errorMsg;
+      hint.style.color = "#ef4444";
+    }
+  }
+}
+
 export function setManualRunCallback(cb: () => void): void {
   manualRunCb = cb;
 }
@@ -1018,14 +1035,33 @@ function pasteIntoChatbot(selector: string, text: string): void {
   const el = document.querySelector(selector) as HTMLElement | null;
   if (!el) return;
 
+  el.focus();
+
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
     el.value = text;
     el.dispatchEvent(new Event("input", { bubbles: true }));
   } else if (el.isContentEditable) {
-    el.focus();
-    el.textContent = "";
-    document.execCommand("insertText", false, text);
-    el.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
+    // Clear via execCommand (not textContent) so the editor's Parchment/internal
+    // model stays in sync with the DOM.
+    document.execCommand("selectAll", false);
+    document.execCommand("delete", false);
+    // Insert as a single insertHTML call — one atomic DOM operation.
+    // The loop-based approach (insertText + insertParagraph per line) is
+    // unreliable with Quill: its MutationObserver fires between each execCommand
+    // call and desynchronises the internal Selection, silently dropping lines 2+.
+    // insertHTML delivers the entire content at once; Quill processes it in one
+    // MutationObserver batch and normalises correctly.
+    const html = text
+      .split("\n")
+      .map((line) => {
+        const escaped = line
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        return `<p>${escaped || "<br>"}</p>`;
+      })
+      .join("");
+    document.execCommand("insertHTML", false, html);
   }
 }
 

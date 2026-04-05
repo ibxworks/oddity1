@@ -527,3 +527,30 @@ export async function updatePreferences(
   if (!res.ok) throw new Error(`updatePreferences failed: ${res.status}`);
   return res.json() as Promise<UserPreferences>;
 }
+
+/** Convert a PDF binary to HTML via the Datalab Marker API (server-side). */
+export async function convertPdfViaMarker(pdfData: Uint8Array): Promise<string> {
+  // Encode binary as base64 to send in JSON body
+  const pdfBase64 = uint8ToBase64(pdfData);
+
+  const res = await authFetch('/api/convert-pdf', {
+    method: 'POST',
+    body: JSON.stringify({ pdfBase64 }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error((body as { error?: string }).error ?? `Convert PDF failed: ${res.status}`);
+  }
+
+  const data = (await res.json()) as { html: string };
+  return data.html;
+}
+
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}

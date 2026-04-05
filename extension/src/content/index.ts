@@ -47,6 +47,7 @@ import {
   updateDashboardPersonality,
   setArgumentsBoxPdf,
   setPdfRunCallback,
+  resetPdfButton,
   setDashUserTier,
 } from "./renderer/arguments-box.js";
 import {
@@ -708,19 +709,61 @@ function isPdfPage(): boolean {
 async function handlePdfConversion(): Promise<void> {
   const pdfUrl = window.location.href;
   try {
-    const { convertPdfToHtml } = await import("./pdf-converter.js");
-    const html = await convertPdfToHtml(pdfUrl);
+    // Check cache first (keyed by URL)
+    const cacheKey = `pdf_html:${pdfUrl}`;
+    const cached = await chrome.storage.local.get(cacheKey);
+    let html: string;
 
-    // Tell background to inject content script into the next new tab
+    const cachedEntry = cached[cacheKey] as { html: string; ts: number } | undefined;
+    if (cachedEntry?.html) {
+      html = cachedEntry.html;
+    } else {
+      // Step 1: Fetch PDF binary via background (handles file:// and auth-gated URLs)
+      const fetchRes = await sendMessage({ action: "fetchPdfData", payload: { url: pdfUrl } });
+      if (fetchRes?.error) throw new Error(fetchRes.error);
+      const pdfData: number[] = fetchRes.data;
+
+      // Step 2: Send binary to backend → Datalab Marker API → get HTML back
+      const convertRes = await sendMessage({ action: "convertPdfToHtml", payload: { pdfData } });
+      if (convertRes?.error) throw new Error(convertRes.error);
+      html = convertRes.html;
+
+      // Cache the result with timestamp; evict oldest if too many entries
+      cachePdfHtml(cacheKey, html);
+    }
+
+    // Step 3: Open converted HTML in a new tab
     await sendMessage({ action: "injectNextNewTab", payload: {} });
-
-    // Open converted HTML in a new tab via blob URL
     const blob = new Blob([html], { type: "text/html" });
     const blobUrl = URL.createObjectURL(blob);
     window.open(blobUrl, "_blank");
   } catch (err) {
     console.error("[Oddity 1] PDF conversion failed:", err);
+    const msg = err instanceof Error ? err.message : "Conversion failed";
+    resetPdfButton(msg);
   }
+}
+
+const PDF_CACHE_PREFIX = "pdf_html:";
+const PDF_CACHE_MAX_ENTRIES = 5;
+
+function cachePdfHtml(key: string, html: string): void {
+  // Store HTML + timestamp, then evict oldest entries if over limit
+  const entry = { html, ts: Date.now() };
+  chrome.storage.local.set({ [key]: entry }).then(() => {
+    // Count existing PDF cache entries and evict oldest if needed
+    chrome.storage.local.get(null).then((all) => {
+      const pdfEntries = Object.entries(all)
+        .filter(([k]) => k.startsWith(PDF_CACHE_PREFIX))
+        .map(([k, v]) => ({ key: k, ts: (v as { ts?: number }).ts ?? 0 }))
+        .sort((a, b) => b.ts - a.ts); // newest first
+
+      if (pdfEntries.length > PDF_CACHE_MAX_ENTRIES) {
+        const toRemove = pdfEntries.slice(PDF_CACHE_MAX_ENTRIES).map((e) => e.key);
+        chrome.storage.local.remove(toRemove).catch(() => {});
+      }
+    }).catch(() => {});
+  }).catch(() => {});
 }
 
 function manualRun(): void {
