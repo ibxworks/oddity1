@@ -751,7 +751,10 @@ export function initArgumentsBox(): void {
             enabledSites.some(
               (s) => hostname === s || hostname.endsWith("." + s),
             ));
-        if (!siteEnabled) {
+        // Skip dimming on PDF-converted pages — the meta tag marks them as
+        // already converted and the annotation pipeline runs regardless of whitelist.
+        const isPdfConverted = !!document.querySelector('meta[name="oddity-source-pdf"]');
+        if (!siteEnabled && !isPdfConverted) {
           dimmed = true;
           containerEl?.classList.add("oddity-not-enabled");
         }
@@ -990,7 +993,7 @@ export function resetPdfButton(errorMsg?: string): void {
   const btn = pdfPanelEl.querySelector<HTMLButtonElement>(".args-run-btn");
   if (btn) {
     btn.disabled = false;
-    btn.textContent = pdfCachedLabel ? "Load cached version" : "Run as HTML";
+    btn.textContent = pdfCachedLabel ? "See annotations" : "Run as HTML";
   }
   if (errorMsg) {
     const hint = pdfPanelEl.querySelector<HTMLDivElement>(".args-not-enabled-hint");
@@ -1445,7 +1448,7 @@ function showPdfOverlay(): void {
     hint.textContent = "Convert to HTML to enable Oddity 1";
     const runBtn = document.createElement("button");
     runBtn.className = "args-run-btn";
-    runBtn.textContent = pdfCachedLabel ? "Load cached version" : "Run as HTML";
+    runBtn.textContent = pdfCachedLabel ? "See annotations" : "Run as HTML";
     runBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       runBtn.disabled = true;
