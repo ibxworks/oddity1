@@ -44,6 +44,11 @@ let docHasContent = false;
 let activeSession: OddityGDocsSession | null = null;
 let loadingOverlayEl: HTMLElement | null = null;
 let loadingStatusEl: HTMLElement | null = null;
+let reviewPanelEl: HTMLElement | null = null;
+
+// ─── Welcome card state ───────────────────────────────────────────────────────
+let welcomeCardEl: HTMLElement | null = null;
+let importedContext = '';
 
 // ─── MCQ state ────────────────────────────────────────────────────────────────
 let mcqActive = false;
@@ -51,7 +56,7 @@ let mcqPreviousQA: Array<{ question: string; answer: string }> = [];
 let mcqQuestionNumber = 1;
 let mcqTopic = '';
 let mcqCardEl: HTMLElement | null = null;
-const MAX_MCQ_QUESTIONS = 3;
+const MAX_MCQ_QUESTIONS = 5;
 
 // ─── Chat history (for edit mode) ─────────────────────────────────────────────
 const chatHistory: GDocsMessage[] = [];
@@ -566,20 +571,163 @@ async function addDepthAnnotationsAsComments(): Promise<void> {
   setInputEnabled(true);
 }
 
+// ─── Edit review panel (Cursor-style) ────────────────────────────────────────
+
+function callDocApi(action: string, payload: Record<string, unknown>): Promise<{ error?: string }> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action, payload }, (r) => resolve((r as { error?: string }) ?? {}));
+  });
+}
+
+async function applyPendingEditsViaApi(ops: Array<{ find: string; replace: string }>): Promise<void> {
+  for (const op of ops) {
+    const result = await callDocApi('gdocsApplyPendingEdit', {
+      docId: activeDocId,
+      findText: op.find,
+      replaceText: op.replace,
+    });
+    if (result.error) console.warn('[Oddity GDocs] Apply edit error:', result.error);
+  }
+}
+
+function dismissReviewPanel(): void {
+  reviewPanelEl?.remove();
+  reviewPanelEl = null;
+}
+
+function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): void {
+  if (!shadowWrapper) return;
+  dismissReviewPanel();
+
+  const pending = new Set(ops.map((_, i) => i)); // indices not yet decided
+
+  const panel = document.createElement('div');
+  panel.className = 'review-panel';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'review-header';
+
+  const title = document.createElement('div');
+  title.className = 'review-title';
+  title.textContent = `${ops.length} change${ops.length !== 1 ? 's' : ''} · highlighted in doc`;
+  header.appendChild(title);
+
+  const bulkBtns = document.createElement('div');
+  bulkBtns.className = 'review-bulk';
+
+  const revertAllBtn = document.createElement('button');
+  revertAllBtn.className = 'review-revert-all';
+  revertAllBtn.textContent = 'Revert all';
+
+  const keepAllBtn = document.createElement('button');
+  keepAllBtn.className = 'review-keep-all';
+  keepAllBtn.textContent = 'Keep all';
+
+  bulkBtns.appendChild(revertAllBtn);
+  bulkBtns.appendChild(keepAllBtn);
+  header.appendChild(bulkBtns);
+  panel.appendChild(header);
+
+  // One row per change — just label + Keep / Revert
+  const changeList = document.createElement('div');
+  changeList.className = 'review-changes';
+
+  for (let i = 0; i < ops.length; i++) {
+    const row = document.createElement('div');
+    row.className = 'change-row';
+
+    const label = document.createElement('span');
+    label.className = 'change-label';
+    label.textContent = `Change ${i + 1}`;
+    row.appendChild(label);
+
+    const btns = document.createElement('div');
+    btns.className = 'change-btns';
+
+    const revertBtn = document.createElement('button');
+    revertBtn.className = 'change-revert';
+    revertBtn.textContent = 'Revert';
+
+    const keepBtn = document.createElement('button');
+    keepBtn.className = 'change-keep';
+    keepBtn.textContent = 'Keep';
+
+    const idx = i;
+    const op = ops[idx]!;
+
+    keepBtn.addEventListener('click', () => {
+      keepBtn.disabled = true;
+      revertBtn.disabled = true;
+      row.classList.add('decided-keep');
+      pending.delete(idx);
+      void callDocApi('gdocsAcceptEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace })
+        .then(() => { if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); } });
+    });
+
+    revertBtn.addEventListener('click', () => {
+      keepBtn.disabled = true;
+      revertBtn.disabled = true;
+      row.classList.add('decided-revert');
+      pending.delete(idx);
+      void callDocApi('gdocsRevertEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace })
+        .then(() => { if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); } });
+    });
+
+    btns.appendChild(revertBtn);
+    btns.appendChild(keepBtn);
+    row.appendChild(btns);
+    changeList.appendChild(row);
+  }
+
+  panel.appendChild(changeList);
+  shadowWrapper.insertBefore(panel, shadowWrapper.firstChild);
+  reviewPanelEl = panel;
+
+  keepAllBtn.addEventListener('click', () => {
+    dismissReviewPanel();
+    setInputEnabled(false);
+    showLoadingOverlay('Applying changes…');
+    void (async () => {
+      for (const op of ops) {
+        await callDocApi('gdocsAcceptEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace });
+      }
+      hideLoadingOverlay();
+      setInputEnabled(true);
+    })();
+  });
+
+  revertAllBtn.addEventListener('click', () => {
+    dismissReviewPanel();
+    setInputEnabled(false);
+    showLoadingOverlay('Reverting changes…');
+    void (async () => {
+      for (const op of ops) {
+        await callDocApi('gdocsRevertEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace });
+      }
+      hideLoadingOverlay();
+      setInputEnabled(true);
+    })();
+  });
+}
+
 // ─── Response router ──────────────────────────────────────────────────────────
 async function handleResponseActions(response: string): Promise<void> {
   if (pendingEditMode) {
     pendingEditMode = false;
     const editMatch = response.match(/<<<EDIT>>>([\s\S]+?)<<<END_EDIT>>>/);
     if (editMatch?.[1]) {
-      await enableSuggestionMode();
       const ops = parseEditOps(editMatch[1].trim());
-      if (activeSession && ops.length > 0) {
-        activeSession.editSuggestions = [...(activeSession.editSuggestions ?? []), ops];
-        await saveSession(activeSession);
+      if (ops.length > 0) {
+        if (activeSession) {
+          activeSession.editSuggestions = [...(activeSession.editSuggestions ?? []), ops];
+          await saveSession(activeSession);
+        }
+        showLoadingOverlay('Highlighting changes…');
+        await applyPendingEditsViaApi(ops);
+        hideLoadingOverlay();
+        showEditReviewPanel(ops);
       }
-      for (const op of ops) await replaceTextViaCanvas(op.find, op.replace);
-      await enableEditMode();
     }
     return;
   }
@@ -593,11 +741,14 @@ async function handleResponseActions(response: string): Promise<void> {
       if (followup) await pasteIntoDoc(`Oddity: ${followup}\n\n`);
     } else {
       await pasteIntoDoc(essayContent + '\n\n');
+      essayTabId = new URLSearchParams(window.location.search).get('tab') ?? 'default';
       if (activeSession) {
         activeSession.essayContent = essayContent;
+        activeSession.essayTabId = essayTabId;
         activeSession.essayVersions = [...(activeSession.essayVersions ?? []), essayContent];
         await saveSession(activeSession);
       }
+      if (topicTextarea) topicTextarea.placeholder = getPlaceholder();
       if (followup) await pasteIntoDoc(`Oddity: ${followup}\n\n`);
     }
   }
@@ -659,10 +810,12 @@ async function fetchMcqQuestion(
   questionNumber: number,
 ): Promise<McqQuestion | null> {
   return new Promise((resolve) => {
+    const mergedContext = [docContext, importedContext].filter(Boolean).join('\n\n');
     chrome.runtime.sendMessage(
-      { action: 'gdocsMcqQuestion', payload: { prompt: topic, docContext, previousQA, questionNumber } },
+      { action: 'gdocsMcqQuestion', payload: { prompt: topic, docContext: mergedContext, previousQA, questionNumber } },
       (result: McqQuestion | { error?: string } | undefined) => {
-        if (!result || 'error' in result) { resolve(null); return; }
+        if (chrome.runtime.lastError) { console.error('[Oddity GDocs] MCQ fetch error:', chrome.runtime.lastError); resolve(null); return; }
+        if (!result || 'error' in result) { console.error('[Oddity GDocs] MCQ error:', result); resolve(null); return; }
         resolve(result as McqQuestion);
       }
     );
@@ -742,6 +895,143 @@ async function handleMcqAnswer(answer: string, question: string): Promise<void> 
   renderMcqCard(next);
 }
 
+function dismissWelcomeCard(): void {
+  welcomeCardEl?.remove();
+  welcomeCardEl = null;
+}
+
+async function readFileAsText(file: File): Promise<string> {
+  // PDF: send to background for conversion
+  if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const pdfData = Array.from(new Uint8Array(reader.result as ArrayBuffer));
+        chrome.runtime.sendMessage(
+          { action: 'convertPdfToHtml', payload: { pdfData } },
+          (result: { html?: string; error?: string } | undefined) => {
+            if (result?.html) {
+              // Strip HTML tags to get plain text
+              const div = document.createElement('div');
+              div.innerHTML = result.html;
+              resolve((div.textContent ?? '').slice(0, 8000));
+            } else {
+              resolve('');
+            }
+          }
+        );
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  // Text files
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(((reader.result as string) ?? '').slice(0, 8000));
+    reader.onerror = () => resolve('');
+    reader.readAsText(file);
+  });
+}
+
+function renderWelcomeCard(): void {
+  if (!shadowWrapper) return;
+  dismissWelcomeCard();
+
+  const card = document.createElement('div');
+  card.className = 'welcome-card';
+
+  const label = document.createElement('div');
+  label.className = 'welcome-label';
+  label.textContent = 'Oddity · First Principles';
+  card.appendChild(label);
+
+  const title = document.createElement('div');
+  title.className = 'welcome-title';
+  title.textContent = 'Build your argument from the ground up';
+  card.appendChild(title);
+
+  const topicInput = document.createElement('input');
+  topicInput.className = 'welcome-input';
+  topicInput.placeholder = 'What do you want to write about?';
+  topicInput.type = 'text';
+  card.appendChild(topicInput);
+
+  // File import row
+  const fileRow = document.createElement('div');
+  fileRow.className = 'welcome-file-row';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.txt,.md,.pdf,.doc,.docx';
+  fileInput.style.display = 'none';
+  fileRow.appendChild(fileInput);
+
+  const fileBtn = document.createElement('button');
+  fileBtn.className = 'welcome-file-btn';
+  fileBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 5l3-4 3 4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9h10" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg> Import resource`;
+
+  const fileName = document.createElement('span');
+  fileName.className = 'welcome-file-name';
+  fileName.textContent = 'Optional';
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file) {
+      fileName.textContent = file.name;
+      fileBtn.classList.add('has-file');
+    } else {
+      fileName.textContent = 'Optional';
+      fileBtn.classList.remove('has-file');
+    }
+  });
+  fileBtn.addEventListener('click', () => fileInput.click());
+
+  fileRow.appendChild(fileBtn);
+  fileRow.appendChild(fileName);
+  card.appendChild(fileRow);
+
+  const startBtn = document.createElement('button');
+  startBtn.className = 'welcome-start';
+  startBtn.textContent = 'Start';
+  startBtn.disabled = true;
+
+  const doStart = async () => {
+    const topic = topicInput.value.trim();
+    if (!topic) return;
+    startBtn.disabled = true;
+    startBtn.textContent = 'Loading…';
+
+    // Read imported file if present
+    const file = fileInput.files?.[0];
+    if (file) {
+      try {
+        importedContext = await readFileAsText(file);
+      } catch {
+        importedContext = '';
+      }
+    } else {
+      importedContext = '';
+    }
+
+    dismissWelcomeCard();
+    void startMcqFlow(topic);
+  };
+
+  topicInput.addEventListener('input', () => {
+    startBtn.disabled = topicInput.value.trim().length === 0;
+  });
+  topicInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !startBtn.disabled) void doStart();
+  });
+  startBtn.addEventListener('click', () => void doStart());
+  card.appendChild(startBtn);
+
+  shadowWrapper.insertBefore(card, shadowWrapper.firstChild);
+  welcomeCardEl = card;
+  setTimeout(() => topicInput.focus(), 50);
+}
+
 async function startMcqFlow(topic: string): Promise<void> {
   mcqTopic = topic;
   mcqActive = true;
@@ -749,16 +1039,22 @@ async function startMcqFlow(topic: string): Promise<void> {
   mcqQuestionNumber = 1;
 
   setInputEnabled(false);
-  if (topicTextarea) topicTextarea.placeholder = 'Thinking…';
+  showLoadingOverlay('Loading questions…');
 
   const first = await fetchMcqQuestion(topic, [], 1);
+  hideLoadingOverlay();
+
   if (!first) {
     mcqActive = false;
     setInputEnabled(true);
-    void generateEssay();
+    // Show error — don't silently fall through to essay generation
+    if (topicTextarea) {
+      topicTextarea.placeholder = 'Failed to load questions. Try again.';
+      setTimeout(() => { if (topicTextarea) topicTextarea.placeholder = getPlaceholder(); }, 4000);
+    }
     return;
   }
-  setInputEnabled(true); // re-enable Notes button while MCQ is active
+  setInputEnabled(true);
   if (topicTextarea) { topicTextarea.disabled = true; topicTextarea.value = ''; topicTextarea.placeholder = 'Answer to continue…'; }
   if (submitBtn) submitBtn.disabled = true;
   renderMcqCard(first);
@@ -799,7 +1095,9 @@ async function handleSubmit(text: string): Promise<void> {
   if (!text || streaming || mcqActive) return;
 
   const currentTabId = new URLSearchParams(window.location.search).get('tab') ?? 'default';
-  const isEditTab = !!essayTabId && currentTabId === essayTabId;
+  // Edit mode if: on the designated essay tab, OR essay exists but no tab was ever set (inline essay)
+  const isEditTab = (!!essayTabId && currentTabId === essayTabId) ||
+                    (!essayTabId && !!(activeSession?.essayContent?.trim()));
 
   if (isEditTab) {
     // Edit mode on essay tab
@@ -866,6 +1164,43 @@ function createInputBar(): void {
     .mcq-option:disabled { opacity: 0.4; cursor: default; }
     .mcq-skip { align-self: flex-end; border: none; background: none; font-size: 11px; color: #9aa0a6; cursor: pointer; font-family: inherit; padding: 0; text-decoration: underline; }
     .mcq-skip:hover { color: #374151; }
+    /* Welcome card */
+    .welcome-card { background: #fff; border-radius: 16px; padding: 20px 20px 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 10px; }
+    .welcome-label { font-size: 10px; font-weight: 600; color: #9aa0a6; letter-spacing: 0.08em; text-transform: uppercase; }
+    .welcome-title { font-size: 14px; font-weight: 700; color: #1a1a1a; line-height: 1.3; }
+    .welcome-input { width: 100%; padding: 8px 12px; border-radius: 9999px; border: 1px solid #e8e8e2; font-size: 13px; font-family: inherit; color: #1a1a1a; outline: none; background: #f9f9f8; transition: border-color 0.15s; }
+    .welcome-input:focus { border-color: #111; background: #fff; }
+    .welcome-input::placeholder { color: #9aa0a6; }
+    .welcome-file-row { display: flex; align-items: center; gap: 8px; }
+    .welcome-file-btn { height: 28px; padding: 0 12px; border-radius: 9999px; border: 1px solid #e8e8e2; background: #f9f9f8; color: #6b7280; font-size: 11px; font-weight: 500; font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: background 0.15s, border-color 0.15s; flex-shrink: 0; }
+    .welcome-file-btn:hover { background: #f0f2f5; border-color: #d1d5db; }
+    .welcome-file-btn.has-file { border-color: #111; color: #111; }
+    .welcome-file-name { font-size: 11px; color: #9aa0a6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .welcome-footer { display: flex; align-items: center; justify-content: flex-end; }
+    .welcome-start { height: 32px; padding: 0 18px; border-radius: 9999px; border: none; background: #111; color: #fff; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; align-self: flex-end; }
+    .welcome-start:hover:not(:disabled) { background: #333; }
+    .welcome-start:disabled { background: #e8e8e2; color: #9aa0a6; cursor: default; }
+    /* Edit review panel */
+    .review-panel { background: #fff; border-radius: 16px; padding: 12px 14px 10px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 8px; }
+    .review-header { display: flex; align-items: center; justify-content: space-between; }
+    .review-title { font-size: 10px; font-weight: 600; color: #9aa0a6; letter-spacing: 0.04em; }
+    .review-bulk { display: flex; gap: 5px; }
+    .review-revert-all { height: 24px; padding: 0 10px; border-radius: 9999px; border: 1px solid #e8e8e2; background: none; color: #6b7280; font-size: 10px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.12s; }
+    .review-revert-all:hover { background: #f0f2f5; }
+    .review-keep-all { height: 24px; padding: 0 10px; border-radius: 9999px; border: none; background: #111; color: #fff; font-size: 10px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.12s; }
+    .review-keep-all:hover { background: #333; }
+    .review-changes { display: flex; flex-direction: column; gap: 4px; }
+    .change-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px; border-radius: 8px; background: #f9f9f8; transition: opacity 0.15s; }
+    .change-row.decided-keep { opacity: 0.38; }
+    .change-row.decided-revert { opacity: 0.38; }
+    .change-label { font-size: 11px; color: #374151; font-weight: 500; }
+    .change-btns { display: flex; gap: 4px; }
+    .change-revert { height: 22px; padding: 0 10px; border-radius: 9999px; border: 1px solid #e8e8e2; background: none; color: #6b7280; font-size: 10px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.12s; }
+    .change-revert:hover:not(:disabled) { background: #f0f2f5; }
+    .change-revert:disabled { opacity: 0.4; cursor: default; }
+    .change-keep { height: 22px; padding: 0 10px; border-radius: 9999px; border: none; background: #111; color: #fff; font-size: 10px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.12s; }
+    .change-keep:hover:not(:disabled) { background: #333; }
+    .change-keep:disabled { background: #e8e8e2; color: #9aa0a6; cursor: default; }
   `;
   shadow.appendChild(style);
 
@@ -924,8 +1259,8 @@ function createInputBar(): void {
   commentBtn = document.createElement('button');
   commentBtn.className = 'action-btn';
   commentBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M10 2H2a1 1 0 00-1 1v5a1 1 0 001 1h2l2 2 2-2h2a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>Notes`;
-  commentBtn.title = 'Add depth annotations as GDocs comments';
-  commentBtn.addEventListener('click', () => void addDepthAnnotationsAsComments());
+  commentBtn.title = 'Re-run annotations';
+  commentBtn.addEventListener('click', () => document.dispatchEvent(new CustomEvent('oddity:gdocs:re-annotate')));
 
   actionsRow.appendChild(commentBtn);
 
@@ -933,7 +1268,9 @@ function createInputBar(): void {
   wrapper.appendChild(bar);
   shadow.appendChild(wrapper);
 
-  setTimeout(() => topicTextarea?.focus(), 100);
+  // Textarea starts locked; renderWelcomeCard (called from activate) will unlock it
+  topicTextarea.disabled = true;
+  if (submitBtn) submitBtn.disabled = true;
 }
 
 // ─── Activate / deactivate ────────────────────────────────────────────────────
@@ -960,7 +1297,10 @@ async function activate(essayContext?: { prompt: string; answers: Record<string,
     chatHistory.push(...existingSession.chatHistory);
     activeSession = existingSession;
     essayTabId = existingSession.essayTabId ?? '';
-    if (topicTextarea) topicTextarea.placeholder = getPlaceholder();
+    // Unlock the input — existing session, skip welcome card
+    if (topicTextarea) { topicTextarea.disabled = false; topicTextarea.placeholder = getPlaceholder(); }
+    if (submitBtn) submitBtn.disabled = false;
+    setTimeout(() => topicTextarea?.focus(), 100);
     // Re-register annotations for reply observer
     void fetchAnnotationsForDoc().then(async (annotations) => {
       if (!annotations.length) return;
@@ -979,11 +1319,15 @@ async function activate(essayContext?: { prompt: string; answers: Record<string,
   } else {
     activeSession = { docId, tabId, chatHistory: [], createdAt: Date.now() };
     await saveSession(activeSession);
+    // Fresh session — show welcome card
+    renderWelcomeCard();
   }
 }
 
 function deactivate() {
+  dismissWelcomeCard();
   dismissMcqCard();
+  dismissReviewPanel();
   if (inputBar) { inputBar.remove(); inputBar = null; }
   topicTextarea = null; submitBtn = null; commentBtn = null; shadowWrapper = null;
   chatHistory.splice(0);
@@ -998,6 +1342,7 @@ function deactivate() {
   mcqPreviousQA = [];
   mcqQuestionNumber = 1;
   mcqTopic = '';
+  importedContext = '';
   streaming = false;
 }
 

@@ -1205,8 +1205,8 @@ async function startGoogleDocsPipeline(): Promise<void> {
     syncArgumentsBox();
   }
 
-  // Inject "Annotate" button — clears all existing annotations + highlights, then re-runs.
-  injectGDocsAnnotateButton(() => {
+  // Listen for re-annotate event from the GDocs chat UI Notes button.
+  document.addEventListener('oddity:gdocs:re-annotate', () => {
     const docId = getGoogleDocsId();
 
     // Collect anchor texts before clearing stores (for GDocs highlight removal).
@@ -1280,35 +1280,6 @@ async function startGoogleDocsPipeline(): Promise<void> {
   activeBodyObserver = pageObserver;
 }
 
-function injectGDocsAnnotateButton(onAnnotate: () => void): void {
-  // Remove any existing button (re-init case)
-  document.getElementById('oddity-gdocs-annotate-btn')?.remove();
-
-  const btn = document.createElement('button');
-  btn.id = 'oddity-gdocs-annotate-btn';
-  btn.textContent = 'Annotate';
-  btn.style.cssText = `
-    position: fixed;
-    top: 8px;
-    right: 60px;
-    z-index: 9999;
-    padding: 6px 14px;
-    background: #1a73e8;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    font-size: 13px;
-    font-family: 'Google Sans', Roboto, Arial, sans-serif;
-    font-weight: 500;
-    cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,.2);
-    line-height: 20px;
-  `;
-  btn.addEventListener('mouseenter', () => { btn.style.background = '#1765cc'; });
-  btn.addEventListener('mouseleave', () => { btn.style.background = '#1a73e8'; });
-  btn.addEventListener('click', () => { onAnnotate(); });
-  document.body.appendChild(btn);
-}
 
 /**
  * Wait until the Google Docs editor shell is in the DOM.
