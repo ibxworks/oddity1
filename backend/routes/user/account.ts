@@ -46,14 +46,21 @@ router.delete('/', async (req, res) => {
       .eq('user_id', userId);
     if (ufErr) console.error('[account DELETE] user_feedback:', ufErr.message);
 
-    // 4. Delete profiles (FK: id → auth.users)
+    // 4. Delete pdf_page_summaries (FK: user_id → profiles.id)
+    const { error: pdfSummaryErr } = await serviceClient
+      .from('pdf_page_summaries')
+      .delete()
+      .eq('user_id', userId);
+    if (pdfSummaryErr) console.error('[account DELETE] pdf_page_summaries:', pdfSummaryErr.message);
+
+    // 5. Delete profiles (FK: id → auth.users)
     const { error: profErr } = await serviceClient
       .from('profiles')
       .delete()
       .eq('id', userId);
     if (profErr) console.error('[account DELETE] profiles:', profErr.message);
 
-    // 5. Delete auth user (requires service_role)
+    // 6. Delete auth user (requires service_role)
     const { error: authErr } = await serviceClient.auth.admin.deleteUser(userId);
     if (authErr) {
       res.status(500).json({ error: 'Failed to delete account' });

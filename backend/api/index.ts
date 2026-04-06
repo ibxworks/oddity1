@@ -16,6 +16,7 @@ import subscriptionRouter from "../routes/subscription.js";
 import portalRouter from "../routes/portal.js";
 import pricesRouter from "../routes/prices.js";
 import convertPdfRouter from "../routes/convert-pdf.js";
+import pdfPageSummariesRouter from "../routes/pdf-page-summaries.js";
 
 if (process.env.ODDITY_PROCESS_ROLE !== "worker") {
   registerProcessGuards({ role: "app", exitOnFatal: false });
@@ -71,6 +72,7 @@ app.use("/api/user-feedback", authMiddleware, userFeedbackRouter);
 app.use("/api/checkout", authMiddleware, checkoutRouter);
 app.use("/api/subscription", authMiddleware, subscriptionRouter);
 app.use("/api/portal", authMiddleware, portalRouter);
+app.use("/api/pdf-page-summaries", authMiddleware, pdfPageSummariesRouter);
 
 // Global error handler
 app.use(

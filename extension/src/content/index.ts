@@ -7,6 +7,7 @@ import type {
   AnnotationUsage,
   DepthPersonality,
   ExtensionMessage,
+  PdfPageSummary,
   SiteAdapter,
   ViewMode,
 } from "@oddity/shared";
@@ -15,9 +16,16 @@ import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
 import { createChatObserver, type ChatObserver } from "./chat-observer.js";
+import { getChatbotDisplayName } from "./chatbot-ui.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
 import { handleExportPdf } from "./export-pdf.js";
 import { extractText, extractWithReadability } from "./extractor.js";
+import {
+  createPdfPageSummaryController,
+  type PdfPageSummaryCard,
+  type PdfPageSummaryController,
+  type PdfPageSummaryGenerateResult,
+} from "./pdf-page-summaries.js";
 import { isLongRequest } from "./long-request.js";
 import { LongWaitManager } from "./long-wait-manager.js";
 import { hideLongWaitToast, showLongWaitToast } from "./long-wait-toast.js";
@@ -48,7 +56,10 @@ import {
   setArgumentsBoxPdf,
   setPdfRunCallback,
   resetPdfButton,
+  setPdfCachedLabel,
   setDashUserTier,
+  setPdfSummaryTabVisible,
+  updatePdfSummaryCards,
 } from "./renderer/arguments-box.js";
 import {
   clearAllAnchors,
@@ -325,6 +336,7 @@ let currentPersonality: DepthPersonality = "jerry";
 let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
+let pdfPageSummaryController: PdfPageSummaryController | null = null;
 const longWaitManager = new LongWaitManager(
   { show: showLongWaitToast, hide: hideLongWaitToast },
   500,
@@ -336,6 +348,11 @@ type AnnotationRequestResult = Partial<AnnotationResponse> & {
   aborted?: boolean;
   rateLimited?: boolean;
   limitReached?: boolean;
+};
+
+type PdfPageSummaryRequestResult = PdfPageSummaryGenerateResult & {
+  usage?: AnnotationUsage;
+  rateLimited?: boolean;
 };
 
 function formatUpgradeUsage(multiplier?: number): string {
@@ -490,6 +507,79 @@ function syncArgumentsBox(): void {
   updateArgumentsBox(mergedAnnotations, mergedFeedback);
 }
 
+function syncPdfSummaryCards(cards: PdfPageSummaryCard[]): void {
+  setPdfSummaryTabVisible(cards.length > 0);
+  updatePdfSummaryCards(cards);
+}
+
+async function initPdfPageSummaryFeature(): Promise<void> {
+  if (!document.querySelector('meta[name="oddity-source-pdf"]')) {
+    pdfPageSummaryController?.destroy();
+    pdfPageSummaryController = null;
+    setPdfSummaryTabVisible(false);
+    updatePdfSummaryCards([]);
+    return;
+  }
+
+  if (pdfPageSummaryController) return;
+
+  pdfPageSummaryController = await createPdfPageSummaryController({
+    onCardsChanged: syncPdfSummaryCards,
+    onGeneratePageSummary: async (page): Promise<PdfPageSummaryRequestResult> => {
+      const controller = pdfPageSummaryController;
+      if (!controller) {
+        return { error: "PDF page summaries are unavailable right now." };
+      }
+
+      const result = await sendMessage<PdfPageSummaryRequestResult>({
+        action: "generatePdfPageSummary",
+        payload: {
+          url: getPageUrl(),
+          documentHash: controller.documentHash,
+          pageNo: page.pageNo,
+          pageTextHash: page.pageTextHash,
+          text:
+            page.text ||
+            "This PDF page has very little extractable text and appears mostly non-text or sparse content.",
+          pageTitle: document.title,
+        },
+      });
+
+      maybeShowUsageToast(result);
+
+      if (result?.error) {
+        return result;
+      }
+
+      return result;
+    },
+  });
+
+  if (!pdfPageSummaryController) {
+    setPdfSummaryTabVisible(false);
+    updatePdfSummaryCards([]);
+    return;
+  }
+
+  const listResult = await sendMessage<{
+    success?: boolean;
+    summaries?: PdfPageSummary[];
+    error?: string;
+  }>({
+    action: "getPdfPageSummaries",
+    payload: {
+      url: getPageUrl(),
+      documentHash: pdfPageSummaryController.documentHash,
+    },
+  });
+
+  if (listResult?.summaries?.length) {
+    pdfPageSummaryController.hydrate(listResult.summaries);
+  } else {
+    syncPdfSummaryCards(pdfPageSummaryController.getCards());
+  }
+}
+
 // ─── React-safe Anchor Guard ───
 // React-based sites (Claude.ai, ChatGPT, etc.) may re-render DOM regions that
 // contain our injected anchor <span> elements.  If React's reconciliation
@@ -637,6 +727,8 @@ function resetAnnotationState(): void {
   destroyMarginNotes();
   destroyArgumentsBox();
   destroyManualAnnotations();
+  pdfPageSummaryController?.destroy();
+  pdfPageSummaryController = null;
 }
 
 // ─── SPA Navigation: URL Change Watcher ───
@@ -697,6 +789,11 @@ function isDomainWhitelisted(domain: string, sites: string[]): boolean {
 }
 
 function isPdfPage(): boolean {
+  // After PDF→HTML conversion, the meta tag marks the page as already converted.
+  // Without this guard, the URL still ends in .pdf and contentType is still
+  // application/pdf, so we'd loop back to showing the PDF overlay.
+  if (document.querySelector('meta[name="oddity-source-pdf"]')) return false;
+
   // Most reliable: browser sets contentType for PDF responses
   if (document.contentType === "application/pdf") return true;
   // Fallback: URL ends in .pdf
@@ -719,24 +816,56 @@ async function handlePdfConversion(): Promise<void> {
       html = cachedEntry.html;
     } else {
       // Step 1: Fetch PDF binary via background (handles file:// and auth-gated URLs)
-      const fetchRes = await sendMessage({ action: "fetchPdfData", payload: { url: pdfUrl } });
+      const fetchRes = await sendMessage<{ data?: number[]; error?: string }>({
+        action: "fetchPdfData",
+        payload: { url: pdfUrl },
+      });
       if (fetchRes?.error) throw new Error(fetchRes.error);
-      const pdfData: number[] = fetchRes.data;
+      const pdfData: number[] = fetchRes.data ?? [];
 
       // Step 2: Send binary to backend → Datalab Marker API → get HTML back
-      const convertRes = await sendMessage({ action: "convertPdfToHtml", payload: { pdfData } });
+      const convertRes = await sendMessage<{ html?: string; error?: string }>({
+        action: "convertPdfToHtml",
+        payload: { pdfData },
+      });
       if (convertRes?.error) throw new Error(convertRes.error);
-      html = convertRes.html;
+      html = convertRes.html ?? "";
 
       // Cache the result with timestamp; evict oldest if too many entries
       cachePdfHtml(cacheKey, html);
     }
 
-    // Step 3: Open converted HTML in a new tab
-    await sendMessage({ action: "injectNextNewTab", payload: {} });
-    const blob = new Blob([html], { type: "text/html" });
-    const blobUrl = URL.createObjectURL(blob);
-    window.open(blobUrl, "_blank");
+    // Step 3: Replace current page DOM in-place (keeps original URL for annotation persistence)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    // Inject meta tag so getPageUrl() returns the original PDF URL
+    // and isPdfPage() knows this is already a converted page
+    const meta = doc.createElement("meta");
+    meta.setAttribute("name", "oddity-source-pdf");
+    meta.setAttribute("content", pdfUrl);
+    doc.head.prepend(meta);
+
+    // Clean up stale state before replacing DOM
+    resetAnnotationState();
+
+    // Replace head and body content using safe DOM adoption
+    while (document.head.firstChild) document.head.firstChild.remove();
+    for (const child of Array.from(doc.head.childNodes)) {
+      document.head.appendChild(document.adoptNode(child));
+    }
+    while (document.body.firstChild) document.body.firstChild.remove();
+    for (const attr of Array.from(doc.body.attributes)) {
+      document.body.setAttribute(attr.name, attr.value);
+    }
+    for (const child of Array.from(doc.body.childNodes)) {
+      document.body.appendChild(document.adoptNode(child));
+    }
+
+    // Re-initialize — will find meta tag, skip PDF detection, run annotation pipeline
+    init().catch((err) => {
+      console.error("[Oddity 1] Post-PDF-conversion init error:", err);
+    });
   } catch (err) {
     console.error("[Oddity 1] PDF conversion failed:", err);
     const msg = err instanceof Error ? err.message : "Conversion failed";
@@ -825,6 +954,12 @@ async function init(): Promise<void> {
       setDashUserTier(pdfAuthStatus.user.tier);
     }
 
+    // Check cache to show appropriate button label
+    const pdfCacheKey = `pdf_html:${window.location.href}`;
+    const pdfCached = await chrome.storage.local.get(pdfCacheKey);
+    const hasCachedHtml = !!(pdfCached[pdfCacheKey] as { html: string; ts: number } | undefined)?.html;
+    setPdfCachedLabel(hasCachedHtml);
+
     setArgumentsBoxPdf(true);
     setPdfRunCallback(handlePdfConversion);
     return;
@@ -839,18 +974,22 @@ async function init(): Promise<void> {
     // Extension context invalidated mid-init (reload/update)
     return;
   }
-  const prefs = stored?.preferences;
+  const prefs = (stored?.preferences ?? {}) as Record<string, unknown>;
 
   // Always start in overview mode on page load for stability.
   // Mode is not restored from storage — the user switches manually after load.
   // (Restoring caused cross-tab interference and unpredictable state on refresh.)
-  if (prefs?.depth_personality) {
-    currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
+  if (prefs.depth_personality) {
+    const storedPersonality = prefs.depth_personality as string;
+    currentPersonality =
+      storedPersonality === "gary"
+        ? "sally"
+        : (storedPersonality as DepthPersonality);
   }
   // currentMode defaults to "overview" (line 315), visibleTypes to overview types (line 317)
   setMarginNoteMode(currentMode);
 
-  if (prefs?.enabled === false) {
+  if (prefs.enabled === false) {
     enabled = false;
     console.log("[Oddity 1] Extension is disabled — skipping initialization");
     initArgumentsBox();
@@ -890,7 +1029,7 @@ async function init(): Promise<void> {
   }
 
   // Whitelist check — only auto-run on enabled sites
-  const enabledSites: string[] = prefs?.enabled_sites ?? DEFAULT_ENABLED_SITES;
+  const enabledSites: string[] = (prefs.enabled_sites as string[] | undefined) ?? DEFAULT_ENABLED_SITES;
   const currentDomain = extractDomain();
 
   if (isDomainWhitelisted(currentDomain, enabledSites)) {
@@ -939,7 +1078,10 @@ async function startPipeline(): Promise<void> {
     initKeyboardNav();
     initArgumentsBox();
     if (matchedAdapter.input_selector) {
-      setChatbotMode(matchedAdapter.input_selector);
+      const chatbotDisplayName =
+        getChatbotDisplayName(matchedAdapter.hostname_pattern) ??
+        getChatbotDisplayName(hostname);
+      setChatbotMode(matchedAdapter.input_selector, chatbotDisplayName);
     }
     setArgumentsBoxEnabled(enabled);
     setInputTextProvider(collectInputText);
@@ -1000,6 +1142,12 @@ async function startPipeline(): Promise<void> {
   initManualAnnotations();
   initKeyboardNav();
   initArgumentsBox();
+  if (document.querySelector('meta[name="oddity-source-pdf"]')) {
+    await initPdfPageSummaryFeature();
+  } else {
+    setPdfSummaryTabVisible(false);
+    updatePdfSummaryCards([]);
+  }
   setInputTextProvider(collectInputText);
   setArgumentsBoxEnabled(enabled);
 
@@ -2407,6 +2555,20 @@ document.addEventListener("oddity:annotation-deleted", (e) => {
   handleAnnotationDeleted(annotationId);
 });
 
+document.addEventListener("oddity:pdf-summary-generate", (e) => {
+  const { pageNo } = (e as CustomEvent<{ pageNo: string }>).detail;
+  if (!pageNo) return;
+  pdfPageSummaryController?.requestPageSummary(pageNo).catch((err) => {
+    console.error("[Oddity 1] PDF page summary generation failed:", err);
+  });
+});
+
+document.addEventListener("oddity:pdf-summary-scroll-to-page", (e) => {
+  const { pageNo } = (e as CustomEvent<{ pageNo: string }>).detail;
+  if (!pageNo) return;
+  pdfPageSummaryController?.scrollToPage(pageNo);
+});
+
 // ─── Feedback Added Sync ───
 // When a user submits a reply/reaction, the saved feedback must be added
 // to the in-memory stores so that syncArgumentsBox() doesn't lose it.
@@ -2541,6 +2703,8 @@ document.addEventListener("keydown", (e) => {
 
 window.addEventListener("pagehide", () => {
   longWaitManager.reset();
+  pdfPageSummaryController?.destroy();
+  pdfPageSummaryController = null;
   destroyArgumentsBox();
 });
 
@@ -2567,6 +2731,10 @@ setSignOutCallback(() => {
   bodyDetectionActive = false;
   marginNotesInitFromBody = false;
   longWaitManager.reset();
+  pdfPageSummaryController?.destroy();
+  pdfPageSummaryController = null;
+  setPdfSummaryTabVisible(false);
+  updatePdfSummaryCards([]);
 });
 
 // Install SPA navigation watcher once (survives across re-inits)

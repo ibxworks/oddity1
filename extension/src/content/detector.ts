@@ -31,6 +31,16 @@ export function detectReadingRegions(
   return detectWithHeuristic();
 }
 
+function isOddityUiElement(el: Element): boolean {
+  return Boolean(
+    el.closest("oddity-arguments-box") ||
+      el.closest("#oddity-margin-notes") ||
+      el.closest("#oddity-overlay") ||
+      el.closest("#oddity-page-dim") ||
+      el.closest("[data-oddity-pdf-summary-host]"),
+  );
+}
+
 function matchHostname(hostname: string, pattern: string): boolean {
   if (pattern.startsWith("*.")) {
     const suffix = pattern.slice(2);
@@ -49,7 +59,11 @@ function detectWithAdapter(adapter: SiteAdapter): DetectedRegion[] {
   for (const selector of adapter.content_selectors) {
     const elements = document.querySelectorAll(selector);
     elements.forEach((el, i) => {
-      if (!excludedSet.has(el) && !isInsideExcluded(el, excludedSet)) {
+      if (
+        !excludedSet.has(el) &&
+        !isInsideExcluded(el, excludedSet) &&
+        !isOddityUiElement(el)
+      ) {
         regions.push({
           id: `adapter-${selector}-${i}`,
           element: el,
@@ -90,6 +104,7 @@ function detectForReadability(): DetectedRegion[] {
   );
   const regions: DetectedRegion[] = [];
   candidates.forEach((el, i) => {
+    if (isOddityUiElement(el)) return;
     if (el.textContent && el.textContent.trim().length > 200) {
       regions.push({
         id: `readability-candidate-${i}`,
@@ -111,6 +126,7 @@ function detectWithHeuristic(): DetectedRegion[] {
   const scored: { el: Element; score: number }[] = [];
 
   candidates.forEach((el) => {
+    if (isOddityUiElement(el)) return;
     const text = el.textContent?.trim() ?? "";
     if (text.length < 200) return;
 

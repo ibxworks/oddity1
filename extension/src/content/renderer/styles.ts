@@ -19,19 +19,20 @@ export type AnnotationVisual = {
 function makeVisual(
   type: AnnotationType,
   theme: ThemeMode,
-  opts?: { bgOpacity?: string; underlineColor?: string },
+  opts?: { bgOpacity?: string; underlineColor?: string; underlineWidth?: string },
 ): AnnotationVisual {
   const color = getAnnotationColor(type, theme);
   // Blue (user_written) gets 0.2 opacity (33), all others get 0.1 (1A)
   const bgOpacity = opts?.bgOpacity ?? (type === "user_written" ? "33" : "1A");
   const underlineColor = opts?.underlineColor ?? (color + "E6"); // 0.9 opacity
+  const underlineWidth = opts?.underlineWidth ?? "1.5px";
 
   const isOverview = (ALL_OVERVIEW_TYPES as readonly string[]).includes(type);
 
   return {
     type,
     backgroundColor: color + bgOpacity,
-    underlineStyle: `1.5px solid ${underlineColor}`,
+    underlineStyle: `${underlineWidth} solid ${underlineColor}`,
     gutterIcon: null,
     label: ANNOTATION_LABELS[type] ?? type.toUpperCase(),
     color,
@@ -47,8 +48,9 @@ const fallbackVisual: AnnotationVisual = {
   color: "#888",
 };
 
-export function getVisual(type: AnnotationType, theme: ThemeMode = 'dark', labelOverride?: string): AnnotationVisual {
-  const visual = makeVisual(type, theme) ?? fallbackVisual;
+export function getVisual(type: AnnotationType, theme: ThemeMode = 'dark', labelOverride?: string, pdfPage?: boolean): AnnotationVisual {
+  const opts = pdfPage ? { bgOpacity: "40", underlineWidth: "2.5px" } : undefined;
+  const visual = makeVisual(type, theme, opts) ?? fallbackVisual;
   if (labelOverride) visual.label = labelOverride;
   return visual;
 }

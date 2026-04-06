@@ -75,6 +75,18 @@ export type Annotation = {
   };
 };
 
+export type PdfPageSummary = {
+  id: string;
+  url: string;
+  document_hash: string;
+  page_no: string;
+  page_text_hash: string;
+  summary: string;
+  page_title: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AnnotationUsage = {
   count: number;
   limit: number;
@@ -86,6 +98,29 @@ export type AnnotationResponse = {
   cached: boolean;
   annotations: Annotation[];
   feedback?: AnnotationFeedback[];
+  usage?: AnnotationUsage;
+  upgrade?: boolean;
+  upgrade_multiplier?: number;
+};
+
+export type PdfPageSummaryListResponse = {
+  success: boolean;
+  summaries: PdfPageSummary[];
+};
+
+export type PdfPageSummaryGenerateRequest = {
+  url: string;
+  document_hash: string;
+  page_no: string;
+  page_text_hash: string;
+  text: string;
+  page_title?: string;
+};
+
+export type PdfPageSummaryGenerateResponse = {
+  success: boolean;
+  cached: boolean;
+  summary: PdfPageSummary;
   usage?: AnnotationUsage;
   upgrade?: boolean;
   upgrade_multiplier?: number;
@@ -353,7 +388,24 @@ export type ExtensionMessage =
       action: "sketchChunk";
       payload: { text: string; done: boolean };
     }
-  | { action: "injectNextNewTab"; payload: Record<string, never> }
   | { action: "fetchPdfData"; payload: { url: string } }
   | { action: "convertPdfToHtml"; payload: { pdfData: number[] } }
+  | {
+      action: "getPdfPageSummaries";
+      payload: {
+        url: string;
+        documentHash: string;
+      };
+    }
+  | {
+      action: "generatePdfPageSummary";
+      payload: {
+        url: string;
+        documentHash: string;
+        pageNo: string;
+        pageTextHash: string;
+        text: string;
+        pageTitle?: string;
+      };
+    }
   | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };

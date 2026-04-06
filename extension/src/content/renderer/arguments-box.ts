@@ -7,8 +7,19 @@ import type {
 } from "@oddity/shared";
 import { getAnnotationColor } from "@oddity/shared";
 
-import { getPageUrl } from "../page-url.js";
+import {
+  getChatbotBuildPromptLabel,
+  getChatbotOnboardingBody,
+  getChatbotOnboardingTitle,
+  getChatbotPromptEmptyStateBody,
+  getChatbotPromptEmptyStateTitle,
+  getChatbotPromptErrorText,
+  getChatbotPromptGoalHelper,
+  getChatbotPromptGoalPlaceholder,
+  getChatbotPromptLoadingLabel,
+} from "../chatbot-ui.js";
 import { showNoticeToast } from "../notice-toast.js";
+import { getPageUrl } from "../page-url.js";
 import {
   getThemeMode,
   offThemeChange,
@@ -49,6 +60,13 @@ type ArgumentItem = {
   annotationType?: AnnotationType; // source annotation type for color
 };
 
+export type PdfSummaryCardItem = {
+  pageNo: string;
+  pageLabel: string;
+  summary: string | null;
+  loading: boolean;
+};
+
 // ─── State ───
 
 let hostEl: HTMLElement | null = null;
@@ -79,18 +97,24 @@ let listDragUpHandler: (() => void) | null = null;
 
 let manualRunCb: (() => void) | null = null;
 let inputTextProviderCb: (() => string) | null = null;
-let activeTab: "notes" | "sketch" = "notes";
+let activeTab: "notes" | "sketch" | "summaries" = "notes";
 let tabBarEl: HTMLDivElement | null = null;
 let notesTabBtn: HTMLButtonElement | null = null;
 let sketchTabBtn: HTMLButtonElement | null = null;
+let pdfSummaryTabBtn: HTMLButtonElement | null = null;
 let sketchContentEl: HTMLDivElement | null = null;
+let pdfSummaryListEl: HTMLDivElement | null = null;
 let sketchBuffer = "";
 let sketchLoading = false;
 let sketchBtnEl: HTMLButtonElement | null = null;
 let footerEl: HTMLDivElement | null = null;
 let purposeInputEl: HTMLTextAreaElement | null = null;
+let purposeLabelEl: HTMLSpanElement | null = null;
+let purposeHelperEl: HTMLDivElement | null = null;
 let isChatbotMode = false;
+let chatbotDisplayName: string | null = null;
 let chatbotInputSelector: string | null = null;
+let sketchViewState: "idle" | "loading" | "ready" | "error" = "idle";
 let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
@@ -98,6 +122,9 @@ let blockedPanelEl: HTMLDivElement | null = null;
 let pdfDetected = false;
 let pdfPanelEl: HTMLDivElement | null = null;
 let pdfRunCb: (() => void) | null = null;
+let pdfCachedLabel = false;
+let pdfSummaryTabVisible = false;
+let pdfSummaryCards: PdfSummaryCardItem[] = [];
 let dashCloseBtnEl: HTMLButtonElement | null = null;
 let canonicalItems: ArgumentItem[] = [];
 let liveItems: ArgumentItem[] = [];
@@ -389,21 +416,28 @@ export function initArgumentsBox(): void {
 
   const purposeLabel = document.createElement("span");
   purposeLabel.className = "args-purpose-label";
-  purposeLabel.textContent = "Purpose:";
+  purposeLabel.textContent = getPurposeLabelText();
+  purposeLabelEl = purposeLabel;
 
   const purposeInput = document.createElement("textarea");
   purposeInput.className = "args-purpose-input";
-  purposeInput.placeholder = isChatbotMode ? "What is this prompt for?" : "Why are you reading this?";
+  purposeInput.placeholder = getPurposePlaceholderText();
   purposeInput.rows = 2;
   purposeInput.addEventListener("click", (e) => e.stopPropagation());
   purposeInput.addEventListener("input", () => {
     purposeInput.classList.remove("args-purpose-error");
-    purposeInput.placeholder = isChatbotMode ? "What is this prompt for?" : "Why are you reading this?";
+    purposeInput.placeholder = getPurposePlaceholderText();
   });
   purposeInputEl = purposeInput;
 
+  const purposeHelper = document.createElement("div");
+  purposeHelper.className = "args-purpose-helper";
+  purposeHelper.style.display = "none";
+  purposeHelperEl = purposeHelper;
+
   purposeSection.appendChild(purposeLabel);
   purposeSection.appendChild(purposeInput);
+  purposeSection.appendChild(purposeHelper);
   panelFace.appendChild(purposeSection);
 
   // ── Tab Bar ──
@@ -428,6 +462,15 @@ export function initArgumentsBox(): void {
 
   tabBarEl.appendChild(notesTabBtn);
   tabBarEl.appendChild(sketchTabBtn);
+  pdfSummaryTabBtn = document.createElement("button");
+  pdfSummaryTabBtn.className = "args-tab";
+  pdfSummaryTabBtn.textContent = "Summaries";
+  pdfSummaryTabBtn.style.display = "none";
+  pdfSummaryTabBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    switchTab("summaries");
+  });
+  tabBarEl.appendChild(pdfSummaryTabBtn);
   panelFace.appendChild(tabBarEl);
 
   // ── List ──
@@ -441,6 +484,12 @@ export function initArgumentsBox(): void {
   sketchContentEl.className = "args-sketch-content";
   sketchContentEl.style.display = "none";
   panelFace.appendChild(sketchContentEl);
+
+  pdfSummaryListEl = document.createElement("div");
+  pdfSummaryListEl.className = "args-pdf-summary-list";
+  pdfSummaryListEl.style.display = "none";
+  panelFace.appendChild(pdfSummaryListEl);
+  renderPdfSummaryList();
 
   // Drag-to-scroll
   listEl.addEventListener("mousedown", (e) => {
@@ -478,7 +527,7 @@ export function initArgumentsBox(): void {
 
   const sketchBtn = document.createElement("button");
   sketchBtn.className = "args-sketch-btn";
-  sketchBtn.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
+  sketchBtn.textContent = getSketchActionLabel();
   sketchBtnEl = sketchBtn;
   sketchBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -750,7 +799,12 @@ export function initArgumentsBox(): void {
             enabledSites.some(
               (s) => hostname === s || hostname.endsWith("." + s),
             ));
-        if (!siteEnabled) {
+        // Skip dimming on PDF-converted pages — the meta tag marks them as
+        // already converted and the annotation pipeline runs regardless of whitelist.
+        const isPdfConverted = !!document.querySelector(
+          'meta[name="oddity-source-pdf"]',
+        );
+        if (!siteEnabled && !isPdfConverted) {
           dimmed = true;
           containerEl?.classList.add("oddity-not-enabled");
         }
@@ -938,7 +992,9 @@ export function setArgumentsBoxDimmed(isDimmed: boolean): void {
       const remaining = result.enableBubbleSnoozeRemaining;
       if (typeof remaining === "number" && remaining > 0) {
         enableBubbleEl?.remove();
-        chrome.storage.local.set({ enableBubbleSnoozeRemaining: remaining - 1 });
+        chrome.storage.local.set({
+          enableBubbleSnoozeRemaining: remaining - 1,
+        });
       }
     });
   }
@@ -979,16 +1035,38 @@ export function setPdfRunCallback(cb: () => void): void {
   pdfRunCb = cb;
 }
 
+export function setPdfSummaryTabVisible(visible: boolean): void {
+  pdfSummaryTabVisible = visible;
+  if (pdfSummaryTabBtn) {
+    pdfSummaryTabBtn.style.display = visible ? "" : "none";
+  }
+  renderPdfSummaryList();
+  if (!visible && activeTab === "summaries") {
+    switchTab("notes");
+  }
+}
+
+export function updatePdfSummaryCards(cards: PdfSummaryCardItem[]): void {
+  pdfSummaryCards = cards;
+  renderPdfSummaryList();
+}
+
+export function setPdfCachedLabel(cached: boolean): void {
+  pdfCachedLabel = cached;
+}
+
 /** Reset the PDF overlay button to its initial state (e.g. after an error). */
 export function resetPdfButton(errorMsg?: string): void {
   if (!pdfPanelEl) return;
   const btn = pdfPanelEl.querySelector<HTMLButtonElement>(".args-run-btn");
   if (btn) {
     btn.disabled = false;
-    btn.textContent = "Run as HTML";
+    btn.textContent = pdfCachedLabel ? "See annotations" : "Run Oddity1";
   }
   if (errorMsg) {
-    const hint = pdfPanelEl.querySelector<HTMLDivElement>(".args-not-enabled-hint");
+    const hint = pdfPanelEl.querySelector<HTMLDivElement>(
+      ".args-not-enabled-hint",
+    );
     if (hint) {
       hint.textContent = errorMsg;
       hint.style.color = "#ef4444";
@@ -1004,18 +1082,101 @@ export function setInputTextProvider(cb: () => string): void {
   inputTextProviderCb = cb;
 }
 
+function getPurposeLabelText(): string {
+  return isChatbotMode ? "Prompt goal" : "Purpose:";
+}
+
+function getPurposePlaceholderText(): string {
+  return isChatbotMode
+    ? getChatbotPromptGoalPlaceholder(chatbotDisplayName)
+    : "Why are you reading this?";
+}
+
+function getPurposeValidationPlaceholderText(): string {
+  return isChatbotMode
+    ? "Please enter your prompt goal"
+    : "Please fill in your purpose first";
+}
+
+function getSketchActionLabel(): string {
+  return isChatbotMode
+    ? getChatbotBuildPromptLabel(chatbotDisplayName)
+    : "Sketch my Argument";
+}
+
+function getSketchLoadingLabel(): string {
+  return isChatbotMode
+    ? getChatbotPromptLoadingLabel(chatbotDisplayName)
+    : "Sketching...";
+}
+
+function getSketchErrorText(): string {
+  return isChatbotMode
+    ? getChatbotPromptErrorText(chatbotDisplayName)
+    : "Failed to generate sketch. Please try again.";
+}
+
+function renderPromptEmptyState(): void {
+  if (!sketchContentEl || !isChatbotMode || sketchViewState !== "idle") return;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "args-prompt-empty";
+
+  const title = document.createElement("div");
+  title.className = "args-prompt-empty-title";
+  title.textContent = getChatbotPromptEmptyStateTitle(chatbotDisplayName);
+
+  const body = document.createElement("div");
+  body.className = "args-prompt-empty-body";
+  body.textContent = getChatbotPromptEmptyStateBody(chatbotDisplayName);
+
+  wrapper.appendChild(title);
+  wrapper.appendChild(body);
+  sketchContentEl.replaceChildren(wrapper);
+}
+
+function syncChatbotUi(): void {
+  if (purposeLabelEl) {
+    purposeLabelEl.textContent = getPurposeLabelText();
+  }
+  if (purposeInputEl) {
+    purposeInputEl.placeholder = getPurposePlaceholderText();
+  }
+  if (purposeHelperEl) {
+    if (isChatbotMode) {
+      purposeHelperEl.textContent =
+        getChatbotPromptGoalHelper(chatbotDisplayName);
+      purposeHelperEl.style.display = "";
+    } else {
+      purposeHelperEl.textContent = "";
+      purposeHelperEl.style.display = "none";
+    }
+  }
+  if (sketchBtnEl) {
+    sketchBtnEl.textContent = getSketchActionLabel();
+  }
+  if (sketchTabBtn) {
+    sketchTabBtn.textContent = isChatbotMode ? "Prompt" : "Sketch";
+  }
+  if (isChatbotMode && sketchViewState === "idle" && !sketchBuffer) {
+    renderPromptEmptyState();
+  }
+}
+
 export function appendSketchChunk(text: string, done: boolean): void {
   if (!sketchContentEl) return;
   if (text) {
+    sketchViewState = "ready";
     sketchBuffer += text;
     sketchContentEl.innerHTML = renderMarkdown(sketchBuffer);
     sketchContentEl.scrollTop = sketchContentEl.scrollHeight;
   }
   if (done) {
+    sketchViewState = "ready";
     sketchLoading = false;
     if (sketchBtnEl) {
       sketchBtnEl.disabled = false;
-      sketchBtnEl.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
+      sketchBtnEl.textContent = getSketchActionLabel();
     }
     if (isChatbotMode && chatbotInputSelector && sketchBuffer) {
       pasteIntoChatbot(chatbotInputSelector, sketchBuffer);
@@ -1023,12 +1184,17 @@ export function appendSketchChunk(text: string, done: boolean): void {
   }
 }
 
-export function setChatbotMode(inputSelector: string): void {
+export function setChatbotMode(
+  inputSelector: string,
+  displayName: string | null = null,
+): void {
   isChatbotMode = true;
   chatbotInputSelector = inputSelector;
-  if (sketchTabBtn) sketchTabBtn.textContent = "Prompt";
-  if (sketchBtnEl) sketchBtnEl.textContent = "Make a Prompt";
-  if (purposeInputEl) purposeInputEl.placeholder = "What is this prompt for?";
+  chatbotDisplayName = displayName;
+  if (!sketchBuffer) {
+    sketchViewState = "idle";
+  }
+  syncChatbotUi();
 }
 
 function pasteIntoChatbot(selector: string, text: string): void {
@@ -1202,6 +1368,8 @@ export function destroyArgumentsBox(): void {
   containerEl = null;
   topBarEl = null;
   listEl = null;
+  pdfSummaryListEl = null;
+  pdfSummaryTabBtn = null;
   panelToggleInput = null;
   panelToggleLabelEl = null;
   dashToggleInput = null;
@@ -1228,6 +1396,7 @@ export function destroyArgumentsBox(): void {
   dashFeedbackStatusEl = null;
   dashFeedbackSendBtnEl = null;
   expanded = false;
+  activeTab = "notes";
   dimmed = false;
   blocked = false;
   manualRunCb = null;
@@ -1236,6 +1405,9 @@ export function destroyArgumentsBox(): void {
   pdfDetected = false;
   pdfPanelEl = null;
   pdfRunCb = null;
+  pdfCachedLabel = false;
+  pdfSummaryTabVisible = false;
+  pdfSummaryCards = [];
   enableBubbleEl = null;
   canonicalItems = [];
   liveItems = [];
@@ -1439,7 +1611,7 @@ function showPdfOverlay(): void {
     hint.textContent = "Convert to HTML to enable Oddity 1";
     const runBtn = document.createElement("button");
     runBtn.className = "args-run-btn";
-    runBtn.textContent = "Run as HTML";
+    runBtn.textContent = pdfCachedLabel ? "See annotations" : "Run Oddity1";
     runBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       runBtn.disabled = true;
@@ -2040,7 +2212,7 @@ function buildDashboardFace(): HTMLDivElement {
 
   const fbRoleSelect = document.createElement("select");
   fbRoleSelect.className = "args-dash-feedback-role-select";
-  const roleOptions = [
+  const roleOptions: Array<[string, string]> = [
     ["", "What's your role? (optional)"],
     ["Student", "Student"],
     ["Researcher", "Researcher"],
@@ -3233,17 +3405,23 @@ function showOnboardingSlideshow(onComplete: () => void): void {
   // Sketch button
   const sketchBtn = document.createElement("div");
   sketchBtn.className = "args-onboarding-sketch-btn";
-  sketchBtn.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
+  sketchBtn.textContent = getSketchActionLabel();
 
   // Sketch output
   const sketchOutput = document.createElement("div");
   sketchOutput.className = "args-onboarding-sketch-output";
 
-  const sketchLines = [
-    "The article argues that renewable energy adoption has accelerated beyond projections.",
-    "You agreed with the core claim but flagged that infrastructure costs remain a barrier.",
-    "You also noted the small sample size, suggesting cautious optimism over the findings.",
-  ];
+  const sketchLines = isChatbotMode
+    ? [
+        "Help me evaluate the article's main claim using the reading below.",
+        "Use my notes and replies to identify the strongest evidence and the biggest limitation.",
+        "Ground every point in the text and say when the evidence is uncertain.",
+      ]
+    : [
+        "The article argues that renewable energy adoption has accelerated beyond projections.",
+        "You agreed with the core claim but flagged that infrastructure costs remain a barrier.",
+        "You also noted the small sample size, suggesting cautious optimism over the findings.",
+      ];
   const sketchInner = document.createElement("div");
   sketchInner.className = "args-onboarding-sketch-inner";
   const sketchLineEls: HTMLElement[] = [];
@@ -3262,11 +3440,14 @@ function showOnboardingSlideshow(onComplete: () => void): void {
 
   const title4 = document.createElement("div");
   title4.className = "args-onboarding-slide-title";
-  title4.textContent = "Sketch Your Argument";
+  title4.textContent = isChatbotMode
+    ? getChatbotOnboardingTitle(chatbotDisplayName)
+    : "Sketch Your Argument";
   const body4 = document.createElement("div");
   body4.className = "args-onboarding-slide-body";
-  body4.textContent =
-    "Your reactions and replies compile into a coherent argument.";
+  body4.textContent = isChatbotMode
+    ? getChatbotOnboardingBody(chatbotDisplayName)
+    : "Your reactions and replies compile into a coherent argument.";
 
   slide4.appendChild(vis4);
   slide4.appendChild(title4);
@@ -3367,7 +3548,8 @@ function showOnboardingSlideshow(onComplete: () => void): void {
     currentSlide = index;
     track.style.setProperty("--slide-index", String(index));
     dotEls.forEach((d, i) => d.classList.toggle("active", i === index));
-    nextBtn.textContent = index === TOTAL_SLIDES - 1 ? "Start Thinking" : "Next";
+    nextBtn.textContent =
+      index === TOTAL_SLIDES - 1 ? "Start Thinking" : "Next";
     // Start animation for new slide (slight delay to let slide transition finish)
     delay(() => animStarters[index]!(), 350);
   }
@@ -3384,9 +3566,23 @@ function showOnboardingSlideshow(onComplete: () => void): void {
     };
     overlay.style.opacity = "0";
     let done = false;
-    overlay.addEventListener("transitionend", () => { if (!done) { done = true; finish(); } }, { once: true });
+    overlay.addEventListener(
+      "transitionend",
+      () => {
+        if (!done) {
+          done = true;
+          finish();
+        }
+      },
+      { once: true },
+    );
     // Fallback: if transitionend never fires (e.g., overlay not yet visible), force finish
-    setTimeout(() => { if (!done) { done = true; finish(); } }, 400);
+    setTimeout(() => {
+      if (!done) {
+        done = true;
+        finish();
+      }
+    }, 400);
   }
 
   // ── Keyboard nav ──
@@ -3844,18 +4040,121 @@ function renderList(): void {
   }
 }
 
+const PDF_SUMMARY_COPY_ICON =
+  '<svg width="14" height="14" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.4883 5.5H7.94922C6.59655 5.5 5.5 6.59655 5.5 7.94922V17.4883C5.5 18.8409 6.59655 19.9375 7.94922 19.9375H17.4883C18.8409 19.9375 19.9375 18.8409 19.9375 17.4883V7.94922C19.9375 6.59655 18.8409 5.5 17.4883 5.5Z" stroke="currentColor" stroke-width="1.375" stroke-linejoin="round"/><path d="M16.4785 5.5L16.5 4.46875C16.4982 3.83113 16.2441 3.22014 15.7932 2.76928C15.3424 2.31841 14.7314 2.06431 14.0938 2.0625H4.8125C4.08382 2.06465 3.38559 2.35508 2.87034 2.87034C2.35508 3.38559 2.06465 4.08382 2.0625 4.8125V14.0938C2.06431 14.7314 2.31841 15.3424 2.76928 15.7932C3.22014 16.2441 3.83113 16.4982 4.46875 16.5H5.5" stroke="currentColor" stroke-width="1.375" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function copyPdfSummary(summary: string, btn: HTMLButtonElement): void {
+  navigator.clipboard
+    .writeText(summary)
+    .then(() => {
+      btn.classList.add("copied");
+      showNoticeToast("Summary copied");
+      setTimeout(() => btn.classList.remove("copied"), 1500);
+    })
+    .catch(() => {
+      showNoticeToast("Couldn't copy summary");
+    });
+}
+
+function renderPdfSummaryList(): void {
+  if (!pdfSummaryListEl) return;
+
+  pdfSummaryListEl.replaceChildren();
+
+  if (!pdfSummaryTabVisible) return;
+
+  if (pdfSummaryCards.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "args-pdf-summary-empty";
+    empty.textContent = "No converted PDF pages found yet.";
+    pdfSummaryListEl.appendChild(empty);
+    return;
+  }
+
+  for (const item of pdfSummaryCards) {
+    const card = document.createElement("div");
+    card.className = "args-pdf-summary-card";
+    if (item.summary) {
+      card.addEventListener("click", () => {
+        document.dispatchEvent(
+          new CustomEvent("oddity:pdf-summary-scroll-to-page", {
+            detail: { pageNo: item.pageNo },
+          }),
+        );
+      });
+    }
+
+    const text = document.createElement("div");
+    text.className = "args-pdf-summary-text";
+    text.textContent = item.summary ?? `Summarize page ${item.pageLabel}`;
+    card.appendChild(text);
+
+    const footer = document.createElement("div");
+    footer.className = "args-pdf-summary-footer";
+
+    const pageLabel = document.createElement("div");
+    pageLabel.className = "args-pdf-summary-page";
+    pageLabel.textContent = item.pageLabel;
+    footer.appendChild(pageLabel);
+
+    if (item.summary) {
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "args-pdf-summary-copy";
+      copyBtn.title = `Copy summary for page ${item.pageLabel}`;
+      copyBtn.innerHTML = PDF_SUMMARY_COPY_ICON;
+      copyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        copyPdfSummary(item.summary!, copyBtn);
+      });
+      footer.appendChild(copyBtn);
+    } else {
+      const actionBtn = document.createElement("button");
+      actionBtn.type = "button";
+      actionBtn.className = "args-pdf-summary-generate";
+      actionBtn.textContent = item.loading ? "Summarizing..." : "Summarize";
+      actionBtn.disabled = item.loading;
+      actionBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        document.dispatchEvent(
+          new CustomEvent("oddity:pdf-summary-generate", {
+            detail: { pageNo: item.pageNo },
+          }),
+        );
+      });
+      footer.appendChild(actionBtn);
+    }
+
+    card.appendChild(footer);
+    pdfSummaryListEl.appendChild(card);
+  }
+}
+
 // ─── Tab Switching ───
 
-function switchTab(tab: "notes" | "sketch"): void {
+function switchTab(tab: "notes" | "sketch" | "summaries"): void {
   activeTab = tab;
   if (notesTabBtn)
     notesTabBtn.className = tab === "notes" ? "args-tab active" : "args-tab";
   if (sketchTabBtn)
     sketchTabBtn.className = tab === "sketch" ? "args-tab active" : "args-tab";
+  if (pdfSummaryTabBtn)
+    pdfSummaryTabBtn.className =
+      tab === "summaries" ? "args-tab active" : "args-tab";
   if (listEl) listEl.style.display = tab === "notes" ? "" : "none";
   if (footerEl) footerEl.style.display = tab === "notes" ? "" : "none";
   if (sketchContentEl)
     sketchContentEl.style.display = tab === "sketch" ? "" : "none";
+  if (pdfSummaryListEl)
+    pdfSummaryListEl.style.display = tab === "summaries" ? "" : "none";
+  if (
+    tab === "sketch" &&
+    isChatbotMode &&
+    sketchViewState === "idle" &&
+    !sketchBuffer
+  ) {
+    renderPromptEmptyState();
+  }
 }
 
 // ─── Sketch Handler ───
@@ -3865,6 +4164,7 @@ function handleSketch(): void {
 
   // Gate: Sketch Pad requires Standard plan
   if (dashUserTier !== "standard") {
+    sketchViewState = "error";
     if (sketchContentEl) {
       switchTab("sketch");
       const errorDiv = document.createElement("div");
@@ -3890,7 +4190,7 @@ function handleSketch(): void {
   if (!purpose) {
     if (purposeInputEl) {
       purposeInputEl.classList.add("args-purpose-error");
-      purposeInputEl.placeholder = "Please fill in your purpose first";
+      purposeInputEl.placeholder = getPurposeValidationPlaceholderText();
       purposeInputEl.focus();
     }
     return;
@@ -3906,10 +4206,11 @@ function handleSketch(): void {
 
   // Disable button, switch to sketch tab, show loading
   sketchLoading = true;
+  sketchViewState = "loading";
   sketchBuffer = "";
   if (sketchBtnEl) {
     sketchBtnEl.disabled = true;
-    sketchBtnEl.textContent = isChatbotMode ? "Making prompt..." : "Sketching...";
+    sketchBtnEl.textContent = getSketchLoadingLabel();
   }
   if (sketchContentEl) {
     sketchContentEl.innerHTML =
@@ -3921,20 +4222,24 @@ function handleSketch(): void {
   chrome.runtime
     .sendMessage({
       action: "requestSketch",
-      payload: { inputText, purpose, userReactions, mode: isChatbotMode ? "prompt" : "sketch" },
+      payload: {
+        inputText,
+        purpose,
+        userReactions,
+        mode: isChatbotMode ? "prompt" : "sketch",
+      },
     })
     .catch(() => {
+      sketchViewState = "error";
       sketchLoading = false;
       if (sketchBtnEl) {
         sketchBtnEl.disabled = false;
-        sketchBtnEl.textContent = isChatbotMode ? "Make a Prompt" : "Sketch my Argument";
+        sketchBtnEl.textContent = getSketchActionLabel();
       }
       if (sketchContentEl) {
         const errorDiv = document.createElement("div");
         errorDiv.className = "args-sketch-error";
-        errorDiv.textContent = isChatbotMode
-          ? "Failed to generate prompt. Please try again."
-          : "Failed to generate sketch. Please try again.";
+        errorDiv.textContent = getSketchErrorText();
         sketchContentEl.replaceChildren(errorDiv);
       }
     });
@@ -4037,6 +4342,21 @@ function handleCopy(btn: HTMLButtonElement): void {
   if (activeTab === "sketch" && sketchBuffer) {
     plainText = sketchBuffer;
     html = renderMarkdown(sketchBuffer);
+  } else if (activeTab === "summaries") {
+    const summarizedCards = pdfSummaryCards.filter((item) => item.summary);
+    if (summarizedCards.length === 0) {
+      showNoticeToast("No summaries to copy yet");
+      return;
+    }
+    plainText = summarizedCards
+      .map((item) => `Page ${item.pageLabel}\n${item.summary}`)
+      .join("\n\n");
+    html = summarizedCards
+      .map(
+        (item) =>
+          `<b>Page ${escapeHtml(item.pageLabel)}</b><br>${escapeHtml(item.summary ?? "")}`,
+      )
+      .join("<br><br>");
   } else {
     const allItems = [...canonicalItems, ...liveItems];
     plainText = allItems.map((i) => formatItemPlain(i)).join("\n\n");
@@ -4699,6 +5019,13 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(255, 255, 255, 0.3);
   }
 
+  .args-purpose-helper {
+    font-size: 10px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
   /* ── List ── */
 
   .args-list {
@@ -5039,6 +5366,116 @@ const ARGUMENTS_BOX_CSS = `
     font-family: system-ui, -apple-system, sans-serif;
   }
 
+  .args-pdf-summary-list {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .args-pdf-summary-card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(17, 24, 39, 0.08);
+    border-radius: 14px;
+    padding: 16px 16px 14px 28px;
+    color: #233146;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .args-pdf-summary-card::before {
+    content: "";
+    position: absolute;
+    top: 16px;
+    left: 12px;
+    width: 4px;
+    height: calc(100% - 32px);
+    border-radius: 999px;
+    background: linear-gradient(180deg, #1d9bf0 0%, #4cb4ff 100%);
+  }
+
+  .args-pdf-summary-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  }
+
+  .args-pdf-summary-text {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 54px;
+  }
+
+  .args-pdf-summary-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+    gap: 12px;
+  }
+
+  .args-pdf-summary-page {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    color: #111827;
+  }
+
+  .args-pdf-summary-copy,
+  .args-pdf-summary-generate {
+    all: unset;
+    box-sizing: border-box;
+    cursor: pointer;
+  }
+
+  .args-pdf-summary-copy {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #233146;
+    background: rgba(29, 155, 240, 0.1);
+    transition: background 0.18s ease, color 0.18s ease;
+  }
+
+  .args-pdf-summary-copy:hover {
+    background: rgba(29, 155, 240, 0.18);
+  }
+
+  .args-pdf-summary-copy.copied {
+    background: rgba(34, 197, 94, 0.18);
+    color: #166534;
+  }
+
+  .args-pdf-summary-generate {
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    background: #172033;
+    color: white;
+  }
+
+  .args-pdf-summary-generate:disabled {
+    opacity: 0.7;
+    cursor: progress;
+  }
+
+  .args-pdf-summary-empty {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+    line-height: 1.5;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
   /* ── Mode Toggle (Overview / Depth) ── */
 
   .args-mode-toggle {
@@ -5208,6 +5645,25 @@ const ARGUMENTS_BOX_CSS = `
     margin-bottom: 4px;
   }
 
+  .args-prompt-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 2px;
+  }
+
+  .args-prompt-empty-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .args-prompt-empty-body {
+    font-size: 12px;
+    line-height: 1.55;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
   .args-sketch-loading {
     display: flex;
     justify-content: center;
@@ -5360,6 +5816,10 @@ const ARGUMENTS_BOX_CSS = `
     color: rgba(0, 0, 0, 0.25);
   }
 
+  :host([data-theme="light"]) .args-purpose-helper {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
   :host([data-theme="light"]) .arg-card {
     background: rgba(255, 255, 255, 0.82);
     backdrop-filter: blur(10px);
@@ -5446,6 +5906,22 @@ const ARGUMENTS_BOX_CSS = `
 
   :host([data-theme="light"]) .args-sketch-content strong {
     color: #111;
+  }
+
+  :host([data-theme="light"]) .args-pdf-summary-card {
+    border-color: rgba(15, 23, 42, 0.08);
+  }
+
+  :host([data-theme="light"]) .args-pdf-summary-empty {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  :host([data-theme="light"]) .args-prompt-empty-title {
+    color: #111;
+  }
+
+  :host([data-theme="light"]) .args-prompt-empty-body {
+    color: rgba(0, 0, 0, 0.58);
   }
 
   :host([data-theme="light"]) .args-sketch-loading span {
