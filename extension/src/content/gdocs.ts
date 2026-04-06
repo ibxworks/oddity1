@@ -580,6 +580,7 @@ function callDocApi(action: string, payload: Record<string, unknown>): Promise<{
 }
 
 async function applyPendingEditsViaApi(ops: Array<{ find: string; replace: string }>): Promise<void> {
+  document.dispatchEvent(new CustomEvent('oddity:gdocs:edit-start'));
   for (const op of ops) {
     const result = await callDocApi('gdocsApplyPendingEdit', {
       docId: activeDocId,
@@ -588,6 +589,10 @@ async function applyPendingEditsViaApi(ops: Array<{ find: string; replace: strin
     });
     if (result.error) console.warn('[Oddity GDocs] Apply edit error:', result.error);
   }
+}
+
+function notifyEditDone(): void {
+  document.dispatchEvent(new CustomEvent('oddity:gdocs:edit-done'));
 }
 
 function dismissReviewPanel(): void {
@@ -662,7 +667,7 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
       row.classList.add('decided-keep');
       pending.delete(idx);
       void callDocApi('gdocsAcceptEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace })
-        .then(() => { if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); } });
+        .then(() => { if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); notifyEditDone(); } });
     });
 
     revertBtn.addEventListener('click', () => {
@@ -671,7 +676,7 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
       row.classList.add('decided-revert');
       pending.delete(idx);
       void callDocApi('gdocsRevertEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace })
-        .then(() => { if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); } });
+        .then(() => { if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); notifyEditDone(); } });
     });
 
     btns.appendChild(revertBtn);
@@ -694,6 +699,7 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
       }
       hideLoadingOverlay();
       setInputEnabled(true);
+      notifyEditDone();
     })();
   });
 
@@ -707,6 +713,7 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
       }
       hideLoadingOverlay();
       setInputEnabled(true);
+      notifyEditDone();
     })();
   });
 }
@@ -766,8 +773,10 @@ function showLoadingOverlay(status: string): void {
   const style = document.createElement('style');
   style.textContent = `
     *, *::before, *::after { box-sizing: border-box; }
-    .overlay { position: fixed; inset: 0; backdrop-filter: blur(6px) saturate(0.8); -webkit-backdrop-filter: blur(6px) saturate(0.8); background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; }
-    .card { background: #fff; border-radius: 16px; padding: 28px 32px; box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 220px; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
+    .overlay { position: fixed; inset: 0; backdrop-filter: blur(6px) saturate(0.8); -webkit-backdrop-filter: blur(6px) saturate(0.8); background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.25s ease-in-out; }
+    .overlay.visible { opacity: 1; }
+    .card { background: #fff; border-radius: 16px; padding: 28px 32px; box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 220px; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; transform: translateY(6px); transition: transform 0.25s ease-in-out; }
+    .overlay.visible .card { transform: translateY(0); }
     .logo { width: 36px; height: 36px; border-radius: 8px; object-fit: contain; }
     .spinner { width: 28px; height: 28px; border: 2.5px solid #e8e8e2; border-top-color: #111; border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -781,12 +790,21 @@ function showLoadingOverlay(status: string): void {
   const statusEl = document.createElement('div'); statusEl.className = 'status'; statusEl.textContent = status; loadingStatusEl = statusEl;
   card.appendChild(logo); card.appendChild(spinner); card.appendChild(statusEl);
   overlay.appendChild(card); shadow.appendChild(overlay);
+  // Trigger fade-in on next frame so the transition fires.
+  requestAnimationFrame(() => overlay.classList.add('visible'));
 }
 
 function hideLoadingOverlay(): void {
-  loadingOverlayEl?.remove();
+  if (!loadingOverlayEl) return;
+  const host = loadingOverlayEl;
   loadingOverlayEl = null;
   loadingStatusEl = null;
+  const overlay = host.shadowRoot?.querySelector('.overlay') as HTMLElement | null;
+  if (!overlay) { host.remove(); return; }
+  overlay.classList.remove('visible');
+  overlay.addEventListener('transitionend', () => host.remove(), { once: true });
+  // Fallback in case transitionend never fires.
+  setTimeout(() => host.remove(), 350);
 }
 
 function setInputEnabled(enabled: boolean) {
@@ -1350,4 +1368,10 @@ function deactivate() {
 document.addEventListener('oddity:gdocs:activate', (e: Event) => {
   const context = (e as CustomEvent<{ prompt: string; answers: Record<string, string> } | undefined>).detail;
   void activate(context ?? undefined);
+});
+
+document.addEventListener('oddity:annotation:fix-now', (e: Event) => {
+  const { anchorText, note, replyText } = (e as CustomEvent<{ annotationId: string; anchorText: string; note: string; replyText: string }>).detail;
+  const prompt = `Fix the following passage based on this annotation feedback.\n\nPassage: "${anchorText}"\nAnnotation: ${note}${replyText ? `\nUser note: ${replyText}` : ''}`;
+  void handleSubmit(prompt);
 });

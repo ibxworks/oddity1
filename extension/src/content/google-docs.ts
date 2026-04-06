@@ -344,6 +344,11 @@ export function clearAllGDocsRects(docId: string): void {
   chrome.storage.local.remove(GDOCS_STATE_KEY_PREFIX + docId).catch(() => {});
 }
 
+/** Clear the pending correction queue (call when editing starts to prevent stale jobs). */
+export function clearGDocsCorrectionQueue(): void {
+  _correctionQueue = [];
+}
+
 /** Remove a single annotation's stored rects (call when annotation is deleted). */
 export function deleteGDocsRect(docId: string, annotationId: string): void {
   _anchorRects.delete(annotationId);

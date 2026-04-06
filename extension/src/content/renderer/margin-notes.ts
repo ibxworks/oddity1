@@ -1700,11 +1700,29 @@ function createNoteElement(
     const repliesContainer = document.createElement("div");
     repliesContainer.className = "note-replies";
     for (const reply of replies) {
+      const row = document.createElement("div");
+      row.className = "note-reply-row";
       const bubble = document.createElement("div");
       bubble.className = "note-reply-bubble";
       bubble.dataset.feedbackId = reply.id;
       bubble.textContent = reply.reply_text ?? "";
-      repliesContainer.appendChild(bubble);
+      row.appendChild(bubble);
+      const fixBtn = document.createElement("button");
+      fixBtn.className = "note-fix-btn";
+      fixBtn.textContent = "Fix now";
+      fixBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        document.dispatchEvent(new CustomEvent("oddity:annotation:fix-now", {
+          detail: {
+            annotationId: annotation.id,
+            anchorText: annotation.anchor.exact,
+            note: annotation.content.note,
+            replyText: reply.reply_text ?? "",
+          },
+        }));
+      });
+      row.appendChild(fixBtn);
+      repliesContainer.appendChild(row);
     }
     expandedContent.appendChild(repliesContainer);
 
@@ -2026,10 +2044,28 @@ function submitReply(
   if (!text) return;
 
   // Add bubble immediately
+  const row = document.createElement("div");
+  row.className = "note-reply-row";
   const bubble = document.createElement("div");
   bubble.className = "note-reply-bubble";
   bubble.textContent = text;
-  container.appendChild(bubble);
+  row.appendChild(bubble);
+  const fixBtn = document.createElement("button");
+  fixBtn.className = "note-fix-btn";
+  fixBtn.textContent = "Fix now";
+  fixBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.dispatchEvent(new CustomEvent("oddity:annotation:fix-now", {
+      detail: {
+        annotationId: annotation.id,
+        anchorText: annotation.anchor.exact,
+        note: annotation.content.note,
+        replyText: text,
+      },
+    }));
+  });
+  row.appendChild(fixBtn);
+  container.appendChild(row);
   container.scrollTop = container.scrollHeight;
 
   const excerpt = annotation.content.note.length > 40
@@ -2808,15 +2844,44 @@ const MARGIN_NOTES_CSS = `
     margin-top: 6px;
   }
 
+  .note-reply-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+  }
+
   .note-reply-bubble {
     background: rgba(255,255,255,0.08);
     border-radius: 8px;
     padding: 4px 10px;
     font-size: var(--oddity-note-size);
-    margin-bottom: 3px;
     word-break: break-word;
     font-family: 'Inter', system-ui, sans-serif;
     color: #FFFFFF;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .note-fix-btn {
+    all: unset;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: rgba(255,255,255,0.55);
+    padding: 2px 8px;
+    border-radius: 100px;
+    border: 1px solid rgba(255,255,255,0.2);
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+  }
+
+  .note-fix-btn:hover {
+    color: #FFFFFF;
+    border-color: rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.08);
   }
 
   /* ── Reply input bar (ace-input-row style) ── */
@@ -3126,6 +3191,21 @@ const MARGIN_NOTES_CSS = `
   :host([data-theme="light"]) .note-section ul,
   :host([data-theme="light"]) .note-reply-bubble {
     color: #293038;
+  }
+
+  :host([data-theme="light"]) .note-reply-bubble {
+    background: rgba(0,0,0,0.06);
+  }
+
+  :host([data-theme="light"]) .note-fix-btn {
+    color: rgba(41,48,56,0.5);
+    border-color: rgba(41,48,56,0.2);
+  }
+
+  :host([data-theme="light"]) .note-fix-btn:hover {
+    color: #293038;
+    border-color: rgba(41,48,56,0.5);
+    background: rgba(41,48,56,0.06);
   }
 
   :host([data-theme="light"]) .note-edit-textarea {

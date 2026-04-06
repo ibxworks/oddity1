@@ -112,6 +112,8 @@ import {
   deleteGDocsRect,
   clearAllGDocsRects,
   saveGDocsAnnotationsToStorage,
+  fetchGoogleDocsText,
+  clearGDocsCorrectionQueue,
 } from "./google-docs.js";
 import "./gdocs.js"; // registers oddity:gdocs:activate listener
 import { createStabilityWatcher } from "./stability.js";
@@ -177,6 +179,8 @@ const gdocsAnnotationCache = new Map<string, Annotation>();
 const gdocsRenderPending = new Map<string, { annotation: Annotation; noteFeedback: ReturnType<typeof Array.prototype.filter>; regionId: string }>();
 /** Unlisten fn for the GDocs scroll container scroll listener. */
 let gdocsScrollUnlisten: (() => void) | null = null;
+/** True while Oddity GDocs AI edits are pending review — suppresses rerenderAll. */
+let gdocsEditingInProgress = false;
 
 const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
@@ -1252,6 +1256,80 @@ async function startGoogleDocsPipeline(): Promise<void> {
     }
   });
 
+  // Hide annotations while the Oddity GDocs editor is applying AI edits.
+  document.addEventListener('oddity:gdocs:edit-start', () => {
+    gdocsEditingInProgress = true;
+
+    // Collect all anchor texts before clearing caches.
+    const anchorTexts: string[] = [];
+    for (const store of [overviewAnnotations, depthAnnotations] as Array<Map<string, Annotation[]>>) {
+      for (const anns of store.values()) {
+        for (const a of anns) {
+          if (a.anchor?.exact) anchorTexts.push(a.anchor.exact);
+        }
+      }
+    }
+
+    // Remove GDocs native highlights from the document.
+    const docId = getGoogleDocsId();
+    if (docId && anchorTexts.length > 0) {
+      sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts } }).catch(() => {});
+      clearAllGDocsRects(docId);
+    }
+
+    // Clear stale correction state so no old jobs re-apply highlights during editing.
+    clearGDocsCorrectionQueue();
+    gdocsRenderPending.clear();
+    gdocsAnnotationCache.clear();
+
+    setOverlayVisible(false);
+    setMarginNotesVisible(false);
+    clearOverlay();
+    clearAllAnchors();
+    clearMarginNotes();
+    clearGdocsAnchors();
+  });
+
+  // After editing resolves: filter out annotations whose anchor is gone, re-render survivors.
+  document.addEventListener('oddity:gdocs:edit-done', () => {
+    gdocsEditingInProgress = false;
+    const docId = getGoogleDocsId();
+    const restore = () => { setOverlayVisible(true); setMarginNotesVisible(true); rerenderAll(); syncArgumentsBox(); };
+    if (!docId) { restore(); return; }
+
+    void fetchGoogleDocsText(docId).then(docText => {
+      if (!docText) { restore(); return; }
+
+      const invalidAnchorTexts: string[] = [];
+      for (const store of [overviewAnnotations, depthAnnotations] as Array<Map<string, Annotation[]>>) {
+        for (const [regionId, anns] of store) {
+          const surviving = anns.filter(a => {
+            const exact = a.anchor?.exact;
+            if (!exact || !docText.includes(exact)) {
+              if (exact) invalidAnchorTexts.push(exact);
+              gdocsAnnotationCache.delete(a.id);
+              gdocsRenderPending.delete(a.id);
+              return false;
+            }
+            return true;
+          });
+          if (surviving.length === 0) store.delete(regionId);
+          else store.set(regionId, surviving);
+        }
+      }
+
+      if (invalidAnchorTexts.length > 0) {
+        sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts: invalidAnchorTexts } })
+          .catch(() => {});
+      }
+
+      // Clear position cache so surviving annotations re-run the highlight pipeline fresh.
+      clearAllGDocsRects(docId);
+
+      restore();
+    });
+  });
+
   // Watch for new content appearing (lazy loading, SPA navigation within Docs).
   // Debounced — GDocs makes hundreds of DOM mutations per second during editing.
   const knownRegions = new WeakSet<Element>(regions.map(r => r.element));
@@ -2163,6 +2241,8 @@ function rerenderAll(): void {
   clearAllAnchors();
   clearMarginNotes();
   clearGdocsAnchors();
+
+  if (gdocsEditingInProgress) return;
 
   for (const [regionId, annotations] of effectiveAnnotations()) {
     renderAnnotations(regionId, annotations);
