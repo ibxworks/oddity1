@@ -1655,7 +1655,7 @@ function toggleDimmedPanel(): void {
   }
   if (pdfDetected) {
     showPdfOverlay();
-  } else {
+  } else if (dimmed) {
     showNotEnabledOverlay();
   }
 }
