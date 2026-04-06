@@ -21,6 +21,7 @@ export default defineManifest({
     "alarms",
     "identity",
     "tabs",
+    "clipboardRead",
   ],
   host_permissions: ["<all_urls>"],
   oauth2: {

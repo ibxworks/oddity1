@@ -1504,6 +1504,14 @@ export function getMarginNotesContentRight(): number {
   return sharedContentRight;
 }
 
+export function getMarginNotesShadowRoot(): ShadowRoot | null {
+  return shadowRoot;
+}
+
+export function getMarginNotesHost(): HTMLElement | null {
+  return hostEl;
+}
+
 export function getMarginNotesContentLeft(): number {
   return sharedContentLeftViewport;
 }

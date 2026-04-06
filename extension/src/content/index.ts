@@ -3062,6 +3062,12 @@ document.addEventListener("oddity:manualAnnotationCreated", (e) => {
   }
 });
 
+// GDocs canvas mode: manual.ts fires this after storing the annotation so the
+// GDocs pipeline can resolve its pixel rects and render the margin note.
+document.addEventListener("oddity:gdocs:rerenderAnnotations", () => {
+  if (isGoogleDocs()) rerenderAll();
+});
+
 // ─── Annotation / Feedback Edit Sync ───
 // Edits from either margin notes or argument box dispatch these events.
 // We update the in-memory stores so mode switches and re-renders show the latest text,
