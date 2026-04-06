@@ -23,6 +23,8 @@ import {
   RateLimitError,
   requestAnnotationsStreaming,
   requestSketchStreaming,
+  getPdfPageSummaries as apiGetPdfPageSummaries,
+  generatePdfPageSummary as apiGeneratePdfPageSummary,
   saveAnnotation,
   UsageLimitError,
 } from "./api-client.js";
@@ -1063,6 +1065,30 @@ chrome.runtime.onMessage.addListener(
           } catch (err) {
             return { error: `PDF conversion failed: ${err instanceof Error ? err.message : String(err)}` };
           }
+        }
+
+        case "getPdfPageSummaries": {
+          const { url, documentHash } = message.payload;
+          return apiGetPdfPageSummaries(url, documentHash);
+        }
+
+        case "generatePdfPageSummary": {
+          const { url, documentHash, pageNo, pageTextHash, text, pageTitle } =
+            message.payload;
+          const result = await apiGeneratePdfPageSummary({
+            url,
+            document_hash: documentHash,
+            page_no: pageNo,
+            page_text_hash: pageTextHash,
+            text,
+            page_title: pageTitle,
+          });
+          track("pdf_page_summary_generated", {
+            page_no: pageNo,
+            cached: result.cached,
+            $current_url: url,
+          });
+          return result;
         }
 
         case "trackEvent": {

@@ -6,6 +6,9 @@ import {
   type AnnotationFeedback,
   type AnnotationUsage,
   type FeedbackType,
+  type PdfPageSummaryGenerateRequest,
+  type PdfPageSummaryGenerateResponse,
+  type PdfPageSummaryListResponse,
   type SiteAdapter,
   type UserPreferences,
 } from '@oddity/shared';
@@ -500,6 +503,37 @@ export async function getAdapters(): Promise<SiteAdapter[]> {
   return res.json() as Promise<SiteAdapter[]>;
 }
 
+export async function getPdfPageSummaries(
+  url: string,
+  documentHash: string,
+): Promise<PdfPageSummaryListResponse> {
+  const params = new URLSearchParams({
+    url,
+    document_hash: documentHash,
+  });
+  const res = await authFetch(`/api/pdf-page-summaries?${params.toString()}`);
+  if (!res.ok) throw new Error(`getPdfPageSummaries failed: ${res.status}`);
+  return res.json() as Promise<PdfPageSummaryListResponse>;
+}
+
+export async function generatePdfPageSummary(
+  payload: PdfPageSummaryGenerateRequest,
+): Promise<PdfPageSummaryGenerateResponse> {
+  const res = await authFetch("/api/pdf-page-summaries/generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorPayload = await readJsonPayload(res);
+    throwAnnotationResponseError(
+      "generatePdfPageSummary failed",
+      res.status,
+      errorPayload,
+    );
+  }
+  return res.json() as Promise<PdfPageSummaryGenerateResponse>;
+}
+
 export async function getPreferences(): Promise<UserPreferences> {
   const res = await authFetch('/api/user/preferences');
   if (!res.ok) throw new Error(`getPreferences failed: ${res.status}`);
@@ -550,7 +584,7 @@ export async function convertPdfViaMarker(pdfData: Uint8Array): Promise<string> 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+    binary += String.fromCharCode(bytes[i]!);
   }
   return btoa(binary);
 }
