@@ -7,6 +7,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { validateAnnotations } from "./schema-validator.js";
+import { validatePdfPageSummary } from "./pdf-page-summary-validator.js";
 import promptsConfig from "../config/prompts.json" with { type: "json" };
 
 const apiKeys = [
@@ -50,7 +51,7 @@ const reliabilityCounters = {
 type CounterName = keyof typeof reliabilityCounters;
 
 export type GeminiLogContext = {
-  route: "annotate" | "annotate/stream" | "sketch";
+  route: "annotate" | "annotate/stream" | "sketch" | "pdf-page-summary";
   requestId?: string;
   contentHash?: string;
 };
@@ -95,6 +96,8 @@ const depthPrompts: Record<string, string> = promptsConfig.depth_prompts ?? {};
 const overviewPersonalities: Record<string, string> =
   (promptsConfig as Record<string, unknown>).overview_personalities as Record<string, string> ?? {};
 const sketchPrompt: string = promptsConfig.sketch_prompt ?? "";
+const pdfPageSummaryPrompt: string =
+  (promptsConfig as Record<string, unknown>).pdf_page_summary_prompt as string ?? "";
 const promptPrompt: string = (promptsConfig as Record<string, unknown>).prompt_prompt as string ?? "";
 
 export class GeminiOperationError extends Error {
@@ -503,6 +506,54 @@ async function callGemini(
   );
 }
 
+async function callGeminiPdfPageSummaryWithClient(
+  entry: ClientEntry,
+  text: string,
+  correctionNote?: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const model = entry.client.getGenerativeModel({
+    model: modelName,
+    systemInstruction: pdfPageSummaryPrompt,
+    generationConfig: getGenerationConfig(),
+  });
+
+  const userContent = correctionNote ? `${text}\n\n${correctionNote}` : text;
+  const result = await model.generateContent(
+    {
+      contents: [{ role: "user", parts: [{ text: userContent }] }],
+    },
+    getRequestOptions(signal),
+  );
+
+  const content = result.response.text();
+  if (!content) return {};
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    return {};
+  }
+}
+
+async function callGeminiPdfPageSummary(
+  text: string,
+  correctionNote?: string,
+  options: GeminiRequestOptions = {},
+): Promise<unknown> {
+  return runWithRetryPlan(
+    "generate_pdf_page_summary",
+    (entry) =>
+      callGeminiPdfPageSummaryWithClient(
+        entry,
+        text,
+        correctionNote,
+        options.signal,
+      ),
+    options,
+  );
+}
+
 async function consumeAnnotationStreamAttempt(
   entry: ClientEntry,
   text: string,
@@ -835,6 +886,30 @@ export async function generateSketchStream(
   }
 
   throw lastError ?? new Error("Sketch stream failed without attempts");
+}
+
+export async function generatePdfPageSummary(
+  text: string,
+  options: GeminiRequestOptions = {},
+): Promise<string> {
+  const firstAttempt = await callGeminiPdfPageSummary(text, undefined, options);
+  const firstResult = validatePdfPageSummary(firstAttempt);
+
+  if (firstResult.errors.length === 0 && firstResult.valid) {
+    return firstResult.valid.summary;
+  }
+
+  const correctionPrompt =
+    `Your previous response had validation errors:\n${firstResult.errors.join("\n")}\n\n` +
+    'Please fix these issues and return only valid JSON in the shape {"summary":"..."} with 1-2 concise sentences.';
+  const retryAttempt = await callGeminiPdfPageSummary(
+    text,
+    correctionPrompt,
+    options,
+  );
+  const retryResult = validatePdfPageSummary(retryAttempt);
+
+  return retryResult.valid?.summary ?? firstResult.valid?.summary ?? "";
 }
 
 function extractCompleteObjects(buffer: string): {
