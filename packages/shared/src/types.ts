@@ -423,6 +423,9 @@ export type ExtensionMessage =
   | { action: "injectNextNewTab"; payload: Record<string, never> }
   | { action: "gdocsFindAndHighlight"; payload: { docId: string; anchorText: string; color?: { red: number; green: number; blue: number } } }
   | { action: "gdocsRemoveHighlights"; payload: { docId: string; anchorTexts: string[] } }
+  | { action: "gdocsApplyPendingEdit"; payload: { docId: string; findText: string; replaceText: string } }
+  | { action: "gdocsAcceptEdit"; payload: { docId: string; findText: string; replaceText: string } }
+  | { action: "gdocsRevertEdit"; payload: { docId: string; findText: string; replaceText: string } }
   | { action: "gdocsChat"; payload: { messages: Array<{ role: "user" | "assistant"; content: string }>; mode: "chat" | "tree" | "essay" | "edit" } }
   | { action: "gdocsMcqQuestion"; payload: { prompt: string; docContext: string; previousQA: Array<{ question: string; answer: string }>; questionNumber: number } }
   | { action: "gdocsSessionLoad"; payload: { docId: string } }

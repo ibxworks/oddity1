@@ -1324,8 +1324,8 @@ async function startGoogleDocsPipeline(): Promise<void> {
     syncArgumentsBox();
   }
 
-  // Inject "Annotate" button — clears all existing annotations + highlights, then re-runs.
-  injectGDocsAnnotateButton(() => {
+  // Listen for re-annotate event from the GDocs chat UI Notes button.
+  document.addEventListener('oddity:gdocs:re-annotate', () => {
     const docId = getGoogleDocsId();
 
     // Collect anchor texts before clearing stores (for GDocs highlight removal).

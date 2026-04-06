@@ -1410,53 +1410,18 @@ chrome.runtime.onMessage.addListener(
         case "gdocsFindAndHighlight": {
           const { docId, anchorText, color } = message.payload;
           try {
-            // Get a Google OAuth token with the documents scope.
-            const token = await new Promise<string>((resolve, reject) => {
-              chrome.identity.getAuthToken({ interactive: true }, (t) => {
-                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-                else resolve(t!);
-              });
-            });
-
-            // Fetch the document to find the anchor text's character range.
-            const docRes = await fetch(
-              `https://docs.googleapis.com/v1/documents/${docId}`,
-              { headers: { Authorization: `Bearer ${token}` } },
-            );
-            if (!docRes.ok) return { error: `docs.get HTTP ${docRes.status}` };
-            const doc = await docRes.json();
-
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
             const range = findTextRange(doc, anchorText);
             if (!range) return { error: "text not found in document" };
-
-            // Apply the annotation highlight color (defaults to green if not specified).
-            const rgbColor = color ?? { red: 0.780, green: 0.933, blue: 0.788 }; // #c7eec9
-            const updateRes = await fetch(
-              `https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  requests: [
-                    {
-                      updateTextStyle: {
-                        range: { startIndex: range.start, endIndex: range.end },
-                        textStyle: {
-                          backgroundColor: {
-                            color: { rgbColor },
-                          },
-                        },
-                        fields: "backgroundColor",
-                      },
-                    },
-                  ],
-                }),
+            const rgbColor = color ?? { red: 0.780, green: 0.933, blue: 0.788 };
+            await gdocsBatchUpdate(docId, token, [{
+              updateTextStyle: {
+                range: { startIndex: range.start, endIndex: range.end },
+                textStyle: { backgroundColor: { color: { rgbColor } } },
+                fields: "backgroundColor",
               },
-            );
-            if (!updateRes.ok) return { error: `batchUpdate HTTP ${updateRes.status}` };
+            }]);
             return {};
           } catch (err) {
             return { error: String(err) };
@@ -1466,21 +1431,8 @@ chrome.runtime.onMessage.addListener(
         case "gdocsRemoveHighlights": {
           const { docId, anchorTexts } = message.payload;
           try {
-            const token = await new Promise<string>((resolve, reject) => {
-              chrome.identity.getAuthToken({ interactive: true }, (t) => {
-                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-                else resolve(t!);
-              });
-            });
-
-            const docRes = await fetch(
-              `https://docs.googleapis.com/v1/documents/${docId}`,
-              { headers: { Authorization: `Bearer ${token}` } },
-            );
-            if (!docRes.ok) return { error: `docs.get HTTP ${docRes.status}` };
-            const doc = await docRes.json();
-
-            // Build one updateTextStyle request per anchor text to clear its background.
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
             const requests: object[] = [];
             for (const text of anchorTexts) {
               const range = findTextRange(doc, text);
@@ -1493,17 +1445,122 @@ chrome.runtime.onMessage.addListener(
                 },
               });
             }
-
             if (requests.length === 0) return {};
-            const updateRes = await fetch(
-              `https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`,
-              {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ requests }),
+            await gdocsBatchUpdate(docId, token, requests);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsApplyPendingEdit": {
+          const { docId, findText, replaceText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            const range = findTextRange(doc, findText);
+            if (!range) return { error: "find text not found in document" };
+
+            const ORANGE = { red: 0.988, green: 0.729, blue: 0.561 };
+            const BLUE   = { red: 0.678, green: 0.847, blue: 0.961 };
+
+            const requests: object[] = [];
+            if (replaceText) {
+              requests.push({ insertText: { location: { index: range.end }, text: replaceText } });
+            }
+            // Highlight original text orange (mark for deletion)
+            requests.push({
+              updateTextStyle: {
+                range: { startIndex: range.start, endIndex: range.end },
+                textStyle: { backgroundColor: { color: { rgbColor: ORANGE } } },
+                fields: 'backgroundColor',
               },
-            );
-            if (!updateRes.ok) return { error: `batchUpdate HTTP ${updateRes.status}` };
+            });
+            if (replaceText) {
+              // Highlight inserted text blue (mark as insertion) — inserted after range.end
+              requests.push({
+                updateTextStyle: {
+                  range: { startIndex: range.end, endIndex: range.end + replaceText.length },
+                  textStyle: { backgroundColor: { color: { rgbColor: BLUE } } },
+                  fields: 'backgroundColor',
+                },
+              });
+            }
+            await gdocsBatchUpdate(docId, token, requests);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsAcceptEdit": {
+          // Keep the replacement: delete orange find-text, clear blue highlight on replace-text
+          const { docId, findText, replaceText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            if (!replaceText) {
+              // Pure deletion — just delete the orange text
+              const range = findTextRange(doc, findText);
+              if (!range) return { error: "find text not found" };
+              await gdocsBatchUpdate(docId, token, [{
+                deleteContentRange: { range: { startIndex: range.start, endIndex: range.end } },
+              }]);
+              return {};
+            }
+            const combined = findText + replaceText;
+            const range = findTextRange(doc, combined);
+            if (!range) return { error: "combined text not found" };
+            const splitIdx = range.start + findText.length;
+            await gdocsBatchUpdate(docId, token, [
+              // Delete the orange find-text
+              { deleteContentRange: { range: { startIndex: range.start, endIndex: splitIdx } } },
+              // After deletion, replaceText is now at [range.start … range.start + replaceText.length]
+              { updateTextStyle: {
+                  range: { startIndex: range.start, endIndex: range.start + replaceText.length },
+                  textStyle: { backgroundColor: {} },
+                  fields: 'backgroundColor',
+              }},
+            ]);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsRevertEdit": {
+          // Revert: delete blue replace-text, clear orange highlight on find-text
+          const { docId, findText, replaceText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            if (!replaceText) {
+              // Pure deletion that was reverted — just clear orange highlight
+              const range = findTextRange(doc, findText);
+              if (!range) return { error: "find text not found" };
+              await gdocsBatchUpdate(docId, token, [{
+                updateTextStyle: {
+                  range: { startIndex: range.start, endIndex: range.end },
+                  textStyle: { backgroundColor: {} },
+                  fields: 'backgroundColor',
+                },
+              }]);
+              return {};
+            }
+            const combined = findText + replaceText;
+            const range = findTextRange(doc, combined);
+            if (!range) return { error: "combined text not found" };
+            const splitIdx = range.start + findText.length;
+            await gdocsBatchUpdate(docId, token, [
+              // Delete the blue replace-text
+              { deleteContentRange: { range: { startIndex: splitIdx, endIndex: range.end } } },
+              // Clear orange highlight on find-text (still at original position)
+              { updateTextStyle: {
+                  range: { startIndex: range.start, endIndex: splitIdx },
+                  textStyle: { backgroundColor: {} },
+                  fields: 'backgroundColor',
+              }},
+            ]);
             return {};
           } catch (err) {
             return { error: String(err) };
