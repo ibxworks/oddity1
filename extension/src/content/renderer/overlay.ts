@@ -348,6 +348,40 @@ export function shiftRectsBelow(thresholdAbsY: number, dyPx: number): void {
 }
 
 /**
+ * Immediately shift the left edge of annotations whose first rect sits on the
+ * same visual line as the cursor and starts to the right of caretAbsX.
+ *
+ * Called on every printable keystroke so the overlay doesn't lag behind typed
+ * text inserted before an annotation on the same line.  Uses direct DOM style
+ * updates instead of a full redraw to keep keystroke latency minimal.
+ */
+export function shiftRectsOnLine(
+  absY: number,
+  lineH: number,
+  caretAbsX: number,
+  dx: number,
+): void {
+  if (!wrapperEl || dx === 0) return;
+  for (const [id, rects] of cachedRects) {
+    const r = rects[0];
+    if (!r) continue;
+    // On the cursor's line
+    if (Math.abs(r.top - absY) >= lineH) continue;
+    // Starts at or to the right of the cursor (annotation is ahead of where we're typing)
+    if (r.left < caretAbsX - 5) continue;
+    // Update the cache
+    cachedRects.set(id, [{ ...r, left: r.left + dx }, ...rects.slice(1)]);
+    // Update the first overlay element for this annotation in-place (avoids full redraw)
+    for (const child of Array.from(wrapperEl.children) as HTMLElement[]) {
+      if (child.dataset.annotationId === id) {
+        child.style.left = `${parseFloat(child.style.left || '0') + dx}px`;
+        break; // only the first rect element needs to shift
+      }
+    }
+  }
+}
+
+/**
  * Destroy the overlay completely.
  */
 export function destroyOverlay(): void {

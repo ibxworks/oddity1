@@ -92,6 +92,7 @@ import {
   setOverlayEventCallbacks,
   setScrollContainer,
   shiftRectsBelow,
+  shiftRectsOnLine,
   enableGDocsInteractionMode,
   type AbsoluteRect,
 } from "./renderer/overlay.js";
@@ -1138,6 +1139,30 @@ async function startGoogleDocsPipeline(): Promise<void> {
         entry.el.style.top = `${entry.rect.top - scrollTop2}px`;
         entry.el.style.left = `${entry.rect.left - scrollLeft2}px`;
       }
+    }
+    refreshMarginNotePositions();
+  });
+
+  // Immediate same-line X-shift: when the user types a printable character or
+  // deletes on the same line as an annotation that sits to the right of the cursor,
+  // push that annotation's overlay left edge right (or left) by the character width.
+  // This fires every keyframe so the overlay never bleeds into the typed text.
+  document.addEventListener('oddity-gdocs-char-shift', (e: Event) => {
+    const { absY, lineH, caretAbsX, dxPx } =
+      (e as CustomEvent<{ absY: number; lineH: number; caretAbsX: number; dxPx: number }>).detail;
+    const scrollEl2 = regions[0]?.element as HTMLElement | undefined;
+    const scrollTop2  = scrollEl2?.scrollTop  ?? 0;
+    const scrollLeft2 = scrollEl2?.scrollLeft ?? 0;
+
+    shiftRectsOnLine(absY, lineH, caretAbsX, dxPx);
+
+    for (const entry of gdocsAnchors.values()) {
+      const r = entry.rect;
+      if (Math.abs(r.top - absY) >= lineH) continue;
+      if (r.left < caretAbsX - 5) continue;
+      entry.rect = { ...r, left: r.left + dxPx };
+      entry.el.style.left = `${entry.rect.left - scrollLeft2}px`;
+      entry.el.style.top  = `${entry.rect.top  - scrollTop2}px`;
     }
     refreshMarginNotePositions();
   });

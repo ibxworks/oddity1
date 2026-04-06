@@ -1062,11 +1062,15 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
   const iframeDoc = iframe?.contentDocument;
   if (!iframeDoc) return () => {};
 
-  const getCaretAbsY = (): { y: number; h: number } | null => {
+  const getCaretAbsY = (): { x: number; y: number; h: number } | null => {
     const caret = document.querySelector<HTMLElement>('.kix-cursor-caret');
     const bcr = caret?.getBoundingClientRect();
     return bcr && bcr.height > 0
-      ? { y: bcr.top + scrollContainer.scrollTop, h: bcr.height }
+      ? {
+          x: bcr.left + scrollContainer.scrollLeft,
+          y: bcr.top  + scrollContainer.scrollTop,
+          h: bcr.height,
+        }
       : null;
   };
 
@@ -1086,17 +1090,28 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
       const text = await fetchGoogleDocsText(docId).catch(() => null);
       if (text && text !== _cachedDocText) {
         _cachedDocText = text;
-        scheduleParaCheck(50); // re-run tracking with the fresh text
+        scheduleParaCheck(0); // re-run tracking with the fresh text
       }
     }, delay);
   };
 
+  // Maximum ms between consecutive scans during active typing.
+  // Prevents the pure-debounce from deferring scans indefinitely while the
+  // user types fast — guarantees a scan runs at least every SCAN_THROTTLE_MS.
+  const SCAN_THROTTLE_MS = 100;
+  let lastScanAt = 0;
+
   let trackTimer: ReturnType<typeof setTimeout> | null = null;
-  const scheduleParaCheck = (delay = 150) => {
+  const scheduleParaCheck = (delay = 50) => {
     if (_anchorRects.size === 0) return;
+    // Throttle: cap the effective delay so a scan fires within SCAN_THROTTLE_MS
+    // of the previous one even when keystrokes keep resetting the debounce timer.
+    const sinceLastScan = Date.now() - lastScanAt;
+    const effectiveDelay = Math.min(delay, Math.max(0, SCAN_THROTTLE_MS - sinceLastScan));
     if (trackTimer) clearTimeout(trackTimer);
     trackTimer = setTimeout(() => {
       trackTimer = null;
+      lastScanAt = Date.now();
 
       const snapshot = snapshotVisibleCanvases();
       const assignedIds = new Set<string>();
@@ -1156,11 +1171,20 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
           const clusterLeft  = cluster[0]!.left;
           const clusterRight = clusterLeft + cluster[0]!.width;
           const clusterTop   = cluster[0]!.top;
+          // Full vertical extent of the cluster, used to detect stale positions of
+          // annotations that were adjacent before a bulk deletion brought them together.
+          const clusterSpanBottom = cluster[cluster.length - 1]!.top + cluster[cluster.length - 1]!.height;
+          // Stale-position buffer: proportional to cluster height so that annotations
+          // whose stored y fell N deleted-lines below the cluster are still found.
+          const clusterStaleBuffer = Math.max(150, clusterSpanBottom - clusterTop);
 
-          // Pass 1 — Canvas candidate detection: tight 30px y-tolerance.
+          // Pass 1 — Canvas candidate detection.
           // Color-filtered: green clusters only consider green annotations and vice versa.
           // This prevents red annotations from becoming candidates for green clusters
           // when they happen to share the same visual line (different color, different cluster).
+          // Y-tolerance: check against the cluster's full vertical span + a stale-position
+          // buffer. When two same-color annotations become adjacent after text deletion,
+          // the lower annotation's stored y can be many lines above the cluster bottom.
           const clusterIsRed = redClusterSet.has(cluster);
           let candidates: Array<{ id: string; left: number; width: number }> = [];
           for (const [id, lastRects] of _anchorRects) {
@@ -1172,7 +1196,7 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
             }
             const lr = lastRects[0];
             if (!lr) continue;
-            if (Math.abs(clusterTop - lr.top) > 30) continue; // same visual line only
+            if (lr.top < clusterTop - 30 || lr.top > clusterSpanBottom + clusterStaleBuffer) continue;
             if (lr.left < clusterRight + 5 && (lr.left + lr.width) > clusterLeft - 5) {
               candidates.push({ id, left: lr.left, width: lr.width });
             }
@@ -1231,11 +1255,26 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
             // assign each rect in the cluster to whichever candidate's stored position
             // is closest in y. This handles adjacent same-color annotations on different
             // lines being merged into one cluster by the 25px pass-2 threshold.
+
+            // Sort candidates by pretext line order so the sequential fallback below
+            // assigns rects top-to-bottom in document order.
+            const sortedCands = [...candidates].sort((a, b) => {
+              const ia = preTextLine.get(a.id);
+              const ib = preTextLine.get(b.id);
+              if (ia && ib) {
+                if (ia.paraIdx !== ib.paraIdx) return ia.paraIdx - ib.paraIdx;
+                return ia.lineIdx - ib.lineIdx;
+              }
+              const ra = _anchorRects.get(a.id)?.[0];
+              const rb = _anchorRects.get(b.id)?.[0];
+              return (ra?.top ?? 0) - (rb?.top ?? 0);
+            });
+
             const verticalGroups = new Map<string, AbsoluteRect[]>();
             for (const rect of cluster) {
-              let bestId = candidates[0]!.id;
+              let bestId = sortedCands[0]!.id;
               let bestDist = Infinity;
-              for (const c of candidates) {
+              for (const c of sortedCands) {
                 for (const sr of (_anchorRects.get(c.id) ?? [])) {
                   const d = Math.abs(sr.top - rect.top);
                   if (d < bestDist) { bestDist = d; bestId = c.id; }
@@ -1244,6 +1283,24 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
               if (!verticalGroups.has(bestId)) verticalGroups.set(bestId, []);
               verticalGroups.get(bestId)!.push(rect);
             }
+
+            // Stored-position split put all rects into one candidate — this means stored
+            // positions are stale (e.g. the lower annotation hasn't been updated yet after
+            // a bulk deletion). Fall back to sequential assignment: distribute cluster rects
+            // top-to-bottom across candidates in pretext order. Each candidate gets one rect
+            // from the top of the cluster; the last candidate absorbs any remainder (wrapped lines).
+            if (verticalGroups.size <= 1 && sortedCands.length >= 2) {
+              verticalGroups.clear();
+              const sortedRects = [...cluster].sort((a, b) => a.top - b.top);
+              const rectsPerCand = Math.max(1, Math.floor(sortedRects.length / sortedCands.length));
+              for (let ci = 0; ci < sortedCands.length; ci++) {
+                const start = ci * rectsPerCand;
+                const end = ci === sortedCands.length - 1 ? sortedRects.length : start + rectsPerCand;
+                const portion = sortedRects.slice(start, end);
+                if (portion.length > 0) verticalGroups.set(sortedCands[ci]!.id, portion);
+              }
+            }
+
             if (verticalGroups.size > 1) {
               for (const [, rects] of verticalGroups) splitClusters.push(rects);
             } else {
@@ -1352,6 +1409,22 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
           _missCounts.delete(id); // off-screen — reset, don't count as a miss
           continue;
         }
+
+        // When the canvas found zero highlights total, GDocs is likely in a transient
+        // rendering state (re-compositing after a large edit). If the anchor text is
+        // still present in the cached document, reset the miss count rather than
+        // accumulating it — this prevents back-to-back blank-canvas scans from
+        // falsely deleting every annotation at once.
+        if (allFound.length === 0 && _cachedDocText) {
+          const anchorText = _currentAnchorTexts.get(id)
+            ?? _completedJobs.find(j => j.id === id)?.exact
+            ?? '';
+          if (anchorText && _cachedDocText.toLowerCase().includes(anchorText.toLowerCase())) {
+            _missCounts.delete(id);
+            continue;
+          }
+        }
+
         const misses = (_missCounts.get(id) ?? 0) + 1;
         _missCounts.set(id, misses);
         if (misses >= 2) toDelete.push(id);
@@ -1373,7 +1446,18 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
       }
 
       saveGDocsRectsToStorage();
-    }, delay);
+    }, effectiveDelay);
+  };
+
+  /** Immediately shift _anchorRects for same-line annotations ahead of the cursor. */
+  const _shiftAnchorRectsOnLine = (absY: number, lineH: number, caretAbsX: number, dx: number) => {
+    for (const [id, rects] of _anchorRects) {
+      const r = rects[0];
+      if (!r) continue;
+      if (Math.abs(r.top - absY) >= lineH) continue;
+      if (r.left < caretAbsX - 5) continue;
+      _anchorRects.set(id, [{ ...r, left: r.left + dx }, ...rects.slice(1)]);
+    }
   };
 
   const onKeydown = (e: KeyboardEvent) => {
@@ -1389,10 +1473,37 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.ctrlKey) {
         requestAnimationFrame(() => {
           const after = getCaretAbsY();
-          if (after && pos.y - after.y > pos.h * 0.5) {
-            document.dispatchEvent(new CustomEvent('oddity-gdocs-line-shift', {
-              detail: { thresholdAbsY: pos.y, dyPx: -pos.h },
-            }));
+          if (after) {
+            if (pos.y - after.y > pos.h * 0.5) {
+              // Line deleted — shift everything below up
+              document.dispatchEvent(new CustomEvent('oddity-gdocs-line-shift', {
+                detail: { thresholdAbsY: pos.y, dyPx: -pos.h },
+              }));
+            } else if (Math.abs(after.y - pos.y) < pos.h * 0.5) {
+              // Same-line deletion — shift annotations to the right of the new cursor left
+              const dx = after.x - pos.x;
+              if (dx !== 0) {
+                _shiftAnchorRectsOnLine(pos.y, pos.h, after.x, dx);
+                document.dispatchEvent(new CustomEvent('oddity-gdocs-char-shift', {
+                  detail: { absY: pos.y, lineH: pos.h, caretAbsX: after.x, dxPx: dx },
+                }));
+              }
+            }
+          }
+        });
+      } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // Printable character — shift annotations on the same line to the right
+        requestAnimationFrame(() => {
+          const after = getCaretAbsY();
+          if (after && Math.abs(after.y - pos.y) < pos.h * 0.5) {
+            // Cursor stayed on the same line (no word-wrap)
+            const dx = after.x - pos.x;
+            if (dx > 0) {
+              _shiftAnchorRectsOnLine(pos.y, pos.h, pos.x, dx);
+              document.dispatchEvent(new CustomEvent('oddity-gdocs-char-shift', {
+                detail: { absY: pos.y, lineH: pos.h, caretAbsX: pos.x, dxPx: dx },
+              }));
+            }
           }
         });
       }
@@ -1413,16 +1524,16 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
       (e.key.length === 1 || e.key === 'Enter');
 
     if (isBulkChange || isDeletion) {
-      scheduleParaCheck(600);
-      scheduleDocTextRefresh(1500); // refresh doc text after bulk changes
+      scheduleParaCheck(150);
+      scheduleDocTextRefresh(500); // refresh doc text after bulk changes
     } else if (isTyping) {
       // If GDocs has a non-collapsed selection, typing replaces potentially
       // many lines — treat it as a bulk change.
       const hasSelection = document.querySelector(
         '.kix-selection-overlay, [class*="kix-selection-overlay"]'
       ) !== null;
-      scheduleParaCheck(hasSelection ? 600 : 150);
-      scheduleDocTextRefresh(2000); // refresh doc text after typing pauses
+      scheduleParaCheck(hasSelection ? 150 : 50);
+      scheduleDocTextRefresh(500); // refresh doc text after typing pauses
     }
   };
 
@@ -1435,7 +1546,7 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
   const heartbeatInterval = setInterval(() => {
     if (_anchorRects.size === 0) return;
     scheduleParaCheck(0);
-  }, 5000);
+  }, 1500);
 
   // ── Scroll-triggered scan ───────────────────────────────────────────────────
   // When the user scrolls to a new area, previously off-screen annotations
@@ -1448,7 +1559,7 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
     scrollTimer = setTimeout(() => {
       scrollTimer = null;
       scheduleParaCheck(0);
-    }, 300);
+    }, 80);
   };
   scrollContainer.addEventListener('scroll', onScroll, { passive: true });
 
