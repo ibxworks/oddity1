@@ -109,6 +109,7 @@ import {
   initGDocsRectCache,
   getGDocsAnchorRects,
   deleteGDocsRect,
+  clearAllGDocsRects,
   saveGDocsAnnotationsToStorage,
 } from "./google-docs.js";
 import { createStabilityWatcher } from "./stability.js";
@@ -1115,6 +1116,12 @@ async function startGoogleDocsPipeline(): Promise<void> {
     }
   });
 
+  // When anchor text is deleted from the document, remove its overlay and margin note.
+  document.addEventListener('oddity-gdocs-anchor-deleted', (e: Event) => {
+    const { id } = (e as CustomEvent<{ id: string }>).detail;
+    handleAnnotationDeleted(id);
+  });
+
   // Immediate line-shift updates: when the user presses Enter or deletes a line,
   // shift all overlay rects and synthetic anchors below the cursor by ±lineHeight.
   document.addEventListener('oddity-gdocs-line-shift', (e: Event) => {
@@ -1169,8 +1176,43 @@ async function startGoogleDocsPipeline(): Promise<void> {
     syncArgumentsBox();
   }
 
-  // Inject "Annotate" button — triggers a fresh API call, replacing current annotations.
+  // Inject "Annotate" button — clears all existing annotations + highlights, then re-runs.
   injectGDocsAnnotateButton(() => {
+    const docId = getGoogleDocsId();
+
+    // Collect anchor texts before clearing stores (for GDocs highlight removal).
+    const anchorTexts: string[] = [];
+    for (const anns of [...overviewAnnotations.values(), ...depthAnnotations.values()]) {
+      for (const a of anns) {
+        const t = a.anchor.exact;
+        if (t) anchorTexts.push(t);
+      }
+    }
+
+    // Clear all overlays and DOM anchors.
+    clearOverlay();
+    clearAllAnchors();
+    clearMarginNotes();
+    clearGdocsAnchors();
+
+    // Clear annotation stores.
+    overviewAnnotations.clear();
+    depthAnnotations.clear();
+    overviewFeedback.clear();
+    depthFeedback.clear();
+    gdocsAnnotationCache.clear();
+    gdocsRenderPending.clear();
+
+    // Clear GDocs position cache.
+    if (docId) clearAllGDocsRects(docId);
+
+    // Remove GDocs native highlights from the document (fire-and-forget).
+    if (docId && anchorTexts.length > 0) {
+      sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts } })
+        .catch(() => {});
+    }
+
+    // Re-run annotation pipeline.
     annotatedRegions.clear();
     pendingRegions.clear();
     overviewGenerated.clear();

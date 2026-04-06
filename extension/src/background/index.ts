@@ -1176,6 +1176,53 @@ chrome.runtime.onMessage.addListener(
           }
         }
 
+        case "gdocsRemoveHighlights": {
+          const { docId, anchorTexts } = message.payload;
+          try {
+            const token = await new Promise<string>((resolve, reject) => {
+              chrome.identity.getAuthToken({ interactive: true }, (t) => {
+                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+                else resolve(t!);
+              });
+            });
+
+            const docRes = await fetch(
+              `https://docs.googleapis.com/v1/documents/${docId}`,
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
+            if (!docRes.ok) return { error: `docs.get HTTP ${docRes.status}` };
+            const doc = await docRes.json();
+
+            // Build one updateTextStyle request per anchor text to clear its background.
+            const requests: object[] = [];
+            for (const text of anchorTexts) {
+              const range = findTextRange(doc, text);
+              if (!range) continue;
+              requests.push({
+                updateTextStyle: {
+                  range: { startIndex: range.start, endIndex: range.end },
+                  textStyle: { backgroundColor: {} },
+                  fields: 'backgroundColor',
+                },
+              });
+            }
+
+            if (requests.length === 0) return {};
+            const updateRes = await fetch(
+              `https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`,
+              {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requests }),
+              },
+            );
+            if (!updateRes.ok) return { error: `batchUpdate HTTP ${updateRes.status}` };
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
         case "injectNextNewTab": {
           // Listen for the next new tab and inject the content script into it.
           // Used for PDF→HTML conversion: content script opens a blob tab,

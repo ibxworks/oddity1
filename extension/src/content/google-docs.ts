@@ -233,11 +233,10 @@ const _completedJobs: CorrectionJob[] = [];
  * Uses tolerance=15 against the 100% RGB values — this covers both 100% opacity
  * and GDocs' ~40% blended rendering while reliably excluding pure white (255,255,255).
  */
-function makeHighlightPredicate(hexColor: string): (r: number, g: number, b: number, a: number) => boolean {
+function makeHighlightPredicate(hexColor: string, tol = 15): (r: number, g: number, b: number, a: number) => boolean {
   const r0 = parseInt(hexColor.slice(1, 3), 16);
   const g0 = parseInt(hexColor.slice(3, 5), 16);
   const b0 = parseInt(hexColor.slice(5, 7), 16);
-  const tol = 15;
   return (r, g, b, _a) =>
     Math.abs(r - r0) <= tol && Math.abs(g - g0) <= tol && Math.abs(b - b0) <= tol;
 }
@@ -248,8 +247,18 @@ const _isRedHighlight   = makeHighlightPredicate(GDOCS_HIGHLIGHT_RED);
 const isAnchorHighlight = (r: number, g: number, b: number, a: number): boolean =>
   _isGreenHighlight(r, g, b, a) || _isRedHighlight(r, g, b, a);
 
-/** Last-known rects (one per line) for each annotation's cyan tracking highlight. */
+/** Last-known rects (one per line) for each annotation's tracking highlight. */
 const _anchorRects = new Map<string, AbsoluteRect[]>();
+/** Annotation type per annotation — used to color-filter split candidates. */
+const _anchorTypes = new Map<string, import('@oddity/shared').AnnotationType>();
+/** Consecutive in-viewport scan misses per annotation — used to detect deleted anchor text. */
+const _missCounts = new Map<string, number>();
+/**
+ * Current anchor text per annotation. Initially equals annotation.anchor.exact, but
+ * updated whenever the user edits the highlighted text in the document so pretext can
+ * continue tracking it through further edits.
+ */
+const _currentAnchorTexts = new Map<string, string>();
 
 /** Returns the cached rects for an annotation, or null if not found. */
 export function getGDocsAnchorRects(annotationId: string): AbsoluteRect[] | null {
@@ -283,6 +292,11 @@ export async function initGDocsRectCache(docId: string): Promise<GDocsPersistedS
     if (!stored?.rects || Object.keys(stored.rects).length === 0) return null;
     for (const [id, rects] of Object.entries(stored.rects)) {
       _anchorRects.set(id, rects);
+    }
+    if (stored.annotations) {
+      for (const ann of stored.annotations) {
+        _anchorTypes.set(ann.id, ann.type);
+      }
     }
     _cachedRectsLoaded = true;
     console.log(`[Oddity 1] GDocs: restored ${_anchorRects.size} anchor rect(s) from storage`);
@@ -319,9 +333,22 @@ export function saveGDocsAnnotationsToStorage(
   }).catch(() => {});
 }
 
+/** Clear all annotation rects and persisted state (call before a full re-annotation). */
+export function clearAllGDocsRects(docId: string): void {
+  _anchorRects.clear();
+  _anchorTypes.clear();
+  _missCounts.clear();
+  _currentAnchorTexts.clear();
+  _cachedRectsLoaded = false;
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.remove(GDOCS_STATE_KEY_PREFIX + docId).catch(() => {});
+}
+
 /** Remove a single annotation's stored rects (call when annotation is deleted). */
 export function deleteGDocsRect(docId: string, annotationId: string): void {
   _anchorRects.delete(annotationId);
+  _anchorTypes.delete(annotationId);
+  _currentAnchorTexts.delete(annotationId);
   if (!chrome?.storage?.local) return;
   const key = GDOCS_STATE_KEY_PREFIX + docId;
   chrome.storage.local.get(key).then(result => {
@@ -351,6 +378,7 @@ function scanCanvasRects(
   predicate: (r: number, g: number, b: number, a: number) => boolean,
   scrollContainer: HTMLElement,
   before?: Map<HTMLCanvasElement, ImageData>,
+  snapshot?: Map<HTMLCanvasElement, ImageData>,
 ): AbsoluteRect[][] {
   interface RowData { y: number; xMin: number; xMax: number; }
   const allRows: RowData[] = [];
@@ -364,33 +392,55 @@ function scanCanvasRects(
     const { width, height } = canvas;
     if (!width || !height) continue;
     let pixels: ImageData;
-    try { pixels = ctx.getImageData(0, 0, width, height); } catch { continue; }
+    const snapshotData = snapshot?.get(canvas);
+    if (snapshotData) {
+      pixels = snapshotData;
+    } else {
+      try { pixels = ctx.getImageData(0, 0, width, height); } catch { continue; }
+    }
 
     const { data } = pixels;
     const beforeData = before?.get(canvas)?.data;
     const sx = bcr.width  / width;
     const sy = bcr.height / height;
 
+    // Gap threshold in canvas pixels: ~15 CSS px, enough to split adjacent anchors
+    // on the same line while keeping spaces within a single anchor connected.
+    const gapThreshold = Math.ceil(15 / sx);
+
     for (let py = 0; py < height; py++) {
-      let xMin = Infinity, xMax = -Infinity;
+      // Track separate horizontal segments so two highlights on the same line
+      // with a gap between them produce distinct RowData entries.
+      let segStart = -1, segEnd = -1;
+
+      const flushSeg = () => {
+        if (segStart === -1) return;
+        allRows.push({
+          y:    bcr.top  + py * sy + scrollContainer.scrollTop,
+          xMin: bcr.left + segStart * sx + scrollContainer.scrollLeft,
+          xMax: bcr.left + segEnd   * sx + scrollContainer.scrollLeft,
+        });
+        segStart = segEnd = -1;
+      };
+
       for (let px = 0; px < width; px++) {
         const i = (py * width + px) * 4;
         const r = data[i]!, g = data[i+1]!, b = data[i+2]!, a = data[i+3]!;
         if (!predicate(r, g, b, a)) continue;
         if (beforeData) {
           const br = beforeData[i]!, bg = beforeData[i+1]!, bb = beforeData[i+2]!, ba = beforeData[i+3]!;
-          if (predicate(br, bg, bb, ba)) continue; // pixel was already matching before — skip
+          if (predicate(br, bg, bb, ba)) continue;
         }
-        if (px < xMin) xMin = px;
-        if (px > xMax) xMax = px;
+        if (segStart === -1) {
+          segStart = segEnd = px;
+        } else if (px - segEnd <= gapThreshold) {
+          segEnd = px;
+        } else {
+          flushSeg();
+          segStart = segEnd = px;
+        }
       }
-      if (xMin !== Infinity) {
-        allRows.push({
-          y:    bcr.top  + py * sy + scrollContainer.scrollTop,
-          xMin: bcr.left + xMin * sx + scrollContainer.scrollLeft,
-          xMax: bcr.left + xMax * sx + scrollContainer.scrollLeft,
-        });
-      }
+      flushSeg();
     }
   }
 
@@ -412,14 +462,16 @@ function scanCanvasRects(
     }
   }
 
-  // Pass 2 — group line runs within 8 px into one annotation cluster.
-  // Keep this tight: intra-annotation line gap is ~2–4 px; inter-annotation gap
-  // (paragraph spacing) is typically ≥ 10 px, so 8 px keeps them separate.
+  // Pass 2 — group line runs within 25 px into one annotation cluster.
+  // 25 px covers up to 2× line spacing (gap ~14 px) while keeping separate paragraphs
+  // with typical paragraph spacing (≥ 30 px) as distinct clusters. Same-annotation
+  // multi-line highlights are always merged; the split logic separates different
+  // annotations that end up in the same cluster.
   const clusters: LineRun[][] = [];
   for (const run of lineRuns) {
     const last = clusters[clusters.length - 1];
     const lastRun = last?.[last.length - 1];
-    if (lastRun && run.top - lastRun.bottom <= 8) {
+    if (lastRun && run.top - lastRun.bottom <= 25) {
       last!.push(run);
     } else {
       clusters.push([run]);
@@ -429,6 +481,209 @@ function scanCanvasRects(
   return clusters.map(lines =>
     lines.map(lr => ({ left: lr.left, top: lr.top, width: lr.right - lr.left, height: lr.bottom - lr.top + 1 })),
   );
+}
+
+// ─── Pretext Layout Helpers ───
+
+interface PageLayoutMetrics {
+  textWidthPx: number;
+  leftMarginPx: number;
+  lineHeight: number;
+  font: string;
+  /** Absolute x of the page's left edge (viewport left + scrollLeft). */
+  pageAbsoluteLeft: number;
+  measureCtx: CanvasRenderingContext2D;
+}
+
+/**
+ * Read the current page layout metrics from the live DOM.
+ * Returns null when the kix-page elements aren't ready yet.
+ */
+function readPageLayoutMetrics(scrollContainer: HTMLElement): PageLayoutMetrics | null {
+  const kixPages = Array.from(scrollContainer.querySelectorAll<HTMLElement>('.kix-page'))
+    .filter(el => { const r = el.getBoundingClientRect(); return r.width > 400 && r.height > 600; });
+  if (kixPages.length === 0) return null;
+
+  const cr0 = kixPages[0]!.getBoundingClientRect();
+  const pageW = cr0.width;
+
+  let leftMarginPx = pageW * (96 / 816);
+  let textWidthPx = pageW - 2 * leftMarginPx;
+  let fontSize = pageW * (14.667 / 816);
+  let fontFamily = 'Arial';
+
+  const firstPara = kixPages[0]!.querySelector<HTMLElement>(
+    '.kix-paragraphrenderer, [class*="paragraphrenderer"]',
+  );
+  if (firstPara) {
+    const pr = firstPara.getBoundingClientRect();
+    const ml = pr.left - cr0.left;
+    if (ml > 0 && ml < pageW * 0.4) leftMarginPx = ml;
+    if (pr.width > pageW * 0.3) textWidthPx = pr.width;
+  }
+
+  const wordNode = scrollContainer.querySelector<HTMLElement>(
+    '.kix-wordhtmlgenerator-word-node, [class*="word-node"]',
+  );
+  if (wordNode) {
+    const style = window.getComputedStyle(wordNode);
+    const parsed = parseFloat(style.fontSize);
+    if (parsed > 0) fontSize = parsed;
+    const family = style.fontFamily?.split(',')[0]?.replace(/['"]/g, '').trim();
+    if (family) fontFamily = family;
+  }
+
+  const font = `${fontSize}px ${fontFamily}`;
+  const measureCtx = document.createElement('canvas').getContext('2d')!;
+  measureCtx.font = font;
+
+  return {
+    textWidthPx,
+    leftMarginPx,
+    lineHeight: fontSize * 1.15,
+    font,
+    pageAbsoluteLeft: cr0.left + scrollContainer.scrollLeft,
+    measureCtx,
+  };
+}
+
+interface AnchorLineInfo {
+  /** Paragraph index in the document (split by '\n'). */
+  paraIdx: number;
+  /** Line index within that paragraph (after word-wrap by pretext). */
+  lineIdx: number;
+  /** x-offset of the anchor's first character from the paragraph's left edge, in CSS px. */
+  xOffset: number;
+  /** Rendered width of the anchor text in CSS px, measured with the same font. */
+  width: number;
+}
+
+/**
+ * Use pretext to find which paragraph + wrapped line an anchor text occupies, and its
+ * x-offset within that line.  These are RELATIVE values (paragraph-local, not screen
+ * coordinates) — reliable even when the absolute y of the anchor is unknown or stale.
+ *
+ * Returns null if the text is absent from the cached document text or layout fails.
+ */
+function computeAnchorLineInfo(
+  anchorText: string,
+  metrics: PageLayoutMetrics,
+): AnchorLineInfo | null {
+  if (!_cachedDocText) return null;
+  const charOffset = _cachedDocText.toLowerCase().indexOf(anchorText.toLowerCase());
+  if (charOffset === -1) return null;
+
+  const paragraphs = _cachedDocText.split('\n');
+  let cumChars = 0;
+  for (let pi = 0; pi < paragraphs.length; pi++) {
+    const para = paragraphs[pi]!;
+    const paraLen = para.length + 1; // +1 for '\n'
+    if (cumChars + paraLen > charOffset) {
+      const offsetInPara = charOffset - cumChars;
+      try {
+        const prepared = prepareWithSegments(para || ' ', metrics.font);
+        const result = layoutWithLines(prepared, metrics.textWidthPx, metrics.lineHeight);
+        let charsSeen = 0;
+        for (let li = 0; li < result.lines.length; li++) {
+          const lineLen = result.lines[li]!.text.length;
+          if (offsetInPara <= charsSeen + lineLen) {
+            const prefix = result.lines[li]!.text.slice(0, offsetInPara - charsSeen);
+            return {
+              paraIdx: pi,
+              lineIdx: li,
+              xOffset: metrics.measureCtx.measureText(prefix).width,
+              width:   metrics.measureCtx.measureText(anchorText).width,
+            };
+          }
+          charsSeen += lineLen;
+        }
+      } catch { /* ignore layout errors */ }
+      break;
+    }
+    cumChars += paraLen;
+  }
+  return null;
+}
+
+/**
+ * Return the character index in `lineText` where the rendered prefix width first reaches
+ * or exceeds `targetX` CSS pixels.
+ */
+function charOffsetAtX(
+  lineText: string,
+  targetX: number,
+  measureCtx: CanvasRenderingContext2D,
+): number {
+  for (let i = 0; i <= lineText.length; i++) {
+    if (measureCtx.measureText(lineText.slice(0, i)).width >= targetX) return i;
+  }
+  return lineText.length;
+}
+
+/**
+ * Given a canvas cluster's absolute position, extract the text that is currently
+ * rendered at that x-range on that line from the cached document text.
+ *
+ * This is used to recover the anchor's *current* text after the user has edited it
+ * in the document — the highlight still exists (canvas confirms it), but the stored
+ * anchor text no longer matches the document.
+ *
+ * Returns null when the paragraph or line cannot be resolved.
+ */
+function extractAnchorTextFromCluster(
+  cluster: AbsoluteRect[],
+  scrollContainer: HTMLElement,
+  metrics: PageLayoutMetrics,
+  docText: string,
+): string | null {
+  if (!docText) return null;
+  const r0 = cluster[0]!;
+  // Viewport y at the vertical center of the first cluster rect.
+  const viewportY = r0.top - scrollContainer.scrollTop + r0.height / 2;
+
+  // Find the paragraph renderer whose bounding rect contains this viewport y.
+  const paraRenderers = Array.from(
+    scrollContainer.querySelectorAll<HTMLElement>(
+      '.kix-paragraphrenderer, [class*="paragraphrenderer"]',
+    ),
+  ).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+  let paraIdx = -1;
+  for (let i = 0; i < paraRenderers.length; i++) {
+    const bcr = paraRenderers[i]!.getBoundingClientRect();
+    if (bcr.top <= viewportY && viewportY < bcr.bottom + metrics.lineHeight) {
+      paraIdx = i;
+      break;
+    }
+  }
+  if (paraIdx === -1) return null;
+
+  const paragraphs = docText.split('\n');
+  const para = paragraphs[paraIdx] ?? '';
+  if (!para.trim()) return null;
+
+  try {
+    const prepared = prepareWithSegments(para, metrics.font);
+    const result = layoutWithLines(prepared, metrics.textWidthPx, metrics.lineHeight);
+
+    // Which wrapped line within this paragraph?
+    const paraTop = paraRenderers[paraIdx]!.getBoundingClientRect().top;
+    const lineIdx = Math.max(0, Math.floor((viewportY - paraTop) / metrics.lineHeight));
+    const line = result.lines[Math.min(lineIdx, result.lines.length - 1)];
+    if (!line) return null;
+
+    // x-offset of the cluster within the text area (subtract page left edge + margin).
+    const xStart = r0.left - metrics.pageAbsoluteLeft - metrics.leftMarginPx;
+    const xEnd   = xStart + r0.width;
+
+    const startChar = charOffsetAtX(line.text, xStart, metrics.measureCtx);
+    const endChar   = charOffsetAtX(line.text, xEnd,   metrics.measureCtx);
+
+    const extracted = line.text.slice(startChar, endChar).trim();
+    return extracted.length >= 2 ? extracted : null; // ignore single-char noise
+  } catch {
+    return null;
+  }
 }
 
 function enqueueCursorCorrection(job: CorrectionJob): void {
@@ -446,6 +701,7 @@ function enqueueCursorCorrection(job: CorrectionJob): void {
   _correctionQueue.push(job);
   if (!_correctionRunning) drainCorrectionQueue();
 }
+
 
 function drainCorrectionQueue(): void {
   const job = _correctionQueue.shift();
@@ -481,9 +737,16 @@ async function runCursorCorrection(job: CorrectionJob): Promise<void> {
   // Snapshot before the API call so scanCanvasRects can diff out pre-existing highlight pixels.
   const beforeSnapshot = snapshotVisibleCanvases();
 
+  const isRed = getAnnotationColor(annotationType, 'light') === '#F5574C';
+  const highlightColor = getGDocsHighlightColor(annotationType);
+
   const result = await sendMessage<{ error?: string }>({
     action: 'gdocsFindAndHighlight',
-    payload: { docId, anchorText: exact, color: getGDocsHighlightColor(annotationType) },
+    payload: {
+      docId,
+      anchorText: exact,
+      color: highlightColor,
+    },
   });
 
   console.log(`[Oddity1] gdocsFindAndHighlight result:`, result);
@@ -496,9 +759,9 @@ async function runCursorCorrection(job: CorrectionJob): Promise<void> {
   // Wait for GDocs canvas to repaint with the new highlight.
   await new Promise<void>(r => setTimeout(r, 600));
 
-  const isHighlight = makeHighlightPredicate(
-    getAnnotationColor(annotationType, 'light') === '#F5574C' ? GDOCS_HIGHLIGHT_RED : GDOCS_HIGHLIGHT_GREEN
-  );
+  // The before-snapshot diff ensures only newly-appeared highlight pixels are detected,
+  // so even if other same-color annotations exist we only pick up the one we just applied.
+  const isHighlight = isRed ? _isRedHighlight : _isGreenHighlight;
   const clusters = scanCanvasRects(isHighlight, scrollContainer, beforeSnapshot);
   console.log(`[Oddity1] scanCanvasRects clusters=${clusters.length}`);
   if (clusters.length === 0) return;
@@ -774,6 +1037,8 @@ function findAnnotationRectsCanvasMode(
 
   const approxWidth = Math.min(measureCtx.measureText(exact).width, textWidthPx - xOffsetInLine);
 
+  // Track annotation type for color-based candidate filtering in scheduleParaCheck.
+  _anchorTypes.set(annotation.id, annotation.type);
   // Queue cursor-based positioning — don't render until the real Y is known.
   enqueueCursorCorrection({ id: annotation.id, exact, scrollContainer, left, width: approxWidth, height: lineHeight, annotationType: annotation.type });
 
@@ -805,58 +1070,310 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
       : null;
   };
 
-  // Live tracking: after each text-modifying key, wait for GDocs to repaint the canvas
-  // (≈150 ms), then scan for the cyan tracking highlights and update any that moved.
+  // Live tracking: after text-modifying keys, wait for GDocs to repaint the canvas,
+  // then scan for annotation highlights and update any that moved.
+  // Run green and red scans separately so adjacent same-line highlights of different
+  // colors are never merged into one cluster.
+  // Doc text refresh: re-fetch the export URL after edits so _cachedDocText stays current.
+  // A fresh doc text lets pretext keep tracking anchors whose text was edited by the user.
+  let docRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleDocTextRefresh = (delay: number) => {
+    if (docRefreshTimer) clearTimeout(docRefreshTimer);
+    const docId = getGoogleDocsId();
+    if (!docId) return;
+    docRefreshTimer = setTimeout(async () => {
+      docRefreshTimer = null;
+      const text = await fetchGoogleDocsText(docId).catch(() => null);
+      if (text && text !== _cachedDocText) {
+        _cachedDocText = text;
+        scheduleParaCheck(50); // re-run tracking with the fresh text
+      }
+    }, delay);
+  };
+
   let trackTimer: ReturnType<typeof setTimeout> | null = null;
-  const scheduleParaCheck = () => {
+  const scheduleParaCheck = (delay = 150) => {
     if (_anchorRects.size === 0) return;
     if (trackTimer) clearTimeout(trackTimer);
     trackTimer = setTimeout(() => {
       trackTimer = null;
-      const found = scanCanvasRects(isAnchorHighlight, scrollContainer); // AbsoluteRect[][]
-      if (found.length === 0) return;
 
-      // Build all (annotation, cluster, distance) pairs and sort by distance.
-      // Distance = min distance from any stored line of the annotation to cluster[0].
-      // Greedily assign each cluster to at most one annotation (and vice versa).
-      const pairs: { id: string; cluster: AbsoluteRect[]; dist: number }[] = [];
-      for (const [id, lastRects] of _anchorRects) {
-        for (const cluster of found) {
-          let minDist = Infinity;
-          for (const lr of lastRects) {
-            const d = Math.abs(cluster[0]!.top  - lr.top)
-                    + Math.abs(cluster[0]!.left - lr.left) * 0.5;
-            if (d < minDist) minDist = d;
-          }
-          pairs.push({ id, cluster, dist: minDist });
+      const snapshot = snapshotVisibleCanvases();
+      const assignedIds = new Set<string>();
+
+      // Pretext: compute line identity (paragraph + line index + relative x-offset) for every
+      // annotation from the cached doc text. This is RELATIVE data — reliable even when
+      // absolute y is stale. Used only for split validation and split ordering, never for
+      // absolute position or proximity matching (where canvas data is authoritative).
+      const pageMetrics = _cachedDocText ? readPageLayoutMetrics(scrollContainer) : null;
+      const preTextLine = new Map<string, AnchorLineInfo>();
+      if (pageMetrics) {
+        for (const id of _anchorRects.keys()) {
+          const job = _completedJobs.find(j => j.id === id);
+          if (!job) continue;
+          // Use the current (possibly updated) anchor text so pretext keeps tracking
+          // anchors whose text the user has edited since the initial annotation.
+          const anchorText = _currentAnchorTexts.get(id) ?? job.exact;
+          const info = computeAnchorLineInfo(anchorText, pageMetrics);
+          if (info) preTextLine.set(id, info);
         }
       }
-      pairs.sort((a, b) => a.dist - b.dist);
 
-      const assignedIds      = new Set<string>();
-      const assignedClusters = new Set<AbsoluteRect[]>();
+      // Scan green and red highlights separately so different-color annotations are
+      // never in the same cluster. Track which clusters are red so candidate detection
+      // can filter by color (red annotations must never be candidates for green clusters).
+      const greenFound = scanCanvasRects(_isGreenHighlight, scrollContainer, undefined, snapshot);
+      const redFound   = scanCanvasRects(_isRedHighlight,   scrollContainer, undefined, snapshot);
+      const redClusterSet = new Set<AbsoluteRect[]>(redFound);
+      const allFound   = [...greenFound, ...redFound];
 
-      for (const { id, cluster, dist } of pairs) {
-        if (dist > 500) break;
-        if (assignedIds.has(id) || assignedClusters.has(cluster)) continue;
-        assignedIds.add(id);
-        assignedClusters.add(cluster);
+      if (allFound.length > 0) {
+        // Split merged clusters using a two-source cross-check:
+        //  1. Canvas (stored rects) identifies candidates — tight y-tolerance so only
+        //     annotations on the same visual line are considered.
+        //  2. Pretext fallback — when canvas finds <2 candidates (stale positions after
+        //     bulk deletion), use pretext line groups to detect co-located annotations.
+        //  3. Pretext validates — both candidates must be on the same paragraph+line.
+        //  4. Split width and ordering use pretext's font measurement (fresh, not stale).
 
-        const lastRects = _anchorRects.get(id)!;
-        const posUnchanged  = Math.abs(cluster[0]!.top  - lastRects[0]!.top)  < 1
-                           && Math.abs(cluster[0]!.left - lastRects[0]!.left) < 1;
-        const shapeUnchanged = cluster.length === lastRects.length
-                            && cluster.every((r, i) => Math.abs(r.width - (lastRects[i]?.width ?? 0)) < 2);
-        if (posUnchanged && shapeUnchanged) continue;
+        // Pre-compute pretext line groups: annotations that share the same paragraph+line.
+        // Key = "paraIdx:lineIdx", value = [{id, xOffset, width}] sorted by x.
+        const pretextLineGroups = new Map<string, Array<{ id: string; xOffset: number; width: number }>>();
+        if (pageMetrics) {
+          for (const [id, info] of preTextLine) {
+            const key = `${info.paraIdx}:${info.lineIdx}`;
+            if (!pretextLineGroups.has(key)) pretextLineGroups.set(key, []);
+            pretextLineGroups.get(key)!.push({ id, xOffset: info.xOffset, width: info.width });
+          }
+          // Sort each group by x-offset ascending
+          for (const members of pretextLineGroups.values()) {
+            members.sort((a, b) => a.xOffset - b.xOffset);
+          }
+        }
 
-        _anchorRects.set(id, cluster);
-        document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', {
-          detail: { id, rects: cluster },
-        }));
+        const splitClusters: AbsoluteRect[][] = [];
+        for (const cluster of allFound) {
+          const clusterLeft  = cluster[0]!.left;
+          const clusterRight = clusterLeft + cluster[0]!.width;
+          const clusterTop   = cluster[0]!.top;
+
+          // Pass 1 — Canvas candidate detection: tight 30px y-tolerance.
+          // Color-filtered: green clusters only consider green annotations and vice versa.
+          // This prevents red annotations from becoming candidates for green clusters
+          // when they happen to share the same visual line (different color, different cluster).
+          const clusterIsRed = redClusterSet.has(cluster);
+          let candidates: Array<{ id: string; left: number; width: number }> = [];
+          for (const [id, lastRects] of _anchorRects) {
+            // Color filter: skip annotations whose highlight color doesn't match this cluster.
+            const annotType = _anchorTypes.get(id);
+            if (annotType !== undefined) {
+              const annotIsRed = getAnnotationColor(annotType, 'light') === '#F5574C';
+              if (annotIsRed !== clusterIsRed) continue;
+            }
+            const lr = lastRects[0];
+            if (!lr) continue;
+            if (Math.abs(clusterTop - lr.top) > 30) continue; // same visual line only
+            if (lr.left < clusterRight + 5 && (lr.left + lr.width) > clusterLeft - 5) {
+              candidates.push({ id, left: lr.left, width: lr.width });
+            }
+          }
+
+          // Pass 2 — Pretext fallback: when canvas found <2 candidates (positions stale
+          // after bulk deletion), check pretext line groups. If a line group's x-range
+          // overlaps this cluster AND has 2+ annotations, use it for splitting.
+          // This handles the case where 3 anchors collapse onto one line after large
+          // text removals and canvas stored positions are hundreds of pixels off.
+          if (candidates.length <= 1 && pageMetrics) {
+            const absPageLeft = pageMetrics.pageAbsoluteLeft + pageMetrics.leftMarginPx;
+            for (const members of pretextLineGroups.values()) {
+              if (members.length < 2) continue;
+              // Color filter: skip members whose annotation color doesn't match cluster
+              const colorMatchedMembers = members.filter(m => {
+                const annotType = _anchorTypes.get(m.id);
+                if (annotType === undefined) return true; // unknown — include
+                const annotIsRed = getAnnotationColor(annotType, 'light') === '#F5574C';
+                return annotIsRed === clusterIsRed;
+              });
+              if (colorMatchedMembers.length < 2) continue;
+              // Approximate absolute x-range of this line group
+              const groupAbsLeft  = absPageLeft + colorMatchedMembers[0]!.xOffset;
+              const lastMember    = colorMatchedMembers[colorMatchedMembers.length - 1]!;
+              const groupAbsRight = absPageLeft + lastMember.xOffset + lastMember.width;
+              // Does the cluster overlap the line group's x-range?
+              if (clusterLeft <= groupAbsRight + 30 && clusterRight >= groupAbsLeft - 30) {
+                candidates = colorMatchedMembers.map(m => ({
+                  id: m.id,
+                  left: absPageLeft + m.xOffset,
+                  width: m.width,
+                }));
+                break;
+              }
+            }
+          }
+
+          if (candidates.length <= 1) {
+            splitClusters.push(cluster);
+            continue;
+          }
+
+          // Pretext cross-check: confirm candidates are on the same paragraph + wrapped line.
+          // If pretext says they're on different lines, canvas candidates are a false match
+          // (e.g. two annotations on consecutive tight lines with overlapping stored y).
+          const firstInfo = preTextLine.get(candidates[0]!.id);
+          const sameLine = candidates.every(c => {
+            const info = preTextLine.get(c.id);
+            if (!info || !firstInfo) return true; // no data → assume same line, allow split
+            return info.paraIdx === firstInfo.paraIdx && info.lineIdx === firstInfo.lineIdx;
+          });
+
+          if (!sameLine) {
+            // Pretext says candidates are on different visual lines — do a vertical split:
+            // assign each rect in the cluster to whichever candidate's stored position
+            // is closest in y. This handles adjacent same-color annotations on different
+            // lines being merged into one cluster by the 25px pass-2 threshold.
+            const verticalGroups = new Map<string, AbsoluteRect[]>();
+            for (const rect of cluster) {
+              let bestId = candidates[0]!.id;
+              let bestDist = Infinity;
+              for (const c of candidates) {
+                for (const sr of (_anchorRects.get(c.id) ?? [])) {
+                  const d = Math.abs(sr.top - rect.top);
+                  if (d < bestDist) { bestDist = d; bestId = c.id; }
+                }
+              }
+              if (!verticalGroups.has(bestId)) verticalGroups.set(bestId, []);
+              verticalGroups.get(bestId)!.push(rect);
+            }
+            if (verticalGroups.size > 1) {
+              for (const [, rects] of verticalGroups) splitClusters.push(rects);
+            } else {
+              splitClusters.push(cluster);
+            }
+            continue;
+          }
+
+          // Both checks agree: this cluster spans multiple same-line annotations.
+          // Sort by pretext relative x-offset (reliable) then split using pretext widths.
+          candidates.sort((a, b) => {
+            const aOff = preTextLine.get(a.id)?.xOffset ?? a.left;
+            const bOff = preTextLine.get(b.id)?.xOffset ?? b.left;
+            return aOff - bOff;
+          });
+          let xCursor = clusterLeft;
+          for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i]!;
+            const isLast = i === candidates.length - 1;
+            const splitWidth = isLast
+              ? (clusterRight - xCursor)
+              : (preTextLine.get(c.id)?.width ?? c.width);
+            if (splitWidth > 0) {
+              // First rect: the portion of line 1 that belongs to this annotation.
+              // Trailing rects (wrapped lines 2+) belong to the LAST annotation only —
+              // they start at the left margin and must not inherit the split x-offset.
+              const firstRect = { ...cluster[0]!, left: xCursor, width: splitWidth };
+              const trailingRects = isLast ? cluster.slice(1) : [];
+              splitClusters.push([firstRect, ...trailingRects]);
+              xCursor += splitWidth;
+            }
+          }
+        }
+
+        // Proximity matching: canvas stored positions are authoritative for y and x.
+        // Pretext is NOT used here — its absolute x is too imprecise to improve matching.
+        const pairs: { id: string; cluster: AbsoluteRect[]; dist: number }[] = [];
+        for (const [id, lastRects] of _anchorRects) {
+          for (const cluster of splitClusters) {
+            let minDist = Infinity;
+            for (const lr of lastRects) {
+              const d = Math.abs(cluster[0]!.top  - lr.top)
+                      + Math.abs(cluster[0]!.left - lr.left) * 0.5;
+              if (d < minDist) minDist = d;
+            }
+            pairs.push({ id, cluster, dist: minDist });
+          }
+        }
+        pairs.sort((a, b) => a.dist - b.dist);
+        const assignedClusters = new Set<AbsoluteRect[]>();
+        // Track which cluster each annotation was assigned to (used for edit detection below).
+        const assignments = new Map<string, AbsoluteRect[]>();
+        for (const { id, cluster, dist } of pairs) {
+          if (assignedIds.has(id) || assignedClusters.has(cluster)) continue;
+          // Reject implausible matches (annotation moved > 800px — likely a mismatch)
+          if (dist > 800) continue;
+          assignedIds.add(id);
+          assignedClusters.add(cluster);
+          assignments.set(id, cluster);
+          _missCounts.delete(id);
+          const lastRects = _anchorRects.get(id)!;
+          const posUnchanged  = Math.abs(cluster[0]!.top  - lastRects[0]!.top)  < 1
+                             && Math.abs(cluster[0]!.left - lastRects[0]!.left) < 1;
+          const shapeUnchanged = cluster.length === lastRects.length
+                              && cluster.every((r, i) => Math.abs(r.width - (lastRects[i]?.width ?? 0)) < 2);
+          if (posUnchanged && shapeUnchanged) continue;
+          _anchorRects.set(id, cluster);
+          document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', { detail: { id, rects: cluster } }));
+        }
+
+        // Anchor text edit detection: for every assigned annotation whose anchor text
+        // pretext could NOT find in the current doc, the user has edited the highlighted
+        // text itself. Extract the new text from the cluster's canvas position so pretext
+        // can resume tracking it on subsequent scans.
+        if (pageMetrics && _cachedDocText) {
+          for (const [id, cluster] of assignments) {
+            if (preTextLine.has(id)) continue; // pretext found it — no edit
+            const newText = extractAnchorTextFromCluster(
+              cluster, scrollContainer, pageMetrics, _cachedDocText,
+            );
+            if (newText) {
+              const job = _completedJobs.find(j => j.id === id);
+              const current = _currentAnchorTexts.get(id) ?? job?.exact ?? '';
+              if (newText !== current) {
+                _currentAnchorTexts.set(id, newText);
+                console.log(`[Oddity1] Anchor text updated for ${id}: "${newText}"`);
+              }
+            }
+          }
+        }
+
       }
-      // Scan complete — save updated positions so next reload restores them.
+
+      // Deletion check: always runs, even when found is empty.
+      // Require 2 consecutive in-viewport misses before treating an annotation as deleted.
+      // A single miss often means the split logic failed (stale positions / stale doc text)
+      // rather than the highlight actually being gone — the doc text refresh at 1500ms will
+      // re-scan and correctly re-match it before the second miss accumulates.
+      const viewTop    = scrollContainer.scrollTop;
+      const viewBottom = viewTop + scrollContainer.clientHeight;
+      const toDelete: string[] = [];
+      for (const [id, rects] of _anchorRects) {
+        if (assignedIds.has(id)) { _missCounts.delete(id); continue; }
+        const r = rects[0];
+        if (!r || r.top < viewTop || r.top > viewBottom) {
+          _missCounts.delete(id); // off-screen — reset, don't count as a miss
+          continue;
+        }
+        const misses = (_missCounts.get(id) ?? 0) + 1;
+        _missCounts.set(id, misses);
+        if (misses >= 2) toDelete.push(id);
+      }
+      // Fire deletions after iterating so _anchorRects isn't mutated mid-loop.
+      for (const id of toDelete) {
+        document.dispatchEvent(new CustomEvent('oddity-gdocs-anchor-deleted', { detail: { id } }));
+      }
+
+      // Completeness check: for every annotation that canvas scan found nothing for AND
+      // is not being deleted, re-assert the last known position so the overlay layer
+      // can re-draw if missing. Recovery from stale positions is handled by
+      // scheduleDocTextRefresh → scheduleParaCheck(50) which uses fresh pretext data.
+      for (const [id, rects] of _anchorRects) {
+        if (assignedIds.has(id) || toDelete.includes(id)) continue;
+        const r = rects[0];
+        if (!r || r.top < viewTop - 200 || r.top > viewBottom + 200) continue;
+        document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', { detail: { id, rects } }));
+      }
+
       saveGDocsRectsToStorage();
-    }, 150);
+    }, delay);
   };
 
   const onKeydown = (e: KeyboardEvent) => {
@@ -881,19 +1398,67 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
       }
     }
 
-    // Schedule a para-renderer position check after any text-modifying key.
-    // (input events don't fire on the GDocs iframe in canvas mode.)
-    const isModifier = e.metaKey || e.ctrlKey || e.altKey;
-    const changesText = !isModifier && (e.key.length === 1 ||
-      e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete');
-    if (changesText) scheduleParaCheck();
+    // Schedule a position re-scan after any text-modifying key.
+    // Use a longer delay whenever the change may affect multiple lines:
+    //   - Bulk ops (paste/undo/redo/cut): always multi-line
+    //   - Backspace/Delete: may delete a multi-line selection
+    //   - Any key while GDocs reports an active selection: replaces selection
+    // Single character typing with no selection uses the fast path (150 ms).
+    const isMeta = e.metaKey || e.ctrlKey;
+    const isBulkChange = isMeta && !e.altKey &&
+      (e.key === 'v' || e.key === 'z' || e.key === 'y' || e.key === 'x');
+    const isDeletion = !isMeta && !e.altKey &&
+      (e.key === 'Backspace' || e.key === 'Delete');
+    const isTyping = !isMeta && !e.altKey &&
+      (e.key.length === 1 || e.key === 'Enter');
+
+    if (isBulkChange || isDeletion) {
+      scheduleParaCheck(600);
+      scheduleDocTextRefresh(1500); // refresh doc text after bulk changes
+    } else if (isTyping) {
+      // If GDocs has a non-collapsed selection, typing replaces potentially
+      // many lines — treat it as a bulk change.
+      const hasSelection = document.querySelector(
+        '.kix-selection-overlay, [class*="kix-selection-overlay"]'
+      ) !== null;
+      scheduleParaCheck(hasSelection ? 600 : 150);
+      scheduleDocTextRefresh(2000); // refresh doc text after typing pauses
+    }
   };
 
   iframeDoc.addEventListener('keydown', onKeydown, true);
 
+  // ── Periodic heartbeat ──────────────────────────────────────────────────────
+  // Even when the user isn't typing, overlays can drift due to browser zoom,
+  // window resize, or GDocs internal reflows. Scan every 5 s to catch drift and
+  // confirm that every annotation that should be visible actually is.
+  const heartbeatInterval = setInterval(() => {
+    if (_anchorRects.size === 0) return;
+    scheduleParaCheck(0);
+  }, 5000);
+
+  // ── Scroll-triggered scan ───────────────────────────────────────────────────
+  // When the user scrolls to a new area, previously off-screen annotations
+  // become visible. Re-scan 300 ms after the scroll settles so their overlays
+  // are verified against the live canvas immediately.
+  let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+  const onScroll = () => {
+    if (_anchorRects.size === 0) return;
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      scrollTimer = null;
+      scheduleParaCheck(0);
+    }, 300);
+  };
+  scrollContainer.addEventListener('scroll', onScroll, { passive: true });
+
   return () => {
     iframeDoc.removeEventListener('keydown', onKeydown, true);
+    scrollContainer.removeEventListener('scroll', onScroll);
     if (trackTimer) clearTimeout(trackTimer);
+    if (docRefreshTimer) clearTimeout(docRefreshTimer);
+    if (scrollTimer) clearTimeout(scrollTimer);
+    clearInterval(heartbeatInterval);
   };
 }
 
