@@ -22,6 +22,10 @@ import {
   deleteAccount,
   RateLimitError,
   requestAnnotationsStreaming,
+  requestGDocsChatStreaming,
+  fetchGDocsMcqQuestion,
+  fetchGDocsSession,
+  saveGDocsSession,
   requestSketchStreaming,
   saveAnnotation,
   UsageLimitError,
@@ -1280,6 +1284,82 @@ chrome.runtime.onMessage.addListener(
           const { event, properties: eventProps } = message.payload;
           track(event, eventProps);
           return { success: true };
+        }
+
+        case "gdocsAnnotateText": {
+          const { text, url, contentHash, wordCount } = message.payload;
+
+          const session = await getSession();
+          if (!session) return { error: "Sign in required" };
+
+          const stored = await chrome.storage.local.get("preferences");
+          const prefs = (stored["preferences"] ?? {}) as { depth_personality?: string };
+          const personality = (prefs.depth_personality ?? "terry") as "terry" | "jerry" | "sally";
+
+          const result = await requestAnnotationsStreaming(
+            { url, content_hash: contentHash, text, mode: "depth", personality, word_count: wordCount },
+            () => {},
+          );
+          return { annotations: result.annotations };
+        }
+
+        case "gdocsChat": {
+          const tabId = sender.tab?.id;
+          if (!tabId) return { error: "No tab ID" };
+
+          const { messages, mode } = message.payload;
+
+          (async () => {
+            try {
+              await requestGDocsChatStreaming(
+                messages,
+                mode,
+                (text) => {
+                  chrome.tabs.sendMessage(tabId, {
+                    action: "gdocsChatChunk",
+                    payload: { text },
+                  }).catch(() => {});
+                },
+              );
+              chrome.tabs.sendMessage(tabId, {
+                action: "gdocsChatDone",
+                payload: {},
+              }).catch(() => {});
+            } catch (err) {
+              const error = err instanceof Error ? err.message : "Unknown error";
+              chrome.tabs.sendMessage(tabId, {
+                action: "gdocsChatError",
+                payload: { error },
+              }).catch(() => {});
+            }
+          })();
+
+          return { ok: true };
+        }
+
+        case "gdocsMcqQuestion": {
+          const { prompt, docContext, previousQA, questionNumber } = message.payload;
+          const result = await fetchGDocsMcqQuestion(prompt, docContext, previousQA, questionNumber);
+          return result;
+        }
+
+        case "gdocsSessionLoad": {
+          const { docId } = message.payload;
+          try {
+            const session = await fetchGDocsSession(docId);
+            return { session };
+          } catch (err) {
+            console.error("[gdocsSessionLoad] Error:", err);
+            return { session: null };
+          }
+        }
+
+        case "gdocsSessionSave": {
+          const { docId, chatHistory, essayVersions, editSuggestions } = message.payload;
+          // Fire-and-forget — don't await, return immediately
+          saveGDocsSession(docId, chatHistory, essayVersions, editSuggestions)
+            .catch((err) => console.error("[gdocsSessionSave] Error:", err));
+          return { ok: true };
         }
 
         default:

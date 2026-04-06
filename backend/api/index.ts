@@ -16,6 +16,9 @@ import subscriptionRouter from "../routes/subscription.js";
 import portalRouter from "../routes/portal.js";
 import pricesRouter from "../routes/prices.js";
 import convertPdfRouter from "../routes/convert-pdf.js";
+import gdocsChatRouter from "../routes/gdocs-chat.js";
+import gdocsMcqRouter from "../routes/gdocs-mcq.js";
+import gdocsSessionRouter from "../routes/gdocs-session.js";
 
 if (process.env.ODDITY_PROCESS_ROLE !== "worker") {
   registerProcessGuards({ role: "app", exitOnFatal: false });
@@ -71,6 +74,9 @@ app.use("/api/user-feedback", authMiddleware, userFeedbackRouter);
 app.use("/api/checkout", authMiddleware, checkoutRouter);
 app.use("/api/subscription", authMiddleware, subscriptionRouter);
 app.use("/api/portal", authMiddleware, portalRouter);
+app.use("/api/gdocs-chat", authMiddleware, gdocsChatRouter);
+app.use("/api/gdocs-mcq", authMiddleware, gdocsMcqRouter);
+app.use("/api/gdocs-session", authMiddleware, gdocsSessionRouter);
 
 // Global error handler
 app.use(

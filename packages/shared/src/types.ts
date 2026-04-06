@@ -358,4 +358,9 @@ export type ExtensionMessage =
   | { action: "fetchUrl"; payload: { url: string } }
   | { action: "gdocsFindAndHighlight"; payload: { docId: string; anchorText: string; color?: { red: number; green: number; blue: number } } }
   | { action: "gdocsRemoveHighlights"; payload: { docId: string; anchorTexts: string[] } }
+  | { action: "gdocsChat"; payload: { messages: Array<{ role: "user" | "assistant"; content: string }>; mode: "chat" | "tree" | "essay" | "edit" } }
+  | { action: "gdocsMcqQuestion"; payload: { prompt: string; docContext: string; previousQA: Array<{ question: string; answer: string }>; questionNumber: number } }
+  | { action: "gdocsSessionLoad"; payload: { docId: string } }
+  | { action: "gdocsSessionSave"; payload: { docId: string; chatHistory: Array<{ role: "user" | "assistant"; content: string }>; essayVersions: string[]; editSuggestions: Array<Array<{ find: string; replace: string }>> } }
+  | { action: "gdocsAnnotateText"; payload: { text: string; url: string; contentHash: string; wordCount: number } }
   | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };

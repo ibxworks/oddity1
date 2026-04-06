@@ -113,6 +113,7 @@ import {
   clearAllGDocsRects,
   saveGDocsAnnotationsToStorage,
 } from "./google-docs.js";
+import "./gdocs.js"; // registers oddity:gdocs:activate listener
 import { createStabilityWatcher } from "./stability.js";
 import { getPageUrl } from "./page-url.js";
 import { setThemeOverride } from "./renderer/theme-detector.js";
@@ -1060,6 +1061,9 @@ async function startGoogleDocsPipeline(): Promise<void> {
     // Live position tracking: immediately shift overlays on Enter/Delete, and
     // silently re-run Cmd+F corrections after the user pauses typing.
     setupGDocsEditTracking(scrollEl);
+
+    // Activate the GDocs chat UI (essay/writing/MCQ/notes).
+    document.dispatchEvent(new CustomEvent('oddity:gdocs:activate'));
 
     // GDocs interaction mode: overlay rects are pointer-events:none so editing
     // clicks reach the canvas; hover/click are detected via document-level hit-testing.

@@ -894,3 +894,178 @@ function extractCompleteObjects(buffer: string): {
 export function getGeminiReliabilityCounters(): Record<string, number> {
   return { ...reliabilityCounters };
 }
+
+// ─── GDocs Chat Streaming ─────────────────────────────────────────────────────
+
+export type GDocsChatMode = "chat" | "tree" | "essay" | "edit";
+
+type GDocsChatMessage = { role: "user" | "assistant"; content: string };
+
+type GDocsChatStreamOptions = GeminiRequestOptions & {
+  onChunk?: (text: string) => void;
+};
+
+const _gdocsPrompts = promptsConfig as Record<string, unknown>;
+const gdocsPromptMap: Record<GDocsChatMode, string> = {
+  chat: (_gdocsPrompts.gdocs_chat_prompt as string) ?? "",
+  tree: (_gdocsPrompts.gdocs_tree_prompt as string) ?? "",
+  essay: (_gdocsPrompts.gdocs_essay_prompt as string) ?? "",
+  edit: (_gdocsPrompts.gdocs_edit_prompt as string) ?? "",
+};
+
+async function consumeGDocsChatStreamAttempt(
+  entry: ClientEntry,
+  messages: GDocsChatMessage[],
+  mode: GDocsChatMode,
+  options: GDocsChatStreamOptions,
+): Promise<string> {
+  const systemPrompt = gdocsPromptMap[mode];
+  const model = entry.client.getGenerativeModel({
+    model: modelName,
+    systemInstruction: systemPrompt,
+    generationConfig: {
+      responseMimeType: "text/plain" as const,
+      maxOutputTokens: 2048,
+      temperature: 0.7,
+    },
+  });
+
+  const contents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  const streamResult = await model.generateContentStream(
+    { contents },
+    getRequestOptions(options.signal),
+  );
+
+  let responseError: unknown = null;
+  const responseSettled = streamResult.response
+    .then(() => undefined)
+    .catch((error) => { responseError = error; });
+
+  let fullText = "";
+  try {
+    for await (const chunk of streamResult.stream) {
+      const delta = chunk.text();
+      if (!delta) continue;
+      fullText += delta;
+      options.onChunk?.(delta);
+    }
+  } catch (error) {
+    await responseSettled;
+    throw error;
+  }
+
+  await responseSettled;
+  if (responseError) throw responseError;
+  return fullText;
+}
+
+export async function generateGDocsChatStream(
+  messages: GDocsChatMessage[],
+  mode: GDocsChatMode,
+  options: GDocsChatStreamOptions = {},
+): Promise<string> {
+  const attempts = buildClientAttemptPlan();
+  let lastError: GeminiOperationError | null = null;
+  let emittedText = false;
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const entry = attempts[index]!;
+    const attemptNumber = index + 1;
+
+    try {
+      return await consumeGDocsChatStreamAttempt(entry, messages, mode, {
+        ...options,
+        onChunk: (chunk) => {
+          emittedText = true;
+          options.onChunk?.(chunk);
+        },
+      });
+    } catch (error) {
+      const operationError = toGeminiOperationError(
+        error,
+        entry.keyIndex,
+        attemptNumber,
+        options.signal,
+      );
+      lastError = operationError;
+
+      if (!operationError.retryable || options.signal?.aborted || emittedText) {
+        throw operationError;
+      }
+
+      if (index >= attempts.length - 1) break;
+
+      incrementCounter("retries");
+      const nextEntry = attempts[index + 1]!;
+      if (nextEntry.keyIndex !== entry.keyIndex) incrementCounter("key_rotations");
+
+      await waitBeforeRetry(attemptNumber, options.signal);
+    }
+  }
+
+  throw lastError ?? new Error("GDocs chat stream failed without attempts");
+}
+
+// ─── MCQ Question Generation ──────────────────────────────────────────────────
+
+export type McqQuestion = { question: string; options: string[] };
+
+const mcqPromptTemplate: string = (_gdocsPrompts.gdocs_mcq_prompt as string) ?? "";
+
+export async function generateMcqQuestion(
+  prompt: string,
+  docContext: string,
+  previousQA: Array<{ question: string; answer: string }>,
+  questionNumber: number,
+): Promise<McqQuestion> {
+  const previousQAText = previousQA.length === 0
+    ? "None yet."
+    : previousQA.map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`).join("\n\n");
+
+  const docContextText = docContext.trim()
+    ? `Existing document content:\n${docContext.trim()}\n\n`
+    : "";
+
+  const filledPrompt = mcqPromptTemplate
+    .replace("{docContext}", docContextText)
+    .replace("{prompt}", prompt)
+    .replace("{previousQA}", previousQAText)
+    .replace("{questionNumber}", String(questionNumber));
+
+  ensureClientsConfigured();
+  const entry = genAIClients[0]!;
+  const model = entry.client.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      responseMimeType: "application/json" as const,
+      maxOutputTokens: 512,
+      temperature: 0.8,
+    },
+  });
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: filledPrompt }] }],
+  });
+
+  const text = result.response.text();
+  try {
+    const parsed = JSON.parse(text) as { question?: string; options?: unknown[] };
+    if (typeof parsed.question === "string" && Array.isArray(parsed.options)) {
+      return {
+        question: parsed.question,
+        options: parsed.options.filter((o): o is string => typeof o === "string").slice(0, 4),
+      };
+    }
+  } catch {
+    // fall through to fallback
+  }
+
+  return {
+    question: `What aspect of "${prompt.slice(0, 60)}" matters most to you?`,
+    options: ["The core argument", "The evidence behind it", "The broader implications", "The counterarguments"],
+  };
+}
