@@ -422,4 +422,5 @@ export type ExtensionMessage =
   | { action: "fetchUrl"; payload: { url: string } }
   | { action: "injectNextNewTab"; payload: Record<string, never> }
   | { action: "gdocsFindAndHighlight"; payload: { docId: string; anchorText: string; color?: { red: number; green: number; blue: number } } }
+  | { action: "gdocsRemoveHighlights"; payload: { docId: string; anchorTexts: string[] } }
   | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };
