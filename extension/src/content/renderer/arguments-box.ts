@@ -4071,6 +4071,8 @@ function copyPdfSummary(summary: string, btn: HTMLButtonElement): void {
 function renderPdfSummaryList(): void {
   if (!pdfSummaryListEl) return;
 
+  // Save scroll position so re-render doesn't jump to top
+  const savedScroll = pdfSummaryListEl.scrollTop;
   pdfSummaryListEl.replaceChildren();
 
   if (!pdfSummaryTabVisible) return;
@@ -4084,9 +4086,10 @@ function renderPdfSummaryList(): void {
   }
 
   for (const item of pdfSummaryCards) {
-    const card = document.createElement("div");
-    card.className = "args-pdf-summary-card";
     if (item.summary) {
+      // ── Full summarized card ──
+      const card = document.createElement("div");
+      card.className = "args-pdf-summary-card";
       card.addEventListener("click", () => {
         document.dispatchEvent(
           new CustomEvent("oddity:pdf-summary-scroll-to-page", {
@@ -4094,22 +4097,20 @@ function renderPdfSummaryList(): void {
           }),
         );
       });
-    }
 
-    const text = document.createElement("div");
-    text.className = "args-pdf-summary-text";
-    text.textContent = item.summary ?? `Summarize page ${item.pageLabel}`;
-    card.appendChild(text);
+      const text = document.createElement("div");
+      text.className = "args-pdf-summary-text";
+      text.textContent = item.summary;
+      card.appendChild(text);
 
-    const footer = document.createElement("div");
-    footer.className = "args-pdf-summary-footer";
+      const footer = document.createElement("div");
+      footer.className = "args-pdf-summary-footer";
 
-    const pageLabel = document.createElement("div");
-    pageLabel.className = "args-pdf-summary-page";
-    pageLabel.textContent = item.pageLabel;
-    footer.appendChild(pageLabel);
+      const pageLabel = document.createElement("div");
+      pageLabel.className = "args-pdf-summary-page";
+      pageLabel.textContent = item.pageLabel;
+      footer.appendChild(pageLabel);
 
-    if (item.summary) {
       const copyBtn = document.createElement("button");
       copyBtn.type = "button";
       copyBtn.className = "args-pdf-summary-copy";
@@ -4120,7 +4121,21 @@ function renderPdfSummaryList(): void {
         copyPdfSummary(item.summary!, copyBtn);
       });
       footer.appendChild(copyBtn);
+      card.appendChild(footer);
+      pdfSummaryListEl.appendChild(card);
     } else {
+      // ── Compact unsummarized card ──
+      const card = document.createElement("div");
+      card.className = "args-pdf-summary-card args-pdf-summary-card--compact";
+
+      const footer = document.createElement("div");
+      footer.className = "args-pdf-summary-footer";
+
+      const pageLabel = document.createElement("div");
+      pageLabel.className = "args-pdf-summary-page";
+      pageLabel.textContent = item.pageLabel;
+      footer.appendChild(pageLabel);
+
       const actionBtn = document.createElement("button");
       actionBtn.type = "button";
       actionBtn.className = "args-pdf-summary-generate";
@@ -4135,11 +4150,13 @@ function renderPdfSummaryList(): void {
         );
       });
       footer.appendChild(actionBtn);
+      card.appendChild(footer);
+      pdfSummaryListEl.appendChild(card);
     }
-
-    card.appendChild(footer);
-    pdfSummaryListEl.appendChild(card);
   }
+
+  // Restore scroll so the list doesn't jump on re-render
+  pdfSummaryListEl.scrollTop = savedScroll;
 }
 
 // ─── Tab Switching ───
@@ -5495,6 +5512,11 @@ const ARGUMENTS_BOX_CSS = `
   .args-pdf-summary-card:hover {
     transform: translateY(-1px);
     box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  }
+
+  .args-pdf-summary-card--compact {
+    padding-top: 10px;
+    padding-bottom: 10px;
   }
 
   .args-pdf-summary-text {
