@@ -142,50 +142,37 @@ function ensureSummaryStyles(): void {
   const style = document.createElement("style");
   style.id = SUMMARY_STYLE_ID;
   style.textContent = `
-    [${SUMMARY_HOST_ATTR}].oddity-pdf-summary-root {
-      width: 100%;
-      display: flex;
-      justify-content: center;
-      margin: 32px 0;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: #111;
-    }
-
     .oddity-pdf-summary-launcher {
+      position: fixed;
+      top: 24px;
+      left: 24px;
+      z-index: ${SUMMARY_MODAL_Z_INDEX - 1};
       display: inline-flex;
       align-items: center;
-      gap: 12px;
-      padding: 10px 18px;
-      border-radius: 6px;
+      gap: 10px;
+      padding: 12.5px 20px;
+      border-radius: 999px;
       border: 1px solid #e2e8f0;
       background: #fff;
       color: #0f172a;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 16px;
+      font-weight: 500;
       cursor: pointer;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-      transition: all 0.15s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      opacity: 0.85;
+      transition: opacity 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
     }
 
     .oddity-pdf-summary-launcher:hover {
-      background: #f8fafc;
-      border-color: #cbd5e1;
+      opacity: 1;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      transform: translateY(-1px);
     }
 
-    .oddity-pdf-summary-launcher-title {
-      font-size: 14px;
-      font-weight: 500;
-      font-family: Helvetica, Arial, sans-serif;
-    }
-
-    .oddity-pdf-summary-launcher-count {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: #f1f5f9;
-      font-size: 11px;
-      font-weight: 600;
-      color: #475569;
+    .oddity-pdf-summary-launcher.oddity-fab-hidden {
+      opacity: 0;
+      pointer-events: none;
     }
 
     .oddity-pdf-summary-modal-backdrop {
@@ -203,6 +190,15 @@ function ensureSummaryStyles(): void {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
+    }
+
+    .oddity-pdf-summary-modal-backdrop.open .oddity-pdf-summary-modal {
+      animation: oddity-summary-modal-in 0.2s ease;
+    }
+
+    @keyframes oddity-summary-modal-in {
+      from { opacity: 0; transform: scale(0.97) translateY(8px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
     }
 
     .oddity-pdf-summary-modal {
@@ -591,7 +587,6 @@ export async function discoverPdfPages(
 
 export class PdfPageSummaryController {
   private readonly pageStates = new Map<string, PageSummaryState>();
-  private readonly rootEl: HTMLDivElement;
   private readonly launcherBtn: HTMLButtonElement;
   private readonly backdropEl: HTMLDivElement;
   private readonly modalEl: HTMLDivElement;
@@ -607,18 +602,12 @@ export class PdfPageSummaryController {
     this.documentHash = documentHash;
     ensureSummaryStyles();
 
-    const firstPage = this.pages[0]?.element;
-    const launcherParent = firstPage?.parentElement;
-    if (!firstPage || !launcherParent || !document.body) {
-      throw new Error("PDF page summaries require discovered PDF pages to exist");
-    }
-
-    this.rootEl = document.createElement("div");
-    this.rootEl.className = "oddity-pdf-summary-root";
-    this.rootEl.setAttribute(SUMMARY_HOST_ATTR, "");
-
     this.launcherBtn = this.createLauncherButton();
+    this.launcherBtn.setAttribute(SUMMARY_HOST_ATTR, "");
+
     this.backdropEl = this.createModalBackdrop();
+    this.backdropEl.setAttribute(SUMMARY_HOST_ATTR, "");
+
     this.modalEl = this.createModal();
     this.gridEl = document.createElement("div");
     this.gridEl.className = "oddity-pdf-summary-grid";
@@ -629,10 +618,7 @@ export class PdfPageSummaryController {
     this.modalEl.appendChild(modalBody);
     this.backdropEl.appendChild(this.modalEl);
 
-    this.backdropEl.setAttribute(SUMMARY_HOST_ATTR, "");
-
-    this.rootEl.appendChild(this.launcherBtn);
-    launcherParent.insertBefore(this.rootEl, firstPage);
+    document.body.appendChild(this.launcherBtn);
     document.body.appendChild(this.backdropEl);
 
     document.addEventListener("keydown", this.handleKeydown);
@@ -702,7 +688,7 @@ export class PdfPageSummaryController {
   destroy(): void {
     document.removeEventListener("keydown", this.handleKeydown);
     this.backdropEl.remove();
-    this.rootEl.remove();
+    this.launcherBtn.remove();
     this.pageStates.clear();
   }
 
@@ -716,13 +702,47 @@ export class PdfPageSummaryController {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "oddity-pdf-summary-launcher";
+    button.setAttribute("aria-label", "Open page summaries");
     button.addEventListener("click", () => this.openModal());
 
-    const title = document.createElement("span");
-    title.className = "oddity-pdf-summary-launcher-title";
-    title.textContent = "Page Summaries";
+    const svgNS = "http://www.w3.org/2000/svg";
+    const icon = document.createElementNS(svgNS, "svg");
+    icon.setAttribute("width", "18");
+    icon.setAttribute("height", "18");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("fill", "none");
+    icon.setAttribute("stroke", "currentColor");
+    icon.setAttribute("stroke-width", "2");
+    icon.setAttribute("stroke-linecap", "round");
+    icon.setAttribute("stroke-linejoin", "round");
+    icon.setAttribute("aria-hidden", "true");
+    const path1 = document.createElementNS(svgNS, "path");
+    path1.setAttribute("d", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z");
+    const path2 = document.createElementNS(svgNS, "polyline");
+    path2.setAttribute("points", "14 2 14 8 20 8");
+    const path3 = document.createElementNS(svgNS, "line");
+    path3.setAttribute("x1", "16");
+    path3.setAttribute("y1", "13");
+    path3.setAttribute("x2", "8");
+    path3.setAttribute("y2", "13");
+    const path4 = document.createElementNS(svgNS, "line");
+    path4.setAttribute("x1", "16");
+    path4.setAttribute("y1", "17");
+    path4.setAttribute("x2", "8");
+    path4.setAttribute("y2", "17");
+    const path5 = document.createElementNS(svgNS, "polyline");
+    path5.setAttribute("points", "10 9 9 9 8 9");
+    icon.appendChild(path1);
+    icon.appendChild(path2);
+    icon.appendChild(path3);
+    icon.appendChild(path4);
+    icon.appendChild(path5);
 
-    button.appendChild(title);
+    const label = document.createElement("span");
+    label.textContent = "Summaries";
+
+    button.appendChild(icon);
+    button.appendChild(label);
     return button;
   }
 
@@ -875,11 +895,16 @@ export class PdfPageSummaryController {
   }
 
   private openModal(): void {
+    const modalBody = this.backdropEl.querySelector<HTMLElement>(".oddity-pdf-summary-modal-body");
+    if (modalBody) modalBody.scrollTop = 0;
+
+    this.launcherBtn.classList.add("oddity-fab-hidden");
     this.backdropEl.classList.add("open");
     this.backdropEl.setAttribute("aria-hidden", "false");
   }
 
   private closeModal(): void {
+    this.launcherBtn.classList.remove("oddity-fab-hidden");
     this.backdropEl.classList.remove("open");
     this.backdropEl.setAttribute("aria-hidden", "true");
   }

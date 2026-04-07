@@ -196,7 +196,7 @@ describe("pdf page summary helpers", () => {
     expect(pages[0]!.textContent).toContain("Some paragraph");
   });
 
-  it("mounts one launcher root immediately before the first page instead of inline hosts", async () => {
+  it("mounts FAB and modal backdrop on document.body, not inline between pages", async () => {
     renderPdfPages();
 
     const controller = await createPdfPageSummaryController({
@@ -204,40 +204,36 @@ describe("pdf page summary helpers", () => {
     });
 
     expect(controller).toBeInstanceOf(PdfPageSummaryController);
-    expect(document.querySelectorAll("[data-oddity-pdf-summary-host]")).toHaveLength(2);
 
+    const hosts = document.querySelectorAll("[data-oddity-pdf-summary-host]");
+    expect(hosts).toHaveLength(2); // launcher FAB + backdrop
+
+    const fab = document.querySelector<HTMLElement>(".oddity-pdf-summary-launcher");
+    const backdrop = document.querySelector<HTMLElement>(".oddity-pdf-summary-modal-backdrop");
+
+    expect(fab?.parentElement).toBe(document.body);
+    expect(fab?.hasAttribute("data-oddity-pdf-summary-host")).toBe(true);
+    expect(backdrop?.parentElement).toBe(document.body);
+
+    // No summary host injected before or between pages
     const firstPage = document.querySelector("#pf1");
-    expect(
-      firstPage?.previousElementSibling?.getAttribute("data-oddity-pdf-summary-host"),
-    ).toBe("");
-    expect(firstPage?.parentElement).toBe(document.querySelector("#page-container"));
-    expect(
-      document
-        .querySelector("#pf2")
-        ?.previousElementSibling?.hasAttribute("data-oddity-pdf-summary-host"),
-    ).toBe(false);
+    expect(firstPage?.previousElementSibling).toBeNull();
   });
 
-  it("mounts the launcher in the first page flow while keeping the modal backdrop on body", async () => {
+  it("mounts FAB on body regardless of page nesting depth", async () => {
     renderNestedPdfPages();
 
     await createPdfPageSummaryController({
       onGeneratePageSummary: vi.fn(),
     });
 
-    const host = document.querySelector<HTMLElement>("[data-oddity-pdf-summary-host]");
-    const firstPage = document.querySelector<HTMLElement>("#pf1");
+    const fab = document.querySelector<HTMLElement>(".oddity-pdf-summary-launcher");
+    const backdrop = document.querySelector<HTMLElement>(".oddity-pdf-summary-modal-backdrop");
     const pageContainer = document.querySelector<HTMLElement>("#page-container");
-    const backdrop = document.querySelector<HTMLElement>(
-      ".oddity-pdf-summary-modal-backdrop",
-    );
 
-    expect(host).not.toBeNull();
-    expect(pageContainer).not.toBeNull();
-    expect(firstPage).not.toBeNull();
-    expect(host?.parentElement).toBe(pageContainer);
-    expect(host?.nextElementSibling).toBe(firstPage);
+    expect(fab?.parentElement).toBe(document.body);
     expect(backdrop?.parentElement).toBe(document.body);
+    expect(pageContainer?.contains(fab!)).toBe(false);
     expect(pageContainer?.contains(backdrop!)).toBe(false);
   });
 
