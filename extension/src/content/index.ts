@@ -61,8 +61,12 @@ import {
   setDashUserTier,
   setPdfSummaryTabVisible,
   updatePdfSummaryCards,
+  triggerOptimizePrompt,
+  pasteIntoChatbot,
 } from "./renderer/arguments-box.js";
+import { initOptimizeButton, destroyOptimizeButton } from "./renderer/optimize-button.js";
 import {
+
   clearAllAnchors,
   getAllAnchorsInOrder,
   getAnnotationId,
@@ -769,6 +773,7 @@ function resetAnnotationState(): void {
   destroyOverlay();
   destroyMarginNotes();
   destroyArgumentsBox();
+  destroyOptimizeButton();
   destroyManualAnnotations();
   pdfPageSummaryController?.destroy();
   pdfPageSummaryController = null;
@@ -1593,6 +1598,12 @@ async function startPipeline(): Promise<void> {
         getChatbotDisplayName(matchedAdapter.hostname_pattern) ??
         getChatbotDisplayName(hostname);
       setChatbotMode(matchedAdapter.input_selector, chatbotDisplayName);
+      
+      initOptimizeButton(
+        { selector: matchedAdapter.input_selector, displayName: chatbotDisplayName },
+        triggerOptimizePrompt,
+        pasteIntoChatbot
+      );
     }
     setArgumentsBoxEnabled(enabled);
     setInputTextProvider(collectInputText);
