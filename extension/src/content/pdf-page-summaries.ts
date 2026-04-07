@@ -629,6 +629,8 @@ export class PdfPageSummaryController {
     this.modalEl.appendChild(modalBody);
     this.backdropEl.appendChild(this.modalEl);
 
+    this.backdropEl.setAttribute(SUMMARY_HOST_ATTR, "");
+
     this.rootEl.appendChild(this.launcherBtn);
     launcherParent.insertBefore(this.rootEl, firstPage);
     document.body.appendChild(this.backdropEl);

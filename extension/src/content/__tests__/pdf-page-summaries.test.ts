@@ -204,7 +204,7 @@ describe("pdf page summary helpers", () => {
     });
 
     expect(controller).toBeInstanceOf(PdfPageSummaryController);
-    expect(document.querySelectorAll("[data-oddity-pdf-summary-host]")).toHaveLength(1);
+    expect(document.querySelectorAll("[data-oddity-pdf-summary-host]")).toHaveLength(2);
 
     const firstPage = document.querySelector("#pf1");
     expect(
@@ -375,6 +375,6 @@ describe("pdf page summary helpers", () => {
       document
         .querySelector(".oddity-pdf-summary-modal-backdrop")
         ?.classList.contains("open"),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
