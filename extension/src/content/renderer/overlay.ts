@@ -420,12 +420,17 @@ function drawCachedAnnotationInto(parent: Node, annotation: Annotation): void {
 
     // Rects are stored at absolute page coordinates; the wrapper's transform
     // shifts them into the viewport.
-    const visual = getVisual(annotation.type, getThemeMode(), annotation.label);
-    const bgCss = gdocsMode ? 'background-color: transparent;' : (visual.backgroundColor ? `background-color: ${visual.backgroundColor};` : '');
-    const borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';
-    // In GDocs mode all rects are pointer-events:none so editing clicks reach the canvas.
-    // On other sites rects need auto so hover/click work (no underlying span to listen on).
-    const pointerEvents = (!gdocsMode && (bgCss || borderCss)) ? 'auto' : 'none';
+    let bgCss = '';
+    let borderCss = '';
+    if (gdocsMode) {
+      // GDocs: use getVisual colors but transparent background so the native highlight shows through.
+      // Pointer events are handled via document-level hit-testing instead.
+      const visual = getVisual(annotation.type, getThemeMode(), annotation.label, false, true);
+      borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';
+    }
+    // Non-GDocs: rects are transparent with pointer-events:none. Colors come from
+    // the injected anchor <span> elements in the DOM text (via anchors.ts).
+    const pointerEvents = 'none';
     el.style.cssText = `
       position: absolute;
       left: ${rect.left}px;
@@ -433,7 +438,6 @@ function drawCachedAnnotationInto(parent: Node, annotation: Annotation): void {
       width: ${rect.width}px;
       height: ${rect.height}px;
       pointer-events: ${pointerEvents};
-      cursor: pointer;
       transition: filter 0.15s;
       z-index: 1;
       box-sizing: border-box;

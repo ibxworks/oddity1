@@ -89,6 +89,8 @@ import {
   onAnchorHoverStart,
   removeMarginNote,
   setMarginNoteMode,
+  setMarginNotesGDocsMode,
+  setMarginNotesPersonality,
   setMarginNotesVisible,
   updateMarginNoteText,
   updateMarginNotesStyle,
@@ -377,9 +379,9 @@ let siteWhitelisted = false;
 let manualRunTriggered = false;
 let blocked = false;
 let enabled = true;
-let currentMode: ViewMode = "depth";
+let currentMode: ViewMode = "overview";
 let currentPersonality: DepthPersonality = "jerry";
-let visibleTypes: AnnotationType[] = [...ALL_DEPTH_TYPES, "user_written"];
+let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
 let pdfPageSummaryController: PdfPageSummaryController | null = null;
@@ -1029,11 +1031,17 @@ async function init(): Promise<void> {
   // Overview mode is disabled — always start in depth mode.
   if (isGoogleDocs()) {
     currentMode = "depth";
+    visibleTypes = [...ALL_DEPTH_TYPES, "user_written"];
   }
-  if (prefs?.depth_personality) {
-    currentPersonality = (prefs.depth_personality as string) === "gary" ? "sally" : prefs.depth_personality;
+  if (prefs.depth_personality) {
+    const storedPersonality = prefs.depth_personality as string;
+    currentPersonality =
+      storedPersonality === "gary"
+        ? "sally"
+        : (storedPersonality as DepthPersonality);
+    setMarginNotesPersonality(currentPersonality);
   }
-  // currentMode defaults to "depth" (see declaration above), visibleTypes to depth types
+  // currentMode defaults to "overview" (see declaration above), visibleTypes to overview types
   setMarginNoteMode(currentMode);
 
   if (prefs.enabled === false) {
@@ -1587,6 +1595,7 @@ async function startPipeline(): Promise<void> {
 
   // ── Google Docs fast-path ──
   if (isGoogleDocs()) {
+    setMarginNotesGDocsMode(true);
     await startGoogleDocsPipeline();
     return;
   }
@@ -2445,7 +2454,7 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   // Update state
   currentMode = newMode;
   setMarginNoteMode(newMode);
-  if (newPersonality) currentPersonality = newPersonality;
+  if (newPersonality) { currentPersonality = newPersonality; setMarginNotesPersonality(newPersonality); }
   if (isGoogleDocs()) setGDocsDebugUnderline(newMode === 'depth');
 
   // Update visible types for new mode
@@ -2596,6 +2605,10 @@ onMessage((message: ExtensionMessage) => {
     }
     case "annotationReady": {
       // Progressive rendering: single annotation from streaming pipeline
+      // GDocs uses its own deferred rendering pipeline (gdocsRenderPending / oddity-gdocs-corrected)
+      // so streaming annotations should never be processed here on a GDocs page.
+      if (isGoogleDocs()) break;
+
       const { regionId: streamRegionId, annotation } = message.payload;
 
       // Skip annotations that were locally deleted (in-flight response race)
@@ -2856,6 +2869,7 @@ onMessage((message: ExtensionMessage) => {
       } else if (personalityChanged) {
         // Personality only affects depth annotations — preserve user-written notes and their feedback
         currentPersonality = newPersonality;
+        setMarginNotesPersonality(newPersonality);
         updateDashboardPersonality(newPersonality);
         clearOverlay();
         clearAllAnchors();

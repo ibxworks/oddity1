@@ -80,9 +80,17 @@ let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
 let justPinnedFromCard = false;
 let userName: string | null = null;
+let personalityName: string = "Richard Feynman";
+
+const PERSONALITY_DISPLAY: Record<string, string> = {
+  terry: "Terry",
+  jerry: "Jerry",
+  sally: "Sally",
+};
 let sharedContentRight = 0;
 let sharedContentLeftViewport = 0;
 let timelineLineEl: HTMLDivElement | null = null;
+let isGDocsMode = false;
 
 // ─── Inline Popover State (Depth mode) ───
 let currentAnnotationMode: ViewMode = "overview";
@@ -101,7 +109,7 @@ let staleStateTimer: ReturnType<typeof setTimeout> | null = null;
 let overviewShowTimer: ReturnType<typeof setTimeout> | null = null;
 let overviewHideTimer: ReturnType<typeof setTimeout> | null = null;
 
-const NOTE_EXPANDED_WIDTH = 286;
+const NOTE_EXPANDED_WIDTH = 420;
 const NOTE_GAP = 10;
 const MARGIN_PADDING = 16;
 const NOTE_MIN_WIDTH = NOTE_EXPANDED_WIDTH / 2;
@@ -116,12 +124,16 @@ const FONT_MAP: Record<AnnotationFont, string> = {
   georgia: "Georgia, 'Times New Roman', serif",
 };
 const SIZE_MAP: Record<AnnotationFontSize, string> = {
-  small: "12px",
-  default: "14px",
-  large: "16px",
+  small: "11px",
+  default: "13px",
+  large: "15px",
 };
 
 // ─── Public API ───
+
+export function setMarginNotesGDocsMode(flag: boolean): void {
+  isGDocsMode = flag;
+}
 
 export function initMarginNotes(region: Element): void {
   regionEl = region;
@@ -132,7 +144,7 @@ export function initMarginNotes(region: Element): void {
     fontLink = document.createElement("link");
     fontLink.rel = "stylesheet";
     fontLink.href =
-      "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=Kalam:wght@400&display=swap";
+      "https://fonts.googleapis.com/css2?family=Fragment+Mono&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=Kalam:wght@400&display=swap";
     const cspHandler = (e: SecurityPolicyViolationEvent) => {
       if (e.blockedURI?.includes("fonts.googleapis.com") || e.blockedURI?.includes("fonts.gstatic.com")) {
         fontLink?.remove();
@@ -233,9 +245,15 @@ export function initMarginNotes(region: Element): void {
   // Fetch user profile for name badge on manual annotations
   sendMessage({ action: "getProfile" } as any)
     .then((p: any) => {
-      userName = p?.display_name?.split(" ")[0] ?? null;
+      userName = p?.display_name ?? null;
+      const pref = p?.preferences?.depth_personality as string | undefined;
+      personalityName = pref ? (PERSONALITY_DISPLAY[pref] ?? "Richard Feynman") : "Richard Feynman";
     })
     .catch(() => {});
+}
+
+export function setMarginNotesPersonality(personality: string): void {
+  personalityName = PERSONALITY_DISPLAY[personality] ?? "Richard Feynman";
 }
 
 export function setMarginNoteMode(mode: ViewMode): void {
@@ -425,7 +443,7 @@ function addInlinePopover(
   // Click on the inline popover itself pins/unpins
   el.addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest("button, input, textarea, a, .note-feedback-pill, .note-icon-btn, .note-reply-input")) return;
+    if (target.closest("button, input, textarea, a, .note-pill-item, .note-reply-input")) return;
     e.stopPropagation();
     if (pinnedId === annotation.id) {
       // Clicking the same pinned popover: unpin
@@ -1295,6 +1313,10 @@ function scheduleStaleStateCheck(): void {
     staleStateTimer = null;
     if (!mouseInAnchor && !mouseInInlinePopover) return;
     if (pinnedId) return; // pinned state is intentional
+    // In GDocs mode, highlights are canvas-rendered — no DOM anchor spans exist,
+    // so :hover will never find them. The hit-test in overlay.ts owns hover state;
+    // trust mouseInAnchor/mouseInInlinePopover as-is and skip the DOM check.
+    if (isGDocsMode) return;
 
     // Check if the mouse is actually over an anchor or popover
     const hovered = document.querySelectorAll(":hover");
@@ -1582,7 +1604,6 @@ function createNoteElement(
   // Label
   const labelEl = document.createElement("span");
   labelEl.className = "note-label";
-  labelEl.style.color = labelColor;
   labelEl.textContent = label;
 
   // User name badge for manual annotations
@@ -1657,49 +1678,11 @@ function createNoteElement(
   }
 
   // ── Edit + Delete icon buttons (shared by both manual and AI annotations) ──
-  const createEditDeleteIcons = (): DocumentFragment => {
-    const frag = document.createDocumentFragment();
 
-    const editBtn = document.createElement("button");
-    editBtn.className = "note-icon-btn note-edit-btn";
-    editBtn.title = "Edit";
-    editBtn.innerHTML = `<span class="icon-dark"><svg width="17" height="17" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.1641 1.33105C19.7393 -0.243794 22.2929 -0.243751 23.8682 1.33105C25.4435 2.90636 25.4435 5.46083 23.8682 7.03613L8.41699 22.4883C7.76597 23.1393 6.94983 23.6009 6.05664 23.8242L1.26465 25.0225C0.608468 25.1865 0.0136891 24.5917 0.177734 23.9355L1.37598 19.1436C1.59927 18.2504 2.0609 17.4342 2.71191 16.7832L18.1641 1.33105ZM16.4727 5.55664L3.97949 18.0508C3.55812 18.4722 3.25879 19 3.11426 19.5781L2.33887 22.6787L2.27832 22.9219L5.62207 22.0859C6.20018 21.9414 6.72804 21.6421 7.14941 21.2207L13.3965 14.9736L19.6426 8.72656L19.748 8.62109L19.6426 8.51465L16.5781 5.4502L16.4727 5.55664ZM22.6016 2.59863C21.726 1.72311 20.3062 1.72311 19.4307 2.59863L17.8457 4.18359L17.9512 4.29004L20.9092 7.24805L21.0156 7.35352L21.1211 7.24805L22.6016 5.76953C23.4771 4.89404 23.477 3.47416 22.6016 2.59863Z" fill="white" stroke="#363636" stroke-width="0.3"/></svg></span><span class="icon-light"><svg width="17" height="17" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.1641 1.33105C19.7393 -0.243794 22.2929 -0.243751 23.8682 1.33105C25.4435 2.90636 25.4435 5.46083 23.8682 7.03613L8.41699 22.4883C7.76597 23.1393 6.94983 23.6009 6.05664 23.8242L1.26465 25.0225C0.608468 25.1865 0.0136891 24.5917 0.177734 23.9355L1.37598 19.1436C1.59927 18.2504 2.0609 17.4342 2.71191 16.7832L18.1641 1.33105ZM16.4727 5.55664L3.97949 18.0508C3.55812 18.4722 3.25879 19 3.11426 19.5781L2.33887 22.6787L2.27832 22.9219L5.62207 22.0859C6.20018 21.9414 6.72804 21.6421 7.14941 21.2207L13.3965 14.9736L19.6426 8.72656L19.748 8.62109L19.6426 8.51465L16.5781 5.4502L16.4727 5.55664ZM22.6016 2.59863C21.726 1.72311 20.3062 1.72311 19.4307 2.59863L17.8457 4.18359L17.9512 4.29004L20.9092 7.24805L21.0156 7.35352L21.1211 7.24805L22.6016 5.76953C23.4771 4.89404 23.477 3.47416 22.6016 2.59863Z" fill="#293038" stroke="white" stroke-width="0.3"/></svg></span>`;
-    editBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      enterEditMode(el, annotation, textEl, contentHash);
-    });
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.className = "note-icon-btn note-delete-btn";
-    deleteBtn.title = "Delete";
-    deleteBtn.innerHTML = `<span class="icon-dark"><svg width="15" height="18" viewBox="0 0 22 27" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.9219 7.43945C19.5106 7.28746 20.0695 7.65114 20.1689 8.25781C20.1871 8.36904 20.1904 8.48758 20.1904 8.61621C20.1916 12.9442 20.1921 17.2726 20.1914 21.6006C20.191 23.8874 18.6924 25.7032 16.4473 26.127C16.1796 26.1775 15.898 26.1959 15.6172 26.1963C12.4044 26.2013 9.19156 26.2003 5.97852 26.1992C3.69159 26.1985 1.85256 24.6628 1.45312 22.418C1.41441 22.2002 1.39474 21.976 1.39453 21.7549C1.39094 17.3332 1.39019 12.9109 1.39355 8.48926C1.3939 8.11363 1.54191 7.815 1.7627 7.62891C1.98301 7.44332 2.28797 7.35899 2.62695 7.43457C3.04346 7.52748 3.36132 7.89535 3.39258 8.32715C3.39929 8.42013 3.3955 8.50965 3.39551 8.62207C3.39566 12.6316 3.39648 16.6411 3.39648 20.6787H3.39551L3.39648 20.6855C3.41225 21.17 3.37743 21.7036 3.45996 22.1953C3.65247 23.341 4.68451 24.1899 5.83789 24.1924C9.13566 24.1995 12.4336 24.1998 15.7314 24.1924C17.1037 24.1893 18.1861 23.0585 18.1865 21.6758C18.188 17.2823 18.1867 12.8885 18.1875 8.49512C18.1876 7.94499 18.484 7.55251 18.9219 7.43945Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M7.26953 0.203125C9.62027 0.198508 11.9716 0.199014 14.3223 0.204102C14.6616 0.204899 14.922 0.314719 15.0977 0.492188C15.2735 0.670059 15.3822 0.934127 15.3848 1.27637C15.3898 1.9497 15.3867 2.62192 15.3867 3.29785V3.7998H15.9141C17.3757 3.79981 18.8361 3.79648 20.2969 3.80078C20.9586 3.80273 21.3942 4.24054 21.3867 4.82031C21.3799 5.3401 20.9666 5.77238 20.4453 5.80176C20.3502 5.8071 20.2583 5.80371 20.1475 5.80371H1.2666C0.639678 5.80015 0.20525 5.37415 0.200195 4.81543C0.195178 4.24231 0.62806 3.8045 1.26758 3.80176C2.72789 3.7955 4.1877 3.79982 5.64941 3.7998H6.1709L6.18359 3.61328C6.18866 3.53651 6.20002 3.43702 6.2002 3.34961C6.20145 2.65408 6.19707 1.96406 6.20215 1.27148C6.20465 0.931308 6.31364 0.668386 6.49023 0.491211C6.66684 0.314264 6.92879 0.203859 7.26953 0.203125ZM8.20312 3.7998H13.3838V2.21973H8.20312V3.7998Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M8.31055 9.80664C8.83083 9.76813 9.2791 10.1133 9.37012 10.627C9.39137 10.7472 9.3973 10.8761 9.39746 11.0117C9.39941 12.7069 9.39844 14.4024 9.39844 16.126C9.39842 17.149 9.40636 18.1395 9.39648 19.1309C9.38809 19.9463 8.64467 20.4191 7.97754 20.1025C7.76977 20.0039 7.62709 19.8731 7.53516 19.7178C7.44262 19.5613 7.39442 19.3667 7.39453 19.1309C7.39576 16.499 7.39446 13.8671 7.39453 11.2354C7.39454 11.0691 7.39044 10.9185 7.39648 10.7646C7.41659 10.2586 7.81791 9.84333 8.31055 9.80664Z" fill="white" stroke="#363636" stroke-width="0.4"/><path d="M13.0742 9.80664C13.5841 9.74797 14.0478 10.0748 14.165 10.5918C14.1862 10.6852 14.1894 10.7898 14.1895 10.9092C14.1911 13.6331 14.189 16.3586 14.1934 19.083C14.1937 19.3328 14.1473 19.5393 14.0547 19.7041C13.9635 19.8663 13.8198 20.0013 13.6016 20.1006C13.3815 20.2006 13.1833 20.2215 13.001 20.1826C12.8191 20.1437 12.6362 20.0418 12.4521 19.8672C12.2593 19.6446 12.1865 19.3976 12.1865 19.1094C12.1869 16.3662 12.1849 13.6236 12.1885 10.8809C12.1893 10.2842 12.5612 9.86575 13.0742 9.80664Z" fill="white" stroke="#363636" stroke-width="0.4"/></svg></span><span class="icon-light"><svg width="15" height="18" viewBox="0 0 22 27" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.9219 7.43945C19.5106 7.28746 20.0695 7.65114 20.1689 8.25781C20.1871 8.36904 20.1904 8.48758 20.1904 8.61621C20.1916 12.9442 20.1921 17.2726 20.1914 21.6006C20.191 23.8874 18.6924 25.7032 16.4473 26.127C16.1796 26.1775 15.898 26.1959 15.6172 26.1963C12.4044 26.2013 9.19156 26.2003 5.97852 26.1992C3.69159 26.1985 1.85256 24.6628 1.45312 22.418C1.41441 22.2002 1.39474 21.976 1.39453 21.7549C1.39094 17.3332 1.39019 12.9109 1.39355 8.48926C1.3939 8.11363 1.54191 7.815 1.7627 7.62891C1.98301 7.44332 2.28797 7.35899 2.62695 7.43457C3.04346 7.52748 3.36132 7.89535 3.39258 8.32715C3.39929 8.42013 3.3955 8.50965 3.39551 8.62207C3.39566 12.6316 3.39648 16.6411 3.39648 20.6787H3.39551L3.39648 20.6855C3.41225 21.17 3.37743 21.7036 3.45996 22.1953C3.65247 23.341 4.68451 24.1899 5.83789 24.1924C9.13566 24.1995 12.4336 24.1998 15.7314 24.1924C17.1037 24.1893 18.1861 23.0585 18.1865 21.6758C18.188 17.2823 18.1867 12.8885 18.1875 8.49512C18.1876 7.94499 18.484 7.55251 18.9219 7.43945Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M7.26953 0.203125C9.62027 0.198508 11.9716 0.199014 14.3223 0.204102C14.6616 0.204899 14.922 0.314719 15.0977 0.492188C15.2735 0.670059 15.3822 0.934127 15.3848 1.27637C15.3898 1.9497 15.3867 2.62192 15.3867 3.29785V3.7998H15.9141C17.3757 3.79981 18.8361 3.79648 20.2969 3.80078C20.9586 3.80273 21.3942 4.24054 21.3867 4.82031C21.3799 5.3401 20.9666 5.77238 20.4453 5.80176C20.3502 5.8071 20.2583 5.80371 20.1475 5.80371H1.2666C0.639678 5.80015 0.20525 5.37415 0.200195 4.81543C0.195178 4.24231 0.62806 3.8045 1.26758 3.80176C2.72789 3.7955 4.1877 3.79982 5.64941 3.7998H6.1709L6.18359 3.61328C6.18866 3.53651 6.20002 3.43702 6.2002 3.34961C6.20145 2.65408 6.19707 1.96406 6.20215 1.27148C6.20465 0.931308 6.31364 0.668386 6.49023 0.491211C6.66684 0.314264 6.92879 0.203859 7.26953 0.203125ZM8.20312 3.7998H13.3838V2.21973H8.20312V3.7998Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M8.31055 9.80664C8.83083 9.76813 9.2791 10.1133 9.37012 10.627C9.39137 10.7472 9.3973 10.8761 9.39746 11.0117C9.39941 12.7069 9.39844 14.4024 9.39844 16.126C9.39842 17.149 9.40636 18.1395 9.39648 19.1309C9.38809 19.9463 8.64467 20.4191 7.97754 20.1025C7.76977 20.0039 7.62709 19.8731 7.53516 19.7178C7.44262 19.5613 7.39442 19.3667 7.39453 19.1309C7.39576 16.499 7.39446 13.8671 7.39453 11.2354C7.39454 11.0691 7.39044 10.9185 7.39648 10.7646C7.41659 10.2586 7.81791 9.84333 8.31055 9.80664Z" fill="#293038" stroke="white" stroke-width="0.4"/><path d="M13.0742 9.80664C13.5841 9.74797 14.0478 10.0748 14.165 10.5918C14.1862 10.6852 14.1894 10.7898 14.1895 10.9092C14.1911 13.6331 14.189 16.3586 14.1934 19.083C14.1937 19.3328 14.1473 19.5393 14.0547 19.7041C13.9635 19.8663 13.8198 20.0013 13.6016 20.1006C13.3815 20.2006 13.1833 20.2215 13.001 20.1826C12.8191 20.1437 12.6362 20.0418 12.4521 19.8672C12.2593 19.6446 12.1865 19.3976 12.1865 19.1094C12.1869 16.3662 12.1849 13.6236 12.1885 10.8809C12.1893 10.2842 12.5612 9.86575 13.0742 9.80664Z" fill="#293038" stroke="white" stroke-width="0.4"/></svg></span>`;
-    deleteBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (onDelete) onDelete(annotation.id);
-      sendMessage({
-        action: "deleteAnnotation",
-        payload: {
-          annotationId: annotation.id,
-          url: getPageUrl(),
-          contentHash: contentHash,
-        },
-      });
-    });
-
-    frag.appendChild(editBtn);
-    frag.appendChild(deleteBtn);
-    return frag;
-  };
+  let outerReplyBar: HTMLDivElement | null = null;
 
   if (isManual) {
-    // ── User annotation: Edit + Delete in a single row ──
-    const manualRow = document.createElement("div");
-    manualRow.className = "note-feedback-row";
-    const manualSpacer = document.createElement("div");
-    manualSpacer.style.flex = "1";
-    manualRow.appendChild(manualSpacer);
-    manualRow.appendChild(createEditDeleteIcons());
-    expandedContent.appendChild(manualRow);
+    // Manual annotations have no bottom section
   } else {
     // ── AI annotation: Reply thread + Feedback row + Edit/Delete ──
 
@@ -1734,19 +1717,22 @@ function createNoteElement(
     }
     expandedContent.appendChild(repliesContainer);
 
-    // Reply input bar
-    const replyBar = document.createElement("div");
-    replyBar.className = "note-reply-bar";
-    const replyInput = document.createElement("input");
-    replyInput.type = "text";
-    replyInput.placeholder = "Add a note...";
+    // Reply section — CSS grid, collapses to input+send row, expands to add pill row
+    const replySection = document.createElement("div");
+    replySection.className = "note-reply-section";
+
+    const replyInput = document.createElement("textarea");
+    replyInput.placeholder = "Thoughts?";
     replyInput.className = "note-reply-input";
+    replyInput.rows = 1;
     replyInput.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "Enter" && replyInput.value.trim()) {
+      if (e.key === "Enter" && !e.shiftKey && replyInput.value.trim()) {
+        e.preventDefault();
         submitReply(annotation, replyInput, repliesContainer, contentHash);
       }
     });
+
     const sendBtn = document.createElement("button");
     sendBtn.className = "note-reply-send";
     sendBtn.innerHTML = `<span class="arrow-light"><svg width="10" height="13" viewBox="0 0 12 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.05377 0.219671C5.76087 -0.0732222 5.286 -0.0732222 4.99311 0.219671L0.220136 4.99264C-0.0727572 5.28553 -0.0727572 5.76041 0.220136 6.0533C0.51303 6.3462 0.987903 6.3462 1.2808 6.0533L5.52344 1.81066L9.76608 6.0533C10.059 6.3462 10.5338 6.3462 10.8267 6.0533C11.1196 5.76041 11.1196 5.28553 10.8267 4.99264L6.05377 0.219671ZM5.52344 15.75H6.27344L6.27344 0.750001H5.52344H4.77344L4.77344 15.75H5.52344Z" fill="white"/></svg></span><span class="arrow-dark"><svg width="10" height="13" viewBox="0 0 12 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.05377 0.219671C5.76087 -0.0732222 5.286 -0.0732222 4.99311 0.219671L0.220136 4.99264C-0.0727572 5.28553 -0.0727572 5.76041 0.220136 6.0533C0.51303 6.3462 0.987903 6.3462 1.2808 6.0533L5.52344 1.81066L9.76608 6.0533C10.059 6.3462 10.5338 6.3462 10.8267 6.0533C11.1196 5.76041 11.1196 5.28553 10.8267 4.99264L6.05377 0.219671ZM5.52344 15.75H6.27344L6.27344 0.750001H5.52344H4.77344L4.77344 15.75H5.52344Z" fill="#293038"/></svg></span>`;
@@ -1756,18 +1742,11 @@ function createNoteElement(
         submitReply(annotation, replyInput, repliesContainer, contentHash);
       }
     });
-    replyBar.appendChild(replyInput);
-    replyBar.appendChild(sendBtn);
-    expandedContent.appendChild(replyBar);
 
-    // Feedback row (thumbs)
-    const feedbackRow = document.createElement("div");
-    feedbackRow.className = "note-feedback-row";
-
+    // Segmented pill group: Agree | divider | I don't think so | divider | mic
     let currentFeedbackId: string | null =
       existingThumbUp?.id ?? existingThumbDown?.id ?? null;
 
-    // Listen for external feedback deletion (e.g. from argument box) to reset pill state
     el.addEventListener("oddity:reset-reaction", () => {
       thumbUp.classList.remove("active");
       thumbDown.classList.remove("active");
@@ -1775,147 +1754,87 @@ function createNoteElement(
     });
 
     const thumbUp = document.createElement("button");
-    thumbUp.className = "note-feedback-pill" + (existingThumbUp ? " active" : "");
+    thumbUp.className = "note-pill-item" + (existingThumbUp ? " active" : "");
     thumbUp.textContent = "Agree";
-    thumbUp.title = "Helpful";
     thumbUp.addEventListener("click", (e) => {
       e.stopPropagation();
       if (thumbUp.classList.contains("active")) {
-        // Undo thumbs up
         thumbUp.classList.remove("active");
-        reactionBadge = updateReactionBadge(
-          labelEl,
-          reactionBadge,
-          "thumbs_up",
-          false,
-        );
+        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", false);
         if (currentFeedbackId) {
           sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } });
           currentFeedbackId = null;
         }
       } else {
-        // Activate thumbs up, deactivate thumbs down
         thumbUp.classList.add("active");
         thumbDown.classList.remove("active");
         reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_up", true);
-        const noteExcerpt = annotation.content.note.length > 40
-          ? annotation.content.note.slice(0, 37) + "\u2026"
-          : annotation.content.note;
-        const liveSortKey = addLiveFeedback("↳", "I agree", {
-          type: "reply",
-          replyHeader: noteExcerpt,
-          replyFullNote: annotation.content.note,
-          replyAnchor: annotation.anchor.exact,
-          annotationType: annotation.type,
-          annotationId: annotation.id,
-          contentHash: contentHash,
-        });
-        const doSave = () =>
-          sendMessage({
-            action: "saveFeedback",
-            payload: {
-              annotationId: annotation.id,
-              contentHash: contentHash,
-              url: getPageUrl(),
-              feedbackType: "thumbs_up",
-              pageTitle: document.title,
-            },
-          }).then((fb: any) => {
-            if (fb?.id) {
-              currentFeedbackId = fb.id;
-              updateLiveFeedbackId(liveSortKey, fb.id);
-              window.dispatchEvent(new CustomEvent("oddity:feedback-added", {
-                detail: { feedback: fb, contentHash: contentHash },
-              }));
-            }
-          });
-        if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } })
-            .then(() => { currentFeedbackId = null; return doSave(); });
-        } else {
-          doSave();
-        }
+        const noteExcerpt = annotation.content.note.length > 40 ? annotation.content.note.slice(0, 37) + "\u2026" : annotation.content.note;
+        const liveSortKey = addLiveFeedback("↳", "I agree", { type: "reply", replyHeader: noteExcerpt, replyFullNote: annotation.content.note, replyAnchor: annotation.anchor.exact, annotationType: annotation.type, annotationId: annotation.id, contentHash });
+        const doSave = () => sendMessage({ action: "saveFeedback", payload: { annotationId: annotation.id, contentHash, url: getPageUrl(), feedbackType: "thumbs_up", pageTitle: document.title } }).then((fb: any) => { if (fb?.id) { currentFeedbackId = fb.id; updateLiveFeedbackId(liveSortKey, fb.id); window.dispatchEvent(new CustomEvent("oddity:feedback-added", { detail: { feedback: fb, contentHash } })); } });
+        if (currentFeedbackId) { sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } }).then(() => { currentFeedbackId = null; return doSave(); }); } else { doSave(); }
       }
     });
 
     const thumbDown = document.createElement("button");
-    thumbDown.className =
-      "note-feedback-pill note-feedback-pill--negative" +
-      (existingThumbDown ? " active" : "");
-    thumbDown.textContent = "I don't think so";
-    thumbDown.title = "I don't think so";
+    thumbDown.className = "note-pill-item" + (existingThumbDown ? " active" : "");
+    thumbDown.textContent = "I don\u2019t think so";
     thumbDown.addEventListener("click", (e) => {
       e.stopPropagation();
       if (thumbDown.classList.contains("active")) {
-        // Undo thumbs down
         thumbDown.classList.remove("active");
-        reactionBadge = updateReactionBadge(
-          labelEl,
-          reactionBadge,
-          "thumbs_down",
-          false,
-        );
+        reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", false);
         if (currentFeedbackId) {
           sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } });
           currentFeedbackId = null;
         }
       } else {
-        // Activate thumbs down, deactivate thumbs up
         thumbDown.classList.add("active");
         thumbUp.classList.remove("active");
         reactionBadge = updateReactionBadge(labelEl, reactionBadge, "thumbs_down", true);
-        const noteExcerptDown = annotation.content.note.length > 40
-          ? annotation.content.note.slice(0, 37) + "\u2026"
-          : annotation.content.note;
-        const liveSortKeyDown = addLiveFeedback("↳", "I don't think so", {
-          type: "reply",
-          replyHeader: noteExcerptDown,
-          replyFullNote: annotation.content.note,
-          replyAnchor: annotation.anchor.exact,
-          annotationType: annotation.type,
-          annotationId: annotation.id,
-          contentHash: contentHash,
-        });
-        const doSave = () =>
-          sendMessage({
-            action: "saveFeedback",
-            payload: {
-              annotationId: annotation.id,
-              contentHash: contentHash,
-              url: getPageUrl(),
-              feedbackType: "thumbs_down",
-              pageTitle: document.title,
-            },
-          }).then((fb: any) => {
-            if (fb?.id) {
-              currentFeedbackId = fb.id;
-              updateLiveFeedbackId(liveSortKeyDown, fb.id);
-              window.dispatchEvent(new CustomEvent("oddity:feedback-added", {
-                detail: { feedback: fb, contentHash: contentHash },
-              }));
-            }
-          });
-        if (currentFeedbackId) {
-          sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } })
-            .then(() => { currentFeedbackId = null; return doSave(); });
-        } else {
-          doSave();
-        }
+        const noteExcerptDown = annotation.content.note.length > 40 ? annotation.content.note.slice(0, 37) + "\u2026" : annotation.content.note;
+        const liveSortKeyDown = addLiveFeedback("↳", "I don\u2019t think so", { type: "reply", replyHeader: noteExcerptDown, replyFullNote: annotation.content.note, replyAnchor: annotation.anchor.exact, annotationType: annotation.type, annotationId: annotation.id, contentHash });
+        const doSave = () => sendMessage({ action: "saveFeedback", payload: { annotationId: annotation.id, contentHash, url: getPageUrl(), feedbackType: "thumbs_down", pageTitle: document.title } }).then((fb: any) => { if (fb?.id) { currentFeedbackId = fb.id; updateLiveFeedbackId(liveSortKeyDown, fb.id); window.dispatchEvent(new CustomEvent("oddity:feedback-added", { detail: { feedback: fb, contentHash } })); } });
+        if (currentFeedbackId) { sendMessage({ action: "deleteFeedback", payload: { feedbackId: currentFeedbackId, contentHash, url: getPageUrl() } }).then(() => { currentFeedbackId = null; return doSave(); }); } else { doSave(); }
       }
     });
+
+    // Voice button (always shown)
+    const voiceBtn = document.createElement("button");
+    voiceBtn.className = "note-pill-item note-pill-item--icon";
+    voiceBtn.title = "Voice input";
+    voiceBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 10a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="19" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      let recognition: any = null;
+      let isRecording = false;
+      voiceBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (isRecording) { recognition?.stop(); return; }
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-US";
+        recognition.onstart = () => { isRecording = true; voiceBtn.classList.add("recording"); };
+        recognition.onresult = (ev: any) => { const t = ev.results[0]?.[0]?.transcript ?? ""; if (t) { replyInput.value = replyInput.value ? replyInput.value + " " + t : t; replyInput.dispatchEvent(new Event("input")); } };
+        recognition.onerror = () => { isRecording = false; voiceBtn.classList.remove("recording"); };
+        recognition.onend = () => { isRecording = false; voiceBtn.classList.remove("recording"); };
+        recognition.start();
+      });
+    }
 
     const pillGroup = document.createElement("div");
     pillGroup.className = "note-pill-group";
     pillGroup.appendChild(thumbUp);
+    const pillDiv1 = document.createElement("div"); pillDiv1.className = "note-pill-divider"; pillGroup.appendChild(pillDiv1);
     pillGroup.appendChild(thumbDown);
+    const pillDiv2 = document.createElement("div"); pillDiv2.className = "note-pill-divider"; pillGroup.appendChild(pillDiv2);
+    pillGroup.appendChild(voiceBtn);
 
-    const iconGroup = document.createElement("div");
-    iconGroup.className = "note-icon-group";
-    iconGroup.appendChild(createEditDeleteIcons());
-
-    feedbackRow.appendChild(pillGroup);
-    feedbackRow.appendChild(iconGroup);
-    expandedContent.appendChild(feedbackRow);
+    replySection.appendChild(replyInput);
+    replySection.appendChild(pillGroup);
+    replySection.appendChild(sendBtn);
+    outerReplyBar = replySection;
   }
 
   // Wrap expanded content children in an inner div for CSS grid animation
@@ -1927,9 +1846,44 @@ function createNoteElement(
   expandedContent.appendChild(expandedInner);
 
   el.appendChild(bracket);
-  if (skillTag) el.appendChild(skillTag);
+
+  // ── Header: persona name + copy button ──
+  const noteHeader = document.createElement("div");
+  noteHeader.className = "note-header";
+  const personaEl = document.createElement("span");
+  personaEl.className = "note-persona";
+  const personaText = isManual ? (userName ?? personalityName) : personalityName;
+  personaEl.textContent = personaText;
+  noteHeader.appendChild(personaEl);
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "note-copy-btn";
+  copyBtn.title = "Copy annotation";
+  copyBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>`;
+  copyBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const replyTexts = feedback
+      .filter(f => f.feedback_type === "reply")
+      .map(f => f.reply_text ?? "")
+      .filter(Boolean);
+    const text = replyTexts.length > 0
+      ? annotation.content.note + "\n\n" + replyTexts.join("\n")
+      : annotation.content.note;
+    navigator.clipboard.writeText(text).catch(() => {});
+  });
+  noteHeader.appendChild(copyBtn);
+  el.appendChild(noteHeader);
+
   el.appendChild(labelEl);
   el.appendChild(textEl);
+
+  // ── Divider + reply bar (always visible for AI annotations) ──
+  if (outerReplyBar) {
+    const divider = document.createElement("div");
+    divider.className = "note-divider";
+    el.appendChild(divider);
+    el.appendChild(outerReplyBar);
+  }
+
   el.appendChild(expandedContent);
 
   // Hover expand/collapse + overlay emphasis (traditional margin notes only;
@@ -2044,7 +1998,7 @@ function createNoteElement(
 
 function submitReply(
   annotation: Annotation,
-  input: HTMLInputElement,
+  input: HTMLInputElement | HTMLTextAreaElement,
   container: HTMLDivElement,
   hash: string,
 ): void {
@@ -2607,24 +2561,25 @@ function stopTracking(): void {
 const MARGIN_NOTES_CSS = `
   :host {
     --oddity-note-font: 'Inter', system-ui, -apple-system, sans-serif;
-    --oddity-note-size: 11.5px;
+    --oddity-note-size: 13px;
   }
 
   .oddity-note {
     position: fixed;
     width: ${NOTE_EXPANDED_WIDTH}px;
-    padding: 13px 18px;
+    padding: 20px 25px 27px 25px;
     font-family: var(--oddity-note-font);
     font-size: var(--oddity-note-size);
     line-height: 1.6;
-    color: #FFFFFF;
+    color: #1E2229;
     pointer-events: auto;
     cursor: default;
-    background: rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 6.5px;
-    box-shadow: 0 3px 14px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 3px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
     opacity: 1;
     transition: opacity 0.25s ease-in, filter 0.25s ease-in, box-shadow 0.2s;
     box-sizing: border-box;
@@ -2646,20 +2601,50 @@ const MARGIN_NOTES_CSS = `
     display: none;
   }
 
+  /* ── Card header: persona name + copy button ── */
+  .note-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .note-persona {
+    font-family: 'Fragment Mono', 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 400;
+    color: #656565;
+    line-height: 1;
+  }
+
+  .note-copy-btn {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #1E2229;
+    flex-shrink: 0;
+    padding: 2px;
+    margin-left: auto;
+  }
+
+  /* ── Divider between body and thoughts input ── */
+  .note-divider {
+    height: 1px;
+    background: #1E2229;
+    margin: 10px -25px 0;
+  }
 
   .note-label {
     display: block;
-    font-family: var(--oddity-note-font);
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-style: normal;
     font-size: var(--oddity-note-size);
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: normal;
-    text-transform: lowercase;
-    margin-bottom: 4px;
-  }
-
-  .note-label::first-letter {
-    text-transform: uppercase;
+    color: #1E2229;
+    margin-bottom: 6px;
   }
 
   .note-skill-tag {
@@ -2675,21 +2660,14 @@ const MARGIN_NOTES_CSS = `
   }
 
   .note-text {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: block;
     word-break: break-word;
-    font-family: var(--oddity-note-font);
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-style: normal;
     font-size: var(--oddity-note-size);
-    font-weight: 370;
+    font-weight: 350;
     line-height: 1.6;
-    color: #FFFFFF;
-    /* Constrain actual height so block-level children (p, ul) don't
-       extend the element's box beyond visible content */
-    max-height: calc(var(--oddity-note-size) * 1.6 * 3 + 8px);
+    color: #1E2229;
   }
 
   .note-text p {
@@ -2727,8 +2705,8 @@ const MARGIN_NOTES_CSS = `
   .oddity-note--overview-margin {
     opacity: 1 !important;
     filter: none !important;
-    padding-left: 15px;
-    padding-right: 15px;
+    padding-left: 25px;
+    padding-right: 25px;
     transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
   }
 
@@ -2775,20 +2753,13 @@ const MARGIN_NOTES_CSS = `
   /* Expanded state */
   .oddity-note.expanded {
     width: ${NOTE_EXPANDED_WIDTH}px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.08);
     opacity: 1;
     z-index: 10;
   }
 
   .oddity-note.anchor-hovered:not(.expanded) {
-    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
-  }
-
-  .oddity-note.expanded .note-text {
-    display: block;
-    -webkit-line-clamp: unset;
-    overflow: visible;
-    max-height: none;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.08);
   }
 
   .note-expanded-content {
@@ -2892,25 +2863,22 @@ const MARGIN_NOTES_CSS = `
     background: rgba(255,255,255,0.08);
   }
 
-  /* ── Reply input bar (ace-input-row style) ── */
+  /* ── Reply input bar ── */
   .note-reply-bar {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 6px;
-    margin-bottom: 14px;
+    padding-top: 10px;
   }
 
   .note-reply-input {
     all: unset;
     flex: 1;
     min-width: 0;
-    background: #FFFFFF;
-    border: 1px solid #DFE7EF;
     border-radius: 100px;
-    padding: 5px 12px;
+    padding: 5px 12px 5px 0;
     font-size: var(--oddity-note-size);
-    font-weight: 450;
+    font-weight: 350;
     color: #293038;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     line-height: 1;
@@ -2918,16 +2886,16 @@ const MARGIN_NOTES_CSS = `
   }
 
   .note-reply-input::placeholder {
-    color: #6D6D6D;
+    color: #BFBFBF;
   }
 
   .note-reply-send {
     all: unset;
     cursor: pointer;
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    background: var(--note-color, #748DBF);
+    background: #1E2229;
     color: #fff;
     font-size: 13px;
     display: flex;
@@ -2938,50 +2906,114 @@ const MARGIN_NOTES_CSS = `
   }
 
   .note-reply-send:hover {
-    opacity: 0.85;
-  }
-
-  /* ── Feedback row ── */
-  .note-feedback-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 8px;
-  }
-
-  .note-pill-group {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .note-icon-group {
-    display: flex;
-    gap: 6px;
-  }
-
-  /* Feedback pills (ace-quick style) */
-  .note-feedback-pill {
-    all: unset;
-    cursor: pointer;
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 12.5px;
-    font-weight: 450;
-    padding: 5px 12px;
-    border-radius: 100px;
-    background: var(--note-color);
-    color: #fff;
-    opacity: 1;
-    transition: opacity 0.15s;
-    white-space: nowrap;
-  }
-
-  .note-feedback-pill:hover {
     opacity: 0.8;
   }
 
-  .note-feedback-pill.active {
-    opacity: 1;
+  /* ── Reply section: CSS grid, collapses/expands ── */
+  .note-reply-section {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto;
+    grid-template-areas: "input send";
+    align-items: center;
+    gap: 8px;
+    margin: 0 -25px -27px;
+    padding: 14px 25px 20px;
+  }
+
+  .note-reply-section .note-reply-input {
+    grid-area: input;
+  }
+
+  .note-reply-section .note-pill-group {
+    grid-area: pills;
+    display: none;
+  }
+
+  .note-reply-section .note-reply-send {
+    grid-area: send;
+    align-self: center;
+  }
+
+  /* Expanded: input on top row, pills + send on bottom row */
+  .oddity-note.expanded .note-reply-section {
+    grid-template-areas:
+      "input input"
+      "pills send";
+    row-gap: 12px;
+    align-items: center;
+  }
+
+  .oddity-note.expanded .note-reply-section .note-pill-group {
+    display: flex;
+  }
+
+  .note-reply-section .note-reply-input {
+    resize: none;
+    overflow: hidden;
+    line-height: 1.5;
+  }
+
+  .oddity-note.expanded .note-reply-section .note-reply-input {
+    min-height: 60px;
+  }
+
+  /* ── Segmented pill group ── */
+  .note-pill-group {
+    display: flex;
+    align-items: center;
+    background: #EBEBEB;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .note-pill-item {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    color: #888;
+    padding: 6px 12px;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .note-pill-item:hover {
+    background: rgba(0,0,0,0.06);
+    color: #555;
+  }
+
+  .note-pill-item.active {
+    color: #1E2229;
+    font-weight: 500;
+  }
+
+  .note-pill-item--icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+  }
+
+  .note-pill-divider {
+    width: 1px;
+    height: 16px;
+    background: #D0D0D0;
+    flex-shrink: 0;
+  }
+
+  .note-pill-item.recording {
+    color: #e53e3e;
+  }
+
+  @keyframes voice-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .note-pill-item.recording svg {
+    animation: voice-pulse 1s ease-in-out infinite;
   }
 
   /* ── Icon theme switching (dark = white icons for dark mode, light = dark icons for light mode) ── */
@@ -3169,9 +3201,8 @@ const MARGIN_NOTES_CSS = `
     letter-spacing: normal;
   }
 
-  /* ── Light mode overrides ── */
+  /* ── Light mode shadow variants ── */
   :host([data-theme="light"]) .oddity-note {
-    color: #293038;
     box-shadow: -4px 2px 10px rgba(0,0,0,0.10), -1px 1px 3px rgba(0,0,0,0.06);
   }
 
@@ -3187,22 +3218,17 @@ const MARGIN_NOTES_CSS = `
     box-shadow: -5px 3px 24px rgba(0,0,0,0.25), -2px 1px 6px rgba(0,0,0,0.1) !important;
   }
 
-  :host([data-theme="light"]) .oddity-note--overview-margin.overview-focused .note-text {
-    display: block;
-    -webkit-line-clamp: unset;
-    overflow: visible;
-    max-height: none;
+  :host([data-theme="light"].has-dimmed) .oddity-note.expanded {
+    box-shadow: -8px 4px 28px rgba(0,0,0,0.22), -3px 2px 8px rgba(0,0,0,0.12);
   }
 
-  :host([data-theme="light"]) .note-text,
-  :host([data-theme="light"]) .note-section p,
-  :host([data-theme="light"]) .note-section ul,
-  :host([data-theme="light"]) .note-reply-bubble {
-    color: #293038;
+  :host([data-theme="light"]) .oddity-note.oddity-note--inline {
+    box-shadow: 0 8px 28px rgba(0,0,0,0.18), 0 3px 10px rgba(0,0,0,0.12);
   }
 
   :host([data-theme="light"]) .note-reply-bubble {
     background: rgba(0,0,0,0.06);
+    color: #293038;
   }
 
   :host([data-theme="light"]) .note-fix-btn {
@@ -3226,6 +3252,11 @@ const MARGIN_NOTES_CSS = `
     color: rgba(41, 48, 56, 0.45);
   }
 
+  :host([data-theme="light"]) .note-section p,
+  :host([data-theme="light"]) .note-section ul {
+    color: #293038;
+  }
+
   :host([data-theme="light"]) .note-icon-btn,
   :host([data-theme="light"]) .note-icon-btn:hover {
     color: #293038;
@@ -3241,12 +3272,101 @@ const MARGIN_NOTES_CSS = `
     color: rgba(41, 48, 56, 0.6);
   }
 
-  :host([data-theme="light"].has-dimmed) .oddity-note.expanded {
-    box-shadow: -8px 4px 28px rgba(0,0,0,0.22), -3px 2px 8px rgba(0,0,0,0.12);
+  /* ── Dark mode overrides ── */
+  :host([data-theme="dark"]) .oddity-note {
+    background: rgba(30, 34, 41, 0.70);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    color: #FFFFFF;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.3);
   }
 
-  :host([data-theme="light"]) .oddity-note.oddity-note--inline {
-    box-shadow: 0 8px 28px rgba(0,0,0,0.18), 0 3px 10px rgba(0,0,0,0.12);
+  :host([data-theme="dark"]) .note-label {
+    color: #FFFFFF;
+  }
+
+  :host([data-theme="dark"]) .note-text {
+    color: #FFFFFF;
+  }
+
+  :host([data-theme="dark"]) .note-persona {
+    color: rgba(255,255,255,0.45);
+  }
+
+  :host([data-theme="dark"]) .note-copy-btn {
+    color: rgba(255,255,255,0.35);
+  }
+
+  :host([data-theme="dark"]) .note-copy-btn:hover {
+    color: #FFFFFF;
+  }
+
+  :host([data-theme="dark"]) .note-divider {
+    background: rgba(255,255,255,0.1);
+  }
+
+  :host([data-theme="dark"]) .note-reply-input {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.12);
+    color: #FFFFFF;
+  }
+
+  :host([data-theme="dark"]) .note-reply-input::placeholder {
+    color: rgba(255,255,255,0.3);
+  }
+
+  :host([data-theme="dark"]) .note-reply-send {
+    background: #FFFFFF;
+    color: #1E2229;
+  }
+
+  :host([data-theme="dark"]) .note-reply-bubble {
+    background: rgba(255,255,255,0.08);
+    color: #FFFFFF;
+  }
+
+  :host([data-theme="dark"]) .note-section p,
+  :host([data-theme="dark"]) .note-section ul {
+    color: #FFFFFF;
+  }
+
+  :host([data-theme="dark"]) .note-section-label {
+    color: rgba(255,255,255,0.45);
+  }
+
+  :host([data-theme="dark"]) .note-fix-btn {
+    color: rgba(255,255,255,0.55);
+    border-color: rgba(255,255,255,0.2);
+  }
+
+  :host([data-theme="dark"]) .note-fix-btn:hover {
+    color: #FFFFFF;
+    border-color: rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.08);
+  }
+
+  :host([data-theme="dark"]) .note-edit-textarea {
+    color: #FFFFFF;
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.15);
+  }
+
+  :host([data-theme="dark"]) .note-cancel-btn {
+    color: rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.12);
+  }
+
+  :host([data-theme="dark"]) .note-user-badge {
+    color: rgba(255,255,255,0.6);
+  }
+
+  :host([data-theme="dark"]) .oddity-note.expanded {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+  }
+
+  :host([data-theme="dark"]) .oddity-note.anchor-hovered:not(.expanded) {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
   }
 
   /* ── Timeline line (Overview mode) ── */
