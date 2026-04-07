@@ -128,6 +128,8 @@ import {
   saveGDocsAnnotationsToStorage,
   fetchGoogleDocsText,
   clearGDocsCorrectionQueue,
+  shiftGDocsAnchorRectsBelow,
+  shiftGDocsAnchorRectsOnLine,
 } from "./google-docs.js";
 import "./gdocs.js"; // registers oddity:gdocs:activate listener
 import { createStabilityWatcher } from "./stability.js";
@@ -1255,6 +1257,7 @@ async function startGoogleDocsPipeline(): Promise<void> {
     const scrollLeft2 = scrollEl2?.scrollLeft ?? 0;
 
     shiftRectsBelow(thresholdAbsY, dyPx);
+    shiftGDocsAnchorRectsBelow(thresholdAbsY, dyPx);
 
     for (const entry of gdocsAnchors.values()) {
       if (entry.rect.top > thresholdAbsY) {
@@ -1278,6 +1281,7 @@ async function startGoogleDocsPipeline(): Promise<void> {
     const scrollLeft2 = scrollEl2?.scrollLeft ?? 0;
 
     shiftRectsOnLine(absY, lineH, caretAbsX, dxPx);
+    shiftGDocsAnchorRectsOnLine(absY, lineH, caretAbsX, dxPx);
 
     for (const entry of gdocsAnchors.values()) {
       const r = entry.rect;

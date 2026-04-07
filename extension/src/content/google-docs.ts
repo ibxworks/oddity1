@@ -349,6 +349,7 @@ export function deleteGDocsRect(docId: string, annotationId: string): void {
   _anchorRects.delete(annotationId);
   _anchorTypes.delete(annotationId);
   _currentAnchorTexts.delete(annotationId);
+  _missCounts.delete(annotationId);
   if (!chrome?.storage?.local) return;
   const key = GDOCS_STATE_KEY_PREFIX + docId;
   chrome.storage.local.get(key).then(result => {
@@ -361,6 +362,32 @@ export function deleteGDocsRect(docId: string, annotationId: string): void {
     }
     return chrome.storage.local.set({ [key]: stored });
   }).catch(() => {});
+}
+
+/** Shift all stored absolute rects down (or up) by dyPx if they are below the given Y threshold. */
+export function shiftGDocsAnchorRectsBelow(thresholdAbsY: number, dyPx: number): void {
+  for (const [id, rects] of _anchorRects) {
+    _anchorRects.set(id, rects.map(r =>
+      r.top > thresholdAbsY ? { ...r, top: r.top + dyPx } : r
+    ));
+  }
+}
+
+/** Shift the left edge of annotations whose first rect matches the Y threshold and X bounds. */
+export function shiftGDocsAnchorRectsOnLine(
+  absY: number,
+  lineH: number,
+  caretAbsX: number,
+  dx: number,
+): void {
+  if (dx === 0) return;
+  for (const [id, rects] of _anchorRects) {
+    const r = rects[0];
+    if (!r) continue;
+    if (Math.abs(r.top - absY) >= lineH) continue;
+    if (r.left < caretAbsX - 5) continue;
+    _anchorRects.set(id, [{ ...r, left: r.left + dx }, ...rects.slice(1)]);
+  }
 }
 
 /**
@@ -447,33 +474,56 @@ function scanCanvasRects(
   if (allRows.length === 0) return [];
   allRows.sort((a, b) => a.y - b.y);
 
-  // Pass 1 — merge pixel rows within 1 px into a single line run.
-  // Using 1 px (not 2) so adjacent highlighted lines don't collapse into one rect.
+  // Pass 1 — group pixel rows into connected LineRuns.
+  // We check X-overlap so horizontally disparate segments remain separate.
   interface LineRun { top: number; bottom: number; left: number; right: number; }
   const lineRuns: LineRun[] = [];
   for (const row of allRows) {
-    const last = lineRuns[lineRuns.length - 1];
-    if (last && row.y - last.bottom <= 1) {
-      last.bottom = row.y;
-      last.left   = Math.min(last.left,  row.xMin);
-      last.right  = Math.max(last.right, row.xMax);
-    } else {
+    let merged = false;
+    for (let i = lineRuns.length - 1; i >= 0; i--) {
+      const lr = lineRuns[i]!;
+      // Overlap safely up to 2px gap (accounts for thin gaps/anti-aliasing)
+      if (row.y >= lr.top - 2 && row.y <= lr.bottom + 2) {
+        if (row.xMin <= lr.right + 5 && row.xMax >= lr.left - 5) {
+          lr.bottom = Math.max(lr.bottom, row.y);
+          lr.top    = Math.min(lr.top, row.y);
+          lr.left   = Math.min(lr.left,  row.xMin);
+          lr.right  = Math.max(lr.right, row.xMax);
+          merged = true;
+          break;
+        }
+      }
+    }
+    if (!merged) {
       lineRuns.push({ top: row.y, bottom: row.y, left: row.xMin, right: row.xMax });
     }
   }
 
-  // Pass 2 — group line runs within 25 px into one annotation cluster.
-  // 25 px covers up to 2× line spacing (gap ~14 px) while keeping separate paragraphs
-  // with typical paragraph spacing (≥ 30 px) as distinct clusters. Same-annotation
-  // multi-line highlights are always merged; the split logic separates different
-  // annotations that end up in the same cluster.
+  // Sort lineRuns top-to-bottom so multi-line wrap logic processes sequentially
+  lineRuns.sort((a, b) => a.top - b.top || a.left - b.left);
+
+  // Pass 2 — group line runs into clusters.
+  // A cluster is a continuous multi-line highlight.
+  // We avoid pushing runs onto an existing cluster if they share the exact same visual line.
   const clusters: LineRun[][] = [];
   for (const run of lineRuns) {
-    const last = clusters[clusters.length - 1];
-    const lastRun = last?.[last.length - 1];
-    if (lastRun && run.top - lastRun.bottom <= 25) {
-      last!.push(run);
-    } else {
+    let added = false;
+    // Iterate backwards to pair multi-line text wraps properly
+    for (let i = clusters.length - 1; i >= 0; i--) {
+      const cluster = clusters[i]!;
+      const lastRun = cluster[cluster.length - 1]!;
+      
+      const verticalOverlap = Math.min(run.bottom, lastRun.bottom) - Math.max(run.top, lastRun.top);
+      const isSameLine = verticalOverlap > (run.bottom - run.top) * 0.3;
+      
+      if (!isSameLine && run.top - lastRun.bottom <= 25) {
+        cluster.push(run);
+        added = true;
+        break;
+      }
+    }
+    
+    if (!added) {
       clusters.push([run]);
     }
   }
@@ -1141,6 +1191,8 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
           }
         }
 
+        // Track resulting split clusters that are red
+        const splitRedClusterSet = new Set<AbsoluteRect[]>();
         const splitClusters: AbsoluteRect[][] = [];
         for (const cluster of allFound) {
           const clusterLeft  = cluster[0]!.left;
@@ -1203,6 +1255,7 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
 
           if (candidates.length <= 1) {
             splitClusters.push(cluster);
+            if (clusterIsRed) splitRedClusterSet.add(cluster);
             continue;
           }
 
@@ -1235,9 +1288,13 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
               verticalGroups.get(bestId)!.push(rect);
             }
             if (verticalGroups.size > 1) {
-              for (const [, rects] of verticalGroups) splitClusters.push(rects);
+              for (const [, rects] of verticalGroups) {
+                splitClusters.push(rects);
+                if (clusterIsRed) splitRedClusterSet.add(rects);
+              }
             } else {
               splitClusters.push(cluster);
+              if (clusterIsRed) splitRedClusterSet.add(cluster);
             }
             continue;
           }
@@ -1262,7 +1319,9 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
               // they start at the left margin and must not inherit the split x-offset.
               const firstRect = { ...cluster[0]!, left: xCursor, width: splitWidth };
               const trailingRects = isLast ? cluster.slice(1) : [];
-              splitClusters.push([firstRect, ...trailingRects]);
+              const splitResult = [firstRect, ...trailingRects];
+              splitClusters.push(splitResult);
+              if (clusterIsRed) splitRedClusterSet.add(splitResult);
               xCursor += splitWidth;
             }
           }
@@ -1272,7 +1331,14 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
         // Pretext is NOT used here — its absolute x is too imprecise to improve matching.
         const pairs: { id: string; cluster: AbsoluteRect[]; dist: number }[] = [];
         for (const [id, lastRects] of _anchorRects) {
+          const annotType = _anchorTypes.get(id);
+          const annotIsRed = annotType !== undefined && getAnnotationColor(annotType, 'light') === '#F5574C';
+
           for (const cluster of splitClusters) {
+            const clusterIsRed = splitRedClusterSet.has(cluster);
+            // Strictly enforce color matching for proximity assignments
+            if (annotType !== undefined && annotIsRed !== clusterIsRed) continue;
+
             let minDist = Infinity;
             for (const lr of lastRects) {
               const d = Math.abs(cluster[0]!.top  - lr.top)
@@ -1288,8 +1354,8 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
         const assignments = new Map<string, AbsoluteRect[]>();
         for (const { id, cluster, dist } of pairs) {
           if (assignedIds.has(id) || assignedClusters.has(cluster)) continue;
-          // Reject implausible matches (annotation moved > 800px — likely a mismatch)
-          if (dist > 800) continue;
+          // Reject implausible matches (annotation moved > 3000px — likely a mismatch)
+          if (dist > 3000) continue;
           assignedIds.add(id);
           assignedClusters.add(cluster);
           assignments.set(id, cluster);
@@ -1335,6 +1401,8 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
       const viewTop    = scrollContainer.scrollTop;
       const viewBottom = viewTop + scrollContainer.clientHeight;
       const toDelete: string[] = [];
+      let hasActiveMisses = false;
+
       for (const [id, rects] of _anchorRects) {
         if (assignedIds.has(id)) { _missCounts.delete(id); continue; }
         const r = rects[0];
@@ -1342,10 +1410,44 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
           _missCounts.delete(id); // off-screen — reset, don't count as a miss
           continue;
         }
+
+        // Verify if text has actually been removed from the underlying document
+        let isTextTrulyGone = false;
+        const anchorText = _currentAnchorTexts.get(id)
+          ?? _completedJobs.find(j => j.id === id)?.exact
+          ?? '';
+
+        if (anchorText && _cachedDocText) {
+          if (!_cachedDocText.toLowerCase().includes(anchorText.toLowerCase())) {
+            isTextTrulyGone = true;
+          }
+        }
+
+        // Blank canvas safeguard: avoid mass deletion if GDocs hasn't rendered yet
+        if (allFound.length === 0 && _cachedDocText && !isTextTrulyGone) {
+          _missCounts.delete(id);
+          continue;
+        }
+
         const misses = (_missCounts.get(id) ?? 0) + 1;
         _missCounts.set(id, misses);
-        if (misses >= 2) toDelete.push(id);
+        hasActiveMisses = true;
+
+        // If backend verification proves the text is gone, delete fast (2 consecutive misses ~200ms).
+        // Otherwise wait for 3 consecutive misses (~500ms) to clear UI.
+        if (isTextTrulyGone && misses >= 2) {
+          toDelete.push(id);
+        } else if (misses >= 3) {
+          toDelete.push(id);
+        }
       }
+
+      // Fire rapid continuous scanning while elements are in 'miss limbo' waiting to be deleted.
+      // This prevents relying on the 1.5s heartbeat for the subsequent misses.
+      if (hasActiveMisses && toDelete.length === 0) {
+        setTimeout(() => scheduleParaCheck(0), 180);
+      }
+
       // Fire deletions after iterating so _anchorRects isn't mutated mid-loop.
       for (const id of toDelete) {
         document.dispatchEvent(new CustomEvent('oddity-gdocs-anchor-deleted', { detail: { id } }));
@@ -1403,16 +1505,16 @@ export function setupGDocsEditTracking(scrollContainer: HTMLElement): () => void
       (e.key.length === 1 || e.key === 'Enter');
 
     if (isBulkChange || isDeletion) {
-      scheduleParaCheck(600);
-      scheduleDocTextRefresh(1500); // refresh doc text after bulk changes
+      scheduleParaCheck(150);
+      scheduleDocTextRefresh(100); // refresh doc text after bulk changes immediately
     } else if (isTyping) {
       // If GDocs has a non-collapsed selection, typing replaces potentially
       // many lines — treat it as a bulk change.
       const hasSelection = document.querySelector(
         '.kix-selection-overlay, [class*="kix-selection-overlay"]'
       ) !== null;
-      scheduleParaCheck(hasSelection ? 600 : 150);
-      scheduleDocTextRefresh(2000); // refresh doc text after typing pauses
+      scheduleParaCheck(hasSelection ? 150 : 50);
+      scheduleDocTextRefresh(hasSelection ? 100 : 500); // refresh doc text after typing pauses
     }
   };
 
