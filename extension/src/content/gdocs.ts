@@ -862,7 +862,10 @@ function renderMcqCard(question: McqQuestion): void {
 
   const optionsEl = document.createElement('div');
   optionsEl.className = 'mcq-options';
-  question.options.forEach((opt, idx) => {
+
+  // Render AI-generated options (up to 3)
+  const aiOptions = question.options.slice(0, 3);
+  aiOptions.forEach((opt, idx) => {
     const btn = document.createElement('button');
     btn.className = 'mcq-option';
 
@@ -879,6 +882,63 @@ function renderMcqCard(question: McqQuestion): void {
     btn.addEventListener('click', () => handleMcqAnswer(opt, question.question));
     optionsEl.appendChild(btn);
   });
+
+  // "Other" option — always the 4th choice
+  const otherIdx = aiOptions.length;
+  const otherBtn = document.createElement('button');
+  otherBtn.className = 'mcq-option';
+
+  const otherLabelEl = document.createElement('span');
+  otherLabelEl.className = 'mcq-option-label';
+  otherLabelEl.textContent = MCQ_LABELS[otherIdx] ?? 'D';
+
+  const otherTextEl = document.createElement('span');
+  otherTextEl.className = 'mcq-option-text mcq-option-other-text';
+  otherTextEl.textContent = 'Other';
+
+  otherBtn.appendChild(otherLabelEl);
+  otherBtn.appendChild(otherTextEl);
+
+  // Inline input that replaces the button text on click
+  const otherInput = document.createElement('input');
+  otherInput.type = 'text';
+  otherInput.className = 'mcq-other-input';
+  otherInput.placeholder = 'Specify…';
+  otherInput.style.display = 'none';
+
+  const otherSubmit = document.createElement('button');
+  otherSubmit.className = 'mcq-other-submit';
+  otherSubmit.textContent = '→';
+  otherSubmit.style.display = 'none';
+
+  otherBtn.appendChild(otherInput);
+  otherBtn.appendChild(otherSubmit);
+
+  const submitOther = () => {
+    const val = otherInput.value.trim();
+    if (!val) return;
+    handleMcqAnswer(val, question.question);
+  };
+
+  otherBtn.addEventListener('click', (e) => {
+    if (otherInput.style.display !== 'none') return; // already expanded
+    e.stopPropagation();
+    // Expand into input mode
+    otherTextEl.style.display = 'none';
+    otherInput.style.display = 'block';
+    otherSubmit.style.display = 'flex';
+    otherBtn.style.borderColor = '#1a1a1a';
+    otherInput.focus();
+  });
+
+  otherInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submitOther(); }
+    e.stopPropagation();
+  });
+  otherInput.addEventListener('click', (e) => e.stopPropagation());
+  otherSubmit.addEventListener('click', (e) => { e.stopPropagation(); submitOther(); });
+
+  optionsEl.appendChild(otherBtn);
   card.appendChild(optionsEl);
 
   const footer = document.createElement('div');
@@ -1190,6 +1250,8 @@ function createInputBar(): void {
     .mcq-option:disabled { opacity: 0.4; cursor: default; }
     .mcq-option-label { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #f0f2f5; color: #6b7280; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; letter-spacing: 0; }
     .mcq-option-text { flex: 1; font-weight: 500; }
+    .mcq-other-input { flex: 1; border: none; outline: none; background: transparent; font-size: 12px; font-family: inherit; color: #1a1a1a; font-weight: 500; padding: 0; min-width: 0; }
+    .mcq-other-submit { flex-shrink: 0; border: none; background: #1a1a1a; color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; font-family: inherit; }
     .mcq-footer { display: flex; justify-content: flex-end; }
     .mcq-skip { border: none; background: none; font-size: 11px; color: #9aa0a6; cursor: pointer; font-family: inherit; padding: 0; }
     .mcq-skip:hover { color: #374151; }

@@ -1135,7 +1135,7 @@ export async function generateAllMcqQuestions(
         )
         .map((item) => ({
           question: item.question,
-          options: item.options.filter((o): o is string => typeof o === "string").slice(0, 4),
+          options: item.options.filter((o): o is string => typeof o === "string").slice(0, 3),
         }))
         .slice(0, 5);
       if (questions.length > 0) return questions;
@@ -1144,12 +1144,12 @@ export async function generateAllMcqQuestions(
     console.error("[generateAllMcqQuestions] Error:", err instanceof Error ? err.message : err);
   }
 
-  // Fallback: 5 generic questions
+  // Fallback: 5 generic questions (3 options each — UI adds "Other" as 4th)
   return [
-    { question: `What is the main goal of your writing about "${prompt.slice(0, 50)}"?`, options: ["Inform readers about the topic", "Argue for a specific position", "Explore different perspectives", "Tell a personal story"] },
-    { question: "Who is your primary audience?", options: ["General readers with no background", "Experts in the field", "Students or beginners", "Decision-makers or leaders"] },
-    { question: "What tone are you aiming for?", options: ["Formal and academic", "Conversational and approachable", "Persuasive and assertive", "Reflective and personal"] },
-    { question: "How deep should the coverage go?", options: ["High-level overview", "Moderate depth with key details", "Comprehensive and thorough", "Focus on one specific aspect"] },
-    { question: "What do you want readers to take away?", options: ["A clear understanding of the topic", "A changed opinion or belief", "Actionable next steps", "Emotional connection or empathy"] },
+    { question: `What is the main goal of your writing about "${prompt.slice(0, 50)}"?`, options: ["Inform readers about the topic", "Argue for a specific position", "Explore different perspectives"] },
+    { question: "Who is your primary audience?", options: ["General readers with no background", "Experts in the field", "Students or beginners"] },
+    { question: "What tone are you aiming for?", options: ["Formal and academic", "Conversational and approachable", "Persuasive and assertive"] },
+    { question: "How deep should the coverage go?", options: ["High-level overview", "Moderate depth with key details", "Comprehensive and thorough"] },
+    { question: "What do you want readers to take away?", options: ["A clear understanding of the topic", "A changed opinion or belief", "Actionable next steps"] },
   ];
 }
