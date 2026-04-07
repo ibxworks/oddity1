@@ -50,6 +50,7 @@ type PageSummaryState = {
   summary: PdfPageSummary | null;
   loading: boolean;
   cardEl: HTMLDivElement;
+  showPreview?: boolean;
 };
 
 function normalizeWhitespace(text: string): string {
@@ -172,6 +173,7 @@ function ensureSummaryStyles(): void {
     .oddity-pdf-summary-launcher-title {
       font-size: 14px;
       font-weight: 500;
+      font-family: Helvetica, Arial, sans-serif;
     }
 
     .oddity-pdf-summary-launcher-count {
@@ -222,6 +224,7 @@ function ensureSummaryStyles(): void {
     }
 
     .oddity-pdf-summary-modal-title {
+      font-family: Helvetica, Arial, sans-serif;
       font-size: 18px;
       font-weight: 500;
       color: #0f172a;
@@ -300,6 +303,7 @@ function ensureSummaryStyles(): void {
     }
 
     .oddity-pdf-summary-page-pill {
+      font-family: Helvetica, Arial, sans-serif;
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.05em;
@@ -716,12 +720,7 @@ export class PdfPageSummaryController {
     title.className = "oddity-pdf-summary-launcher-title";
     title.textContent = "Page Summaries";
 
-    const count = document.createElement("span");
-    count.className = "oddity-pdf-summary-launcher-count";
-    count.textContent = `${this.pages.length}`;
-
     button.appendChild(title);
-    button.appendChild(count);
     return button;
   }
 
@@ -781,10 +780,11 @@ export class PdfPageSummaryController {
     card.replaceChildren();
 
     card.onclick = () => {
+      this.closeModal();
       this.scrollToPage(state.page.pageNo);
     };
 
-    if (state.summary?.summary) {
+    if (state.summary?.summary && !state.showPreview) {
       card.appendChild(this.buildSummaryCardHeader(state));
       
       const content = document.createElement("div");
@@ -795,6 +795,18 @@ export class PdfPageSummaryController {
       text.textContent = state.summary.summary;
       
       content.appendChild(text);
+
+      const actionBtn = document.createElement("button");
+      actionBtn.type = "button";
+      actionBtn.className = "oddity-pdf-summary-action";
+      actionBtn.textContent = "Show Thumbnail";
+      actionBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        state.showPreview = true;
+        this.renderState(state);
+      });
+      content.appendChild(actionBtn);
+
       card.appendChild(content);
       return;
     }
@@ -808,12 +820,22 @@ export class PdfPageSummaryController {
     const actionBtn = document.createElement("button");
     actionBtn.type = "button";
     actionBtn.className = "oddity-pdf-summary-action";
-    actionBtn.textContent = state.loading ? "Summarizing..." : "Summarize";
-    actionBtn.disabled = state.loading;
-    actionBtn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      void this.requestPageSummary(state.page.pageNo);
-    });
+
+    if (state.summary?.summary) {
+      actionBtn.textContent = "Show Summary";
+      actionBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        state.showPreview = false;
+        this.renderState(state);
+      });
+    } else {
+      actionBtn.textContent = state.loading ? "Summarizing..." : "Summarize";
+      actionBtn.disabled = state.loading;
+      actionBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void this.requestPageSummary(state.page.pageNo);
+      });
+    }
     
     content.appendChild(actionBtn);
     card.appendChild(content);
@@ -836,10 +858,6 @@ export class PdfPageSummaryController {
     copyBtn.className = "oddity-pdf-summary-copy";
     copyBtn.title = `Copy summary for page ${state.page.pageLabel}`;
     copyBtn.appendChild(buildCopyIcon());
-
-    const label = document.createElement("span");
-    label.textContent = "Copy";
-    copyBtn.appendChild(label);
 
     copyBtn.addEventListener("click", (event) => {
       event.stopPropagation();

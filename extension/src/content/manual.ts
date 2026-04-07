@@ -188,6 +188,16 @@ function handleSelectionChange(): void {
   currentRange = sel.getRangeAt(0).cloneRange();
   if (!currentRange) return;
 
+  // Ignore selections inside the PDF page summaries modal.
+  const container = currentRange.startContainer;
+  const element = container.nodeType === Node.ELEMENT_NODE 
+    ? (container as Element) 
+    : container.parentElement;
+  if (element?.closest("[data-oddity-pdf-summary-host]")) {
+    dismissFab();
+    return;
+  }
+
   showFab(sel.getRangeAt(0));
 }
 
