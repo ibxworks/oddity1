@@ -1180,9 +1180,11 @@ export function appendSketchChunk(text: string, done: boolean): void {
     }
     if (isChatbotMode && chatbotInputSelector && sketchBuffer) {
       pasteIntoChatbot(chatbotInputSelector, sketchBuffer);
+      document.dispatchEvent(new CustomEvent("oddity:optimizePromptDone", { detail: { success: true } }));
     }
   }
 }
+
 
 export function setChatbotMode(
   inputSelector: string,
@@ -1197,7 +1199,7 @@ export function setChatbotMode(
   syncChatbotUi();
 }
 
-function pasteIntoChatbot(selector: string, text: string): void {
+export function pasteIntoChatbot(selector: string, text: string): void {
   const el = document.querySelector(selector) as HTMLElement | null;
   if (!el) return;
 
@@ -4297,6 +4299,88 @@ function formatItemPlain(item: ArgumentItem): string {
   lines.push(`Note: ${item.text}`);
   return lines.join("\n");
 }
+
+export function triggerOptimizePrompt(chatbotInputBoxText: string): void {
+  if (sketchLoading) return;
+
+  if (dashUserTier !== "standard") {
+    document.dispatchEvent(
+      new CustomEvent("oddity:optimizePromptDone", {
+        detail: { error: "Requires Standard plan." },
+      }),
+    );
+    return;
+  }
+
+  const inputText = inputTextProviderCb?.() ?? "";
+  if (!inputText) {
+    document.dispatchEvent(
+      new CustomEvent("oddity:optimizePromptDone", {
+        detail: { error: "No page context found." },
+      }),
+    );
+    return;
+  }
+
+  const allItems = [...canonicalItems, ...liveItems];
+  const userReactions = allItems.map((i) => formatItemPlain(i)).join("\n\n");
+
+  sketchLoading = true;
+  sketchViewState = "loading";
+  sketchBuffer = "";
+
+  // Make sure argbox shows loading too if it's open
+  if (sketchContentEl) {
+    sketchContentEl.innerHTML =
+      '<div class="args-sketch-loading"><span></span><span></span><span></span></div>';
+  }
+  if (sketchBtnEl) {
+    sketchBtnEl.disabled = true;
+    sketchBtnEl.textContent = getSketchLoadingLabel();
+  }
+
+  chrome.runtime
+    .sendMessage({
+      action: "requestSketch",
+      payload: {
+        inputText,
+        purpose: chatbotInputBoxText,
+        userReactions,
+        mode: "prompt",
+      },
+    })
+    .catch((err) => {
+      sketchViewState = "error";
+      sketchLoading = false;
+      if (sketchBtnEl) {
+        sketchBtnEl.disabled = false;
+        sketchBtnEl.textContent = getSketchActionLabel();
+      }
+      if (sketchContentEl) {
+        const errorDiv = document.createElement("div");
+        errorDiv.className = "args-sketch-error";
+        errorDiv.textContent = getSketchErrorText();
+        sketchContentEl.replaceChildren(errorDiv);
+      }
+      document.dispatchEvent(
+        new CustomEvent("oddity:optimizePromptDone", { detail: { error: err } }),
+      );
+    });
+}
+
+
+export function getOptimizePromptContext() {
+  const inputText = inputTextProviderCb?.() ?? "";
+  const allItems = [...canonicalItems, ...liveItems];
+  const userReactions = allItems.map((i) => formatItemPlain(i)).join("\n\n");
+  
+  return {
+    tier: dashUserTier,
+    inputText,
+    userReactions
+  };
+}
+
 
 /**
  * Format a single item as HTML for rich clipboard copy.
