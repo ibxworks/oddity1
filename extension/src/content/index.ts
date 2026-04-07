@@ -22,6 +22,7 @@ import { handleExportPdf } from "./export-pdf.js";
 import { extractText, extractWithReadability } from "./extractor.js";
 import {
   createPdfPageSummaryController,
+  normalizePdfDom,
   type PdfPageSummaryCard,
   type PdfPageSummaryController,
   type PdfPageSummaryGenerateResult,
@@ -522,6 +523,8 @@ async function initPdfPageSummaryFeature(): Promise<void> {
   }
 
   if (pdfPageSummaryController) return;
+
+  normalizePdfDom();
 
   pdfPageSummaryController = await createPdfPageSummaryController({
     onCardsChanged: syncPdfSummaryCards,
@@ -1135,6 +1138,11 @@ async function startPipeline(): Promise<void> {
 
   // ── Static site flow ──
   regions = detectReadingRegions(adapters);
+  const isConvertedPdf = !!document.querySelector('meta[name="oddity-source-pdf"]');
+
+  if (isConvertedPdf) {
+    normalizePdfDom();
+  }
 
   console.log(`[Oddity 1] Detected ${regions.length} reading region(s)`);
 
@@ -1143,7 +1151,7 @@ async function startPipeline(): Promise<void> {
   initManualAnnotations();
   initKeyboardNav();
   initArgumentsBox();
-  if (document.querySelector('meta[name="oddity-source-pdf"]')) {
+  if (isConvertedPdf) {
     await initPdfPageSummaryFeature();
   } else {
     setPdfSummaryTabVisible(false);
