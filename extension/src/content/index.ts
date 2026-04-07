@@ -1025,6 +1025,7 @@ async function init(): Promise<void> {
   if (document.querySelector('meta[name="oddity-source-pdf"]')) {
     siteWhitelisted = true;
     await startPipeline();
+    setArgumentsBoxDimmed(false);
     return;
   }
 
