@@ -1321,7 +1321,8 @@ export async function handleRemoteSignIn(user: {
   const siteEnabled =
     Array.isArray(enabledSites) &&
     enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
-  if (!siteEnabled) {
+  const isPdfConverted = !!document.querySelector('meta[name="oddity-source-pdf"]');
+  if (!siteEnabled && !isPdfConverted) {
     // Collapse to button — don't auto-expand the "not enabled" panel
     dimmed = true;
     containerEl?.classList.add("oddity-not-enabled");
@@ -1699,7 +1700,10 @@ function toggle(): void {
             enabledSites.some(
               (s) => hostname === s || hostname.endsWith("." + s),
             ));
-        if (!siteEnabled) {
+        const isPdfConverted = !!document.querySelector(
+          'meta[name="oddity-source-pdf"]',
+        );
+        if (!siteEnabled && !isPdfConverted) {
           showNotEnabledOverlay();
         }
       }
@@ -2418,7 +2422,10 @@ function buildDashboardFace(): HTMLDivElement {
           enabledSites.some(
             (s) => hostname === s || hostname.endsWith("." + s),
           );
-        if (!siteEnabled) {
+        const isPdfConverted = !!document.querySelector(
+          'meta[name="oddity-source-pdf"]',
+        );
+        if (!siteEnabled && !isPdfConverted) {
           showNotEnabledOverlay();
         }
         updateModeToggleVisibility();
@@ -2546,7 +2553,10 @@ function buildDashboardFace(): HTMLDivElement {
           enabledSites.some(
             (s) => hostname === s || hostname.endsWith("." + s),
           );
-        if (!siteEnabled) {
+        const isPdfConverted = !!document.querySelector(
+          'meta[name="oddity-source-pdf"]',
+        );
+        if (!siteEnabled && !isPdfConverted) {
           showNotEnabledOverlay();
         }
         updateModeToggleVisibility();
