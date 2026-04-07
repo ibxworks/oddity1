@@ -2917,8 +2917,8 @@ const MARGIN_NOTES_CSS = `
     grid-template-areas: "input send";
     align-items: center;
     gap: 8px;
-    margin: 0 -25px -27px;
-    padding: 14px 25px 20px;
+    margin: 0 -25px 0;
+    padding: 14px 25px 0;
   }
 
   .note-reply-section .note-reply-input {
@@ -2962,8 +2962,8 @@ const MARGIN_NOTES_CSS = `
   .note-pill-group {
     display: flex;
     align-items: center;
-    background: #EBEBEB;
-    border-radius: 8px;
+    background: #EDEDED;
+    border-radius: 4px;
     overflow: hidden;
   }
 
@@ -2971,9 +2971,9 @@ const MARGIN_NOTES_CSS = `
     all: unset;
     cursor: pointer;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 12px;
+    font-size: var(--oddity-note-size);
     font-weight: 400;
-    color: #888;
+    color: #8C9096;
     padding: 6px 12px;
     white-space: nowrap;
     transition: background 0.15s, color 0.15s;
@@ -2993,13 +2993,13 @@ const MARGIN_NOTES_CSS = `
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 6px 12px;
+    padding: 6px 4px 6px 8px;
   }
 
   .note-pill-divider {
     width: 1px;
     height: 16px;
-    background: #D0D0D0;
+    background: #FFFFFF;
     flex-shrink: 0;
   }
 
