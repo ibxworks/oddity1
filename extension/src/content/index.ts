@@ -1028,12 +1028,19 @@ async function init(): Promise<void> {
     return;
   }
 
-  // PDF-converted HTML page — skip whitelist check and auto-run annotations.
-  // The meta tag is injected by pdf-converter.ts for all converted pages.
+  // PDF-converted HTML page — treat like a non-whitelisted page so the user
+  // chooses when to run Oddity (via the argbox), instead of auto-annotating.
   if (document.querySelector('meta[name="oddity-source-pdf"]')) {
-    siteWhitelisted = true;
-    await startPipeline();
-    setArgumentsBoxDimmed(false);
+    siteWhitelisted = false;
+    initArgumentsBox();
+    setInputTextProvider(collectInputText);
+    setArgumentsBoxEnabled(enabled);
+    setArgumentsBoxDimmed(true);
+    setManualRunCallback(manualRun);
+
+    // Always initialize Page Summaries immediately — it's independent of
+    // annotation and should be available before the user clicks "Run Oddity1".
+    initPdfPageSummaryFeature().catch(console.error);
     return;
   }
 
