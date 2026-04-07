@@ -142,80 +142,55 @@ function ensureSummaryStyles(): void {
   style.id = SUMMARY_STYLE_ID;
   style.textContent = `
     [${SUMMARY_HOST_ATTR}].oddity-pdf-summary-root {
-      width: min(1120px, calc(100% - 32px));
-      margin: 18px auto 22px;
-      font-family: "Fraunces", Georgia, serif;
-      color: #172033;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      margin: 32px 0;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #111;
     }
 
     .oddity-pdf-summary-launcher {
       display: inline-flex;
       align-items: center;
-      gap: 14px;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      border-radius: 18px;
-      padding: 14px 18px;
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 248, 255, 0.96) 100%);
-      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-      color: #172033;
+      gap: 12px;
+      padding: 10px 18px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #0f172a;
       cursor: pointer;
-      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      transition: all 0.15s ease;
     }
 
     .oddity-pdf-summary-launcher:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 20px 48px rgba(15, 23, 42, 0.12);
-      border-color: rgba(29, 155, 240, 0.22);
-    }
-
-    .oddity-pdf-summary-launcher-copy {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 3px;
+      background: #f8fafc;
+      border-color: #cbd5e1;
     }
 
     .oddity-pdf-summary-launcher-title {
-      font-size: 16px;
-      font-weight: 700;
-      line-height: 1.2;
-    }
-
-    .oddity-pdf-summary-launcher-subtitle {
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      font-size: 12px;
-      line-height: 1.4;
-      color: #526074;
+      font-size: 14px;
+      font-weight: 500;
     }
 
     .oddity-pdf-summary-launcher-count {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 34px;
-      height: 34px;
-      padding: 0 10px;
+      padding: 2px 8px;
       border-radius: 999px;
-      background: rgba(23, 32, 51, 0.06);
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: #233146;
+      background: #f1f5f9;
+      font-size: 11px;
+      font-weight: 600;
+      color: #475569;
     }
 
     .oddity-pdf-summary-modal-backdrop {
       position: fixed;
       inset: 0;
       z-index: ${SUMMARY_MODAL_Z_INDEX};
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding: clamp(16px, 4vh, 34px) 24px;
-      background: rgba(15, 23, 42, 0.34);
-      backdrop-filter: blur(8px);
+      background: #fff;
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
@@ -229,278 +204,207 @@ function ensureSummaryStyles(): void {
     }
 
     .oddity-pdf-summary-modal {
-      width: min(1240px, calc(100vw - 48px));
-      max-height: calc(100vh - 48px);
+      width: 100vw;
+      height: 100vh;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.7);
-      border-radius: 28px;
-      background:
-        linear-gradient(180deg, rgba(250, 252, 255, 0.98) 0%, rgba(244, 248, 255, 0.98) 100%);
-      box-shadow:
-        0 32px 96px rgba(2, 6, 23, 0.3),
-        0 10px 24px rgba(15, 23, 42, 0.14);
+      background: #fff;
+      font-family: inherit;
     }
 
     .oddity-pdf-summary-modal-header {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 20px;
-      padding: 24px 28px 18px;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 251, 255, 0.9) 100%);
-    }
-
-    .oddity-pdf-summary-modal-eyebrow {
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: #73839a;
+      padding: 20px 32px;
+      border-bottom: 1px solid #e2e8f0;
+      background: #fff;
     }
 
     .oddity-pdf-summary-modal-title {
-      margin-top: 6px;
-      font-size: clamp(24px, 2.8vw, 32px);
-      font-weight: 700;
-      line-height: 1.1;
-      color: #111827;
-    }
-
-    .oddity-pdf-summary-modal-subtitle {
-      margin-top: 6px;
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      font-size: 13px;
-      line-height: 1.5;
-      color: #526074;
+      font-size: 18px;
+      font-weight: 500;
+      color: #0f172a;
+      letter-spacing: -0.01em;
     }
 
     .oddity-pdf-summary-close {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 32px;
       border: 0;
-      border-radius: 999px;
-      background: rgba(15, 23, 42, 0.06);
-      color: #172033;
+      background: transparent;
+      color: #64748b;
       cursor: pointer;
       font-size: 24px;
       line-height: 1;
-      transition: background 0.18s ease, transform 0.18s ease;
+      border-radius: 4px;
     }
 
     .oddity-pdf-summary-close:hover {
-      background: rgba(15, 23, 42, 0.1);
-      transform: translateY(-1px);
+      background: #f1f5f9;
+      color: #0f172a;
     }
 
     .oddity-pdf-summary-modal-body {
       flex: 1;
       overflow: auto;
-      padding: 24px 28px 28px;
+      padding: 32px;
+      background: #f8fafc;
     }
 
     .oddity-pdf-summary-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 18px;
-      align-items: start;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
     }
 
     .oddity-pdf-summary-modal-card {
       position: relative;
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      min-height: 220px;
-      padding: 18px;
-      border: 1px solid rgba(17, 24, 39, 0.08);
-      border-radius: 22px;
-      background: rgba(255, 255, 255, 0.96);
-      box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
-      cursor: pointer;
-      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+      height: 400px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
       overflow: hidden;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
     }
 
     .oddity-pdf-summary-modal-card:hover {
-      transform: translateY(-2px);
-      border-color: rgba(29, 155, 240, 0.2);
-      box-shadow: 0 22px 40px rgba(15, 23, 42, 0.12);
+      border-color: #cbd5e1;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.04);
     }
 
-    .oddity-pdf-summary-modal-card::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, rgba(29, 155, 240, 0.05) 0%, rgba(255, 255, 255, 0) 32%);
-      pointer-events: none;
-    }
-
-    .oddity-pdf-summary-card-header,
-    .oddity-pdf-summary-card-footer {
-      position: relative;
-      z-index: 1;
+    .oddity-pdf-summary-card-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid #f1f5f9;
+      background: #fff;
+    }
+
+    .oddity-pdf-summary-card-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
     }
 
     .oddity-pdf-summary-page-pill {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 7px 12px;
-      border-radius: 999px;
-      background: rgba(23, 32, 51, 0.07);
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
+      font-weight: 600;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: #233146;
-    }
-
-    .oddity-pdf-summary-action,
-    .oddity-pdf-summary-copy {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      border: 0;
-      border-radius: 999px;
-      cursor: pointer;
-      transition: transform 0.18s ease, background 0.18s ease, opacity 0.18s ease;
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      font-size: 12px;
-      font-weight: 700;
-      line-height: 1;
-    }
-
-    .oddity-pdf-summary-action:hover,
-    .oddity-pdf-summary-copy:hover {
-      transform: translateY(-1px);
+      color: #64748b;
     }
 
     .oddity-pdf-summary-action {
-      padding: 10px 14px;
-      background: #172033;
-      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background: #fff;
+      color: #0f172a;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      margin-top: auto;
+      width: 100%;
+    }
+
+    .oddity-pdf-summary-action:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
     }
 
     .oddity-pdf-summary-action[disabled] {
-      opacity: 0.7;
-      cursor: progress;
-      transform: none;
+      opacity: 0.6;
+      cursor: default;
+      pointer-events: none;
     }
 
     .oddity-pdf-summary-copy {
-      padding: 10px 14px;
-      background: rgba(29, 155, 240, 0.1);
-      color: #233146;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: transparent;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .oddity-pdf-summary-copy:hover {
+      background: #f1f5f9;
+      color: #334155;
     }
 
     .oddity-pdf-summary-copy.copied {
-      background: rgba(34, 197, 94, 0.16);
-      color: #166534;
+      color: #10b981;
     }
 
     .oddity-pdf-summary-text {
-      position: relative;
-      z-index: 1;
-      font-size: 14px;
-      line-height: 1.65;
-      color: #233146;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #334155;
     }
 
     .oddity-pdf-summary-preview-shell {
-      position: relative;
-      z-index: 1;
       display: flex;
       justify-content: center;
-      padding: 12px;
-      border-radius: 18px;
-      background: linear-gradient(180deg, rgba(236, 243, 252, 0.96) 0%, rgba(247, 250, 255, 0.94) 100%);
-      border: 1px solid rgba(148, 163, 184, 0.18);
+      align-items: center;
+      flex: 1;
+      background: #f8fafc;
+      border-radius: 6px;
       overflow: hidden;
+      margin-bottom: 16px;
+      border: 1px solid #f1f5f9;
     }
 
     .oddity-pdf-summary-preview-frame {
       width: ${PREVIEW_WIDTH_PX}px;
-      max-width: 100%;
-      overflow: hidden;
-      border-radius: 12px;
-      background: white;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.05);
     }
 
     .oddity-pdf-summary-preview-inner {
-      position: relative;
       width: ${PREVIEW_WIDTH_PX}px;
-      overflow: hidden;
       transform-origin: top left;
+      overflow: hidden;
     }
 
     .oddity-pdf-summary-preview-page {
       transform-origin: top left;
       pointer-events: none !important;
       user-select: none;
-      overflow: hidden;
-      filter: saturate(0.98);
-    }
-
-    .oddity-pdf-summary-card-hint {
-      position: relative;
-      z-index: 1;
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      font-size: 12px;
-      line-height: 1.45;
-      color: #6b7280;
     }
 
     @media (max-width: 760px) {
-      [${SUMMARY_HOST_ATTR}].oddity-pdf-summary-root {
-        width: calc(100% - 20px);
-        margin: 14px auto 18px;
-      }
-
-      .oddity-pdf-summary-launcher {
-        width: 100%;
-        justify-content: space-between;
-      }
-
-      .oddity-pdf-summary-modal-backdrop {
-        padding: 12px;
-      }
-
-      .oddity-pdf-summary-modal {
-        width: calc(100vw - 24px);
-        max-height: calc(100vh - 24px);
-        border-radius: 22px;
-      }
-
       .oddity-pdf-summary-modal-header {
-        padding: 20px 18px 16px;
+        padding: 16px 20px;
       }
-
       .oddity-pdf-summary-modal-body {
-        padding: 18px;
+        padding: 16px;
       }
-
       .oddity-pdf-summary-grid {
         grid-template-columns: 1fr;
-      }
-
-      .oddity-pdf-summary-modal-card {
-        padding: 16px;
       }
     }
   `;
@@ -808,25 +712,15 @@ export class PdfPageSummaryController {
     button.className = "oddity-pdf-summary-launcher";
     button.addEventListener("click", () => this.openModal());
 
-    const copyWrap = document.createElement("span");
-    copyWrap.className = "oddity-pdf-summary-launcher-copy";
-
     const title = document.createElement("span");
     title.className = "oddity-pdf-summary-launcher-title";
-    title.textContent = "Per-page summaries";
-
-    const subtitle = document.createElement("span");
-    subtitle.className = "oddity-pdf-summary-launcher-subtitle";
-    subtitle.textContent = "Open a clean overview of every converted PDF page.";
-
-    copyWrap.appendChild(title);
-    copyWrap.appendChild(subtitle);
+    title.textContent = "Page Summaries";
 
     const count = document.createElement("span");
     count.className = "oddity-pdf-summary-launcher-count";
     count.textContent = `${this.pages.length}`;
 
-    button.appendChild(copyWrap);
+    button.appendChild(title);
     button.appendChild(count);
     return button;
   }
@@ -848,37 +742,23 @@ export class PdfPageSummaryController {
     modal.className = "oddity-pdf-summary-modal";
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-label", "Per-page summaries");
+    modal.setAttribute("aria-label", "Page Summaries");
 
     const header = document.createElement("div");
     header.className = "oddity-pdf-summary-modal-header";
 
-    const copyWrap = document.createElement("div");
-
-    const eyebrow = document.createElement("div");
-    eyebrow.className = "oddity-pdf-summary-modal-eyebrow";
-    eyebrow.textContent = "Converted PDF";
-
     const title = document.createElement("div");
     title.className = "oddity-pdf-summary-modal-title";
-    title.textContent = "Per-page summaries";
-
-    const subtitle = document.createElement("div");
-    subtitle.className = "oddity-pdf-summary-modal-subtitle";
-    subtitle.textContent = `Review ${this.pages.length} pages, summarize any missing ones, and copy saved summaries without leaving the document.`;
-
-    copyWrap.appendChild(eyebrow);
-    copyWrap.appendChild(title);
-    copyWrap.appendChild(subtitle);
+    title.textContent = "Page Summaries";
 
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "oddity-pdf-summary-close";
-    closeBtn.setAttribute("aria-label", "Close per-page summaries");
+    closeBtn.setAttribute("aria-label", "Close");
     closeBtn.textContent = "×";
     closeBtn.addEventListener("click", () => this.closeModal());
 
-    header.appendChild(copyWrap);
+    header.appendChild(title);
     header.appendChild(closeBtn);
     modal.appendChild(header);
     return modal;
@@ -906,29 +786,24 @@ export class PdfPageSummaryController {
 
     if (state.summary?.summary) {
       card.appendChild(this.buildSummaryCardHeader(state));
+      
+      const content = document.createElement("div");
+      content.className = "oddity-pdf-summary-card-content";
 
       const text = document.createElement("div");
       text.className = "oddity-pdf-summary-text";
       text.textContent = state.summary.summary;
-      card.appendChild(text);
-
-      const hint = document.createElement("div");
-      hint.className = "oddity-pdf-summary-card-hint";
-      hint.textContent = "Click anywhere on this card to jump to the page.";
-      card.appendChild(hint);
+      
+      content.appendChild(text);
+      card.appendChild(content);
       return;
     }
 
     card.appendChild(this.buildPreviewCardHeader(state.page.pageLabel));
-    card.appendChild(createPreviewFrame(state.page.element));
-
-    const footer = document.createElement("div");
-    footer.className = "oddity-pdf-summary-card-footer";
-
-    const hint = document.createElement("div");
-    hint.className = "oddity-pdf-summary-card-hint";
-    hint.textContent = "Open the page or generate a quick summary.";
-    footer.appendChild(hint);
+    
+    const content = document.createElement("div");
+    content.className = "oddity-pdf-summary-card-content";
+    content.appendChild(createPreviewFrame(state.page.element));
 
     const actionBtn = document.createElement("button");
     actionBtn.type = "button";
@@ -939,9 +814,9 @@ export class PdfPageSummaryController {
       event.stopPropagation();
       void this.requestPageSummary(state.page.pageNo);
     });
-    footer.appendChild(actionBtn);
-
-    card.appendChild(footer);
+    
+    content.appendChild(actionBtn);
+    card.appendChild(content);
   }
 
   private buildPreviewCardHeader(pageLabel: string): HTMLDivElement {
