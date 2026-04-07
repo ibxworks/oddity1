@@ -1524,7 +1524,14 @@ function renderGoogleDocsAnnotations(regionId: string, annotations: Annotation[]
 
   for (const annotation of visible) {
     try {
-      const { rects, anchorNode } = findAnnotationRects(region, annotation);
+      const { rects: computedRects, anchorNode } = findAnnotationRects(region, annotation);
+      // When the live computation returns nothing (e.g. _cachedDocText not yet
+      // populated, or transient layout miss during rerenderAll), fall back to the
+      // last known rects stored by the canvas scanner so the annotation is
+      // rendered immediately rather than getting stuck in gdocsRenderPending.
+      // The scanner's heartbeat will correct the position within ~1.5 s if needed.
+      const storedRects = computedRects.length === 0 ? (getGDocsAnchorRects(annotation.id) ?? []) : [];
+      const rects = computedRects.length > 0 ? computedRects : storedRects;
       if (rects.length === 0) {
         // Canvas mode: position not yet known — store for deferred render when cursor correction fires.
         if (isGoogleDocs()) {
@@ -2100,15 +2107,23 @@ async function tryUrlPrediction(): Promise<void> {
 // ─── Annotation Deletion ───
 
 function handleAnnotationDeleted(annotationId: string): void {
+  // Prevent duplicate handling — if this id was already processed (e.g. from
+  // a redundant message), bail out immediately so we don't re-run rerenderAll.
+  if (deletedAnnotationIds.has(annotationId)) return;
+
   // Track locally so in-flight server responses don't re-add it
   deletedAnnotationIds.add(annotationId);
 
-  // Find the contentHash for this annotation so we can tell the server
+  // Capture anchor text BEFORE removing from stores so we can remove the
+  // native GDocs highlight for this annotation (see below).
+  let deletedAnchorText: string | undefined;
   let deletedContentHash: string | undefined;
   for (const store of [overviewAnnotations, depthAnnotations]) {
     for (const [regionId, annotations] of store) {
-      if (annotations.some((a) => a.id === annotationId)) {
+      const ann = annotations.find((a) => a.id === annotationId);
+      if (ann) {
         deletedContentHash = regionId;
+        deletedAnchorText = ann.anchor?.exact;
       }
       const filtered = annotations.filter((a) => a.id !== annotationId);
       if (filtered.length !== annotations.length) {
@@ -2139,7 +2154,29 @@ function handleAnnotationDeleted(annotationId: string): void {
 
   // Remove persisted anchor rect for this annotation (GDocs only)
   const docId = getGoogleDocsId();
-  if (docId) deleteGDocsRect(docId, annotationId);
+  if (docId) {
+    deleteGDocsRect(docId, annotationId);
+
+    // Remove the native GDocs highlight that was applied for this annotation.
+    // Without this, the scanner keeps seeing the orphaned highlight and will
+    // misassign it to neighbouring annotations, corrupting their positions and
+    // eventually firing spurious oddity-gdocs-anchor-deleted events that wipe
+    // other annotations from all stores (and from storage), which is why
+    // other overlays disappear and don't come back after a page refresh.
+    if (deletedAnchorText) {
+      sendMessage({
+        action: 'gdocsRemoveHighlights',
+        payload: { docId, anchorTexts: [deletedAnchorText] },
+      }).catch(() => {});
+    }
+  }
+
+  // Clean up GDocs-specific render caches for the deleted annotation.
+  // Stale entries in these maps are harmless by themselves but can cause
+  // the oddity-gdocs-corrected handler to run stale code paths when the
+  // scanner later fires correction events.
+  gdocsAnnotationCache.delete(annotationId);
+  gdocsRenderPending.delete(annotationId);
 
   // Remove from DOM
   removeAnchors(annotationId);

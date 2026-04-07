@@ -53,7 +53,8 @@ let importedContext = '';
 // ─── MCQ state ────────────────────────────────────────────────────────────────
 let mcqActive = false;
 let mcqPreviousQA: Array<{ question: string; answer: string }> = [];
-let mcqQuestionNumber = 1;
+let mcqQuestionIndex = 0;
+let mcqAllQuestions: McqQuestion[] = [];
 let mcqTopic = '';
 let mcqCardEl: HTMLElement | null = null;
 const MAX_MCQ_QUESTIONS = 5;
@@ -804,19 +805,15 @@ function setInputEnabled(enabled: boolean) {
 }
 
 // ─── MCQ flow ─────────────────────────────────────────────────────────────────
-async function fetchMcqQuestion(
-  topic: string,
-  previousQA: Array<{ question: string; answer: string }>,
-  questionNumber: number,
-): Promise<McqQuestion | null> {
+async function fetchAllMcqQuestions(topic: string): Promise<McqQuestion[] | null> {
   return new Promise((resolve) => {
     const mergedContext = [docContext, importedContext].filter(Boolean).join('\n\n');
     chrome.runtime.sendMessage(
-      { action: 'gdocsMcqQuestion', payload: { prompt: topic, docContext: mergedContext, previousQA, questionNumber } },
-      (result: McqQuestion | { error?: string } | undefined) => {
+      { action: 'gdocsMcqQuestions', payload: { prompt: topic, docContext: mergedContext } },
+      (result: McqQuestion[] | { error?: string } | undefined) => {
         if (chrome.runtime.lastError) { console.error('[Oddity GDocs] MCQ fetch error:', chrome.runtime.lastError); resolve(null); return; }
-        if (!result || 'error' in result) { console.error('[Oddity GDocs] MCQ error:', result); resolve(null); return; }
-        resolve(result as McqQuestion);
+        if (!result || !Array.isArray(result)) { console.error('[Oddity GDocs] MCQ error:', result); resolve(null); return; }
+        resolve(result as McqQuestion[]);
       }
     );
   });
@@ -827,17 +824,36 @@ function dismissMcqCard(): void {
   mcqCardEl = null;
 }
 
+const MCQ_LABELS = ['A', 'B', 'C', 'D'];
+
 function renderMcqCard(question: McqQuestion): void {
   if (!shadowWrapper) return;
   dismissMcqCard();
 
+  const displayNum = mcqQuestionIndex + 1;
+
   const card = document.createElement('div');
   card.className = 'mcq-card';
 
-  const qNumEl = document.createElement('div');
-  qNumEl.className = 'mcq-num';
-  qNumEl.textContent = `Question ${mcqQuestionNumber} of ${MAX_MCQ_QUESTIONS}`;
-  card.appendChild(qNumEl);
+  // Header: progress dots + "X / Y"
+  const header = document.createElement('div');
+  header.className = 'mcq-header';
+
+  const dots = document.createElement('div');
+  dots.className = 'mcq-dots';
+  for (let i = 0; i < MAX_MCQ_QUESTIONS; i++) {
+    const dot = document.createElement('span');
+    dot.className = i < displayNum ? 'mcq-dot mcq-dot-filled' : 'mcq-dot';
+    dots.appendChild(dot);
+  }
+
+  const progress = document.createElement('span');
+  progress.className = 'mcq-progress';
+  progress.textContent = `${displayNum} / ${MAX_MCQ_QUESTIONS}`;
+
+  header.appendChild(dots);
+  header.appendChild(progress);
+  card.appendChild(header);
 
   const questionEl = document.createElement('div');
   questionEl.className = 'mcq-question';
@@ -846,53 +862,57 @@ function renderMcqCard(question: McqQuestion): void {
 
   const optionsEl = document.createElement('div');
   optionsEl.className = 'mcq-options';
-  for (const opt of question.options) {
+  question.options.forEach((opt, idx) => {
     const btn = document.createElement('button');
     btn.className = 'mcq-option';
-    btn.textContent = opt;
-    btn.addEventListener('click', () => void handleMcqAnswer(opt, question.question));
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'mcq-option-label';
+    labelEl.textContent = MCQ_LABELS[idx] ?? String(idx + 1);
+
+    const textEl = document.createElement('span');
+    textEl.className = 'mcq-option-text';
+    textEl.textContent = opt;
+
+    btn.appendChild(labelEl);
+    btn.appendChild(textEl);
+    btn.addEventListener('click', () => handleMcqAnswer(opt, question.question));
     optionsEl.appendChild(btn);
-  }
+  });
   card.appendChild(optionsEl);
+
+  const footer = document.createElement('div');
+  footer.className = 'mcq-footer';
 
   const skipBtn = document.createElement('button');
   skipBtn.className = 'mcq-skip';
-  skipBtn.textContent = 'Skip — write essay now';
+  skipBtn.textContent = 'Skip to writing';
   skipBtn.addEventListener('click', () => {
     dismissMcqCard();
     mcqActive = false;
     void generateEssay();
   });
-  card.appendChild(skipBtn);
+  footer.appendChild(skipBtn);
+  card.appendChild(footer);
 
   // Insert at top of wrapper (above the input bar)
   shadowWrapper.insertBefore(card, shadowWrapper.firstChild);
   mcqCardEl = card;
 }
 
-async function handleMcqAnswer(answer: string, question: string): Promise<void> {
+function handleMcqAnswer(answer: string, question: string): void {
   if (!mcqActive) return;
   mcqPreviousQA.push({ question, answer });
-  mcqQuestionNumber++;
+  mcqQuestionIndex++;
 
-  if (mcqQuestionNumber > MAX_MCQ_QUESTIONS) {
+  if (mcqQuestionIndex >= mcqAllQuestions.length) {
     dismissMcqCard();
     mcqActive = false;
     void generateEssay();
     return;
   }
 
-  // Disable option buttons while fetching next
-  mcqCardEl?.querySelectorAll<HTMLButtonElement>('.mcq-option').forEach(b => { b.disabled = true; });
-
-  const next = await fetchMcqQuestion(mcqTopic, mcqPreviousQA, mcqQuestionNumber);
-  if (!next) {
-    dismissMcqCard();
-    mcqActive = false;
-    void generateEssay();
-    return;
-  }
-  renderMcqCard(next);
+  renderMcqCard(mcqAllQuestions[mcqQuestionIndex]!);
 }
 
 function dismissWelcomeCard(): void {
@@ -1036,28 +1056,30 @@ async function startMcqFlow(topic: string): Promise<void> {
   mcqTopic = topic;
   mcqActive = true;
   mcqPreviousQA = [];
-  mcqQuestionNumber = 1;
+  mcqQuestionIndex = 0;
+  mcqAllQuestions = [];
 
   setInputEnabled(false);
-  showLoadingOverlay('Loading questions…');
+  showLoadingOverlay('Preparing questions…');
 
-  const first = await fetchMcqQuestion(topic, [], 1);
+  const questions = await fetchAllMcqQuestions(topic);
   hideLoadingOverlay();
 
-  if (!first) {
+  if (!questions || questions.length === 0) {
     mcqActive = false;
     setInputEnabled(true);
-    // Show error — don't silently fall through to essay generation
     if (topicTextarea) {
       topicTextarea.placeholder = 'Failed to load questions. Try again.';
       setTimeout(() => { if (topicTextarea) topicTextarea.placeholder = getPlaceholder(); }, 4000);
     }
     return;
   }
+
+  mcqAllQuestions = questions;
   setInputEnabled(true);
-  if (topicTextarea) { topicTextarea.disabled = true; topicTextarea.value = ''; topicTextarea.placeholder = 'Answer to continue…'; }
+  if (topicTextarea) { topicTextarea.disabled = true; topicTextarea.value = ''; topicTextarea.placeholder = 'Select an answer to continue…'; }
   if (submitBtn) submitBtn.disabled = true;
-  renderMcqCard(first);
+  renderMcqCard(mcqAllQuestions[0]!);
 }
 
 function generateEssay(): void {
@@ -1155,14 +1177,21 @@ function createInputBar(): void {
     .action-btn:disabled { opacity: 0.4; cursor: default; }
     .action-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
     /* MCQ card */
-    .mcq-card { background: #fff; border-radius: 16px; padding: 20px 20px 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 12px; }
-    .mcq-num { font-size: 10px; font-weight: 600; color: #9aa0a6; letter-spacing: 0.08em; text-transform: uppercase; }
-    .mcq-question { font-size: 13px; font-weight: 600; color: #1a1a1a; line-height: 1.45; }
+    .mcq-card { background: #fff; border-radius: 16px; padding: 18px 18px 14px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 14px; }
+    .mcq-header { display: flex; align-items: center; justify-content: space-between; }
+    .mcq-dots { display: flex; align-items: center; gap: 4px; }
+    .mcq-dot { width: 6px; height: 6px; border-radius: 50%; background: #e5e7eb; transition: background 0.2s; }
+    .mcq-dot-filled { background: #1a1a1a; }
+    .mcq-progress { font-size: 11px; font-weight: 500; color: #9aa0a6; font-variant-numeric: tabular-nums; }
+    .mcq-question { font-size: 13px; font-weight: 600; color: #1a1a1a; line-height: 1.5; }
     .mcq-options { display: flex; flex-direction: column; gap: 6px; }
-    .mcq-option { text-align: left; padding: 8px 14px; border-radius: 9999px; border: none; background: #f0f2f5; color: #374151; font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer; transition: background 0.12s; line-height: 1.35; }
-    .mcq-option:hover { background: #e5e7eb; }
+    .mcq-option { display: flex; align-items: center; gap: 10px; text-align: left; padding: 9px 12px; border-radius: 10px; border: 1px solid #e8e8e2; background: #fff; color: #374151; font-size: 12px; font-family: inherit; cursor: pointer; transition: background 0.12s, border-color 0.12s; line-height: 1.4; width: 100%; }
+    .mcq-option:hover { background: #f7f7f6; border-color: #d1d5db; }
     .mcq-option:disabled { opacity: 0.4; cursor: default; }
-    .mcq-skip { align-self: flex-end; border: none; background: none; font-size: 11px; color: #9aa0a6; cursor: pointer; font-family: inherit; padding: 0; text-decoration: underline; }
+    .mcq-option-label { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #f0f2f5; color: #6b7280; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; letter-spacing: 0; }
+    .mcq-option-text { flex: 1; font-weight: 500; }
+    .mcq-footer { display: flex; justify-content: flex-end; }
+    .mcq-skip { border: none; background: none; font-size: 11px; color: #9aa0a6; cursor: pointer; font-family: inherit; padding: 0; }
     .mcq-skip:hover { color: #374151; }
     /* Welcome card */
     .welcome-card { background: #fff; border-radius: 16px; padding: 20px 20px 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 10px; }
@@ -1340,7 +1369,8 @@ function deactivate() {
   activeSession = null;
   mcqActive = false;
   mcqPreviousQA = [];
-  mcqQuestionNumber = 1;
+  mcqQuestionIndex = 0;
+  mcqAllQuestions = [];
   mcqTopic = '';
   importedContext = '';
   streaming = false;

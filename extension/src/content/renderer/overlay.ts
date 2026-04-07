@@ -215,8 +215,17 @@ export function renderAnnotationWithRects(annotation: Annotation, rects: Absolut
 
 /**
  * Clear all rendered annotations from the overlay.
+ * Also cancels any pending rAF batch flush to prevent stale items from rendering
+ * after the overlay is rebuilt (e.g. during rerenderAll after annotation deletion).
  */
 export function clearOverlay(): void {
+  // Cancel pending batch flush so stale pendingBatch items don't render
+  // after the new items are queued by the re-render that follows.
+  if (batchRafId !== null) {
+    cancelAnimationFrame(batchRafId);
+    batchRafId = null;
+  }
+  pendingBatch = [];
   if (wrapperEl) {
     wrapperEl.innerHTML = '';
   }

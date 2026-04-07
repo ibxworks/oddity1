@@ -1091,56 +1091,65 @@ export type McqQuestion = { question: string; options: string[] };
 
 const mcqPromptTemplate: string = (_gdocsPrompts.gdocs_mcq_prompt as string) ?? "";
 
-export async function generateMcqQuestion(
+export async function generateAllMcqQuestions(
   prompt: string,
   docContext: string,
-  previousQA: Array<{ question: string; answer: string }>,
-  questionNumber: number,
-): Promise<McqQuestion> {
-  const previousQAText = previousQA.length === 0
-    ? "None yet."
-    : previousQA.map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`).join("\n\n");
-
+): Promise<McqQuestion[]> {
   const docContextText = docContext.trim()
     ? `Existing document content:\n${docContext.trim()}\n\n`
     : "";
 
   const filledPrompt = mcqPromptTemplate
     .replace("{docContext}", docContextText)
-    .replace("{prompt}", prompt)
-    .replace("{previousQA}", previousQAText)
-    .replace("{questionNumber}", String(questionNumber));
+    .replace("{prompt}", prompt);
 
-  ensureClientsConfigured();
-  const entry = genAIClients[0]!;
-  const model = entry.client.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      responseMimeType: "application/json" as const,
-      maxOutputTokens: 512,
-      temperature: 0.8,
-    },
-  });
-
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: filledPrompt }] }],
-  });
-
-  const text = result.response.text();
   try {
-    const parsed = JSON.parse(text) as { question?: string; options?: unknown[] };
-    if (typeof parsed.question === "string" && Array.isArray(parsed.options)) {
-      return {
-        question: parsed.question,
-        options: parsed.options.filter((o): o is string => typeof o === "string").slice(0, 4),
-      };
+    ensureClientsConfigured();
+    const entry = genAIClients[0]!;
+    const model = entry.client.getGenerativeModel({
+      model: modelName,
+      generationConfig: {
+        maxOutputTokens: 1024,
+        temperature: 0.8,
+      },
+    });
+
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: filledPrompt }] }],
+    });
+
+    const text = result.response.text().trim();
+    // Strip markdown fences if model wraps output
+    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(cleaned) as unknown;
+    const arr = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as Record<string, unknown>).questions)
+        ? (parsed as Record<string, unknown>).questions as unknown[]
+        : null;
+    if (arr) {
+      const questions = arr
+        .filter((item): item is { question: string; options: unknown[] } =>
+          typeof (item as Record<string, unknown>).question === "string" &&
+          Array.isArray((item as Record<string, unknown>).options)
+        )
+        .map((item) => ({
+          question: item.question,
+          options: item.options.filter((o): o is string => typeof o === "string").slice(0, 4),
+        }))
+        .slice(0, 5);
+      if (questions.length > 0) return questions;
     }
-  } catch {
-    // fall through to fallback
+  } catch (err) {
+    console.error("[generateAllMcqQuestions] Error:", err instanceof Error ? err.message : err);
   }
 
-  return {
-    question: `What aspect of "${prompt.slice(0, 60)}" matters most to you?`,
-    options: ["The core argument", "The evidence behind it", "The broader implications", "The counterarguments"],
-  };
+  // Fallback: 5 generic questions
+  return [
+    { question: `What is the main goal of your writing about "${prompt.slice(0, 50)}"?`, options: ["Inform readers about the topic", "Argue for a specific position", "Explore different perspectives", "Tell a personal story"] },
+    { question: "Who is your primary audience?", options: ["General readers with no background", "Experts in the field", "Students or beginners", "Decision-makers or leaders"] },
+    { question: "What tone are you aiming for?", options: ["Formal and academic", "Conversational and approachable", "Persuasive and assertive", "Reflective and personal"] },
+    { question: "How deep should the coverage go?", options: ["High-level overview", "Moderate depth with key details", "Comprehensive and thorough", "Focus on one specific aspect"] },
+    { question: "What do you want readers to take away?", options: ["A clear understanding of the topic", "A changed opinion or belief", "Actionable next steps", "Emotional connection or empathy"] },
+  ];
 }

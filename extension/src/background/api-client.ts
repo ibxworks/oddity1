@@ -658,19 +658,17 @@ export async function requestGDocsChatStreaming(
 
 export type McqQuestion = { question: string; options: string[] };
 
-export async function fetchGDocsMcqQuestion(
+export async function fetchAllGDocsMcqQuestions(
   prompt: string,
   docContext: string,
-  previousQA: Array<{ question: string; answer: string }>,
-  questionNumber: number,
-): Promise<McqQuestion> {
+): Promise<McqQuestion[]> {
   async function doFetch(token: string | null): Promise<Response> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
     return fetch(`${BACKEND_URL}/api/gdocs-mcq`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ prompt, docContext, previousQA, questionNumber }),
+      body: JSON.stringify({ prompt, docContext }),
     });
   }
 
@@ -680,8 +678,8 @@ export async function fetchGDocsMcqQuestion(
     if (!retryToken) throw new AuthError();
     res = await doFetch(retryToken);
   }
-  if (!res.ok) throw new Error(`fetchGDocsMcqQuestion failed: ${res.status}`);
-  return res.json() as Promise<McqQuestion>;
+  if (!res.ok) throw new Error(`fetchAllGDocsMcqQuestions failed: ${res.status}`);
+  return res.json() as Promise<McqQuestion[]>;
 }
 
 // ─── GDocs Session (cloud sync) ───────────────────────────────────────────────

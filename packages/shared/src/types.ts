@@ -427,7 +427,7 @@ export type ExtensionMessage =
   | { action: "gdocsAcceptEdit"; payload: { docId: string; findText: string; replaceText: string } }
   | { action: "gdocsRevertEdit"; payload: { docId: string; findText: string; replaceText: string } }
   | { action: "gdocsChat"; payload: { messages: Array<{ role: "user" | "assistant"; content: string }>; mode: "chat" | "tree" | "essay" | "edit" } }
-  | { action: "gdocsMcqQuestion"; payload: { prompt: string; docContext: string; previousQA: Array<{ question: string; answer: string }>; questionNumber: number } }
+  | { action: "gdocsMcqQuestions"; payload: { prompt: string; docContext: string } }
   | { action: "gdocsSessionLoad"; payload: { docId: string } }
   | { action: "gdocsSessionSave"; payload: { docId: string; chatHistory: Array<{ role: "user" | "assistant"; content: string }>; essayVersions: string[]; editSuggestions: Array<Array<{ find: string; replace: string }>> } }
   | { action: "gdocsAnnotateText"; payload: { text: string; url: string; contentHash: string; wordCount: number } }

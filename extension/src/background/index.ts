@@ -23,7 +23,7 @@ import {
   RateLimitError,
   requestAnnotationsStreaming,
   requestGDocsChatStreaming,
-  fetchGDocsMcqQuestion,
+  fetchAllGDocsMcqQuestions,
   fetchGDocsSession,
   saveGDocsSession,
   requestSketchStreaming,
@@ -1677,9 +1677,9 @@ chrome.runtime.onMessage.addListener(
           return { ok: true };
         }
 
-        case "gdocsMcqQuestion": {
-          const { prompt, docContext, previousQA, questionNumber } = message.payload;
-          const result = await fetchGDocsMcqQuestion(prompt, docContext, previousQA, questionNumber);
+        case "gdocsMcqQuestions": {
+          const { prompt, docContext } = message.payload;
+          const result = await fetchAllGDocsMcqQuestions(prompt, docContext);
           return result;
         }
 
