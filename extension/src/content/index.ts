@@ -61,6 +61,7 @@ import {
   setDashUserTier,
   setPdfSummaryTabVisible,
   updatePdfSummaryCards,
+  scrollPdfSummaryToPage,
   triggerOptimizePrompt,
   pasteIntoChatbot,
 } from "./renderer/arguments-box.js";
@@ -532,6 +533,9 @@ async function initPdfPageSummaryFeature(): Promise<void> {
 
   pdfPageSummaryController = await createPdfPageSummaryController({
     onCardsChanged: syncPdfSummaryCards,
+    onVisiblePageChanged: (pageNo) => {
+      scrollPdfSummaryToPage(pageNo);
+    },
     onGeneratePageSummary: async (page): Promise<PdfPageSummaryRequestResult> => {
       const controller = pdfPageSummaryController;
       if (!controller) {

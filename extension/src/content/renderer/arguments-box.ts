@@ -1051,6 +1051,18 @@ export function updatePdfSummaryCards(cards: PdfSummaryCardItem[]): void {
   renderPdfSummaryList();
 }
 
+export function scrollPdfSummaryToPage(pageNo: string): void {
+  if (!pdfSummaryListEl) return;
+  const cards = pdfSummaryListEl.querySelectorAll<HTMLElement>(".args-pdf-summary-card");
+  for (const card of cards) {
+    const isTarget = card.dataset.pageNo === pageNo;
+    card.classList.toggle("args-pdf-summary-card--active", isTarget);
+    if (isTarget) {
+      card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+}
+
 export function setPdfCachedLabel(cached: boolean): void {
   pdfCachedLabel = cached;
 }
@@ -4090,6 +4102,7 @@ function renderPdfSummaryList(): void {
       // ── Full summarized card ──
       const card = document.createElement("div");
       card.className = "args-pdf-summary-card";
+      card.dataset.pageNo = item.pageNo;
       card.addEventListener("click", () => {
         document.dispatchEvent(
           new CustomEvent("oddity:pdf-summary-scroll-to-page", {
@@ -4127,6 +4140,7 @@ function renderPdfSummaryList(): void {
       // ── Compact unsummarized card ──
       const card = document.createElement("div");
       card.className = "args-pdf-summary-card args-pdf-summary-card--compact";
+      card.dataset.pageNo = item.pageNo;
 
       const footer = document.createElement("div");
       footer.className = "args-pdf-summary-footer";
@@ -5512,6 +5526,11 @@ const ARGUMENTS_BOX_CSS = `
   .args-pdf-summary-card:hover {
     transform: translateY(-1px);
     box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  }
+
+  .args-pdf-summary-card--active {
+    outline: 2px solid #3b82f6;
+    outline-offset: -2px;
   }
 
   .args-pdf-summary-card--compact {

@@ -40,6 +40,7 @@ export type PdfPageSummaryGenerateResult =
 
 type PdfPageSummaryControllerOptions = {
   onCardsChanged?: (cards: PdfPageSummaryCard[]) => void;
+  onVisiblePageChanged?: (pageNo: string) => void;
   onGeneratePageSummary: (
     page: PdfPageDescriptor,
   ) => Promise<PdfPageSummaryGenerateResult>;
@@ -591,6 +592,9 @@ export class PdfPageSummaryController {
   private readonly backdropEl: HTMLDivElement;
   private readonly modalEl: HTMLDivElement;
   private readonly gridEl: HTMLDivElement;
+  private observer: IntersectionObserver | null = null;
+  private currentVisiblePageNo: string | null = null;
+  private pageIntersectionRatios = new Map<string, number>();
 
   readonly documentHash: string;
 
@@ -635,6 +639,42 @@ export class PdfPageSummaryController {
     }
 
     this.renderAll();
+
+    for (const page of pages) {
+      this.pageIntersectionRatios.set(page.pageNo, 0);
+    }
+
+    this.observer = new IntersectionObserver(
+      (entries) => {
+        // Update the stored ratio for every page that changed this frame
+        for (const entry of entries) {
+          const pageNo = (entry.target as HTMLElement).dataset.pageNo;
+          if (pageNo) {
+            this.pageIntersectionRatios.set(
+              pageNo,
+              entry.isIntersecting ? entry.intersectionRatio : 0,
+            );
+          }
+        }
+        // Find the page with the highest ratio across ALL pages, not just the current batch
+        let bestPageNo: string | null = null;
+        let bestRatio = 0;
+        for (const [pageNo, ratio] of this.pageIntersectionRatios) {
+          if (ratio > bestRatio) {
+            bestRatio = ratio;
+            bestPageNo = pageNo;
+          }
+        }
+        if (bestPageNo && bestPageNo !== this.currentVisiblePageNo) {
+          this.currentVisiblePageNo = bestPageNo;
+          this.options.onVisiblePageChanged?.(bestPageNo);
+        }
+      },
+      { threshold: [0, 0.25, 0.5, 0.75, 1.0] },
+    );
+    for (const page of pages) {
+      this.observer.observe(page.element);
+    }
   }
 
   hydrate(summaries: PdfPageSummary[]): void {
@@ -686,6 +726,8 @@ export class PdfPageSummaryController {
   }
 
   destroy(): void {
+    this.observer?.disconnect();
+    this.observer = null;
     document.removeEventListener("keydown", this.handleKeydown);
     this.backdropEl.remove();
     this.launcherBtn.remove();
@@ -895,12 +937,18 @@ export class PdfPageSummaryController {
   }
 
   private openModal(): void {
-    const modalBody = this.backdropEl.querySelector<HTMLElement>(".oddity-pdf-summary-modal-body");
-    if (modalBody) modalBody.scrollTop = 0;
-
     this.launcherBtn.classList.add("oddity-fab-hidden");
     this.backdropEl.classList.add("open");
     this.backdropEl.setAttribute("aria-hidden", "false");
+
+    if (this.currentVisiblePageNo) {
+      const state = this.pageStates.get(this.currentVisiblePageNo);
+      if (state?.cardEl) {
+        requestAnimationFrame(() => {
+          state.cardEl.scrollIntoView({ block: "center", behavior: "instant" });
+        });
+      }
+    }
   }
 
   private closeModal(): void {

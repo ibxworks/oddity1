@@ -80,6 +80,13 @@ describe("pdf page summary helpers", () => {
     document.head.innerHTML = "";
     document.body.innerHTML = "";
 
+    // IntersectionObserver is not available in jsdom
+    globalThis.IntersectionObserver = vi.fn().mockImplementation(() => ({
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+    })) as unknown as typeof IntersectionObserver;
+
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
