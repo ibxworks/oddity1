@@ -18,6 +18,7 @@ import {
   generateAnnotationsStream,
 } from "../lib/gemini.js";
 import { createInflightDedup } from "../lib/inflight-dedup.js";
+import { isValidPersonaSlug } from "../lib/persona-registry.js";
 import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
 import { createRequestAbortSignal } from "../lib/request-abort.js";
 import { serviceClient } from "../lib/supabase.js";
@@ -72,7 +73,13 @@ const AnnotateRequestSchema = z.object({
   content_hash: z.string().min(1),
   text: z.string().min(1).max(MAX_TEXT_LENGTH),
   mode: z.enum(["overview", "depth"]),
-  personality: z.enum(["terry", "jerry", "sally", "gary"]).optional().transform(p => p === "gary" ? "sally" : p),
+  personality: z.string().optional().transform(p => {
+    if (!p) return undefined;
+    if (p === "gary") return "sally" as DepthPersonality;
+    if (p === "terry" || p === "jerry" || p === "sally") return p as DepthPersonality;
+    if (p.startsWith("pf:") && isValidPersonaSlug(p.slice(3))) return p as DepthPersonality;
+    return undefined; // unknown value — drop it
+  }),
   word_count: z.number().int().positive(),
 });
 
@@ -100,6 +107,18 @@ router.post("/", async (req, res) => {
     ) {
       res.status(403).json({
         error: "Sally personality requires a Standard plan",
+        upgrade: true,
+      });
+      return;
+    }
+
+    // ── Feature gate: Public figure personas require Standard ──
+    if (
+      parsed.data.personality?.startsWith("pf:") &&
+      !canUseFeature(userTier, "publicFigurePersonas")
+    ) {
+      res.status(403).json({
+        error: "Public figure personas require a Standard plan",
         upgrade: true,
       });
       return;

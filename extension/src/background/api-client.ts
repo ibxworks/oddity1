@@ -9,6 +9,7 @@ import {
   type PdfPageSummaryGenerateRequest,
   type PdfPageSummaryGenerateResponse,
   type PdfPageSummaryListResponse,
+  type PublicFigurePersona,
   type SiteAdapter,
   type UserPreferences,
 } from '@oddity/shared';
@@ -501,6 +502,12 @@ export async function getAdapters(): Promise<SiteAdapter[]> {
   const res = await authFetch('/api/adapters');
   if (!res.ok) throw new Error(`getAdapters failed: ${res.status}`);
   return res.json() as Promise<SiteAdapter[]>;
+}
+
+export async function getPublicFigurePersonas(): Promise<PublicFigurePersona[]> {
+  const res = await fetch(`${BACKEND_URL}/api/personas`);
+  if (!res.ok) throw new Error(`getPublicFigurePersonas failed: ${res.status}`);
+  return res.json() as Promise<PublicFigurePersona[]>;
 }
 
 export async function getPdfPageSummaries(

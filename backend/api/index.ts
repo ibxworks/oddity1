@@ -17,6 +17,7 @@ import portalRouter from "../routes/portal.js";
 import pricesRouter from "../routes/prices.js";
 import convertPdfRouter from "../routes/convert-pdf.js";
 import pdfPageSummariesRouter from "../routes/pdf-page-summaries.js";
+import personasRouter from "../routes/personas.js";
 
 if (process.env.ODDITY_PROCESS_ROLE !== "worker") {
   registerProcessGuards({ role: "app", exitOnFatal: false });
@@ -60,6 +61,7 @@ app.get("/api/health", (_req, res) => {
 // Public routes (no auth)
 app.use("/api/adapters", adaptersRouter);
 app.use("/api/prices", pricesRouter);
+app.use("/api/personas", personasRouter);
 
 // Protected routes
 app.use("/api/annotate", authMiddleware, annotateRouter);

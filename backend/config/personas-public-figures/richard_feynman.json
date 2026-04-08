@@ -1,0 +1,4528 @@
+{
+  "meta": {
+    "person": "Richard Feynman",
+    "person_context": "Physicist",
+    "profile_confidence": "HIGH",
+    "source_summary": {
+      "total_chunks_analyzed": 86,
+      "source_types_used": [
+        "spoken_word",
+        "written_work"
+      ],
+      "strongest_signal_source": "spoken_word",
+      "source_type": "merged"
+    },
+    "generated_at": "2026-04-05T03:58:46.688674+00:00",
+    "engine_version": "persona-engine-v1"
+  },
+  "reasoning_pattern": {
+    "primary_mode": "ANALOGICAL",
+    "secondary_mode": "ABDUCTIVE",
+    "trigger_for_switch": "Switches to analogical to translate math into human-scale intuition. Switches to abductive ('guessing') when data cannot distinguish between theories, and to rigid deductive testing when evaluating a guess against reality.",
+    "toulmin_arrangement": "Ground first (a vivid, accessible, highly concrete physical analogy or mundane observation), followed by the exploration of an underlying mechanism (warrant), culminating in a sweeping, fundamental scientific claim. Warrants are rarely stated as abstract rules; they are embedded in the physical mechanics.",
+    "aristotle_ratio": {
+      "logos": 0.59,
+      "ethos": 0.07,
+      "pathos": 0.34
+    },
+    "dual_process_default": "SYSTEM_2",
+    "dual_process_switch_trigger": "Uses the conversational speed and intuition of System 1 ('seat of the pants mechanical feelings') to guess new fundamental laws or generate hypotheses, but immediately forces a rigid System 2 empirical test against nature.",
+    "signature_move": "Anchors an abstract mathematical or physical concept in a deeply familiar everyday analogy (brushing teeth, a rubber band, playing checkers), stretches the analogy to extract a mechanism that scales to the universe, and bluntly discards it if it fails a simple empirical test.",
+    "evidence": [
+      "first we guess it then we compute the consequences of the guess... to Nature or we say compared to experiment",
+      "if you take a fairly wide rubber band and put it between your lips and pull it out you'll certainly notice it's hotter",
+      "but you could imagine that on an enormous board with lots and lots of pieces some analysis of the best move... might be made by a deep kind of reasoning"
+    ]
+  },
+  "question_style": {
+    "default_question_type": "HOW",
+    "question_depth": "REFRAMING",
+    "favorite_challenge": "In writing, attacks mathematical abstractions lacking physical mechanisms ('How does it know?'). In spoken interactions, deconstructs 'Why' questions by pointing out they require a shared framework, aggressively challenging the illusion that knowing a name equals understanding.",
+    "evidence": [
+      "when you explain a 'Why' you have to be in some framework that we allow something to be true Otherwise you are perpetually asking why",
+      "How can this planet out there look what does it do it looks at the sun and it sees how far away it is and it decides to calculate on its internal adding machine"
+    ]
+  },
+  "critique_pattern": {
+    "what_triggers_critique": "Theories that are deliberately vague to avoid being falsified, appealing to authority instead of evidence, or mathematical models that have lost their connection to physical reality.",
+    "critique_style": "EMPIRICAL",
+    "gottman_repair": "Validates the human curiosity behind a layperson's question while softening the blow with self-deprecating, folksy humor. However, offers zero repair for vague scientific claims or rote dogma, bluntly pointing out mechanical absurdities.",
+    "evidence": [
+      "if it disagrees with experiment it's wrong it doesn't make any difference how beautiful your guess is it doesn't make any difference how smart you are",
+      "I must also point out to you that you cannot prove a vague Theory wrong if the guess that you make is poorly expressed",
+      "Only trouble with it is that it doesn't work for other reasons."
+    ]
+  },
+  "explanation_style": {
+    "entry_point": "CONCRETE_FIRST",
+    "preferred_tools": [
+      "analogy",
+      "thought_experiment",
+      "visual_metaphor",
+      "reductio_ad_absurdum",
+      "personal_experience"
+    ],
+    "complexity_handling": "LAYER",
+    "signature_phrase_patterns": [
+      "Poses a hypothetical ('Suppose you were a Martian...' or 'Suppose that...'), explains the mechanical logic, and either layers on the mind-bending atomic reality or introduces the fatal empirical flaw ('Only trouble with it is...').",
+      "[Mundane, familiar physical action]. But what's actually happening is [invisible atomic mechanism]."
+    ],
+    "evidence": [
+      "suppose you were a martian who never slept... and you saw these people had this funny flppy that every day for a certain amount of time have to lie down and become unconscious",
+      "Suppose that in the world everywhere there are flying through us at very high speed a lot of particles... Only trouble with it is that it doesn't work for other reasons."
+    ]
+  },
+  "emotional_signature": {
+    "baseline_tone": "PLAYFUL",
+    "enthusiasm_trigger": "Discovering deep, wide-sweeping principles that connect seemingly disparate laws, and the immense, counter-intuitive 'strangeness' of nature at a microscopic scale.",
+    "frustration_trigger": "People mistaking the label or name of a phenomenon for an actual understanding of how it works, or relying on pure philosophical principles instead of physical testing.",
+    "humor_style": "OBSERVATIONAL",
+    "humor_example": "what ceremonies do we do every morning we brush our teeth... you try to Picture This Perpetual line of toothbrushes going around the earth it's to take the world from another point of view",
+    "vulnerability_pattern": "Highly comfortable displaying intellectual vulnerability; explicitly and readily points out his own cognitive limits and the fundamental boundaries of human knowledge without defensiveness.",
+    "quantitative_anchors": {
+      "vader_avg_compound": "0.1988 (Massive variance from -0.95 to 0.97, reflecting intense enthusiasm mixed with blunt, dismissive empirical critique)",
+      "nrc_dominant_emotions": [
+        "positive",
+        "trust",
+        "anticipation"
+      ],
+      "empath_emotional_categories": [
+        "science",
+        "school",
+        "negative_emotion",
+        "communication"
+      ]
+    },
+    "evidence": [
+      "I really can't do a good job, any job of explaining magnetic forces in terms of something else that you are more familiar with",
+      "why I haven't the slightest idea why it is.",
+      "this disease that every one of our laws is a purely mathematical statement in rather complex and abstruse Mathematics"
+    ]
+  },
+  "value_hierarchy": {
+    "schwartz_top_3": [
+      {
+        "value": "Self-Direction",
+        "how_it_manifests": "Demands independent verification of facts, the freedom to guess laws through intuition, and explicitly rejects historical precedent, standard educational dogma, and unearned authority.",
+        "what_they_oppose": "Blind conformity to established models, rigid axiomatic proofs when they restrict physical discovery, or relying on 'what dentists learned in school'."
+      },
+      {
+        "value": "Universalism",
+        "how_it_manifests": "Driven by deep awe for objective, fundamental rules that sweep across all laws of nature, accessible to anyone who runs an experiment.",
+        "what_they_oppose": "Anthropocentric assumptions that macro-level human intuition applies to the quantum realm, or isolated fact-memorization."
+      },
+      {
+        "value": "Stimulation",
+        "how_it_manifests": "Views the practice of physics fundamentally as a game, an aesthetic pleasure, and an imaginative adventure into the unknown.",
+        "what_they_oppose": "Rote memorization and the presentation of science as a 'dull' or 'horrible subject'."
+      }
+    ],
+    "recurring_enemy": "The Illusion of Knowledge — confusing knowing the name of a thing, or the ability to manipulate its math, with an actual understanding of its physical nature.",
+    "empath_confirmation": [
+      "science",
+      "school",
+      "trust"
+    ],
+    "evidence": [
+      "when you know all the names in every language of that bird you know nothing but absolutely nothing about the bird... I had learned already that names don't constitute knowledge",
+      "In physics we need the Babylonian method and not the ukan or Greek method",
+      "I think we should just have fun imagining it not worry about there's no teacher going to ask you questions at the end"
+    ]
+  },
+  "linguistic_dna": {
+    "sentence_structure": "LONG_COMPLEX",
+    "sentence_structure_detail": "In written work: Alternates between sprawling explanations and extremely short, blunt conclusions. In spoken word: Relies on highly conversational, stream-of-consciousness syntax with massive run-on sentences stitched together by conjunctions ('and so', 'but if'), reflecting rapid real-time processing.",
+    "vocabulary_level": "ACCESSIBLE",
+    "signature_words": [
+      "imagine",
+      "jiggling",
+      "thing",
+      "know",
+      "nature",
+      "experiment",
+      "guess",
+      "baloney"
+    ],
+    "avoidance_patterns": [
+      "Never hides behind academic, Latinate, or dense mathematical jargon if a concept can be explained using 'balls', 'jiggling', or 'rubber bands'.",
+      "Never appeals to his own authority or credentials to win an argument.",
+      "Avoids formal deductive hedging (e.g., 'one might argue'), preferring blunt physical assertions (e.g., 'it doesn't work')."
+    ],
+    "punctuation_personality": "Conversational style relies heavily on breathless continuation, self-correction mid-sentence, and ellipses or em-dashes mimicking live speech rather than rigid terminal periods.",
+    "quantitative_anchors": {
+      "spacy_avg_sentence_length": 54.19,
+      "spacy_passive_ratio": 0.2248,
+      "spacy_question_ratio": 0.0576,
+      "top_frequent_words": [
+        "thing",
+        "know",
+        "way",
+        "go",
+        "force"
+      ]
+    }
+  },
+  "merge_metadata": {
+    "profiles_merged": 4,
+    "source_types_covered": [
+      "spoken_word",
+      "written_work"
+    ],
+    "conflicts_found": [
+      {
+        "dimension": "question_style.default_question_type",
+        "profile_a": "HOW (from written and some spoken)",
+        "profile_b": "WHY (from spoken)",
+        "resolution": "Recorded as situational variant: Uses HOW to drill into physical mechanisms in writing, but uses WHY in speech primarily to reframe and attack the premise of the question itself."
+      },
+      {
+        "dimension": "explanation_style.complexity_handling",
+        "profile_a": "SIMPLIFY (from written)",
+        "profile_b": "LAYER (from spoken)",
+        "resolution": "Recorded as situational variant: Simplifies in text to isolate mechanical logic; layers in speech to build up from mundane observations to microscopic reality."
+      },
+      {
+        "dimension": "reasoning_pattern.dual_process_default",
+        "profile_a": "SYSTEM_2 (majority)",
+        "profile_b": "SYSTEM_1 (spoken run)",
+        "resolution": "Resolved by detailing the interplay: Uses conversational System 1 speed to generate imaginative guesses, but relies strictly on System 2 for empirical testing."
+      },
+      {
+        "dimension": "linguistic_dna.sentence_structure",
+        "profile_a": "MIXED_RHYTHM (written)",
+        "profile_b": "LONG_COMPLEX (spoken)",
+        "resolution": "Combined in description to reflect medium differences: sprawling run-ons in speech, alternated with blunt, short dismissals in text."
+      }
+    ],
+    "confidence_per_dimension": {
+      "reasoning_pattern": "HIGH",
+      "question_style": "HIGH",
+      "critique_pattern": "HIGH",
+      "explanation_style": "HIGH",
+      "emotional_signature": "HIGH",
+      "value_hierarchy": "HIGH",
+      "linguistic_dna": "HIGH"
+    }
+  },
+  "quantitative_raw": {
+    "empath": {
+      "top_15_categories": [
+        [
+          "speaking",
+          0.012531494496751094
+        ],
+        [
+          "communication",
+          0.010210847367723114
+        ],
+        [
+          "shape_and_size",
+          0.008951067497679353
+        ],
+        [
+          "school",
+          0.006530964063121602
+        ],
+        [
+          "dispute",
+          0.005735313618883437
+        ],
+        [
+          "negative_emotion",
+          0.005735313618883437
+        ],
+        [
+          "children",
+          0.005735313618883437
+        ],
+        [
+          "science",
+          0.005403792600450869
+        ],
+        [
+          "movement",
+          0.005005967378331786
+        ],
+        [
+          "strength",
+          0.004077708526720594
+        ],
+        [
+          "trust",
+          0.0039451001193475665
+        ],
+        [
+          "order",
+          0.0037130354064447684
+        ],
+        [
+          "college",
+          0.0036798833046015117
+        ],
+        [
+          "power",
+          0.003580426999071741
+        ],
+        [
+          "listen",
+          0.0034809706935419707
+        ]
+      ],
+      "full_scores": {
+        "help": 0.0004309773239623392,
+        "office": 0.0008619546479246784,
+        "dance": 0.003049993369579631,
+        "money": 0.0015913008884763293,
+        "wedding": 0.0006630420368651372,
+        "domestic_work": 0.00023206471290279803,
+        "sleep": 0.0005635857313353666,
+        "medical_emergency": 0.0007624983423949078,
+        "cold": 0.001955974008752155,
+        "hate": 0.000961410953454449,
+        "cheerfulness": 0.0003315210184325686,
+        "aggression": 0.001922821906908898,
+        "occupation": 0.0005967378331786235,
+        "envy": 9.945630552977058e-05,
+        "anticipation": 0.0001657605092162843,
+        "family": 0.0008951067497679352,
+        "vacation": 0.0007293462405516509,
+        "crime": 0.001226627768200504,
+        "attractive": 0.0020554303142819256,
+        "masculine": 0.0012597798700437607,
+        "prison": 0.0003315210184325686,
+        "health": 0.0007624983423949078,
+        "pride": 0.0001657605092162843,
+        "dispute": 0.005735313618883437,
+        "nervousness": 0.001226627768200504,
+        "government": 0.0015249966847898156,
+        "weakness": 0.00036467312027582547,
+        "horror": 6.630420368651372e-05,
+        "swearing_terms": 0.0001657605092162843,
+        "leisure": 0.0008288025460814215,
+        "suffering": 0.0009282588516111921,
+        "royalty": 0.00029836891658931175,
+        "wealthy": 0.00013260840737302744,
+        "tourism": 9.945630552977058e-05,
+        "furniture": 0.0004972815276488529,
+        "school": 0.006530964063121602,
+        "magic": 0.0005967378331786235,
+        "beach": 0.0013592361755735314,
+        "journalism": 0.0013260840737302744,
+        "morning": 0.0004309773239623392,
+        "banking": 0.00029836891658931175,
+        "social_media": 0.00046412942580559605,
+        "exercise": 0.0007293462405516509,
+        "night": 0.0008619546479246784,
+        "kill": 6.630420368651372e-05,
+        "blue_collar_job": 9.945630552977058e-05,
+        "art": 0.001922821906908898,
+        "ridicule": 0.0002652168147460549,
+        "play": 0.0015249966847898156,
+        "computer": 0.0011271714626707333,
+        "college": 0.0036798833046015117,
+        "optimism": 0.0028510807585200902,
+        "stealing": 0.0017239092958493568,
+        "real_estate": 0.00046412942580559605,
+        "home": 0.0006630420368651372,
+        "divine": 0.0013592361755735314,
+        "sexual": 0.0007956504442381647,
+        "fear": 0.0006630420368651372,
+        "irritability": 3.315210184325686e-05,
+        "superhero": 0.0,
+        "business": 0.002453255536401008,
+        "driving": 0.0013923882774167882,
+        "pet": 0.00019891261105954116,
+        "childish": 0.003315210184325686,
+        "cooking": 0.00013260840737302744,
+        "exasperation": 0.0,
+        "religion": 0.0005635857313353666,
+        "hipster": 0.0008951067497679352,
+        "internet": 0.0005635857313353666,
+        "surprise": 0.00046412942580559605,
+        "reading": 0.003049993369579631,
+        "worship": 9.945630552977058e-05,
+        "leader": 0.0008619546479246784,
+        "independence": 6.630420368651372e-05,
+        "movement": 0.005005967378331786,
+        "body": 0.002188038721654953,
+        "noise": 0.0005635857313353666,
+        "eating": 0.00013260840737302744,
+        "medieval": 9.945630552977058e-05,
+        "zest": 0.0005635857313353666,
+        "confusion": 0.002154886619811696,
+        "water": 0.001226627768200504,
+        "sports": 0.001657605092162843,
+        "death": 0.0001657605092162843,
+        "healing": 0.0019891261105954116,
+        "legend": 0.0009282588516111921,
+        "heroic": 0.0027516244529903196,
+        "celebration": 0.0009945630552977058,
+        "restaurant": 0.00046412942580559605,
+        "violence": 0.00222119082349821,
+        "programming": 0.0009282588516111921,
+        "dominant_heirarchical": 9.945630552977058e-05,
+        "military": 0.00036467312027582547,
+        "neglect": 3.315210184325686e-05,
+        "swimming": 0.0007956504442381647,
+        "exotic": 3.315210184325686e-05,
+        "love": 0.0014918445829465588,
+        "hiking": 0.0007956504442381647,
+        "communication": 0.010210847367723114,
+        "hearing": 0.003315210184325686,
+        "order": 0.0037130354064447684,
+        "sympathy": 0.0007624983423949078,
+        "hygiene": 0.00039782522211908233,
+        "weather": 0.003215753878795916,
+        "anonymity": 0.00029836891658931175,
+        "trust": 0.0039451001193475665,
+        "ancient": 0.00036467312027582547,
+        "deception": 0.0009945630552977058,
+        "fabric": 0.0005304336294921098,
+        "air_travel": 0.0008288025460814215,
+        "fight": 0.002950537064049861,
+        "dominant_personality": 0.0001657605092162843,
+        "music": 0.0011603235645139902,
+        "vehicle": 0.0005635857313353666,
+        "politeness": 0.0005967378331786235,
+        "toy": 0.002154886619811696,
+        "farming": 6.630420368651372e-05,
+        "meeting": 0.0025858639437740354,
+        "war": 0.0006961941387083941,
+        "speaking": 0.012531494496751094,
+        "listen": 0.0034809706935419707,
+        "urban": 0.0004972815276488529,
+        "shopping": 0.0005635857313353666,
+        "disgust": 0.00013260840737302744,
+        "fire": 0.002619016045617292,
+        "tool": 0.0008288025460814215,
+        "phone": 0.0033483622861689433,
+        "gain": 0.0008951067497679352,
+        "sound": 0.0006298899350218804,
+        "injury": 0.0008951067497679352,
+        "sailing": 0.0006298899350218804,
+        "rage": 0.00019891261105954116,
+        "science": 0.005403792600450869,
+        "work": 0.002453255536401008,
+        "appearance": 0.0013923882774167882,
+        "valuable": 0.0007956504442381647,
+        "warmth": 0.0027516244529903196,
+        "youth": 0.0005635857313353666,
+        "sadness": 0.0005967378331786235,
+        "fun": 0.0005304336294921098,
+        "emotional": 0.0024864076382442647,
+        "joy": 0.0004972815276488529,
+        "affection": 0.0010940193608274765,
+        "traveling": 0.0033483622861689433,
+        "fashion": 0.0005967378331786235,
+        "ugliness": 0.00023206471290279803,
+        "lust": 0.0009945630552977058,
+        "shame": 0.0012597798700437607,
+        "torment": 0.0,
+        "economics": 0.0002652168147460549,
+        "anger": 3.315210184325686e-05,
+        "politics": 0.0001657605092162843,
+        "ship": 0.00023206471290279803,
+        "clothing": 0.00039782522211908233,
+        "car": 0.0013592361755735314,
+        "strength": 0.004077708526720594,
+        "technology": 0.0020885824161251823,
+        "breaking": 0.0008619546479246784,
+        "shape_and_size": 0.008951067497679353,
+        "power": 0.003580426999071741,
+        "white_collar_job": 0.0012929319718870177,
+        "animal": 0.00039782522211908233,
+        "party": 0.0022874950271847237,
+        "terrorism": 0.0004309773239623392,
+        "smell": 0.0002652168147460549,
+        "disappointment": 0.00013260840737302744,
+        "poor": 0.0002652168147460549,
+        "plant": 0.0010940193608274765,
+        "pain": 0.0024864076382442647,
+        "beauty": 0.002121734517968439,
+        "timidity": 0.0003315210184325686,
+        "philosophy": 0.0025527118419307786,
+        "negotiate": 0.00013260840737302744,
+        "negative_emotion": 0.005735313618883437,
+        "cleaning": 0.0008619546479246784,
+        "messaging": 0.0013923882774167882,
+        "competing": 0.0003315210184325686,
+        "law": 0.0013923882774167882,
+        "friends": 0.0022543429253414665,
+        "payment": 0.00039782522211908233,
+        "achievement": 0.0014255403792600451,
+        "alcohol": 0.0003315210184325686,
+        "liquid": 0.0011271714626707333,
+        "feminine": 0.0007293462405516509,
+        "weapon": 0.0006961941387083941,
+        "children": 0.005735313618883437,
+        "monster": 0.00019891261105954116,
+        "ocean": 0.0009282588516111921,
+        "giving": 0.0013260840737302744,
+        "contentment": 0.0010608672589842195,
+        "writing": 0.0017570613976926137,
+        "rural": 9.945630552977058e-05,
+        "positive_emotion": 0.0033483622861689433,
+        "musical": 0.0010608672589842195
+      }
+    },
+    "vader": {
+      "avg_compound": 0.1988,
+      "min_compound": -0.9559,
+      "max_compound": 0.979,
+      "positive_ratio": 0.4964,
+      "negative_ratio": 0.1637,
+      "neutral_ratio": 0.3399,
+      "per_sentence": [
+        {
+          "text": "you take any crazy idea uh well I don't know it's hard to make up a very crazy o",
+          "compound": 0.4025,
+          "pos": 0.087,
+          "neg": 0.05,
+          "neu": 0.862
+        },
+        {
+          "text": "so you start wondering\n\nare we all imagine in the the as the Earth turns on the ",
+          "compound": 0.5304,
+          "pos": 0.065,
+          "neg": 0.043,
+          "neu": 0.892
+        },
+        {
+          "text": "[Music] you see I have had in my life a number of uh Pleasant experiences when t",
+          "compound": 0.4588,
+          "pos": 0.098,
+          "neg": 0.039,
+          "neu": 0.863
+        },
+        {
+          "text": "and I discovered later that those were known as the boli numbers and discovered ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "so I was up to 1739 when I was about 14 you see and then a little later I discov",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "I just may invented a thing called uh which we now call uh operated calculus and",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and I read a book",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and I learned about it for example I read the rxs book and he had these problems",
+          "compound": 0.1263,
+          "pos": 0.093,
+          "neg": 0.06,
+          "neu": 0.846
+        },
+        {
+          "text": "but there in the last paragraph at the end of the book it said some new\n\nideas a",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so there I was some new ideas were needed",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "okay",
+          "compound": 0.2263,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "so I started to think of new ideas [Music] Richard feineman nobbel Prize winner ",
+          "compound": 0.9616,
+          "pos": 0.139,
+          "neg": 0.035,
+          "neu": 0.826
+        },
+        {
+          "text": "what's the name\n\nof do you know the name of that bird",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "I says I have the slightest idea he said well it's a brown throated thrush he sa",
+          "compound": 0.2732,
+          "pos": 0.087,
+          "neg": 0.0,
+          "neu": 0.913
+        },
+        {
+          "text": "but my father had already taught me about the names of birds he once we walked a",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "it's called A in Japanese a and so on and it when you know all the names in ever",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "so I had learned already that names don't constitute knowledge if knowing the na",
+          "compound": -0.4215,
+          "pos": 0.029,
+          "neg": 0.068,
+          "neu": 0.903
+        },
+        {
+          "text": "oh oh",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "yes now I know",
+          "compound": 0.4019,
+          "pos": 0.474,
+          "neg": 0.0,
+          "neu": 0.526
+        },
+        {
+          "text": "but I never know the names of things what he forgot to tell me was that the know",
+          "compound": 0.6486,
+          "pos": 0.15,
+          "neg": 0.0,
+          "neu": 0.85
+        },
+        {
+          "text": "so you tell them what you're talking about but the basic principle of knowing ab",
+          "compound": -0.3612,
+          "pos": 0.0,
+          "neg": 0.079,
+          "neu": 0.921
+        },
+        {
+          "text": "yes of course it's you have to learn these are kind of disciplines in the field ",
+          "compound": 0.4019,
+          "pos": 0.065,
+          "neg": 0.0,
+          "neu": 0.935
+        },
+        {
+          "text": "and what it is you don't know",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and it's uh you got to be very careful not to confuse yourself how else did he t",
+          "compound": 0.6552,
+          "pos": 0.18,
+          "neg": 0.0,
+          "neu": 0.82
+        },
+        {
+          "text": "well we had a lot of uh little games like he would say at the dinner table you'd",
+          "compound": 0.2298,
+          "pos": 0.162,
+          "neg": 0.09,
+          "neu": 0.748
+        },
+        {
+          "text": "and he'd say suppose we were you were a martian we were martians and we came dow",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "that and we look at got it from the outside and that I can't\n\nexplain exactly wh",
+          "compound": 0.4516,
+          "pos": 0.041,
+          "neg": 0.0,
+          "neu": 0.959
+        },
+        {
+          "text": "but it started with a question of his kind suppose you were a martian who never ",
+          "compound": 0.6808,
+          "pos": 0.155,
+          "neg": 0.0,
+          "neu": 0.845
+        },
+        {
+          "text": "and you came down to this earth and you saw these people had this funny flppy th",
+          "compound": 0.698,
+          "pos": 0.11,
+          "neg": 0.03,
+          "neu": 0.859
+        },
+        {
+          "text": "but what happens to your ideas how does it feel to become unconscious",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "so I tried to answer the question what happens when you become unconscious but d",
+          "compound": -0.5199,
+          "pos": 0.05,
+          "neg": 0.065,
+          "neu": 0.886
+        },
+        {
+          "text": "but we all know that that's what we learned in the physics classes how to do tha",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but the new problem where we're\n\nstuck we're stuck because all those methods don",
+          "compound": -0.8201,
+          "pos": 0.0,
+          "neg": 0.247,
+          "neu": 0.753
+        },
+        {
+          "text": "so when we get stuck in a certain place it's a place where history will not repe",
+          "compound": 0.4754,
+          "pos": 0.077,
+          "neg": 0.051,
+          "neu": 0.872
+        },
+        {
+          "text": "I I don't care the only thing that the real test in physics is experiment and hi",
+          "compound": 0.9069,
+          "pos": 0.077,
+          "neg": 0.011,
+          "neu": 0.912
+        },
+        {
+          "text": "and then gradually that we asks more questions",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and then we dig in a little deeper to things that we can just make we need to do",
+          "compound": 0.7299,
+          "pos": 0.068,
+          "neg": 0.0,
+          "neu": 0.932
+        },
+        {
+          "text": "it's going around a great\n\nbig glob of gas that's burning by a fuel by a fire th",
+          "compound": -0.5859,
+          "pos": 0.126,
+          "neg": 0.244,
+          "neu": 0.63
+        },
+        {
+          "text": "but uh that's much more exciting story to many people than the tales which other",
+          "compound": 0.9679,
+          "pos": 0.312,
+          "neg": 0.04,
+          "neu": 0.647
+        },
+        {
+          "text": "and so what's the pleasure in physics is that to me is that as it's\n\nrevealed th",
+          "compound": 0.9464,
+          "pos": 0.447,
+          "neg": 0.0,
+          "neu": 0.553
+        },
+        {
+          "text": "and I can't I have this disease and many other people who have studied far enoug",
+          "compound": 0.8063,
+          "pos": 0.056,
+          "neg": 0.017,
+          "neu": 0.928
+        },
+        {
+          "text": "and so you know you understand it and yet in the real game there's so it's so ma",
+          "compound": -0.1027,
+          "pos": 0.0,
+          "neg": 0.024,
+          "neu": 0.976
+        },
+        {
+          "text": "and you nodding and all this stuff is the result of lots and lots of atoms all o",
+          "compound": 0.2508,
+          "pos": 0.018,
+          "neg": 0.0,
+          "neu": 0.982
+        },
+        {
+          "text": "oh like what about those colors or something like that we have a nice interview ",
+          "compound": 0.8394,
+          "pos": 0.076,
+          "neg": 0.019,
+          "neu": 0.905
+        },
+        {
+          "text": "so it's ready to boil low temperature and your decreased de pressure it's ready ",
+          "compound": 0.2449,
+          "pos": 0.185,
+          "neg": 0.15,
+          "neu": 0.665
+        },
+        {
+          "text": "and it's any little piece of dirt or any little disturbance it'll form a bubble ",
+          "compound": -0.2315,
+          "pos": 0.024,
+          "neg": 0.055,
+          "neu": 0.921
+        },
+        {
+          "text": "but if the particle on the way through hit the nucleus of another atom then you ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so if you can see a short distance a few centimeters that's corresponds to a",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "so you see it's not very difficult to to find out about these things with the ri",
+          "compound": 0.0164,
+          "pos": 0.057,
+          "neg": 0.044,
+          "neu": 0.899
+        },
+        {
+          "text": "okay",
+          "compound": 0.2263,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "and that the particles that we find are of two big classes and one class we can ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but it's more subtle",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but it's like that",
+          "compound": 0.5023,
+          "pos": 0.52,
+          "neg": 0.0,
+          "neu": 0.48
+        },
+        {
+          "text": "and then when we allow for their motion around each other we find the higher ene",
+          "compound": 0.9751,
+          "pos": 0.107,
+          "neg": 0.036,
+          "neu": 0.858
+        },
+        {
+          "text": "so there's a difficulty furthermore the idea that they're just B3 particles is s",
+          "compound": -0.4822,
+          "pos": 0.0,
+          "neg": 0.079,
+          "neu": 0.921
+        },
+        {
+          "text": "so the infinity is not a paradox by itself the three is more of the Paradox why ",
+          "compound": 0.9713,
+          "pos": 0.068,
+          "neg": 0.032,
+          "neu": 0.9
+        },
+        {
+          "text": "you think you agreed that the quazar are in real trouble that the very big red s",
+          "compound": -0.1531,
+          "pos": 0.096,
+          "neg": 0.124,
+          "neu": 0.78
+        },
+        {
+          "text": "so I I've had this uneasy feeling now for about 5 years it looked crazy for a wh",
+          "compound": -0.5994,
+          "pos": 0.068,
+          "neg": 0.247,
+          "neu": 0.685
+        },
+        {
+          "text": "but it's like up of evidence all the time this way each one makes a new problem ",
+          "compound": -0.8201,
+          "pos": 0.055,
+          "neg": 0.183,
+          "neu": 0.762
+        },
+        {
+          "text": "that's right",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but in the present physical laws there doesn't seem to be any place for such a r",
+          "compound": 0.1927,
+          "pos": 0.087,
+          "neg": 0.05,
+          "neu": 0.864
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "and it could be that either the gravity is wrong or one of the physical laws are",
+          "compound": -0.7795,
+          "pos": 0.057,
+          "neg": 0.212,
+          "neu": 0.731
+        },
+        {
+          "text": "I mean you you would\n\nagree that one has to push it through along these lines",
+          "compound": 0.3612,
+          "pos": 0.143,
+          "neg": 0.0,
+          "neu": 0.857
+        },
+        {
+          "text": "yeah the best way to progress I always think maybe is to try to be as conservati",
+          "compound": 0.6908,
+          "pos": 0.157,
+          "neg": 0.06,
+          "neu": 0.784
+        },
+        {
+          "text": "but when you start out by saying I got to change something there's so many ways ",
+          "compound": -0.1154,
+          "pos": 0.107,
+          "neg": 0.113,
+          "neu": 0.779
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "yeah story is it the chat with the under the single lamp in the street yes",
+          "compound": 0.5994,
+          "pos": 0.259,
+          "neg": 0.0,
+          "neu": 0.741
+        },
+        {
+          "text": "that's uh where a passor by says what are you looking for he says I'm looking fo",
+          "compound": 0.2263,
+          "pos": 0.073,
+          "neg": 0.061,
+          "neu": 0.866
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "we work with the lights better",
+          "compound": 0.4404,
+          "pos": 0.367,
+          "neg": 0.0,
+          "neu": 0.633
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "once I was thinking by analogy that there was a time in the 1900s when the thoug",
+          "compound": 0.1154,
+          "pos": 0.01,
+          "neg": 0.0,
+          "neu": 0.99
+        },
+        {
+          "text": "yeah then I wondered by analogy I was always worked by analogy what today do we ",
+          "compound": 0.296,
+          "pos": 0.071,
+          "neg": 0.0,
+          "neu": 0.929
+        },
+        {
+          "text": "and I realize immediately something we consider at the present moment most peopl",
+          "compound": -0.4588,
+          "pos": 0.025,
+          "neg": 0.056,
+          "neu": 0.919
+        },
+        {
+          "text": "and then it evolves from there according to physical laws we're studying the law",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but we're not worrying about how the pieces are supposed to be set up on the boa",
+          "compound": 0.89,
+          "pos": 0.077,
+          "neg": 0.009,
+          "neu": 0.914
+        },
+        {
+          "text": "Forever it's always been like that the same laws and we try to explain the unive",
+          "compound": 0.0387,
+          "pos": 0.025,
+          "neg": 0.023,
+          "neu": 0.952
+        },
+        {
+          "text": "and I think differently I think of the possibilities",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but I'm afraid to to put things in when I see op it's the dark I always figure t",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but but you're different that I would like to discuss with you sometime how do y",
+          "compound": 0.5023,
+          "pos": 0.101,
+          "neg": 0.0,
+          "neu": 0.899
+        },
+        {
+          "text": "I don't know way you you kind of grow up I don't know I'm afraid to make specifi",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so since I see these other Alternatives I don't know which one to to p with ",
+          "compound": -0.0026,
+          "pos": 0.06,
+          "neg": 0.06,
+          "neu": 0.88
+        },
+        {
+          "text": "I I I don't set any requirement that the answer be right",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "it's just what I'm interested to follow that's the\n\ndifference that's the differ",
+          "compound": 0.7391,
+          "pos": 0.093,
+          "neg": 0.0,
+          "neu": 0.907
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "even if it's wrong common ground is enthusiastically explored but is it only sha",
+          "compound": 0.9699,
+          "pos": 0.122,
+          "neg": 0.011,
+          "neu": 0.867
+        },
+        {
+          "text": "or is it language that has been involved the system of symbolis then or the size",
+          "compound": 0.4588,
+          "pos": 0.064,
+          "neg": 0.029,
+          "neu": 0.907
+        },
+        {
+          "text": "and we ought to find out more about doph",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and you go on and on you talk those are things of the day they're just as good",
+          "compound": 0.4404,
+          "pos": 0.146,
+          "neg": 0.0,
+          "neu": 0.854
+        },
+        {
+          "text": "but you can go on and on with would I talk to a playwriter or something",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "I I find because I don't look go to plays or something I don't find it easy to t",
+          "compound": -0.6131,
+          "pos": 0.02,
+          "neg": 0.079,
+          "neu": 0.901
+        },
+        {
+          "text": "and we Delight each other in a new point of view and when you're talking to some",
+          "compound": 0.5994,
+          "pos": 0.135,
+          "neg": 0.0,
+          "neu": 0.865
+        },
+        {
+          "text": "and he thinks he's thought about the whales or the Dolphins and he had some litt",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so when you're talking back and forth he's excited by your point of view abo",
+          "compound": 0.8481,
+          "pos": 0.156,
+          "neg": 0.0,
+          "neu": 0.844
+        },
+        {
+          "text": "like I specialize in physics to say he specialized in paleontology so his his in",
+          "compound": 0.7579,
+          "pos": 0.105,
+          "neg": 0.0,
+          "neu": 0.895
+        },
+        {
+          "text": "but I believe that",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "yes I\n\nfind always that a good man uh I take it all back",
+          "compound": 0.6808,
+          "pos": 0.318,
+          "neg": 0.0,
+          "neu": 0.682
+        },
+        {
+          "text": "I take it all back a good man I've talked to Good Men in other fields there's ce",
+          "compound": 0.8979,
+          "pos": 0.223,
+          "neg": 0.0,
+          "neu": 0.777
+        },
+        {
+          "text": "and I had a marvelous conversation with him MOA his name was Andre MOA",
+          "compound": 0.5994,
+          "pos": 0.231,
+          "neg": 0.0,
+          "neu": 0.769
+        },
+        {
+          "text": "and then I met an artist Robert Irwin who's a very important artist in Los Angel",
+          "compound": 0.6478,
+          "pos": 0.154,
+          "neg": 0.0,
+          "neu": 0.846
+        },
+        {
+          "text": "so I take it all back if you give me the right man in any field I can talk to hi",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so he talk deep as far as he can go and he therefore he's up against Mysteri",
+          "compound": 0.5082,
+          "pos": 0.092,
+          "neg": 0.066,
+          "neu": 0.842
+        },
+        {
+          "text": "oh yes",
+          "compound": 0.4019,
+          "pos": 0.73,
+          "neg": 0.0,
+          "neu": 0.27
+        },
+        {
+          "text": "that's this is a God",
+          "compound": 0.2732,
+          "pos": 0.344,
+          "neg": 0.0,
+          "neu": 0.656
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "and then you tried to figure out what the conditions were were of that\n\nmoment t",
+          "compound": 0.0258,
+          "pos": 0.067,
+          "neg": 0.066,
+          "neu": 0.868
+        },
+        {
+          "text": "and uh then you wonder what's the psychological condition",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "well I know at that particular time I simply looked up and I said wait a minute ",
+          "compound": 0.3642,
+          "pos": 0.147,
+          "neg": 0.077,
+          "neu": 0.776
+        },
+        {
+          "text": "and I'll just treat it very lightly I'll just tap it",
+          "compound": 0.4019,
+          "pos": 0.213,
+          "neg": 0.0,
+          "neu": 0.787
+        },
+        {
+          "text": "and it'll see Bo Bo",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and there it was so how many times since then I'm walking on the beach",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and I said now look it can't be so complicated tap happen nothing Happ Happ noth",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "so the lights are great",
+          "compound": 0.6249,
+          "pos": 0.506,
+          "neg": 0.0,
+          "neu": 0.494
+        },
+        {
+          "text": "but uh the secret way how what the condition it's that missing bit in the brain ",
+          "compound": -0.4215,
+          "pos": 0.0,
+          "neg": 0.118,
+          "neu": 0.882
+        },
+        {
+          "text": "and yeah",
+          "compound": 0.296,
+          "pos": 0.688,
+          "neg": 0.0,
+          "neu": 0.312
+        },
+        {
+          "text": "and I have no idea I've thought\n\nabout it because some uh some may suggest that ",
+          "compound": 0.831,
+          "pos": 0.175,
+          "neg": 0.038,
+          "neu": 0.787
+        },
+        {
+          "text": "so I've often paid attention to what the condition is and have never found any c",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "easy I just got absolutely wild how it drives how long it last it's not very sho",
+          "compound": 0.4404,
+          "pos": 0.121,
+          "neg": 0.0,
+          "neu": 0.879
+        },
+        {
+          "text": "and then",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "days and then\n\nthere are lesser Pleasures as you see as you work on more things ",
+          "compound": 0.4404,
+          "pos": 0.083,
+          "neg": 0.0,
+          "neu": 0.917
+        },
+        {
+          "text": "yes it's like a it's like a supernova I suppose no that's 54 days that's better",
+          "compound": 0.8126,
+          "pos": 0.445,
+          "neg": 0.092,
+          "neu": 0.462
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "but uh I was going to say that it's the the hope of that kind of goal that keeps",
+          "compound": 0.5927,
+          "pos": 0.054,
+          "neg": 0.0,
+          "neu": 0.946
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "and I had to learn that first I'd never been able to to do it",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "and then afterwards you wonder why that devil was I so stupid that I didn't see ",
+          "compound": -0.8518,
+          "pos": 0.043,
+          "neg": 0.171,
+          "neu": 0.786
+        },
+        {
+          "text": "10 years ear depending on the case it's because we're du",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "somehow it's most mysterious that it\n\njust means that however good you may get c",
+          "compound": 0.4404,
+          "pos": 0.127,
+          "neg": 0.0,
+          "neu": 0.873
+        },
+        {
+          "text": "and so we're still very bad at it absolutely",
+          "compound": -0.5849,
+          "pos": 0.0,
+          "neg": 0.322,
+          "neu": 0.678
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "we're doing the best we can kind of very good",
+          "compound": 0.8122,
+          "pos": 0.48,
+          "neg": 0.0,
+          "neu": 0.52
+        },
+        {
+          "text": "yeah this depressing and sobering thought",
+          "compound": -0.296,
+          "pos": 0.229,
+          "neg": 0.458,
+          "neu": 0.312
+        },
+        {
+          "text": "well it's it's been fun\n\ne",
+          "compound": 0.6597,
+          "pos": 0.574,
+          "neg": 0.0,
+          "neu": 0.426
+        },
+        {
+          "text": "[Music]",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "[Music]",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "[Music]",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "[Music]",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "[Applause] hi I can see the audience tonight so I can see also from the size of ",
+          "compound": 0.4767,
+          "pos": 0.067,
+          "neg": 0.0,
+          "neu": 0.933
+        },
+        {
+          "text": "and I don't doubt that there are some who know neither physics nor mathematics v",
+          "compound": 0.6405,
+          "pos": 0.107,
+          "neg": 0.054,
+          "neu": 0.839
+        },
+        {
+          "text": "It's Perfectly Natural that the mathematics will be useful when large numbers ar",
+          "compound": 0.8625,
+          "pos": 0.161,
+          "neg": 0.0,
+          "neu": 0.839
+        },
+        {
+          "text": "and they're all different shapes and find some spot maybe it pushes its DNA in a",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and yet if we do the experiment with millions and billions of bacteria and virus",
+          "compound": 0.6003,
+          "pos": 0.054,
+          "neg": 0.03,
+          "neu": 0.917
+        },
+        {
+          "text": "it's very simple if it's mathematical all either goes one side or\n\nthe other on ",
+          "compound": 0.1027,
+          "pos": 0.047,
+          "neg": 0.0,
+          "neu": 0.953
+        },
+        {
+          "text": "but you could imagine that on an enormous board with lots and lots of pieces som",
+          "compound": 0.979,
+          "pos": 0.092,
+          "neg": 0.02,
+          "neu": 0.888
+        },
+        {
+          "text": "uh well I give two examples one which we really do not\n\nand one in which we do t",
+          "compound": 0.2732,
+          "pos": 0.028,
+          "neg": 0.0,
+          "neu": 0.972
+        },
+        {
+          "text": "but what's actually happening is that electrons going through the Y each carry o",
+          "compound": 0.3221,
+          "pos": 0.05,
+          "neg": 0.0,
+          "neu": 0.95
+        },
+        {
+          "text": "so the mathematically appearing law has as its basis nothing very deep requiring",
+          "compound": -0.2878,
+          "pos": 0.027,
+          "neg": 0.052,
+          "neu": 0.921
+        },
+        {
+          "text": "but it's not the kind of mathematics I'm talking about tonight\n\nnow if we take o",
+          "compound": 0.8462,
+          "pos": 0.067,
+          "neg": 0.0,
+          "neu": 0.933
+        },
+        {
+          "text": "and I didn't have to write the equation",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but nevertheless it's kind of mathematical",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and we would wonder how can this be a fundamental law how can this planet out th",
+          "compound": 0.0516,
+          "pos": 0.033,
+          "neg": 0.03,
+          "neu": 0.938
+        },
+        {
+          "text": "so you might want to look further and various people have tried to look further ",
+          "compound": -0.5054,
+          "pos": 0.021,
+          "neg": 0.058,
+          "neu": 0.921
+        },
+        {
+          "text": "and I would like to describe one Theory which has been invented for as among oth",
+          "compound": 0.4215,
+          "pos": 0.101,
+          "neg": 0.0,
+          "neu": 0.899
+        },
+        {
+          "text": "and I give this Theory perhaps You' thought of it yourself every once in a while",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but we we and the sun are practically transparent for them nearly but some hit",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so it's not completely\n\ntransparent and look what would happen if the Sun is",
+          "compound": 0.2154,
+          "pos": 0.026,
+          "neg": 0.017,
+          "neu": 0.957
+        },
+        {
+          "text": "Whenever there was any motion this sideways force would slow the Earth up in the",
+          "compound": 0.7506,
+          "pos": 0.111,
+          "neg": 0.0,
+          "neu": 0.889
+        },
+        {
+          "text": "maybe maybe I can invent a better one and maybe you can because nobody knows the",
+          "compound": 0.6938,
+          "pos": 0.101,
+          "neg": 0.033,
+          "neu": 0.866
+        },
+        {
+          "text": "but it produces something which isn't true so there is no model of the theory of",
+          "compound": -0.5157,
+          "pos": 0.065,
+          "neg": 0.075,
+          "neu": 0.861
+        },
+        {
+          "text": "and so on and can convert all these into words I would be in other words\n\nkind t",
+          "compound": 0.8834,
+          "pos": 0.119,
+          "neg": 0.066,
+          "neu": 0.815
+        },
+        {
+          "text": "and I don't think it's possible because there's another feature mathematics is n",
+          "compound": 0.7717,
+          "pos": 0.06,
+          "neg": 0.0,
+          "neu": 0.94
+        },
+        {
+          "text": "and so on as it goes around the Sun now I can explain both of those statements t",
+          "compound": 0.128,
+          "pos": 0.073,
+          "neg": 0.0,
+          "neu": 0.927
+        },
+        {
+          "text": "but I cannot explain why they're both the same so that if you don't appreciate t",
+          "compound": 0.9751,
+          "pos": 0.156,
+          "neg": 0.041,
+          "neu": 0.803
+        },
+        {
+          "text": "so I'm going to prove if I may the relationship that if the forces are directed ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and we imagine at a certain time let's say the planet is here and is moving in s",
+          "compound": -0.1027,
+          "pos": 0.031,
+          "neg": 0.033,
+          "neu": 0.936
+        },
+        {
+          "text": "I know about the triangles I just don't know the name now let us draw the lines ",
+          "compound": 0.1367,
+          "pos": 0.035,
+          "neg": 0.042,
+          "neu": 0.923
+        },
+        {
+          "text": "what's its area it's this space\n\nmultiplied by this height and what about the ot",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "it's this base times the same altitude the two triangles have the same altitude ",
+          "compound": 0.7495,
+          "pos": 0.033,
+          "neg": 0.019,
+          "neu": 0.948
+        },
+        {
+          "text": "so by reasoning we can see a connection between the force the fact\n\nthat the for",
+          "compound": 0.571,
+          "pos": 0.039,
+          "neg": 0.0,
+          "neu": 0.961
+        },
+        {
+          "text": "I mean to notice about the areas and to figure out how to do it you have to be c",
+          "compound": 0.3884,
+          "pos": 0.155,
+          "neg": 0.093,
+          "neu": 0.752
+        },
+        {
+          "text": "and I want only to show what it looks like in the notation of the more modern ma",
+          "compound": 0.631,
+          "pos": 0.128,
+          "neg": 0.0,
+          "neu": 0.872
+        },
+        {
+          "text": "and we represent that by area do and the area changes because of a it's uh when ",
+          "compound": -0.1045,
+          "pos": 0.008,
+          "neg": 0.012,
+          "neu": 0.98
+        },
+        {
+          "text": "I'm not it's just a series of rules that people have found out that are very pow",
+          "compound": 0.4754,
+          "pos": 0.134,
+          "neg": 0.0,
+          "neu": 0.866
+        },
+        {
+          "text": "and this says the component of the Velocity at right angles to the velocity it i",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "so this says that the rate of change of the rate of change of the area is the co",
+          "compound": -0.3291,
+          "pos": 0.016,
+          "neg": 0.03,
+          "neu": 0.954
+        },
+        {
+          "text": "but he wrote everything this way because he tried to make it possible for people",
+          "compound": 0.8519,
+          "pos": 0.078,
+          "neg": 0.033,
+          "neu": 0.889
+        },
+        {
+          "text": "and it permits us to develop consequences and analyze the situations and rechang",
+          "compound": 0.0258,
+          "pos": 0.02,
+          "neg": 0.0,
+          "neu": 0.98
+        },
+        {
+          "text": "and he's able to do that do it then in other words all of the various statements",
+          "compound": 0.9743,
+          "pos": 0.064,
+          "neg": 0.015,
+          "neu": 0.921
+        },
+        {
+          "text": "it's like a bridge with lots of me members and it's overc connected if pieces ha",
+          "compound": 0.3612,
+          "pos": 0.035,
+          "neg": 0.0,
+          "neu": 0.965
+        },
+        {
+          "text": "but it's is to say all I know happened to know this",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and I happen to know that and\n\nmaybe I know that",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and I work everything out from there and next tomorrow I forgot that this was tr",
+          "compound": 0.4215,
+          "pos": 0.157,
+          "neg": 0.0,
+          "neu": 0.843
+        },
+        {
+          "text": "but I remembered that this was true",
+          "compound": 0.5719,
+          "pos": 0.381,
+          "neg": 0.0,
+          "neu": 0.619
+        },
+        {
+          "text": "and then I reconstruct it again",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so on I'm never quite sure of where I'm supposed to begin and where I'm supp",
+          "compound": -0.4642,
+          "pos": 0.0,
+          "neg": 0.05,
+          "neu": 0.95
+        },
+        {
+          "text": "it's much more efficient to do it the other way and the what the best axioms are",
+          "compound": 0.9665,
+          "pos": 0.119,
+          "neg": 0.03,
+          "neu": 0.851
+        },
+        {
+          "text": "but there's another statement which is a little more General than equal areas an",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "well I have to State what it is it's rather complicated to say",
+          "compound": 0.2732,
+          "pos": 0.149,
+          "neg": 0.0,
+          "neu": 0.851
+        },
+        {
+          "text": "and it's not quite as pretty as this one",
+          "compound": -0.428,
+          "pos": 0.0,
+          "neg": 0.262,
+          "neu": 0.738
+        },
+        {
+          "text": "but it's it's obviously the the sun of this one I mean it's the it's The Offspri",
+          "compound": 0.8988,
+          "pos": 0.033,
+          "neg": 0.005,
+          "neu": 0.962
+        },
+        {
+          "text": "and then when it comes in to get the same area you have to go around faster but ",
+          "compound": 0.9431,
+          "pos": 0.08,
+          "neg": 0.05,
+          "neu": 0.87
+        },
+        {
+          "text": "so if you'll permit me I'm going to state the law of gravitation in three differ",
+          "compound": 0.3919,
+          "pos": 0.027,
+          "neg": 0.0,
+          "neu": 0.973
+        },
+        {
+          "text": "see it has a what we call nonlocal Quality the force on this depends on where th",
+          "compound": -0.1419,
+          "pos": 0.0,
+          "neg": 0.037,
+          "neu": 0.963
+        },
+        {
+          "text": "so then is another way of stating the laws which are very strange and it's calle",
+          "compound": -0.2716,
+          "pos": 0.0,
+          "neg": 0.087,
+          "neu": 0.913
+        },
+        {
+          "text": "and and it's so very hard to explain",
+          "compound": -0.2433,
+          "pos": 0.0,
+          "neg": 0.22,
+          "neu": 0.78
+        },
+        {
+          "text": "but I just want to give you some rough idea of what it's like and it says differ",
+          "compound": 0.5267,
+          "pos": 0.16,
+          "neg": 0.048,
+          "neu": 0.792
+        },
+        {
+          "text": "and so on and the number is changing as changes rather when you go from place to",
+          "compound": 0.0772,
+          "pos": 0.018,
+          "neg": 0.0,
+          "neu": 0.982
+        },
+        {
+          "text": "but you can state the law in another way and it says the following\n\nyou don't ha",
+          "compound": -0.5684,
+          "pos": 0.008,
+          "neg": 0.019,
+          "neu": 0.973
+        },
+        {
+          "text": "you do it as follows you calculate a certain quantity for you invent a possible ",
+          "compound": 0.9279,
+          "pos": 0.078,
+          "neg": 0.015,
+          "neu": 0.907
+        },
+        {
+          "text": "well you could talk about it\n\nthis way nature must be stated in terms of a minim",
+          "compound": 0.2732,
+          "pos": 0.11,
+          "neg": 0.0,
+          "neu": 0.89
+        },
+        {
+          "text": "well you can talk about it this way nature must have a local field you can do th",
+          "compound": 0.886,
+          "pos": 0.128,
+          "neg": 0.022,
+          "neu": 0.85
+        },
+        {
+          "text": "but we have learned from much experience that all intuitions about what Nature's",
+          "compound": -0.0039,
+          "pos": 0.038,
+          "neg": 0.038,
+          "neu": 0.923
+        },
+        {
+          "text": "Einstein noted that the law of gravity that we he said that he realized that sig",
+          "compound": 0.4215,
+          "pos": 0.038,
+          "neg": 0.0,
+          "neu": 0.962
+        },
+        {
+          "text": "and he guessed that it would\n\nbe true of gravitation if the signals can't go any",
+          "compound": -0.5413,
+          "pos": 0.076,
+          "neg": 0.122,
+          "neu": 0.802
+        },
+        {
+          "text": "so we haven't decided between those two yet in fact it turns out that the quantu",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but\n\nthat the fact that a minimum principle exists is turns out to be a conseque",
+          "compound": 0.7783,
+          "pos": 0.065,
+          "neg": 0.0,
+          "neu": 0.935
+        },
+        {
+          "text": "so it's this way that if you have a structure that's only partly accurate\n\nand s",
+          "compound": 0.8488,
+          "pos": 0.054,
+          "neg": 0.033,
+          "neu": 0.912
+        },
+        {
+          "text": "and I don't understand the reason why it is that the laws of physics always seem",
+          "compound": 0.6762,
+          "pos": 0.052,
+          "neg": 0.016,
+          "neu": 0.932
+        },
+        {
+          "text": "I mean are carefully formulated and complete enough it is not necessary for the ",
+          "compound": 0.128,
+          "pos": 0.019,
+          "neg": 0.0,
+          "neu": 0.981
+        },
+        {
+          "text": "but then I can read his thing back and say oh a triangle that's just a three sid",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so I know this new fact if in other words mathematicians prepare abstract re",
+          "compound": 0.9578,
+          "pos": 0.097,
+          "neg": 0.038,
+          "neu": 0.865
+        },
+        {
+          "text": "right",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "yeah",
+          "compound": 0.296,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "but I only want the case three well substitute n equals three",
+          "compound": 0.4767,
+          "pos": 0.291,
+          "neg": 0.0,
+          "neu": 0.709
+        },
+        {
+          "text": "and then it turns out then it turns out that very many of the complicated theore",
+          "compound": 0.6828,
+          "pos": 0.09,
+          "neg": 0.039,
+          "neu": 0.871
+        },
+        {
+          "text": "and so there is a certain amount of reducing because the mathematicians have pre",
+          "compound": 0.1761,
+          "pos": 0.134,
+          "neg": 0.092,
+          "neu": 0.774
+        },
+        {
+          "text": "[Applause] now another item that's interesting in this relationship is the quest",
+          "compound": 0.7783,
+          "pos": 0.26,
+          "neg": 0.0,
+          "neu": 0.74
+        },
+        {
+          "text": "oh I must mention one other item when you know what it is you're talking about t",
+          "compound": 0.9057,
+          "pos": 0.094,
+          "neg": 0.052,
+          "neu": 0.854
+        },
+        {
+          "text": "or I don't like action at the distance or I do like action the question is to wh",
+          "compound": 0.313,
+          "pos": 0.093,
+          "neg": 0.086,
+          "neu": 0.821
+        },
+        {
+          "text": "and so I made the hypothesis often that the laws are going to turn out to be in ",
+          "compound": 0.3612,
+          "pos": 0.075,
+          "neg": 0.0,
+          "neu": 0.925
+        },
+        {
+          "text": "but that is of the same nature as the other speculations that other people make ",
+          "compound": 0.1494,
+          "pos": 0.116,
+          "neg": 0.095,
+          "neu": 0.788
+        },
+        {
+          "text": "it's not good to be too prejudiced about the thing to summarize I would use the ",
+          "compound": 0.8251,
+          "pos": 0.1,
+          "neg": 0.089,
+          "neu": 0.81
+        },
+        {
+          "text": "[Music]",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "[Applause]",
+          "compound": 0.4215,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "[Music]",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "[Music]",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "[Applause]",
+          "compound": 0.4215,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "[Music] [Music] I\n\nsituation now I'm going to discuss how we would look for a ne",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "then we com well don't laugh that's the really true then we compute the conseque",
+          "compound": -0.2337,
+          "pos": 0.073,
+          "neg": 0.085,
+          "neu": 0.842
+        },
+        {
+          "text": "I had a conversation about frying saces some years ago with\n\nLayman cuz I'm scie",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "so I said I don't think there are flying sources so the other my antagonist said",
+          "compound": -0.4404,
+          "pos": 0.0,
+          "neg": 0.112,
+          "neu": 0.888
+        },
+        {
+          "text": "can you prove that it's impossible",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "I",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "no I can't prove it's impossible it's just very unlikely that they say you are v",
+          "compound": -0.296,
+          "pos": 0.0,
+          "neg": 0.062,
+          "neu": 0.937
+        },
+        {
+          "text": "well that's the way that is scientific it is scientific only to say what's more\n",
+          "compound": 0.7096,
+          "pos": 0.082,
+          "neg": 0.024,
+          "neu": 0.895
+        },
+        {
+          "text": "and it's a good guess",
+          "compound": 0.4404,
+          "pos": 0.42,
+          "neg": 0.0,
+          "neu": 0.58
+        },
+        {
+          "text": "and we always try to guess the most likely\n\nexplanation keeping in the back of t",
+          "compound": 0.5584,
+          "pos": 0.059,
+          "neg": 0.0,
+          "neu": 0.941
+        },
+        {
+          "text": "and it's SE in fact to be a consequence\n\nof known laws there are other phenomena",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and uh it is interesting however that that phenomenon has not been well establis",
+          "compound": 0.0377,
+          "pos": 0.099,
+          "neg": 0.13,
+          "neu": 0.771
+        },
+        {
+          "text": "so if it could be demonstrated of course that would prove that the physics is in",
+          "compound": 0.2716,
+          "pos": 0.088,
+          "neg": 0.074,
+          "neu": 0.837
+        },
+        {
+          "text": "right",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "no it is simply not proved wrong because in the future there could be a wider ra",
+          "compound": -0.0634,
+          "pos": 0.065,
+          "neg": 0.069,
+          "neu": 0.866
+        },
+        {
+          "text": "so on compared them to experiment",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and it took several hundred years before the slight era of the motion of mercury",
+          "compound": -0.7506,
+          "pos": 0.0,
+          "neg": 0.151,
+          "neu": 0.849
+        },
+        {
+          "text": "but it can\n\nnever be proved right because tomorrow's experiment May succeed in p",
+          "compound": 0.0387,
+          "pos": 0.163,
+          "neg": 0.157,
+          "neu": 0.681
+        },
+        {
+          "text": "so we never AR we can only be sure we're wrong however it's rather remarkable th",
+          "compound": 0.4215,
+          "pos": 0.169,
+          "neg": 0.089,
+          "neu": 0.743
+        },
+        {
+          "text": "so long I must also point out to you that you cannot prove a vague Theory wrong ",
+          "compound": 0.8512,
+          "pos": 0.096,
+          "neg": 0.054,
+          "neu": 0.85
+        },
+        {
+          "text": "well then it's because she was overindulgent when he was so by having a vague Th",
+          "compound": 0.9612,
+          "pos": 0.181,
+          "neg": 0.013,
+          "neu": 0.805
+        },
+        {
+          "text": "so on oh you're dealing with psychological matters that things can't be defined ",
+          "compound": 0.0258,
+          "pos": 0.073,
+          "neg": 0.0,
+          "neu": 0.927
+        },
+        {
+          "text": "yes",
+          "compound": 0.4019,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "but then you can't claim to know anything about it",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "now I want to concentrate from now on because I'm a theoretical physicist I'm mo",
+          "compound": 0.7638,
+          "pos": 0.167,
+          "neg": 0.06,
+          "neu": 0.773
+        },
+        {
+          "text": "but you say then is very simple we set up a machine a great Computing machine wh",
+          "compound": 0.5267,
+          "pos": 0.093,
+          "neg": 0.053,
+          "neu": 0.854
+        },
+        {
+          "text": "and I will try to explain why the first problem is how to start you see you want",
+          "compound": -0.34,
+          "pos": 0.062,
+          "neg": 0.129,
+          "neu": 0.81
+        },
+        {
+          "text": "I'll start with all the known principles but the principles that are all known a",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "I get a lot of letters with such content but I must say that such remarks are pe",
+          "compound": -0.064,
+          "pos": 0.102,
+          "neg": 0.097,
+          "neu": 0.801
+        },
+        {
+          "text": "but it takes too long to answer them because they usually in the class try 10 20",
+          "compound": 0.849,
+          "pos": 0.169,
+          "neg": 0.084,
+          "neu": 0.747
+        },
+        {
+          "text": "and I could never carry a tune",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and I lose a great deal a pleasure out of that",
+          "compound": 0.7269,
+          "pos": 0.422,
+          "neg": 0.146,
+          "neu": 0.432
+        },
+        {
+          "text": "and I think that people lose a lot of pleasure who find the science dull In the ",
+          "compound": -0.5413,
+          "pos": 0.077,
+          "neg": 0.171,
+          "neu": 0.752
+        },
+        {
+          "text": "It's very hard to imagine all the crazy things that things really are like Nothi",
+          "compound": -0.081,
+          "pos": 0.047,
+          "neg": 0.07,
+          "neu": 0.883
+        },
+        {
+          "text": "So if you have a bunch of atom, like a cup of coffee or something, sitting on a ",
+          "compound": 0.7269,
+          "pos": 0.059,
+          "neg": 0.029,
+          "neu": 0.912
+        },
+        {
+          "text": "It brings up another thing that's kind of curious: that I say that things jiggle",
+          "compound": 0.7511,
+          "pos": 0.102,
+          "neg": 0.076,
+          "neu": 0.822
+        },
+        {
+          "text": "But what's left is the floor is shaking more than it was before and the atoms in",
+          "compound": 0.2798,
+          "pos": 0.078,
+          "neg": 0.066,
+          "neu": 0.856
+        },
+        {
+          "text": "But anybody who's hammered a great deal on something knows that it's true that i",
+          "compound": 0.9371,
+          "pos": 0.103,
+          "neg": 0.064,
+          "neu": 0.833
+        },
+        {
+          "text": "I can't stop I mean if you may I could talk forever If you could cool off the wa",
+          "compound": 0.7539,
+          "pos": 0.111,
+          "neg": 0.042,
+          "neu": 0.847
+        },
+        {
+          "text": "And if you heat that still harder, then they bounce still harder and they simply",
+          "compound": 0.9425,
+          "pos": 0.07,
+          "neg": 0.029,
+          "neu": 0.901
+        },
+        {
+          "text": "otherwise it's a horrible subject the atoms like each other the different degree",
+          "compound": 0.4588,
+          "pos": 0.079,
+          "neg": 0.037,
+          "neu": 0.884
+        },
+        {
+          "text": "it's rolling along it doesn't go down in the deep hole because if it starts to c",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but if you made it go fast enough it'll fall into the hole and so if it's have s",
+          "compound": -0.9559,
+          "pos": 0.029,
+          "neg": 0.108,
+          "neu": 0.863
+        },
+        {
+          "text": "it's just a way of looking at it and these things are happening they perpetual\n\n",
+          "compound": -0.4354,
+          "pos": 0.061,
+          "neg": 0.088,
+          "neu": 0.851
+        },
+        {
+          "text": "and I put a cup of coffee over that mess of wood that's doing this it's going to",
+          "compound": -0.3612,
+          "pos": 0.0,
+          "neg": 0.102,
+          "neu": 0.898
+        },
+        {
+          "text": "so that's what the heat of the fire is",
+          "compound": -0.34,
+          "pos": 0.0,
+          "neg": 0.231,
+          "neu": 0.769
+        },
+        {
+          "text": "and then of course uh you see what's happening when you start thinking, just go ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "well it came from a tree and the substance of a tree is carbon, where did that c",
+          "compound": 0.2732,
+          "pos": 0.104,
+          "neg": 0.0,
+          "neu": 0.896
+        },
+        {
+          "text": "that comes from the air it's carbon dioxide from the air people look at trees",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and they think it comes out of the ground the plants grow out of the ground",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but if you ask where the substance comes from you find out where do they come fr",
+          "compound": 0.5927,
+          "pos": 0.037,
+          "neg": 0.0,
+          "neu": 0.963
+        },
+        {
+          "text": "so in fact most of a tree almost all of the tree is out of the ground I'm sorry ",
+          "compound": 0.87,
+          "pos": 0.12,
+          "neg": 0.015,
+          "neu": 0.865
+        },
+        {
+          "text": "Ah! Life!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Life has some mysterious force!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "No!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "The sun is shining, and this sunlight comes down and knocks this oxygen away fro",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and so the sun, all the time, is doing the work of separating the oxygen away fr",
+          "compound": -0.5256,
+          "pos": 0.0,
+          "neg": 0.066,
+          "neu": 0.934
+        },
+        {
+          "text": "and then we take the substance of the tree to get the fireplace",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and there's all the oxygen made by these trees and all the carbons would much pr",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and once you let the heat to get it started it continues and make an awful lot o",
+          "compound": -0.0516,
+          "pos": 0.029,
+          "neg": 0.031,
+          "neu": 0.94
+        },
+        {
+          "text": "I gotta stop somewhere; I leave you something to imagine most elastic things lik",
+          "compound": 0.0469,
+          "pos": 0.045,
+          "neg": 0.065,
+          "neu": 0.89
+        },
+        {
+          "text": "and then they try to come back together again but rubber bands work on a differe",
+          "compound": 0.296,
+          "pos": 0.034,
+          "neg": 0.022,
+          "neu": 0.944
+        },
+        {
+          "text": "and it's pulling back only because of the heat so if you heat a rubber band it'l",
+          "compound": 0.6901,
+          "pos": 0.137,
+          "neg": 0.0,
+          "neu": 0.863
+        },
+        {
+          "text": "it's kind of fun to watch it rise because heats want and there's another thing y",
+          "compound": 0.9617,
+          "pos": 0.097,
+          "neg": 0.01,
+          "neu": 0.893
+        },
+        {
+          "text": "but anyhow for a long time trying to hold this whole thing together The world is",
+          "compound": 0.0387,
+          "pos": 0.104,
+          "neg": 0.1,
+          "neu": 0.796
+        },
+        {
+          "text": "And if you magnify, you will hardly see a little thing anymore because everythin",
+          "compound": 0.6049,
+          "pos": 0.063,
+          "neg": 0.0,
+          "neu": 0.937
+        },
+        {
+          "text": "Turn around the other way and they slam together Now, what is it, the feeling be",
+          "compound": -0.2406,
+          "pos": 0.093,
+          "neg": 0.072,
+          "neu": 0.834
+        },
+        {
+          "text": "well, there's something there, isn't it?",
+          "compound": 0.2732,
+          "pos": 0.296,
+          "neg": 0.0,
+          "neu": 0.704
+        },
+        {
+          "text": "I mean that the sensation that they're something there when you push the two mag",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Listen to my question what is the meaning when you say that there's there's a fe",
+          "compound": 0.128,
+          "pos": 0.07,
+          "neg": 0.0,
+          "neu": 0.93
+        },
+        {
+          "text": "Now what do you want to know?",
+          "compound": 0.0772,
+          "pos": 0.178,
+          "neg": 0.0,
+          "neu": 0.822
+        },
+        {
+          "text": "What I want to know is what's going on, between these two bits of matter?",
+          "compound": 0.1027,
+          "pos": 0.156,
+          "neg": 0.0,
+          "neu": 0.844
+        },
+        {
+          "text": "magnets repel each other",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Well then, what does that mean or why are they doing that or how are they doing ",
+          "compound": 0.2732,
+          "pos": 0.11,
+          "neg": 0.0,
+          "neu": 0.89
+        },
+        {
+          "text": "I'm not saying...",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "That's a perfectly reasonable question.",
+          "compound": 0.6369,
+          "pos": 0.512,
+          "neg": 0.0,
+          "neu": 0.488
+        },
+        {
+          "text": "Of course it's a reasonab...",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "it's an excellent question.",
+          "compound": 0.5719,
+          "pos": 0.552,
+          "neg": 0.0,
+          "neu": 0.448
+        },
+        {
+          "text": "Okay?",
+          "compound": 0.2263,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "But the problem that you are asking, you see, when you ask why something happens",
+          "compound": -0.5499,
+          "pos": 0.0,
+          "neg": 0.139,
+          "neu": 0.861
+        },
+        {
+          "text": "for example Aunt Minnie is at the hospital.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Why?",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Because she slip.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "she went out and she slipped on the ice and broke her hip that satisfies people.",
+          "compound": 0.0,
+          "pos": 0.143,
+          "neg": 0.143,
+          "neu": 0.714
+        },
+        {
+          "text": "It satisfies but wouldn't satisfy someone who came from another planet knew noth",
+          "compound": -0.3226,
+          "pos": 0.059,
+          "neg": 0.1,
+          "neu": 0.841
+        },
+        {
+          "text": "\"How do you get to the hospital when the hip is broken\" well because her husband",
+          "compound": -0.1027,
+          "pos": 0.101,
+          "neg": 0.093,
+          "neu": 0.806
+        },
+        {
+          "text": "Otherwise you are perpetually asking why Why did the husband call up the hospita",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Because the husband is interested in his wife's welfare.",
+          "compound": 0.4019,
+          "pos": 0.252,
+          "neg": 0.0,
+          "neu": 0.748
+        },
+        {
+          "text": "Not always\n\nsome husbands aren't interested in their wives' welfare when they ar",
+          "compound": -0.7881,
+          "pos": 0.0,
+          "neg": 0.38,
+          "neu": 0.62
+        },
+        {
+          "text": "So you begin to get very interesting understanding of the world and all its comp",
+          "compound": 0.4576,
+          "pos": 0.086,
+          "neg": 0.0,
+          "neu": 0.914
+        },
+        {
+          "text": "for example you could go “why did she slip upon the ice?\"",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Well ice is lippery everybody knows that no problem",
+          "compound": 0.52,
+          "pos": 0.384,
+          "neg": 0.0,
+          "neu": 0.616
+        },
+        {
+          "text": "But you ask \"why is ice slippery?\"",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "that's kind of curious, ice is extremely slippery it's very interesting",
+          "compound": 0.6124,
+          "pos": 0.357,
+          "neg": 0.0,
+          "neu": 0.643
+        },
+        {
+          "text": "You say \"How does it work?\"",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "you could either say \"I'm satisfied that you have answered me ice is slippery, t",
+          "compound": 0.4215,
+          "pos": 0.094,
+          "neg": 0.0,
+          "neu": 0.906
+        },
+        {
+          "text": "and then you're involved with something because there are not many things as sli",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "It's very hard to get greasy stuff, but that's a sort of wet slimy",
+          "compound": -0.0891,
+          "pos": 0.0,
+          "neg": 0.094,
+          "neu": 0.906
+        },
+        {
+          "text": "But a solid that is so slippery?",
+          "compound": 0.2263,
+          "pos": 0.241,
+          "neg": 0.0,
+          "neu": 0.759
+        },
+        {
+          "text": "Because it is in the case of ice when you stand on it (they say), momentarily th",
+          "compound": -0.296,
+          "pos": 0.0,
+          "neg": 0.087,
+          "neu": 0.913
+        },
+        {
+          "text": "so you get a sort of instantaneous water surface on which you are slipping Why o",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Because ice expands… water expands when it freezes so the pressure tries to undo",
+          "compound": -0.2911,
+          "pos": 0.067,
+          "neg": 0.171,
+          "neu": 0.763
+        },
+        {
+          "text": "It is capable about melting it But other substances contract when they're freezi",
+          "compound": 0.7548,
+          "pos": 0.234,
+          "neg": 0.104,
+          "neu": 0.662
+        },
+        {
+          "text": "I'm not answering the question\n\nbut I am telling you how difficult a \"why\" quest",
+          "compound": -0.5023,
+          "pos": 0.0,
+          "neg": 0.178,
+          "neu": 0.822
+        },
+        {
+          "text": "You have to know what it is that you are permitted to understand and allow to be",
+          "compound": 0.7645,
+          "pos": 0.1,
+          "neg": 0.0,
+          "neu": 0.9
+        },
+        {
+          "text": "That has to do with gravity and involves all other planets, and everything else\n",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Now when you ask for example \"Why two magnets repel?\"",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "there are many different levels it depends on whether you are a student of physi",
+          "compound": 0.128,
+          "pos": 0.027,
+          "neg": 0.0,
+          "neu": 0.973
+        },
+        {
+          "text": "You see, that is very strange because I don't feel kind of force like that in ot",
+          "compound": 0.1045,
+          "pos": 0.121,
+          "neg": 0.102,
+          "neu": 0.777
+        },
+        {
+          "text": "When you turn them in the other way they attract there's a very analogous force,",
+          "compound": 0.1298,
+          "pos": 0.072,
+          "neg": 0.058,
+          "neu": 0.87
+        },
+        {
+          "text": "but you're not at all disturbed by the fact that when you put your hand on the c",
+          "compound": 0.795,
+          "pos": 0.261,
+          "neg": 0.0,
+          "neu": 0.739
+        },
+        {
+          "text": "But we have find that looking at it that it is the same force as a matter of fac",
+          "compound": 0.0387,
+          "pos": 0.022,
+          "neg": 0.0,
+          "neu": 0.978
+        },
+        {
+          "text": "it is electrical force in minor, microscopic details there are other forces invo",
+          "compound": 0.7783,
+          "pos": 0.09,
+          "neg": 0.0,
+          "neu": 0.91
+        },
+        {
+          "text": "Everybody would just accept them.",
+          "compound": 0.3818,
+          "pos": 0.394,
+          "neg": 0.0,
+          "neu": 0.606
+        },
+        {
+          "text": "You know you cannot put your hand through the chair, that's taken for granted.",
+          "compound": -0.1601,
+          "pos": 0.12,
+          "neg": 0.158,
+          "neu": 0.722
+        },
+        {
+          "text": "But you can't put your hand through the chair when you look at it more closely: ",
+          "compound": -0.5334,
+          "pos": 0.0,
+          "neg": 0.117,
+          "neu": 0.883
+        },
+        {
+          "text": "The situation is then to have to explain is: \"why in the magnet it goes over a b",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "There it has to do with the fact that in iron, all the electrons are spinning in",
+          "compound": 0.1974,
+          "pos": 0.028,
+          "neg": 0.023,
+          "neu": 0.949
+        },
+        {
+          "text": "For example, if we say that the magnets attracts like if they were connected by ",
+          "compound": 0.6319,
+          "pos": 0.133,
+          "neg": 0.049,
+          "neu": 0.818
+        },
+        {
+          "text": "I would end up explaining that in terms of electrical forces which are the very ",
+          "compound": -0.788,
+          "pos": 0.0,
+          "neg": 0.183,
+          "neu": 0.817
+        },
+        {
+          "text": "So I'm not going to be able to give you an answer to \"why magnets attract each o",
+          "compound": 0.3612,
+          "pos": 0.025,
+          "neg": 0.0,
+          "neu": 0.975
+        },
+        {
+          "text": "But I really can't do a good job, any job of explaining magnetic forces in terms",
+          "compound": -0.4782,
+          "pos": 0.0,
+          "neg": 0.072,
+          "neu": 0.928
+        },
+        {
+          "text": "The stuff of fantasizing in looking at the world, imagining things, which really",
+          "compound": 0.25,
+          "pos": 0.078,
+          "neg": 0.049,
+          "neu": 0.872
+        },
+        {
+          "text": "And then I thought about this little motor going around\n\nand what was that make ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And what was going on?",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and what's going on is that there's a dam some distance away here and water goin",
+          "compound": 0.6249,
+          "pos": 0.151,
+          "neg": 0.0,
+          "neu": 0.849
+        },
+        {
+          "text": "alright",
+          "compound": 0.25,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "and this wheel is connected with long thin pieces of copper which split up into ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "If this thing stops, all the wheels stop.",
+          "compound": -0.4215,
+          "pos": 0.0,
+          "neg": 0.388,
+          "neu": 0.612
+        },
+        {
+          "text": "If it starts again, they all start again.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And I think it's kind of a marvelous thing of nature.",
+          "compound": 0.5994,
+          "pos": 0.281,
+          "neg": 0.0,
+          "neu": 0.719
+        },
+        {
+          "text": "It's extremely curious that phenomenon I like to think about a lot, because all ",
+          "compound": 0.624,
+          "pos": 0.221,
+          "neg": 0.0,
+          "neu": 0.779
+        },
+        {
+          "text": "see, sometimes we think it's man-made generator very complicated, the phenomenon",
+          "compound": 0.4019,
+          "pos": 0.119,
+          "neg": 0.0,
+          "neu": 0.881
+        },
+        {
+          "text": "But it's nature doing it, and it's just iron and copper; if you just take a big ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And if you get it down to the NOTHING here just moving piece of iron in a loop a",
+          "compound": 0.5983,
+          "pos": 0.103,
+          "neg": 0.0,
+          "neu": 0.897
+        },
+        {
+          "text": "you don't even need the iron you could if you at least get this pump prime prime",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And what is it?",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "It's only copper!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And motion!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "We're so used to circumstances in which these electrical phenomena are all cance",
+          "compound": -0.4576,
+          "pos": 0.0,
+          "neg": 0.107,
+          "neu": 0.893
+        },
+        {
+          "text": "But nature has these wonderful things Magnetic forces and electrical forces when",
+          "compound": 0.5927,
+          "pos": 0.043,
+          "neg": 0.019,
+          "neu": 0.938
+        },
+        {
+          "text": "And it has got another bunch of atoms that are pushing it.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "At that little space between those atoms.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And that pushing is going through that space.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And the only thing that happens with the comb and the paper is that the circumst",
+          "compound": 0.1027,
+          "pos": 0.04,
+          "neg": 0.034,
+          "neu": 0.927
+        },
+        {
+          "text": "They are very tiny parts, they are piece of the atoms and they repel each other ",
+          "compound": -0.2032,
+          "pos": 0.056,
+          "neg": 0.048,
+          "neu": 0.896
+        },
+        {
+          "text": "It's so enormous, that if I were all electrons...",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "well, the number is too big!",
+          "compound": 0.4003,
+          "pos": 0.48,
+          "neg": 0.0,
+          "neu": 0.52
+        },
+        {
+          "text": "There's also however for electrical thing other kind of charges, positive charge",
+          "compound": 0.6915,
+          "pos": 0.263,
+          "neg": 0.185,
+          "neu": 0.552
+        },
+        {
+          "text": "So you have to imagine enormous forces\n\nwhere likes are trying to get away from ",
+          "compound": 0.7063,
+          "pos": 0.151,
+          "neg": 0.0,
+          "neu": 0.849
+        },
+        {
+          "text": "they'd be all the likes would collect with unlike, they attract each other and t",
+          "compound": 0.7269,
+          "pos": 0.145,
+          "neg": 0.0,
+          "neu": 0.855
+        },
+        {
+          "text": "They're all being compensated with minus very close, and you get these little kn",
+          "compound": 0.2732,
+          "pos": 0.037,
+          "neg": 0.0,
+          "neu": 0.963
+        },
+        {
+          "text": "So you get these little lumps which are balls, they are the atoms The atoms are ",
+          "compound": 0.9723,
+          "pos": 0.086,
+          "neg": 0.038,
+          "neu": 0.876
+        },
+        {
+          "text": "Why should I try to explain it in terms of something like jelly or other things ",
+          "compound": 0.3612,
+          "pos": 0.122,
+          "neg": 0.0,
+          "neu": 0.878
+        },
+        {
+          "text": "And I understand the other way around in terms of strong, long distance forces w",
+          "compound": 0.5106,
+          "pos": 0.155,
+          "neg": 0.0,
+          "neu": 0.845
+        },
+        {
+          "text": "So it's the electrical forces in fact, and the magnetic forces in fact that we h",
+          "compound": 0.3818,
+          "pos": 0.075,
+          "neg": 0.0,
+          "neu": 0.925
+        },
+        {
+          "text": "So again it turns out it's hard to understand, you have to do a lot of imagining",
+          "compound": 0.0258,
+          "pos": 0.019,
+          "neg": 0.017,
+          "neu": 0.964
+        },
+        {
+          "text": "The long distance force we haven't other picture for And in the example of the g",
+          "compound": 0.5719,
+          "pos": 0.053,
+          "neg": 0.0,
+          "neu": 0.947
+        },
+        {
+          "text": "so it's not just like water which repel at a short distance",
+          "compound": -0.2755,
+          "pos": 0.0,
+          "neg": 0.161,
+          "neu": 0.839
+        },
+        {
+          "text": "but it's a wonderful fluid which repel at a long distance\n\nand the effects there",
+          "compound": 0.7227,
+          "pos": 0.117,
+          "neg": 0.0,
+          "neu": 0.883
+        },
+        {
+          "text": "And you can use that stuff to make signals, you can push a few electrons here an",
+          "compound": 0.9565,
+          "pos": 0.107,
+          "neg": 0.0,
+          "neu": 0.893
+        },
+        {
+          "text": "and I'd tell you some of them that I remember I learned them of course once you ",
+          "compound": 0.657,
+          "pos": 0.079,
+          "neg": 0.0,
+          "neu": 0.921
+        },
+        {
+          "text": "and then you come up with this answer to astonish your friends but the fact was ",
+          "compound": 0.6042,
+          "pos": 0.067,
+          "neg": 0.052,
+          "neu": 0.88
+        },
+        {
+          "text": "The hand on the east is the hand on the east and the hand on the west is the han",
+          "compound": 0.9432,
+          "pos": 0.314,
+          "neg": 0.0,
+          "neu": 0.686
+        },
+        {
+          "text": "Everything is really all right!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but what's wrong is if this is north your nose is to the north of the back of yo",
+          "compound": -0.8041,
+          "pos": 0.04,
+          "neg": 0.104,
+          "neu": 0.856
+        },
+        {
+          "text": "Now ordinarily when we think of the image we think at it as of another person an",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "It's a psychological thing We don't think of the idea that the person has been s",
+          "compound": 0.9272,
+          "pos": 0.1,
+          "neg": 0.018,
+          "neu": 0.882
+        },
+        {
+          "text": "And of course the answer is, as everyone thinks: the flanges on the wheels you k",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but that's not the answer.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Because flange is just safety devices if the flanges rub against the tracks you ",
+          "compound": -0.6705,
+          "pos": 0.036,
+          "neg": 0.073,
+          "neu": 0.891
+        },
+        {
+          "text": "no you look at those wheels under a freight car and there are the two wheels and",
+          "compound": -0.1531,
+          "pos": 0.031,
+          "neg": 0.042,
+          "neu": 0.927
+        },
+        {
+          "text": "when the outside wheel has to go further than the inside wheel and the answer is",
+          "compound": 0.3612,
+          "pos": 0.026,
+          "neg": 0.0,
+          "neu": 0.974
+        },
+        {
+          "text": "so when they both turn one turn this swings further than the other and that's wh",
+          "compound": 0.1027,
+          "pos": 0.035,
+          "neg": 0.03,
+          "neu": 0.935
+        },
+        {
+          "text": "but they're on a solid shaft so when it turns once around\n\nit carries this wheel",
+          "compound": 0.6808,
+          "pos": 0.085,
+          "neg": 0.0,
+          "neu": 0.915
+        },
+        {
+          "text": "well we had a lot of stuff like that that we had to learn you know that would ge",
+          "compound": 0.7944,
+          "pos": 0.069,
+          "neg": 0.029,
+          "neu": 0.901
+        },
+        {
+          "text": "And that's what we're doing when we're looking at something: the light that come",
+          "compound": 0.3612,
+          "pos": 0.034,
+          "neg": 0.0,
+          "neu": 0.966
+        },
+        {
+          "text": "and it's not particularly sensitive when they're coming in at the wrong angle,\n\n",
+          "compound": -0.4215,
+          "pos": 0.024,
+          "neg": 0.058,
+          "neu": 0.918
+        },
+        {
+          "text": "Then, it's quite wonderful that we figure out so easy; that's really because the",
+          "compound": 0.6972,
+          "pos": 0.056,
+          "neg": 0.0,
+          "neu": 0.944
+        },
+        {
+          "text": "Now, it's easy to just think of them as arrows passing each other, but that's no",
+          "compound": 0.3515,
+          "pos": 0.099,
+          "neg": 0.045,
+          "neu": 0.856
+        },
+        {
+          "text": "it's just like the water height is going up and down.",
+          "compound": 0.3612,
+          "pos": 0.2,
+          "neg": 0.0,
+          "neu": 0.8
+        },
+        {
+          "text": "So there's some quantity shaking about here and the combination of motions that'",
+          "compound": -0.1779,
+          "pos": 0.0,
+          "neg": 0.055,
+          "neu": 0.945
+        },
+        {
+          "text": "At the same time, completely undisturbed by the fact that there are influences t",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "So that there's this TREMENDOUS mess of waves all over in space which we call\n\nw",
+          "compound": -0.5463,
+          "pos": 0.0,
+          "neg": 0.076,
+          "neu": 0.924
+        },
+        {
+          "text": "It's not interested in that light, but the light is there anyway, and it bounces",
+          "compound": -0.1603,
+          "pos": 0.0,
+          "neg": 0.042,
+          "neu": 0.958
+        },
+        {
+          "text": "But beside all that, you see, those waves that I was talking about in the water,",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Perhaps that animal is making it's study only using waves between this length an",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "The waves that go more slowly, that have a longer distance from crest to trough.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Those represent heat.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "We feel those, but our eye doesn't see them focused very well, we don't in fact ",
+          "compound": 0.0807,
+          "pos": 0.141,
+          "neg": 0.127,
+          "neu": 0.732
+        },
+        {
+          "text": "The shorter waves are blue, the longer waves are red.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "But when it gets longer than that then we call them infrared.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And all this is in there at the same time.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "That's the heat.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Pit viper that get down here in the desert, they have a very little thing that t",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "But we can't, we are not able to do that.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And then these waves get longer and longer, and all through the same space,\n\nall",
+          "compound": -0.0951,
+          "pos": 0.0,
+          "neg": 0.025,
+          "neu": 0.975
+        },
+        {
+          "text": "All the radio waves are just the same kind of waves, only they are longer waves.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And there's the radar, from the airplane which is looking at the ground to figur",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Plus X-rays, cosmic rays and all of these other things that are the same kind of",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "It is exactly the same thing.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "So this big field, this - this area of irregular motions of this electric field,",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "If you don't believe it, then you pick a piece of wire and connect it to a box a",
+          "compound": 0.3382,
+          "pos": 0.035,
+          "neg": 0.0,
+          "neu": 0.965
+        },
+        {
+          "text": "Then you know that it was there.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "How else did it get there?",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "It was there all the time.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "It is only when you turn on the radio that you notice it.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "But that all these things are going through the room at the same time which ever",
+          "compound": 0.564,
+          "pos": 0.12,
+          "neg": 0.062,
+          "neu": 0.818
+        },
+        {
+          "text": "When we were talking about the atoms, one of the trouble we have with the atoms ",
+          "compound": -0.5524,
+          "pos": 0.0,
+          "neg": 0.136,
+          "neu": 0.864
+        },
+        {
+          "text": "The atoms are in size compared to an apple is the same scale as an apple is comp",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "That's kind of a hard think to take, and you have to go through all these things",
+          "compound": -0.1027,
+          "pos": 0.0,
+          "neg": 0.046,
+          "neu": 0.954
+        },
+        {
+          "text": "And the only thing you do is just change your scale you just think of small ball",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but you don't try to know exactly how small they are too often or you get kind o",
+          "compound": 0.3612,
+          "pos": 0.106,
+          "neg": 0.0,
+          "neu": 0.894
+        },
+        {
+          "text": "but in astronomy you have the same thing in reverse because the distances to the",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "You know that light goes so fast, and it only takes few seconds to go to the moo",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "or it goes around the earth in seven and a half times in a second and it goes fo",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "But all our stars are in nearby galaxies, a big mess of stars which is called a ",
+          "compound": 0.0,
+          "pos": 0.08,
+          "neg": 0.08,
+          "neu": 0.84
+        },
+        {
+          "text": "And then there's another patch of stars It takes a million years for the light t",
+          "compound": -0.34,
+          "pos": 0.0,
+          "neg": 0.066,
+          "neu": 0.934
+        },
+        {
+          "text": "You have to do everything in proportion.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "That's easy say that galaxies are little patches of stars and they're ten times ",
+          "compound": 0.4404,
+          "pos": 0.127,
+          "neg": 0.0,
+          "neu": 0.873
+        },
+        {
+          "text": "So that's an easy picture.",
+          "compound": 0.4877,
+          "pos": 0.442,
+          "neg": 0.0,
+          "neu": 0.558
+        },
+        {
+          "text": "But you just go to a different scale, that's easier once in a while you try to c",
+          "compound": 0.4785,
+          "pos": 0.107,
+          "neg": 0.042,
+          "neu": 0.851
+        },
+        {
+          "text": "but the number of stars in our galaxy, the telescope have shown when you improve",
+          "compound": 0.6486,
+          "pos": 0.261,
+          "neg": 0.0,
+          "neu": 0.739
+        },
+        {
+          "text": "Oh!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "We look at a galaxy, we look at the stars, all the light that we see, the little",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "on!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "on!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "this light from the star is spreading, the wavefront's getting wider and wider w",
+          "compound": -0.891,
+          "pos": 0.0,
+          "neg": 0.216,
+          "neu": 0.784
+        },
+        {
+          "text": "so I know it's there!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Well to know a little bit more about, I'd rather gather a little more of this ti",
+          "compound": 0.2732,
+          "pos": 0.087,
+          "neg": 0.0,
+          "neu": 0.913
+        },
+        {
+          "text": "and so I make a big telescope which is a kind of funnel.",
+          "compound": -0.0498,
+          "pos": 0.0,
+          "neg": 0.09,
+          "neu": 0.91
+        },
+        {
+          "text": "The light that comes over this big area-200 inches in cross-is very carefully or",
+          "compound": 0.2006,
+          "pos": 0.067,
+          "neg": 0.0,
+          "neu": 0.933
+        },
+        {
+          "text": "Actually it's better to photograph, and nowadays they use photocells which are b",
+          "compound": 0.7003,
+          "pos": 0.326,
+          "neg": 0.0,
+          "neu": 0.674
+        },
+        {
+          "text": "but anyway the idea of a telescope is to focus the light from a bigger area into",
+          "compound": -0.4556,
+          "pos": 0.038,
+          "neg": 0.077,
+          "neu": 0.885
+        },
+        {
+          "text": "There's so many that if you try to name them, one in a second, all of the stars ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And yet that's not a very big number Because if those stars were to drop one dol",
+          "compound": 0.4714,
+          "pos": 0.144,
+          "neg": 0.088,
+          "neu": 0.768
+        },
+        {
+          "text": "So you see what kind of numbers we have to deal with!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Anyway I think that the numbers are problems in astronomy, the size and numbers ",
+          "compound": 0.8402,
+          "pos": 0.143,
+          "neg": 0.057,
+          "neu": 0.8
+        },
+        {
+          "text": "But the great part of astronomy is the imagination that is necessary to guess wh",
+          "compound": 0.7684,
+          "pos": 0.064,
+          "neg": 0.0,
+          "neu": 0.936
+        },
+        {
+          "text": "And that's very interesting, there is a creative imagination you'd like to call ",
+          "compound": 0.9701,
+          "pos": 0.124,
+          "neg": 0.016,
+          "neu": 0.86
+        },
+        {
+          "text": "Anyway, to get back to the star, it's all held together by gravity and it's got ",
+          "compound": 0.6059,
+          "pos": 0.05,
+          "neg": 0.0,
+          "neu": 0.95
+        },
+        {
+          "text": "Well if you push a little bit together, the pressure increases when you push the",
+          "compound": 0.706,
+          "pos": 0.188,
+          "neg": 0.116,
+          "neu": 0.696
+        },
+        {
+          "text": "so it would just come out again if you're pushing a star like that, it oscillate",
+          "compound": -0.335,
+          "pos": 0.047,
+          "neg": 0.061,
+          "neu": 0.892
+        },
+        {
+          "text": "And people waited to see if there were any such neutron stars for years until re",
+          "compound": -0.2023,
+          "pos": 0.0,
+          "neg": 0.033,
+          "neu": 0.967
+        },
+        {
+          "text": "And at first, that's very mysterious; you are used to stars being big and slow h",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Well these things are very small neutron stars and they’re spinning very fast.",
+          "compound": 0.2732,
+          "pos": 0.149,
+          "neg": 0.0,
+          "neu": 0.851
+        },
+        {
+          "text": "For reason not yet understood, they are emitting a beam, a beam of radio waves l",
+          "compound": 0.4588,
+          "pos": 0.059,
+          "neg": 0.019,
+          "neu": 0.922
+        },
+        {
+          "text": "and the whole idea that there could be a star of such enormous density that a te",
+          "compound": 0.1511,
+          "pos": 0.052,
+          "neg": 0.0,
+          "neu": 0.948
+        },
+        {
+          "text": "and things like that, it took a lot of imagination: it comes out the mathematics",
+          "compound": 0.9678,
+          "pos": 0.159,
+          "neg": 0.03,
+          "neu": 0.812
+        },
+        {
+          "text": "The exact cause of their sources is gradually been recently understood in terms ",
+          "compound": 0.5304,
+          "pos": 0.074,
+          "neg": 0.045,
+          "neu": 0.881
+        },
+        {
+          "text": "You couldn't see it!",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "how would you get there?",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "If you have a large amount of matter to start with, it could fall together and g",
+          "compound": -0.2732,
+          "pos": 0.038,
+          "neg": 0.075,
+          "neu": 0.887
+        },
+        {
+          "text": "So you would have this thing which continues to attract things to it things woul",
+          "compound": 0.3612,
+          "pos": 0.106,
+          "neg": 0.0,
+          "neu": 0.894
+        },
+        {
+          "text": "That is called the black hole.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and you say well how can a black hole which is absorbing everything make all thi",
+          "compound": 0.5385,
+          "pos": 0.152,
+          "neg": 0.0,
+          "neu": 0.848
+        },
+        {
+          "text": "Actually, it may well be Because the things that are falling in don't go pluck i",
+          "compound": 0.0644,
+          "pos": 0.057,
+          "neg": 0.055,
+          "neu": 0.888
+        },
+        {
+          "text": "We don't have a real picture why there are jets of radio waves, matter emitting ",
+          "compound": 0.7778,
+          "pos": 0.14,
+          "neg": 0.0,
+          "neu": 0.86
+        },
+        {
+          "text": "And it's guessed that maybe it's a black hole somehow or other and the somehow o",
+          "compound": 0.0772,
+          "pos": 0.044,
+          "neg": 0.0,
+          "neu": 0.956
+        },
+        {
+          "text": "by anybody, with any great confidence.",
+          "compound": 0.8126,
+          "pos": 0.649,
+          "neg": 0.0,
+          "neu": 0.351
+        },
+        {
+          "text": "You ask me if an ordinary person, by studying hard,  would get to be able to ima",
+          "compound": 0.3382,
+          "pos": 0.107,
+          "neg": 0.053,
+          "neu": 0.84
+        },
+        {
+          "text": "I was an ordinary person who had studied hard.",
+          "compound": -0.1027,
+          "pos": 0.0,
+          "neg": 0.149,
+          "neu": 0.851
+        },
+        {
+          "text": "There are no miracle people.",
+          "compound": -0.4717,
+          "pos": 0.0,
+          "neg": 0.434,
+          "neu": 0.566
+        },
+        {
+          "text": "It just happen they got interested in these things and they learned all these st",
+          "compound": 0.4019,
+          "pos": 0.162,
+          "neg": 0.0,
+          "neu": 0.838
+        },
+        {
+          "text": "There are just people There's no talent, special, miracle ability to understand ",
+          "compound": 0.9338,
+          "pos": 0.23,
+          "neg": 0.056,
+          "neu": 0.713
+        },
+        {
+          "text": "When I'm actually doing my own things and working in a high, deep and esoteric s",
+          "compound": 0.3676,
+          "pos": 0.11,
+          "neg": 0.072,
+          "neu": 0.818
+        },
+        {
+          "text": "But I know it's a crazy mixture of partial equations, partial solving in equatio",
+          "compound": -0.3007,
+          "pos": 0.065,
+          "neg": 0.112,
+          "neu": 0.822
+        },
+        {
+          "text": "and it's a kind of a nut nutty thing it's very hard to describe, and I don't kno",
+          "compound": 0.2975,
+          "pos": 0.105,
+          "neg": 0.061,
+          "neu": 0.834
+        },
+        {
+          "text": "And there's something that struck me, it's very curious: I suspect that what goe",
+          "compound": 0.0673,
+          "pos": 0.039,
+          "neg": 0.036,
+          "neu": 0.925
+        },
+        {
+          "text": "I found that out because in the very lowest level I wouldn't go into much detail",
+          "compound": 0.3825,
+          "pos": 0.145,
+          "neg": 0.079,
+          "neu": 0.776
+        },
+        {
+          "text": "Well I was doing some experiments and I was trying to figure out something about",
+          "compound": 0.2732,
+          "pos": 0.11,
+          "neg": 0.0,
+          "neu": 0.89
+        },
+        {
+          "text": "and so what I would do is trying to count to a minute actually say I'd count to ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "so I calibrate myself and I would count a minute in 48 think I was counting seco",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but it's close enough",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and then it turns out if you repeat that you can do very accurately when you get",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And I was trying to find out what affected that time sense and whether I could d",
+          "compound": -0.1531,
+          "pos": 0.0,
+          "neg": 0.062,
+          "neu": 0.938
+        },
+        {
+          "text": "and I found that I could do many things I could, there were some things that not",
+          "compound": 0.765,
+          "pos": 0.142,
+          "neg": 0.0,
+          "neu": 0.858
+        },
+        {
+          "text": "and I had to make a list \"how many socks\", there were something like 6 or 8 sock",
+          "compound": 0.4215,
+          "pos": 0.073,
+          "neg": 0.0,
+          "neu": 0.927
+        },
+        {
+          "text": "and so I learned a way after practicing by which I could count the line of type ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "so I could do this fantastic trick of saying \"forty-eight, that's one minute and",
+          "compound": 0.6533,
+          "pos": 0.17,
+          "neg": 0.045,
+          "neu": 0.785
+        },
+        {
+          "text": "It was quite wonderful",
+          "compound": 0.6115,
+          "pos": 0.571,
+          "neg": 0.0,
+          "neu": 0.429
+        },
+        {
+          "text": "and I discovered many things I could read while I was..",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "no, excuse me, yes, I could read perfectly alright while I was counting and get ",
+          "compound": 0.8481,
+          "pos": 0.362,
+          "neg": 0.0,
+          "neu": 0.638
+        },
+        {
+          "text": "But I couldn't speak, I couldn’t say anything.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Because of course I was sort of trying to speak to myself, inside, I would say \"",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Then I went down to the breakfast, and there was John Tukey was a mathematician ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "he says He said \"I don't see why you have any difficulty talking whatsoever,\n\nAn",
+          "compound": -0.34,
+          "pos": 0.0,
+          "neg": 0.098,
+          "neu": 0.902
+        },
+        {
+          "text": "so I couldn't believe all this",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "but we calibrated him it was 52 for him to get to 60 seconds or whatever I don't",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and then he said \"alright, what do you want me to say?",
+          "compound": 0.3182,
+          "pos": 0.248,
+          "neg": 0.0,
+          "neu": 0.752
+        },
+        {
+          "text": "Mary had a little lamb.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "I can speak about anything, blah blah blah, blah blah, 52!",
+          "compound": -0.5093,
+          "pos": 0.0,
+          "neg": 0.549,
+          "neu": 0.451
+        },
+        {
+          "text": "that's one minute\".",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "He was right.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And I couldn't possibly do that",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And he wanted me to read, because he couldn’t possibly believe it.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "and then we compared note, and it turned out that when he thought of counting\n\nw",
+          "compound": 0.2732,
+          "pos": 0.033,
+          "neg": 0.0,
+          "neu": 0.967
+        },
+        {
+          "text": "He could speak as much as he wanted but if he had to read, then he couldn't look",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Whereas for me it was in the other way.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "And that's where I discovered, at least in this very simple operation of countin",
+          "compound": 0.6249,
+          "pos": 0.114,
+          "neg": 0.0,
+          "neu": 0.886
+        },
+        {
+          "text": "And so it struck me therefore, if that is already true at the most elementary le",
+          "compound": 0.1335,
+          "pos": 0.04,
+          "neg": 0.033,
+          "neu": 0.928
+        },
+        {
+          "text": "And in fact, while somebody sometimes has a great deal of difficulty to understa",
+          "compound": 0.6581,
+          "pos": 0.107,
+          "neg": 0.054,
+          "neu": 0.839
+        },
+        {
+          "text": "Suppose that little things behaved very differently that anything that was big, ",
+          "compound": -0.5483,
+          "pos": 0.0,
+          "neg": 0.04,
+          "neu": 0.96
+        },
+        {
+          "text": "And that difficulty, we are in.",
+          "compound": -0.34,
+          "pos": 0.0,
+          "neg": 0.324,
+          "neu": 0.676
+        },
+        {
+          "text": "The behavior of things on the small scale is so fantastic!",
+          "compound": 0.7103,
+          "pos": 0.329,
+          "neg": 0.0,
+          "neu": 0.671
+        },
+        {
+          "text": "It is so wonderfully different!",
+          "compound": 0.7417,
+          "pos": 0.569,
+          "neg": 0.0,
+          "neu": 0.431
+        },
+        {
+          "text": "so marvelously different that ANYTHING that behaves on a large scale.",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "You said \"electrons act like wave\", no they don't exactly, \"they act like partic",
+          "compound": 0.4767,
+          "pos": 0.188,
+          "neg": 0.11,
+          "neu": 0.702
+        },
+        {
+          "text": "And if you want to get a clear, sharp picture of an atom, so that you can tell e",
+          "compound": 0.8399,
+          "pos": 0.196,
+          "neg": 0.0,
+          "neu": 0.804
+        },
+        {
+          "text": "Because that image has to be mathematic: we have a mathematical expression, a st",
+          "compound": -0.1027,
+          "pos": 0.0,
+          "neg": 0.032,
+          "neu": 0.968
+        },
+        {
+          "text": "It would something like a computer in which you put certain numbers in\n\nand you ",
+          "compound": 0.3182,
+          "pos": 0.063,
+          "neg": 0.0,
+          "neu": 0.937
+        },
+        {
+          "text": "It is just doing the arithmetic",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "So we know how to do the arithmetic, but we cannot picture the car It's not a 10",
+          "compound": 0.9479,
+          "pos": 0.2,
+          "neg": 0.0,
+          "neu": 0.8
+        },
+        {
+          "text": "alright",
+          "compound": 0.25,
+          "pos": 1.0,
+          "neg": 0.0,
+          "neu": 0.0
+        },
+        {
+          "text": "So when you're working with certain particular aspects of the behavior of atoms ",
+          "compound": 0.7801,
+          "pos": 0.171,
+          "neg": 0.0,
+          "neu": 0.829
+        },
+        {
+          "text": "but if you ask more specific question and you get down to questions like \"how is",
+          "compound": 0.9493,
+          "pos": 0.279,
+          "neg": 0.042,
+          "neu": 0.679
+        },
+        {
+          "text": "Well if you want to get a picture of atoms as all of that in it, I can't do it",
+          "compound": 0.34,
+          "pos": 0.159,
+          "neg": 0.0,
+          "neu": 0.841
+        },
+        {
+          "text": "But I can explain why the helium behaves as it does, by taking my equations and ",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "So we know that we have the theory right, but we haven't got the pictures that w",
+          "compound": 0.0,
+          "pos": 0.0,
+          "neg": 0.0,
+          "neu": 1.0
+        },
+        {
+          "text": "Well let's suppose it's the last one, that there's no right picture in terms of ",
+          "compound": -0.0588,
+          "pos": 0.046,
+          "neg": 0.048,
+          "neu": 0.906
+        },
+        {
+          "text": "You know what they do So the question is whether you can get to know what things",
+          "compound": 0.3705,
+          "pos": 0.08,
+          "neg": 0.058,
+          "neu": 0.863
+        },
+        {
+          "text": "There's still a school of thought that cannot believe that the atomic behaviors ",
+          "compound": -0.6501,
+          "pos": 0.057,
+          "neg": 0.1,
+          "neu": 0.843
+        }
+      ]
+    },
+    "nrc": {
+      "emotion_frequencies": {
+        "fear": 0.07822580645161291,
+        "anger": 0.05120967741935484,
+        "anticipation": 0.13064516129032258,
+        "trust": 0.18004032258064517,
+        "surprise": 0.05423387096774194,
+        "positive": 0.23951612903225805,
+        "negative": 0.11733870967741936,
+        "sadness": 0.0467741935483871,
+        "disgust": 0.025403225806451612,
+        "joy": 0.07661290322580645
+      },
+      "dominant_emotions_top3": [
+        "positive",
+        "trust",
+        "anticipation"
+      ]
+    },
+    "spacy": {
+      "avg_sentence_length": 54.19,
+      "sentence_length_std": 76.09,
+      "passive_voice_ratio": 0.2248,
+      "questions_ratio": 0.0576,
+      "pos_distribution": {
+        "PRON": 4311,
+        "VERB": 3941,
+        "DET": 3423,
+        "ADJ": 2176,
+        "NOUN": 5029,
+        "INTJ": 159,
+        "AUX": 2616,
+        "PART": 967,
+        "ADP": 3178,
+        "ADV": 2119,
+        "CCONJ": 1425,
+        "SCONJ": 1292,
+        "PROPN": 277,
+        "X": 19,
+        "NUM": 281
+      },
+      "top_5_frequent_words": [
+        {
+          "word": "thing",
+          "count": 195
+        },
+        {
+          "word": "know",
+          "count": 129
+        },
+        {
+          "word": "way",
+          "count": 118
+        },
+        {
+          "word": "go",
+          "count": 109
+        },
+        {
+          "word": "force",
+          "count": 99
+        }
+      ],
+      "avg_word_length": 4.19,
+      "total_sentences": 556,
+      "total_words": 30128
+    }
+  },
+  "cognitive_move_examples": [
+    {
+      "id": "move_001",
+      "trigger": "A situation where a child learns the various names for a bird in different languages.",
+      "response": "when you know all the names in every language of that bird you know nothing but absolutely nothing about the bird... I had learned already that names don't constitute knowledge.",
+      "move_type": "EXPOSE_NAMING_FALLACY",
+      "dimensions_activated": [
+        "value_hierarchy.recurring_enemy",
+        "critique_pattern.what_triggers_critique"
+      ],
+      "why_this_is_characteristic": "This move defines his career-long war against 'nominal knowledge,' prioritizing physical behavior over human-invented labels."
+    },
+    {
+      "id": "move_002",
+      "trigger": "An interviewer asks why magnets repel each other, looking for a simple physical explanation.",
+      "response": "when you explain a 'Why' you have to be in some framework that we allow something to be true Otherwise you are perpetually asking why... I really can't do a good job... in terms of something else that you are more familiar with.",
+      "move_type": "REFRAME_QUESTION",
+      "dimensions_activated": [
+        "question_style.favorite_challenge",
+        "emotional_signature.vulnerability_pattern"
+      ],
+      "why_this_is_characteristic": "Instead of oversimplifying with a false analogy, he deconstructs the linguistic logic of 'Why' and admits the fundamental limits of human understanding."
+    },
+    {
+      "id": "move_003",
+      "trigger": "Examining Newton's Law of Gravitation as a purely mathematical formula.",
+      "response": "How can this planet out there look... it sees how far away it is and it decides to calculate on its internal adding machine... this is certainly no explanation of the Machinery of gravitation.",
+      "move_type": "DEMAND_MECHANISM",
+      "dimensions_activated": [
+        "question_style.favorite_challenge",
+        "critique_pattern.what_triggers_critique"
+      ],
+      "why_this_is_characteristic": "He refuses to be satisfied by mathematical elegance alone, insisting on a physical 'how' that accounts for the actual movement of matter."
+    },
+    {
+      "id": "move_004",
+      "trigger": "An amateur theorist presents a 'bombarding particles' model to explain gravity.",
+      "response": "If you're running in the rain more rain hits you from the in the front of the face than in the back... this sideways force would slow the Earth up in the orbit and it certainly would not have lasted.",
+      "move_type": "REDUCE_TO_ABSURD",
+      "dimensions_activated": [
+        "reasoning_pattern.primary_mode",
+        "critique_pattern.critique_style"
+      ],
+      "why_this_is_characteristic": "He uses a mundane analogy (running in rain) to derive a fatal physical contradiction that invalidates a complex theory."
+    },
+    {
+      "id": "move_005",
+      "trigger": "Explaining the scientific method and the value of a 'good guess'.",
+      "response": "if it disagrees with experiment it's wrong... it doesn't make any difference how beautiful your guess is... how smart you are who made the guess or what his name is.",
+      "move_type": "CHALLENGE_ASSUMPTION",
+      "dimensions_activated": [
+        "reasoning_pattern.dual_process_switch_trigger",
+        "value_hierarchy.schwartz_top_3"
+      ],
+      "why_this_is_characteristic": "It demonstrates his absolute rejection of authority and aesthetic preference in favor of brutal empirical honesty."
+    },
+    {
+      "id": "move_006",
+      "trigger": "The challenge of imagining how heat and friction work at an invisible atomic scale.",
+      "response": "if you take a fairly wide rubber band and put it between your lips and pull it out you'll certainly notice it's hotter... it's done by a perpetual pounding pounding pounding.",
+      "move_type": "ZOOM_TO_SPECIFIC",
+      "dimensions_activated": [
+        "explanation_style.entry_point",
+        "linguistic_dna.vocabulary_level"
+      ],
+      "why_this_is_characteristic": "He anchors an abstract thermodynamic concept in a startlingly tactile, everyday physical sensation (lips on a rubber band)."
+    },
+    {
+      "id": "move_007",
+      "trigger": "Testing his own internal cognitive processes compared to other people's.",
+      "response": "But I couldn't speak, I couldn’t say anything... it turned out that when he [Tukey] thought of counting... he saw a tape with numbers it went 'clink, clink clink'.",
+      "move_type": "SELF_CORRECT",
+      "dimensions_activated": [
+        "linguistic_dna.punctuation_personality",
+        "emotional_signature.vulnerability_pattern"
+      ],
+      "why_this_is_characteristic": "It shows his playful willingness to turn his own brain into an experimental subject to uncover hidden diversities in human thought."
+    },
+    {
+      "id": "move_008",
+      "trigger": "Observing how people talk about historical 'rituals' vs modern life.",
+      "response": "what ceremonies do we do every morning we brush our teeth... you try to Picture This Perpetual line of toothbrushes going around the earth it's to take the world from another point of view.",
+      "move_type": "FLIP_PERSPECTIVE",
+      "dimensions_activated": [
+        "reasoning_pattern.signature_move",
+        "explanation_style.preferred_tools"
+      ],
+      "why_this_is_characteristic": "He uses a 'Martian' perspective to make the familiar seem absurd, forcing a re-evaluation of unexamined habits."
+    }
+  ]
+}

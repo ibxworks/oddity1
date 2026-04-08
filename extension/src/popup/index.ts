@@ -2,6 +2,7 @@ import type {
   AnnotationFont,
   AnnotationFontSize,
   DepthPersonality,
+  PublicFigurePersona,
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
@@ -46,6 +47,12 @@ const blockedDomainSection = document.getElementById("blocked-domain-section")!;
 const profilePersonaSelect = document.getElementById(
   "profile-persona-select",
 ) as HTMLElement;
+
+// Public figure persona refs
+const publicFigureRow = document.getElementById("public-figure-row")!;
+const publicFigureSelect = document.getElementById(
+  "public-figure-select",
+) as HTMLSelectElement;
 
 // Auth bar refs (bottom)
 const profileBtn = document.getElementById("profile-btn")!;
@@ -176,11 +183,24 @@ function applyPrefsToUI(): void {
   }
 
   // Sync top avatar with personality
-  const displayName =
-    (currentPrefs.depth_personality ?? "terry").charAt(0).toUpperCase() +
-    (currentPrefs.depth_personality ?? "terry").slice(1);
-  profilePersonaSelect.textContent = displayName;
-  applyPersonaVisuals(displayName);
+  const rawPersonality = currentPrefs.depth_personality ?? "terry";
+  if (rawPersonality.startsWith("pf:")) {
+    // Public figure selected: deactivate core buttons, select in dropdown
+    for (const btn of intensityGroup.querySelectorAll<HTMLButtonElement>(".density-btn")) {
+      btn.classList.remove("active");
+    }
+    publicFigureSelect.value = rawPersonality;
+    const pfDisplayName =
+      publicFigureSelect.selectedOptions[0]?.textContent ?? "Public Figure";
+    profilePersonaSelect.textContent = pfDisplayName;
+    applyPersonaVisuals("Terry"); // use Terry avatar for all PF personas
+  } else {
+    publicFigureSelect.value = "";
+    const displayName =
+      rawPersonality.charAt(0).toUpperCase() + rawPersonality.slice(1);
+    profilePersonaSelect.textContent = displayName;
+    applyPersonaVisuals(displayName);
+  }
 
   // Font select
   fontSelect.value = currentPrefs.annotation_font;
@@ -240,6 +260,9 @@ function showAuthenticatedUI(user: {
     sallyBtn.style.opacity = "";
     sallyBtn.title = "";
   }
+
+  // Load public figure personas for all users (selection gated on tier)
+  loadPublicFigurePersonas().catch(() => {});
 }
 
 function showUnauthenticatedUI(): void {
@@ -420,6 +443,9 @@ intensityGroup.addEventListener("click", (e) => {
     b.classList.toggle("active", b === btn);
   }
 
+  // Reset public figure dropdown when a core personality is selected
+  publicFigureSelect.value = "";
+
   // Sync the top avatar and persona selector with the selected personality
   const displayName =
     personality.charAt(0).toUpperCase() + personality.slice(1);
@@ -428,6 +454,63 @@ intensityGroup.addEventListener("click", (e) => {
 
   savePrefs();
 });
+
+// Public figure persona dropdown
+publicFigureSelect.addEventListener("change", () => {
+  const value = publicFigureSelect.value;
+  if (!value) {
+    // "None" selected — revert to terry
+    currentPrefs.depth_personality = "terry";
+    applyPrefsToUI();
+  } else if (currentUser?.tier !== "standard") {
+    // Gate: requires Standard plan
+    showUpgradeToast("Public figure personas require a Standard plan");
+    publicFigureSelect.value = "";
+    return;
+  } else {
+    currentPrefs.depth_personality = value as DepthPersonality;
+    // Deactivate core personality buttons
+    for (const b of intensityGroup.querySelectorAll<HTMLButtonElement>(".density-btn")) {
+      b.classList.remove("active");
+    }
+    const pfDisplayName =
+      publicFigureSelect.selectedOptions[0]?.textContent ?? "Public Figure";
+    profilePersonaSelect.textContent = pfDisplayName;
+    applyPersonaVisuals("Terry");
+  }
+  savePrefs();
+});
+
+async function loadPublicFigurePersonas(): Promise<void> {
+  try {
+    const result = await sendMessage<{ personas: PublicFigurePersona[] }>({
+      action: "getPersonas",
+      payload: {},
+    });
+    const personas = result.personas ?? [];
+    if (personas.length === 0) return;
+
+    // Populate dropdown options (preserve "None" first option)
+    while (publicFigureSelect.options.length > 1) {
+      publicFigureSelect.remove(1);
+    }
+    for (const p of personas) {
+      const opt = document.createElement("option");
+      opt.value = `pf:${p.slug}`;
+      opt.textContent = p.displayName;
+      publicFigureSelect.appendChild(opt);
+    }
+
+    publicFigureRow.style.display = "";
+
+    // If current personality is already a pf: slug, sync the UI
+    if (currentPrefs.depth_personality?.startsWith("pf:")) {
+      applyPrefsToUI();
+    }
+  } catch {
+    // Personas unavailable — keep row hidden
+  }
+}
 
 // Font select
 fontSelect.addEventListener("change", () => {

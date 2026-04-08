@@ -1,4 +1,5 @@
 import type { Annotation, AnnotationMode, DepthPersonality } from "@oddity/shared";
+import { getPersona } from "./persona-registry.js";
 import {
   GoogleGenerativeAI,
   GoogleGenerativeAIError,
@@ -190,8 +191,20 @@ function buildSystemPrompt(
     return overviewPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
   }
 
+  // Public figure persona: Terry's base prompt + persona thinking overlay
+  if (personality?.startsWith("pf:")) {
+    const slug = personality.slice(3);
+    const persona = getPersona(slug);
+    if (!persona) {
+      console.warn(`[gemini] Unknown persona slug: ${slug}, falling back to terry`);
+      return depthPrompts["terry"] ?? depthPrompts["jerry"] ?? "";
+    }
+    const base = depthPrompts["terry"] ?? depthPrompts["jerry"] ?? "";
+    return `${base}\n\n---\n## PERSONA THINKING OVERLAY\n${persona.prompt}`;
+  }
+
   const key = personality ?? "jerry";
-  return depthPrompts[key] ?? depthPrompts.jerry ?? "";
+  return depthPrompts[key] ?? depthPrompts["jerry"] ?? "";
 }
 
 function mapOverviewOutput(raw: unknown[]): unknown[] {

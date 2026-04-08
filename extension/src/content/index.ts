@@ -22,6 +22,7 @@ import { handleExportPdf } from "./export-pdf.js";
 import { extractText, extractWithReadability } from "./extractor.js";
 import {
   createPdfPageSummaryController,
+  normalizePdfDom,
   type PdfPageSummaryCard,
   type PdfPageSummaryController,
   type PdfPageSummaryGenerateResult,
@@ -60,8 +61,14 @@ import {
   setDashUserTier,
   setPdfSummaryTabVisible,
   updatePdfSummaryCards,
+  scrollPdfSummaryToPage,
+  triggerOptimizePrompt,
+  pasteIntoChatbot,
+  setPublicFigurePersonas,
 } from "./renderer/arguments-box.js";
+import { initOptimizeButton, destroyOptimizeButton } from "./renderer/optimize-button.js";
 import {
+
   clearAllAnchors,
   getAllAnchorsInOrder,
   getAnnotationId,
@@ -523,8 +530,13 @@ async function initPdfPageSummaryFeature(): Promise<void> {
 
   if (pdfPageSummaryController) return;
 
+  normalizePdfDom();
+
   pdfPageSummaryController = await createPdfPageSummaryController({
     onCardsChanged: syncPdfSummaryCards,
+    onVisiblePageChanged: (pageNo) => {
+      scrollPdfSummaryToPage(pageNo);
+    },
     onGeneratePageSummary: async (page): Promise<PdfPageSummaryRequestResult> => {
       const controller = pdfPageSummaryController;
       if (!controller) {
@@ -726,6 +738,7 @@ function resetAnnotationState(): void {
   destroyOverlay();
   destroyMarginNotes();
   destroyArgumentsBox();
+  destroyOptimizeButton();
   destroyManualAnnotations();
   pdfPageSummaryController?.destroy();
   pdfPageSummaryController = null;
@@ -1010,6 +1023,14 @@ async function init(): Promise<void> {
     setDashUserTier(authStatus.user.tier);
   }
 
+  // Load public figure personas for all users (selection gated on tier in argbox)
+  sendMessage<{ personas: Array<{ slug: string; displayName: string }> }>({
+    action: "getPersonas",
+    payload: {},
+  }).then((result) => {
+    setPublicFigurePersonas(result.personas ?? []);
+  }).catch(() => {});
+
   if (!authStatus?.authenticated) {
     console.log("[Oddity 1] Not signed in — showing auth toast");
     showAuthToast();
@@ -1020,11 +1041,19 @@ async function init(): Promise<void> {
     return;
   }
 
-  // PDF-converted HTML page — skip whitelist check and auto-run annotations.
-  // The meta tag is injected by pdf-converter.ts for all converted pages.
+  // PDF-converted HTML page — treat like a non-whitelisted page so the user
+  // chooses when to run Oddity (via the argbox), instead of auto-annotating.
   if (document.querySelector('meta[name="oddity-source-pdf"]')) {
-    siteWhitelisted = true;
-    await startPipeline();
+    siteWhitelisted = false;
+    initArgumentsBox();
+    setInputTextProvider(collectInputText);
+    setArgumentsBoxEnabled(enabled);
+    setArgumentsBoxDimmed(true);
+    setManualRunCallback(manualRun);
+
+    // Always initialize Page Summaries immediately — it's independent of
+    // annotation and should be available before the user clicks "Run Oddity1".
+    initPdfPageSummaryFeature().catch(console.error);
     return;
   }
 
@@ -1082,6 +1111,12 @@ async function startPipeline(): Promise<void> {
         getChatbotDisplayName(matchedAdapter.hostname_pattern) ??
         getChatbotDisplayName(hostname);
       setChatbotMode(matchedAdapter.input_selector, chatbotDisplayName);
+      
+      initOptimizeButton(
+        { selector: matchedAdapter.input_selector, displayName: chatbotDisplayName },
+        triggerOptimizePrompt,
+        pasteIntoChatbot
+      );
     }
     setArgumentsBoxEnabled(enabled);
     setInputTextProvider(collectInputText);
@@ -1134,6 +1169,11 @@ async function startPipeline(): Promise<void> {
 
   // ── Static site flow ──
   regions = detectReadingRegions(adapters);
+  const isConvertedPdf = !!document.querySelector('meta[name="oddity-source-pdf"]');
+
+  if (isConvertedPdf) {
+    normalizePdfDom();
+  }
 
   console.log(`[Oddity 1] Detected ${regions.length} reading region(s)`);
 
@@ -1142,7 +1182,7 @@ async function startPipeline(): Promise<void> {
   initManualAnnotations();
   initKeyboardNav();
   initArgumentsBox();
-  if (document.querySelector('meta[name="oddity-source-pdf"]')) {
+  if (isConvertedPdf) {
     await initPdfPageSummaryFeature();
   } else {
     setPdfSummaryTabVisible(false);

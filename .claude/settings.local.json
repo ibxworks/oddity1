@@ -146,7 +146,8 @@
       "Bash(AUTH=\"Authorization: Bearer phx_rolA0VVtFQTfAN4m5jOjVMQYbaVISMaElwQmLmRyZkudtnM\")",
       "Bash(__NEW_LINE_0e18ed5e7765075a__ echo:*)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -H \"$AUTH\" \"https://us.posthog.com/api/projects/355832/dashboards/1410914/?refresh=force_blocking\")",
-      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -H \"$AUTH\" \"https://us.posthog.com/api/projects/355832/dashboards/1410930/?refresh=force_blocking\")"
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -H \"$AUTH\" \"https://us.posthog.com/api/projects/355832/dashboards/1410930/?refresh=force_blocking\")",
+      "mcp__chrome-devtools__list_pages"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -140,6 +140,8 @@ let dashProfileNameEl: HTMLSpanElement | null = null;
 let dashProfileAvatarEl: HTMLSpanElement | null = null;
 let dashTierBadgeEl: HTMLElement | null = null;
 let dashDensityBtns: HTMLButtonElement[] = [];
+let dashPublicFigureSelect: HTMLSelectElement | null = null;
+let dashPublicFigureRow: HTMLDivElement | null = null;
 let dashFontSelect: HTMLSelectElement | null = null;
 let dashFontSizeSelect: HTMLSelectElement | null = null;
 let dashPersonaSelect: HTMLElement | null = null;
@@ -1051,6 +1053,18 @@ export function updatePdfSummaryCards(cards: PdfSummaryCardItem[]): void {
   renderPdfSummaryList();
 }
 
+export function scrollPdfSummaryToPage(pageNo: string): void {
+  if (!pdfSummaryListEl) return;
+  const cards = pdfSummaryListEl.querySelectorAll<HTMLElement>(".args-pdf-summary-card");
+  for (const card of cards) {
+    const isTarget = card.dataset.pageNo === pageNo;
+    card.classList.toggle("args-pdf-summary-card--active", isTarget);
+    if (isTarget) {
+      card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+}
+
 export function setPdfCachedLabel(cached: boolean): void {
   pdfCachedLabel = cached;
 }
@@ -1180,9 +1194,11 @@ export function appendSketchChunk(text: string, done: boolean): void {
     }
     if (isChatbotMode && chatbotInputSelector && sketchBuffer) {
       pasteIntoChatbot(chatbotInputSelector, sketchBuffer);
+      document.dispatchEvent(new CustomEvent("oddity:optimizePromptDone", { detail: { success: true } }));
     }
   }
 }
+
 
 export function setChatbotMode(
   inputSelector: string,
@@ -1197,7 +1213,7 @@ export function setChatbotMode(
   syncChatbotUi();
 }
 
-function pasteIntoChatbot(selector: string, text: string): void {
+export function pasteIntoChatbot(selector: string, text: string): void {
   const el = document.querySelector(selector) as HTMLElement | null;
   if (!el) return;
 
@@ -1247,6 +1263,27 @@ let signOutCb: (() => void) | null = null;
 
 /** Update the dashboard's personality display (avatar, select, buttons, bubble). */
 export function updateDashboardPersonality(personality: string): void {
+  if (personality.startsWith("pf:")) {
+    // Public figure: deactivate core buttons, select in dropdown, use Terry avatar
+    dashDensityBtns.forEach((b) => b.classList.remove("args-dash-density-active"));
+    if (dashPublicFigureSelect) {
+      dashPublicFigureSelect.value = personality;
+      const pfDisplayName =
+        dashPublicFigureSelect.selectedOptions[0]?.textContent ?? "Public Figure";
+      if (dashPersonaSelect) dashPersonaSelect.textContent = pfDisplayName;
+    }
+    if (dashPersonaAvatarImgEl) {
+      dashPersonaAvatarImgEl.src = chrome.runtime.getURL("Terry.png");
+      dashPersonaAvatarImgEl.alt = "Terry";
+    }
+    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = "#fff";
+    if (bubbleLogoImgEl) {
+      bubbleLogoImgEl.src = chrome.runtime.getURL("Terry.png");
+      bubbleLogoImgEl.alt = "Terry";
+    }
+    return;
+  }
+
   const display = personality.charAt(0).toUpperCase() + personality.slice(1);
   if (dashPersonaSelect) dashPersonaSelect.textContent = display;
   if (dashPersonaAvatarImgEl) {
@@ -1262,6 +1299,7 @@ export function updateDashboardPersonality(personality: string): void {
       b.dataset.intensity === personality,
     ),
   );
+  if (dashPublicFigureSelect) dashPublicFigureSelect.value = "";
   if (bubbleLogoImgEl) {
     bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
     bubbleLogoImgEl.alt = display;
@@ -1270,6 +1308,27 @@ export function updateDashboardPersonality(personality: string): void {
 
 export function setSignOutCallback(cb: () => void): void {
   signOutCb = cb;
+}
+
+/** Populate the public figure dropdown from the personas list. */
+export function setPublicFigurePersonas(
+  personas: Array<{ slug: string; displayName: string }>,
+): void {
+  if (!dashPublicFigureSelect || !dashPublicFigureRow) return;
+
+  // Clear existing options except "None"
+  while (dashPublicFigureSelect.options.length > 1) {
+    dashPublicFigureSelect.remove(1);
+  }
+
+  for (const p of personas) {
+    const opt = document.createElement("option");
+    opt.value = `pf:${p.slug}`;
+    opt.textContent = p.displayName;
+    dashPublicFigureSelect.appendChild(opt);
+  }
+
+  dashPublicFigureRow.style.display = personas.length > 0 ? "" : "none";
 }
 
 export function handleRemoteSignOut(): void {
@@ -1321,7 +1380,8 @@ export async function handleRemoteSignIn(user: {
   const siteEnabled =
     Array.isArray(enabledSites) &&
     enabledSites.some((s) => hostname === s || hostname.endsWith("." + s));
-  if (!siteEnabled) {
+  const isPdfConverted = !!document.querySelector('meta[name="oddity-source-pdf"]');
+  if (!siteEnabled && !isPdfConverted) {
     // Collapse to button — don't auto-expand the "not enabled" panel
     dimmed = true;
     containerEl?.classList.add("oddity-not-enabled");
@@ -1385,6 +1445,8 @@ export function destroyArgumentsBox(): void {
   dashUserEmail = "";
   dashUserTier = "free";
   dashDensityBtns = [];
+  dashPublicFigureSelect = null;
+  dashPublicFigureRow = null;
   dashFontSelect = null;
   dashFontSizeSelect = null;
   dashPersonaSelect = null;
@@ -1655,7 +1717,7 @@ function toggleDimmedPanel(): void {
   }
   if (pdfDetected) {
     showPdfOverlay();
-  } else {
+  } else if (dimmed) {
     showNotEnabledOverlay();
   }
 }
@@ -1699,7 +1761,10 @@ function toggle(): void {
             enabledSites.some(
               (s) => hostname === s || hostname.endsWith("." + s),
             ));
-        if (!siteEnabled) {
+        const isPdfConverted = !!document.querySelector(
+          'meta[name="oddity-source-pdf"]',
+        );
+        if (!siteEnabled && !isPdfConverted) {
           showNotEnabledOverlay();
         }
       }
@@ -1977,6 +2042,43 @@ function buildDashboardFace(): HTMLDivElement {
   personalityRow.appendChild(personalityLabel);
   personalityRow.appendChild(personalityGroup);
   section.appendChild(personalityRow);
+
+  // Public Figure dropdown row (hidden until personas loaded)
+  dashPublicFigureRow = document.createElement("div");
+  dashPublicFigureRow.className = "args-dash-row";
+  dashPublicFigureRow.style.display = "none";
+  const pfLabel = document.createElement("span");
+  pfLabel.className = "args-dash-label";
+  pfLabel.textContent = "Public Figure";
+  dashPublicFigureSelect = document.createElement("select");
+  dashPublicFigureSelect.className = "args-dash-select";
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "None";
+  dashPublicFigureSelect.appendChild(noneOpt);
+  dashPublicFigureSelect.addEventListener("change", () => {
+    const value = dashPublicFigureSelect!.value;
+    if (value && dashUserTier !== "standard") {
+      // Gate: requires Standard plan
+      showNoticeToast("Public figure personas require a Standard plan");
+      dashPublicFigureSelect!.value = "";
+      return;
+    }
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      if (!value) {
+        // Revert to terry
+        chrome.storage.local.set({ preferences: { ...prefs, depth_personality: "terry" } });
+      } else {
+        // Deactivate core buttons
+        dashDensityBtns.forEach((b) => b.classList.remove("args-dash-density-active"));
+        chrome.storage.local.set({ preferences: { ...prefs, depth_personality: value } });
+      }
+    });
+  });
+  dashPublicFigureRow.appendChild(pfLabel);
+  dashPublicFigureRow.appendChild(dashPublicFigureSelect);
+  section.appendChild(dashPublicFigureRow);
 
   // Font row
   const fontRow = document.createElement("div");
@@ -2418,7 +2520,10 @@ function buildDashboardFace(): HTMLDivElement {
           enabledSites.some(
             (s) => hostname === s || hostname.endsWith("." + s),
           );
-        if (!siteEnabled) {
+        const isPdfConverted = !!document.querySelector(
+          'meta[name="oddity-source-pdf"]',
+        );
+        if (!siteEnabled && !isPdfConverted) {
           showNotEnabledOverlay();
         }
         updateModeToggleVisibility();
@@ -2546,7 +2651,10 @@ function buildDashboardFace(): HTMLDivElement {
           enabledSites.some(
             (s) => hostname === s || hostname.endsWith("." + s),
           );
-        if (!siteEnabled) {
+        const isPdfConverted = !!document.querySelector(
+          'meta[name="oddity-source-pdf"]',
+        );
+        if (!siteEnabled && !isPdfConverted) {
           showNotEnabledOverlay();
         }
         updateModeToggleVisibility();
@@ -4059,6 +4167,8 @@ function copyPdfSummary(summary: string, btn: HTMLButtonElement): void {
 function renderPdfSummaryList(): void {
   if (!pdfSummaryListEl) return;
 
+  // Save scroll position so re-render doesn't jump to top
+  const savedScroll = pdfSummaryListEl.scrollTop;
   pdfSummaryListEl.replaceChildren();
 
   if (!pdfSummaryTabVisible) return;
@@ -4072,9 +4182,11 @@ function renderPdfSummaryList(): void {
   }
 
   for (const item of pdfSummaryCards) {
-    const card = document.createElement("div");
-    card.className = "args-pdf-summary-card";
     if (item.summary) {
+      // ── Full summarized card ──
+      const card = document.createElement("div");
+      card.className = "args-pdf-summary-card";
+      card.dataset.pageNo = item.pageNo;
       card.addEventListener("click", () => {
         document.dispatchEvent(
           new CustomEvent("oddity:pdf-summary-scroll-to-page", {
@@ -4082,22 +4194,20 @@ function renderPdfSummaryList(): void {
           }),
         );
       });
-    }
 
-    const text = document.createElement("div");
-    text.className = "args-pdf-summary-text";
-    text.textContent = item.summary ?? `Summarize page ${item.pageLabel}`;
-    card.appendChild(text);
+      const text = document.createElement("div");
+      text.className = "args-pdf-summary-text";
+      text.textContent = item.summary;
+      card.appendChild(text);
 
-    const footer = document.createElement("div");
-    footer.className = "args-pdf-summary-footer";
+      const footer = document.createElement("div");
+      footer.className = "args-pdf-summary-footer";
 
-    const pageLabel = document.createElement("div");
-    pageLabel.className = "args-pdf-summary-page";
-    pageLabel.textContent = item.pageLabel;
-    footer.appendChild(pageLabel);
+      const pageLabel = document.createElement("div");
+      pageLabel.className = "args-pdf-summary-page";
+      pageLabel.textContent = item.pageLabel;
+      footer.appendChild(pageLabel);
 
-    if (item.summary) {
       const copyBtn = document.createElement("button");
       copyBtn.type = "button";
       copyBtn.className = "args-pdf-summary-copy";
@@ -4108,7 +4218,22 @@ function renderPdfSummaryList(): void {
         copyPdfSummary(item.summary!, copyBtn);
       });
       footer.appendChild(copyBtn);
+      card.appendChild(footer);
+      pdfSummaryListEl.appendChild(card);
     } else {
+      // ── Compact unsummarized card ──
+      const card = document.createElement("div");
+      card.className = "args-pdf-summary-card args-pdf-summary-card--compact";
+      card.dataset.pageNo = item.pageNo;
+
+      const footer = document.createElement("div");
+      footer.className = "args-pdf-summary-footer";
+
+      const pageLabel = document.createElement("div");
+      pageLabel.className = "args-pdf-summary-page";
+      pageLabel.textContent = item.pageLabel;
+      footer.appendChild(pageLabel);
+
       const actionBtn = document.createElement("button");
       actionBtn.type = "button";
       actionBtn.className = "args-pdf-summary-generate";
@@ -4123,11 +4248,13 @@ function renderPdfSummaryList(): void {
         );
       });
       footer.appendChild(actionBtn);
+      card.appendChild(footer);
+      pdfSummaryListEl.appendChild(card);
     }
-
-    card.appendChild(footer);
-    pdfSummaryListEl.appendChild(card);
   }
+
+  // Restore scroll so the list doesn't jump on re-render
+  pdfSummaryListEl.scrollTop = savedScroll;
 }
 
 // ─── Tab Switching ───
@@ -4287,6 +4414,88 @@ function formatItemPlain(item: ArgumentItem): string {
   lines.push(`Note: ${item.text}`);
   return lines.join("\n");
 }
+
+export function triggerOptimizePrompt(chatbotInputBoxText: string): void {
+  if (sketchLoading) return;
+
+  if (dashUserTier !== "standard") {
+    document.dispatchEvent(
+      new CustomEvent("oddity:optimizePromptDone", {
+        detail: { error: "Requires Standard plan." },
+      }),
+    );
+    return;
+  }
+
+  const inputText = inputTextProviderCb?.() ?? "";
+  if (!inputText) {
+    document.dispatchEvent(
+      new CustomEvent("oddity:optimizePromptDone", {
+        detail: { error: "No page context found." },
+      }),
+    );
+    return;
+  }
+
+  const allItems = [...canonicalItems, ...liveItems];
+  const userReactions = allItems.map((i) => formatItemPlain(i)).join("\n\n");
+
+  sketchLoading = true;
+  sketchViewState = "loading";
+  sketchBuffer = "";
+
+  // Make sure argbox shows loading too if it's open
+  if (sketchContentEl) {
+    sketchContentEl.innerHTML =
+      '<div class="args-sketch-loading"><span></span><span></span><span></span></div>';
+  }
+  if (sketchBtnEl) {
+    sketchBtnEl.disabled = true;
+    sketchBtnEl.textContent = getSketchLoadingLabel();
+  }
+
+  chrome.runtime
+    .sendMessage({
+      action: "requestSketch",
+      payload: {
+        inputText,
+        purpose: chatbotInputBoxText,
+        userReactions,
+        mode: "prompt",
+      },
+    })
+    .catch((err) => {
+      sketchViewState = "error";
+      sketchLoading = false;
+      if (sketchBtnEl) {
+        sketchBtnEl.disabled = false;
+        sketchBtnEl.textContent = getSketchActionLabel();
+      }
+      if (sketchContentEl) {
+        const errorDiv = document.createElement("div");
+        errorDiv.className = "args-sketch-error";
+        errorDiv.textContent = getSketchErrorText();
+        sketchContentEl.replaceChildren(errorDiv);
+      }
+      document.dispatchEvent(
+        new CustomEvent("oddity:optimizePromptDone", { detail: { error: err } }),
+      );
+    });
+}
+
+
+export function getOptimizePromptContext() {
+  const inputText = inputTextProviderCb?.() ?? "";
+  const allItems = [...canonicalItems, ...liveItems];
+  const userReactions = allItems.map((i) => formatItemPlain(i)).join("\n\n");
+  
+  return {
+    tier: dashUserTier,
+    inputText,
+    userReactions
+  };
+}
+
 
 /**
  * Format a single item as HTML for rich clipboard copy.
@@ -5401,6 +5610,16 @@ const ARGUMENTS_BOX_CSS = `
   .args-pdf-summary-card:hover {
     transform: translateY(-1px);
     box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  }
+
+  .args-pdf-summary-card--active {
+    outline: 2px solid #3b82f6;
+    outline-offset: -2px;
+  }
+
+  .args-pdf-summary-card--compact {
+    padding-top: 10px;
+    padding-bottom: 10px;
   }
 
   .args-pdf-summary-text {
