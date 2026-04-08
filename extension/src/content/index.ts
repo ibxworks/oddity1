@@ -1023,15 +1023,13 @@ async function init(): Promise<void> {
     setDashUserTier(authStatus.user.tier);
   }
 
-  // Load public figure personas for Standard tier users
-  if (authStatus?.user?.tier === "standard") {
-    sendMessage<{ personas: Array<{ slug: string; displayName: string }> }>({
-      action: "getPersonas",
-      payload: {},
-    }).then((result) => {
-      setPublicFigurePersonas(result.personas ?? []);
-    }).catch(() => {});
-  }
+  // Load public figure personas for all users (selection gated on tier in argbox)
+  sendMessage<{ personas: Array<{ slug: string; displayName: string }> }>({
+    action: "getPersonas",
+    payload: {},
+  }).then((result) => {
+    setPublicFigurePersonas(result.personas ?? []);
+  }).catch(() => {});
 
   if (!authStatus?.authenticated) {
     console.log("[Oddity 1] Not signed in — showing auth toast");

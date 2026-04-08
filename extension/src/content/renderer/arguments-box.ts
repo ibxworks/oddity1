@@ -2058,6 +2058,12 @@ function buildDashboardFace(): HTMLDivElement {
   dashPublicFigureSelect.appendChild(noneOpt);
   dashPublicFigureSelect.addEventListener("change", () => {
     const value = dashPublicFigureSelect!.value;
+    if (value && dashUserTier !== "standard") {
+      // Gate: requires Standard plan
+      showNoticeToast("Public figure personas require a Standard plan");
+      dashPublicFigureSelect!.value = "";
+      return;
+    }
     chrome.storage.local.get("preferences").then((stored) => {
       const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
       if (!value) {

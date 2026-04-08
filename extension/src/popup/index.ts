@@ -261,10 +261,8 @@ function showAuthenticatedUI(user: {
     sallyBtn.title = "";
   }
 
-  // Load public figure personas for Standard tier users
-  if (user.tier === "standard") {
-    loadPublicFigurePersonas().catch(() => {});
-  }
+  // Load public figure personas for all users (selection gated on tier)
+  loadPublicFigurePersonas().catch(() => {});
 }
 
 function showUnauthenticatedUI(): void {
@@ -464,6 +462,11 @@ publicFigureSelect.addEventListener("change", () => {
     // "None" selected — revert to terry
     currentPrefs.depth_personality = "terry";
     applyPrefsToUI();
+  } else if (currentUser?.tier !== "standard") {
+    // Gate: requires Standard plan
+    showUpgradeToast("Public figure personas require a Standard plan");
+    publicFigureSelect.value = "";
+    return;
   } else {
     currentPrefs.depth_personality = value as DepthPersonality;
     // Deactivate core personality buttons
