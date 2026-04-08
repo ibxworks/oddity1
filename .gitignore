@@ -8,3 +8,4 @@ dist/
 *.log
 .vercel
 .vite
+claude_source_code/

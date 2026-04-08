@@ -1378,20 +1378,8 @@ function generateEssay(): void {
 // ─── Mode Router ─────────────────────────────────────────────────────────────
 async function routeRequest(text: string): Promise<'fast' | 'plan'> {
   const docText = await getApiDocText();
+  const essayContent = activeSession?.essayContent?.trim() ?? '';
 
-  // Hard rule: any document with existing content → always FAST.
-  // PLAN is only useful on a blank doc where the user wants a writing plan first.
-  if (
-    docText.trim().length > 0 ||
-    (activeSession?.essayContent?.trim() ?? '').length > 0 ||
-    docHasContent
-  ) {
-    return 'fast';
-  }
-
-  // Blank doc: ask LLM whether this is an exploratory request (PLAN) or a direct
-  // instruction (FAST, e.g. "write a paragraph about X").
-  const essayContent = '';
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(
       { action: 'gdocsRoute', payload: { prompt: text, docContext: docText, essayContent } },
