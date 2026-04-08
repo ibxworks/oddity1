@@ -593,7 +593,7 @@ function uint8ToBase64(bytes: Uint8Array): string {
 
 export async function requestGDocsChatStreaming(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
-  mode: "chat" | "tree" | "essay" | "edit",
+  mode: "chat" | "tree" | "essay" | "edit" | "fast" | "outline",
   onChunk: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -680,6 +680,35 @@ export async function fetchAllGDocsMcqQuestions(
   }
   if (!res.ok) throw new Error(`fetchAllGDocsMcqQuestions failed: ${res.status}`);
   return res.json() as Promise<McqQuestion[]>;
+}
+
+// ─── GDocs Route (mode classifier) ───────────────────────────────────────────
+
+export type GDocsRouteMode = "FAST" | "PLAN";
+
+export async function requestGDocsRoute(
+  prompt: string,
+  docContext: string,
+  essayContent: string,
+): Promise<{ mode: GDocsRouteMode; reasoning: string }> {
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${BACKEND_URL}/api/gdocs-route`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt, docContext, essayContent }),
+    });
+  }
+
+  let res = await doFetch(await getAccessToken());
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) throw new AuthError();
+    res = await doFetch(retryToken);
+  }
+  if (!res.ok) throw new Error(`requestGDocsRoute failed: ${res.status}`);
+  return res.json() as Promise<{ mode: GDocsRouteMode; reasoning: string }>;
 }
 
 // ─── GDocs Session (cloud sync) ───────────────────────────────────────────────

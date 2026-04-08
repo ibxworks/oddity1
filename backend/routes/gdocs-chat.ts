@@ -10,7 +10,7 @@ const MessageSchema = z.object({
 
 const GDocsChatRequestSchema = z.object({
   messages: z.array(MessageSchema).min(1).max(100),
-  mode: z.enum(["chat", "tree", "essay", "edit"]).default("chat"),
+  mode: z.enum(["chat", "tree", "essay", "edit", "fast", "outline", "skeleton"]).default("chat"),
 });
 
 const router = Router();

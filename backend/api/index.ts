@@ -20,6 +20,7 @@ import gdocsChatRouter from "../routes/gdocs-chat.js";
 import gdocsMcqRouter from "../routes/gdocs-mcq.js";
 import gdocsSessionRouter from "../routes/gdocs-session.js";
 import pdfPageSummariesRouter from "../routes/pdf-page-summaries.js";
+import gdocsRouteRouter from "../routes/gdocs-route.js";
 
 if (process.env.ODDITY_PROCESS_ROLE !== "worker") {
   registerProcessGuards({ role: "app", exitOnFatal: false });
@@ -79,6 +80,7 @@ app.use("/api/gdocs-chat", authMiddleware, gdocsChatRouter);
 app.use("/api/gdocs-mcq", authMiddleware, gdocsMcqRouter);
 app.use("/api/gdocs-session", authMiddleware, gdocsSessionRouter);
 app.use("/api/pdf-page-summaries", authMiddleware, pdfPageSummariesRouter);
+app.use("/api/gdocs-route", authMiddleware, gdocsRouteRouter);
 
 // Global error handler
 app.use(

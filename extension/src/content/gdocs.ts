@@ -18,9 +18,16 @@ interface OddityGDocsSession {
   editSuggestions?: Array<{ find: string; replace: string }[]>;
 }
 
+// Matches the McqOption / McqQuestion types exported from backend/lib/gemini.ts.
+// Claude Code pattern: each option has a label (1-5 words) + description (trade-off explanation).
+interface McqOption {
+  label: string;
+  description: string;
+}
 interface McqQuestion {
   question: string;
-  options: string[];
+  header: string;      // ≤12 char chip shown above the question
+  options: McqOption[]; // 2-4 options; "Other" is added by the UI automatically
 }
 
 function sleep(ms: number) {
@@ -59,8 +66,33 @@ let mcqResources: Array<{ name: string; content: string }> = [];
 let mcqMemos: Array<{ note: string; reply: string }> = [];
 const MAX_MCQ_QUESTIONS = 5;
 
+// ─── Mode selection ───────────────────────────────────────────────────────────
+let userMode: 'auto' | 'fast' | 'plan' = 'auto';
+
+// ─── Plan Mode state ──────────────────────────────────────────────────────────
+let pendingOutlineMode = false;
+let pendingSkeletonMode = false;    // true while streaming the skeleton
+let pendingSkeletonApproval = false; // true while skeleton is shown and awaiting user action
+let pendingPlanTopic = '';
+let currentOutlineText = '';
+let currentSkeletonText = '';
+
 // ─── Chat history (for edit mode) ─────────────────────────────────────────────
 const chatHistory: GDocsMessage[] = [];
+
+// Maximum turns to keep in chat history before pruning the oldest pairs.
+// Mirrors Claude Code's context-window management: truncate at a hard limit
+// with a note so the model knows history was compressed.
+const MAX_CHAT_HISTORY_TURNS = 10; // 10 user+assistant pairs = 20 messages
+
+function pruneChatHistoryIfNeeded(): void {
+  // Each "turn" is 1 user + 1 assistant message (2 entries).
+  const maxMessages = MAX_CHAT_HISTORY_TURNS * 2;
+  if (chatHistory.length <= maxMessages) return;
+  // Remove oldest pairs from the front, always keeping pairs intact.
+  const excess = chatHistory.length - maxMessages;
+  chatHistory.splice(0, excess % 2 === 0 ? excess : excess + 1);
+}
 
 // ─── URL parsing ─────────────────────────────────────────────────────────────
 function parseGDocsLocation(): { docId: string; tabId: string } {
@@ -130,11 +162,61 @@ async function loadSessionFromCloud(docId: string): Promise<OddityGDocsSession |
 }
 
 // ─── Stream relay via background messages ────────────────────────────────────
+
+// Monotonic request ID — incremented on every new request.
+// Any chunk/done/error whose requestId doesn't match the current one is silently
+// dropped, preventing text from two concurrent requests from mixing.
+// (Ported from Claude Code's turn-tracking pattern.)
+let currentRequestId = 0;
+
+// Two-stage timeouts:
+//   FIRST_CHUNK_TIMEOUT_MS — how long to wait for the very first token (reasoning
+//     models like gemini-2.5-pro can think for 30-45s before streaming starts).
+//   HEARTBEAT_TIMEOUT_MS   — max silence between tokens once streaming has begun
+//     (stream is considered frozen if no new token for this long).
+const FIRST_CHUNK_TIMEOUT_MS = 90_000;
+const HEARTBEAT_TIMEOUT_MS   = 20_000;
+let chunkTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+let receivedFirstChunk = false;
+
+function clearChunkTimeout(): void {
+  if (chunkTimeoutHandle !== null) {
+    clearTimeout(chunkTimeoutHandle);
+    chunkTimeoutHandle = null;
+  }
+}
+
+function resetChunkTimeout(requestId: number, isFirstChunk = false): void {
+  clearChunkTimeout();
+  const ms = isFirstChunk ? FIRST_CHUNK_TIMEOUT_MS : HEARTBEAT_TIMEOUT_MS;
+  chunkTimeoutHandle = setTimeout(() => {
+    if (requestId !== currentRequestId) return; // stale
+    console.warn('[Oddity GDocs] Stream timeout — no chunk received in', ms, 'ms');
+    currentStreamText = '';
+    streaming = false;
+    pendingEditMode = false;
+    pendingOutlineMode = false;
+    pendingSkeletonMode = false;
+    stopLoadingAnimation();
+    setInputEnabled(true);
+    showInlineError('Response timed out — the AI stopped responding. Please try again.');
+  }, ms);
+}
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === 'gdocsChatChunk') {
-    currentStreamText += (message.payload as { text: string }).text;
+    const { text, requestId } = message.payload as { text: string; requestId?: number };
+    // Discard chunks from stale/concurrent requests
+    if (requestId !== undefined && requestId !== currentRequestId) return;
+    currentStreamText += text;
+    receivedFirstChunk = true;
+    resetChunkTimeout(currentRequestId, false); // switch to short heartbeat after first chunk
   } else if (message.action === 'gdocsChatDone') {
+    const { requestId } = (message.payload ?? {}) as { requestId?: number };
+    if (requestId !== undefined && requestId !== currentRequestId) return;
+    clearChunkTimeout();
     const response = currentStreamText;
+    pruneChatHistoryIfNeeded();
     chatHistory.push({ role: 'assistant', content: response });
     currentStreamText = '';
     handleResponseActions(response)
@@ -154,51 +236,57 @@ chrome.runtime.onMessage.addListener((message) => {
         setInputEnabled(true);
       });
   } else if (message.action === 'gdocsChatError') {
-    const errMsg = (message.payload as { error?: string }).error ?? 'Unknown error';
-    console.error('[Oddity GDocs] Chat error:', errMsg);
+    const { error: errMsg, requestId } = (message.payload ?? {}) as { error?: string; requestId?: number };
+    if (requestId !== undefined && requestId !== currentRequestId) return;
+    clearChunkTimeout();
+    const msg = errMsg ?? 'Unknown error';
+    console.error('[Oddity GDocs] Chat error:', msg);
     currentStreamText = '';
     streaming = false;
     pendingEditMode = false;
+    pendingOutlineMode = false;
+    pendingSkeletonMode = false;
     stopLoadingAnimation();
     setInputEnabled(true);
     if (topicTextarea) {
-      topicTextarea.placeholder = `Error: ${errMsg.slice(0, 60)}`;
+      topicTextarea.placeholder = `Error: ${msg.slice(0, 60)}`;
       setTimeout(() => { if (topicTextarea) topicTextarea.placeholder = getPlaceholder(); }, 4000);
     }
   }
 });
+
+// Sends a gdocsChat message with a stamped requestId and starts the heartbeat.
+// All gdocsChat sends must go through this so the concurrent-request guard works.
+function sendGDocsChat(messages: GDocsMessage[], mode: string): void {
+  currentRequestId += 1;
+  const requestId = currentRequestId;
+  receivedFirstChunk = false;
+  resetChunkTimeout(requestId, true); // start with long first-chunk timeout
+  chrome.runtime.sendMessage({ action: 'gdocsChat', payload: { messages, mode, requestId } });
+}
 
 function getPlaceholder(): string {
   if (activeSession?.essayContent?.trim() || docHasContent) return 'Ask for edits…';
   return 'What do you want to write about?';
 }
 
-// ─── Doc context scraping ─────────────────────────────────────────────────────
-function scrapeDocContext(): string {
-  const docs = [document, ...iframeDocuments()];
-
-  const paragraphText = docs
-    .flatMap(d => Array.from(d.querySelectorAll<HTMLElement>('.kix-paragraphrenderer')))
-    .map(p => p.textContent ?? '')
-    .filter(t => t.trim().length > 0)
-    .join('\n');
-  if (paragraphText.trim().length > 0) return paragraphText.slice(0, 8000);
-
-  const wordNodeText = docs
-    .flatMap(d => Array.from(d.querySelectorAll<HTMLElement>('.kix-wordhtmlgenerator-word-node')))
-    .map(el => el.textContent ?? '')
-    .filter(t => t.trim().length > 0)
-    .join(' ');
-  if (wordNodeText.trim().length > 0) return wordNodeText.slice(0, 8000);
-
-  for (const d of docs) {
-    const editor = d.querySelector<HTMLElement>('.docs-editor-container, .kix-appview-editor');
-    if (editor) {
-      const text = editor.innerText ?? '';
-      if (text.trim().length > 0) return text.slice(0, 8000);
-    }
-  }
-  return '';
+// ─── Doc text via Docs API ────────────────────────────────────────────────────
+// Always fetch from the Google Docs REST API — not the canvas-rendered DOM —
+// so the AI sees the exact same text that findTextRange will search.
+async function getApiDocText(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { action: 'gdocsGetDocText', payload: { docId: activeDocId } },
+      (result: { text?: string; error?: string }) => {
+        if (chrome.runtime.lastError || result?.error) {
+          console.warn('[Oddity GDocs] gdocsGetDocText failed, returning empty:', chrome.runtime.lastError ?? result?.error);
+          resolve('');
+          return;
+        }
+        resolve(result?.text?.trim() ?? '');
+      }
+    );
+  });
 }
 
 // ─── Doc insertion ────────────────────────────────────────────────────────────
@@ -284,6 +372,8 @@ async function buildEssayTab(essayContent: string): Promise<void> {
   essayTabId = newTabId;
   await renameGDocsTabWithRetry('Essay Draft', newTabId, 8, 300);
   await pasteIntoDoc(essayContent + '\n\n');
+  docHasContent = true;
+  docContext = essayContent;
   if (activeSession) {
     activeSession.essayContent = essayContent;
     activeSession.essayTabId = newTabId;
@@ -330,15 +420,44 @@ async function enableEditMode(): Promise<void> {
   }
 }
 
+// ─── Edit op types ────────────────────────────────────────────────────────────
+type EditOp =
+  | { type: 'replace'; find: string; replace: string }
+  | { type: 'delete'; find: string }
+  | { type: 'insert'; after: string; text: string };
+
 // ─── Find & replace helpers ───────────────────────────────────────────────────
-function parseEditOps(text: string): Array<{ find: string; replace: string }> {
-  const ops: Array<{ find: string; replace: string }> = [];
+function parseEditOps(text: string): EditOp[] {
+  const ops: EditOp[] = [];
   const blocks = text.split(/^---\s*$/m);
   for (const block of blocks) {
-    const findMatch = block.match(/^FIND:\s*([\s\S]*?)(?=\nREPLACE:)/m);
-    const replaceMatch = block.match(/^REPLACE:\s*([\s\S]*)$/m);
-    if (findMatch?.[1] !== undefined) {
-      ops.push({ find: findMatch[1].trim(), replace: replaceMatch?.[1]?.trim() ?? '' });
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith('REPLACE:')) {
+      const findMatch = trimmed.match(/^FIND:\s*([\s\S]*?)(?=\nWITH:)/m);
+      const withMatch = trimmed.match(/^WITH:\s*([\s\S]*)$/m);
+      if (findMatch?.[1]) {
+        ops.push({ type: 'replace', find: findMatch[1].trim(), replace: withMatch?.[1]?.trim() ?? '' });
+      }
+    } else if (trimmed.startsWith('DELETE:')) {
+      const findMatch = trimmed.match(/^FIND:\s*([\s\S]*)$/m);
+      if (findMatch?.[1]) {
+        ops.push({ type: 'delete', find: findMatch[1].trim() });
+      }
+    } else if (trimmed.startsWith('INSERT:')) {
+      const afterMatch = trimmed.match(/^AFTER:\s*([\s\S]*?)(?=\nTEXT:)/m);
+      const textMatch = trimmed.match(/^TEXT:\s*([\s\S]*)$/m);
+      if (afterMatch?.[1] && textMatch?.[1]) {
+        ops.push({ type: 'insert', after: afterMatch[1].trim(), text: textMatch[1].trim() });
+      }
+    } else {
+      // Legacy FIND/REPLACE fallback
+      const findMatch = trimmed.match(/^FIND:\s*([\s\S]*?)(?=\nREPLACE:)/m);
+      const replaceMatch = trimmed.match(/^REPLACE:\s*([\s\S]*)$/m);
+      if (findMatch?.[1] !== undefined) {
+        ops.push({ type: 'replace', find: findMatch[1].trim(), replace: replaceMatch?.[1]?.trim() ?? '' });
+      }
     }
   }
   return ops;
@@ -389,36 +508,6 @@ async function typeIntoFRInput(input: HTMLInputElement, value: string): Promise<
     input.dispatchEvent(new InputEvent('input', { data: char, inputType: 'insertText', bubbles: true }));
   }
   await sleep(400);
-}
-
-async function replaceTextViaCanvas(findText: string, replaceText: string): Promise<void> {
-  const canvasIframe = document.querySelector<HTMLIFrameElement>('.docs-texteventtarget-iframe');
-  if (!canvasIframe?.contentDocument?.body) return;
-  canvasIframe.contentDocument.body.focus();
-  await sleep(100);
-  canvasIframe.contentDocument.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'H', code: 'KeyH', keyCode: 72, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
-  const ready = await waitForFRDialog();
-  if (!ready) return;
-  const { findInput } = findFRInputs();
-  if (!findInput) return;
-  await typeIntoFRInput(findInput, findText);
-  const nextBtn = findNextFRBtn();
-  if (nextBtn) {
-    nextBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    nextBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-    nextBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    await sleep(300);
-  }
-  findInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
-  await sleep(100);
-  const closeStart = Date.now();
-  while (Date.now() - closeStart < 2000) {
-    if (!findFRInputs().findInput) break;
-    await sleep(100);
-  }
-  await sleep(200);
-  await pasteIntoDoc(replaceText);
-  await sleep(200);
 }
 
 function findNextFRBtn(): HTMLElement | null {
@@ -579,15 +668,62 @@ function callDocApi(action: string, payload: Record<string, unknown>): Promise<{
   });
 }
 
-async function applyPendingEditsViaApi(ops: Array<{ find: string; replace: string }>): Promise<void> {
+async function applyPendingEditsViaApi(ops: EditOp[]): Promise<EditOp[]> {
+  document.dispatchEvent(new CustomEvent('oddity:gdocs:edit-start'));
+  const applied: EditOp[] = [];
+  const failed: EditOp[] = [];
+
+  // Track replace-text from previous ops to detect cascading conflicts.
+  // Ported from Claude Code's FileEditTool getPatchForEdits: if op N's find
+  // string is a substring of op N-1's replacement, applying N would match
+  // inside newly-inserted text rather than the original document.
+  const appliedReplaceTexts: string[] = [];
+
   for (const op of ops) {
-    const result = await callDocApi('gdocsApplyPendingEdit', {
-      docId: activeDocId,
-      findText: op.find,
-      replaceText: op.replace,
-    });
-    if (result.error) console.warn('[Oddity GDocs] Apply edit error:', result.error);
+    // Cascading edit guard: skip if this op's find text is a substring of
+    // any previously applied replacement (Claude Code utils.ts:262-350).
+    if (op.type !== 'insert') {
+      const findKey = op.find.replace(/\n+$/, '');
+      const cascadeConflict = appliedReplaceTexts.some(
+        prev => findKey !== '' && prev.includes(findKey)
+      );
+      if (cascadeConflict) {
+        console.warn('[Oddity GDocs] Skipping op — find text is a substring of a previous replacement:', op.find.slice(0, 60));
+        failed.push(op);
+        continue;
+      }
+    }
+
+    let result: { error?: string };
+    if (op.type === 'insert') {
+      result = await callDocApi('gdocsApplyInsert', { docId: activeDocId, afterText: op.after, insertText: op.text });
+    } else {
+      // For delete ops with no trailing newline in the find text, also attempt
+      // stripping a trailing newline — mirrors Claude Code's applyEditToFile deletion logic.
+      const findText = op.find;
+      const replaceText = op.type === 'replace' ? op.replace : '';
+      result = await callDocApi('gdocsApplyPendingEdit', {
+        docId: activeDocId,
+        findText,
+        replaceText,
+      });
+    }
+
+    if (result.error) {
+      console.warn('[Oddity GDocs] Apply edit error:', result.error);
+      failed.push(op);
+    } else {
+      applied.push(op);
+      if (op.type === 'replace') appliedReplaceTexts.push(op.replace);
+    }
   }
+
+  if (failed.length > 0 && applied.length === 0) {
+    showInlineError("Couldn't locate the text to edit — the document may have changed. Try again.");
+  } else if (failed.length > 0) {
+    showInlineError(`${failed.length} of ${ops.length} edits couldn't be located in the document.`);
+  }
+  return applied;
 }
 
 function dismissReviewPanel(): void {
@@ -595,16 +731,21 @@ function dismissReviewPanel(): void {
   reviewPanelEl = null;
 }
 
-function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): void {
+function opLabel(op: EditOp): string {
+  if (op.type === 'insert') return `Add after "${op.after.slice(0, 40)}…"`;
+  if (op.type === 'delete') return `Remove "${op.find.slice(0, 40)}…"`;
+  return `Replace "${op.find.slice(0, 30)}…"`;
+}
+
+function showEditReviewPanel(ops: EditOp[]): void {
   if (!shadowWrapper) return;
   dismissReviewPanel();
 
-  const pending = new Set(ops.map((_, i) => i)); // indices not yet decided
+  const pending = new Set(ops.map((_, i) => i));
 
   const panel = document.createElement('div');
   panel.className = 'review-panel';
 
-  // Header
   const header = document.createElement('div');
   header.className = 'review-header';
 
@@ -629,17 +770,32 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
   header.appendChild(bulkBtns);
   panel.appendChild(header);
 
-  // One row per change — just label + Keep / Revert
   const changeList = document.createElement('div');
   changeList.className = 'review-changes';
 
+  function acceptOp(op: EditOp): Promise<{ error?: string }> {
+    if (op.type === 'insert') {
+      return callDocApi('gdocsAcceptInsert', { docId: activeDocId, afterText: op.after, insertText: op.text });
+    }
+    return callDocApi('gdocsAcceptEdit', { docId: activeDocId, findText: op.find, replaceText: op.type === 'replace' ? op.replace : '' });
+  }
+
+  function revertOp(op: EditOp): Promise<{ error?: string }> {
+    if (op.type === 'insert') {
+      return callDocApi('gdocsRevertInsert', { docId: activeDocId, afterText: op.after, insertText: op.text });
+    }
+    return callDocApi('gdocsRevertEdit', { docId: activeDocId, findText: op.find, replaceText: op.type === 'replace' ? op.replace : '' });
+  }
+
   for (let i = 0; i < ops.length; i++) {
+    const op = ops[i]!;
+    const idx = i;
     const row = document.createElement('div');
     row.className = 'change-row';
 
     const label = document.createElement('span');
     label.className = 'change-label';
-    label.textContent = `Change ${i + 1}`;
+    label.textContent = opLabel(op);
     row.appendChild(label);
 
     const btns = document.createElement('div');
@@ -653,16 +809,14 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
     keepBtn.className = 'change-keep';
     keepBtn.textContent = 'Keep';
 
-    const idx = i;
-    const op = ops[idx]!;
-
     keepBtn.addEventListener('click', () => {
       keepBtn.disabled = true;
       revertBtn.disabled = true;
       row.classList.add('decided-keep');
       pending.delete(idx);
-      void callDocApi('gdocsAcceptEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace })
-        .then(() => { if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); } });
+      void acceptOp(op).then(() => {
+        if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); notifyEditDone(); }
+      });
     });
 
     revertBtn.addEventListener('click', () => {
@@ -670,8 +824,9 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
       revertBtn.disabled = true;
       row.classList.add('decided-revert');
       pending.delete(idx);
-      void callDocApi('gdocsRevertEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace })
-        .then(() => { if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); } });
+      void revertOp(op).then(() => {
+        if (pending.size === 0) { dismissReviewPanel(); setInputEnabled(true); notifyEditDone(); }
+      });
     });
 
     btns.appendChild(revertBtn);
@@ -689,9 +844,7 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
     setInputEnabled(false);
     startLoadingAnimation();
     void (async () => {
-      for (const op of ops) {
-        await callDocApi('gdocsAcceptEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace });
-      }
+      for (const op of ops) await acceptOp(op);
       stopLoadingAnimation();
       setInputEnabled(true);
     })();
@@ -702,9 +855,7 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
     setInputEnabled(false);
     startLoadingAnimation();
     void (async () => {
-      for (const op of ops) {
-        await callDocApi('gdocsRevertEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace });
-      }
+      for (const op of ops) await revertOp(op);
       stopLoadingAnimation();
       setInputEnabled(true);
     })();
@@ -713,21 +864,61 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
 
 // ─── Response router ──────────────────────────────────────────────────────────
 async function handleResponseActions(response: string): Promise<void> {
+  if (pendingSkeletonMode) {
+    pendingSkeletonMode = false;
+    const raw = response.trim();
+
+    // Parse FOLLOW_UP lines out of the skeleton response
+    const followUpRegex = /^FOLLOW_UP_\d+:\s*(.+)$/gm;
+    const followUpLines: string[] = [];
+    let match;
+    while ((match = followUpRegex.exec(raw)) !== null) {
+      if (match[1]) followUpLines.push(match[1].trim());
+    }
+    currentSkeletonText = raw.replace(/^FOLLOW_UP_\d+:.*$/gm, '').trim();
+
+    // Build the display text — include follow-up questions as a prompt to the user
+    const followUpSection = followUpLines.length > 0
+      ? `\n\n---\nTo refine this plan, consider:\n${followUpLines.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
+      : '';
+    const displayText = `${currentSkeletonText}${followUpSection}`;
+
+    pendingSkeletonApproval = true;
+    currentOutlineText = currentSkeletonText;
+    document.dispatchEvent(new CustomEvent('oddity:gdocs:outline:ready', { detail: { outline: displayText } }));
+    streaming = false;
+    stopLoadingAnimation();
+    setInputEnabled(true);
+    return;
+  }
+
+  if (pendingOutlineMode) {
+    pendingOutlineMode = false;
+    currentOutlineText = response.trim();
+    document.dispatchEvent(new CustomEvent('oddity:gdocs:outline:ready', { detail: { outline: currentOutlineText } }));
+    streaming = false;
+    stopLoadingAnimation();
+    setInputEnabled(true);
+    return;
+  }
+
   if (pendingEditMode) {
     pendingEditMode = false;
     const editMatch = response.match(/<<<EDIT>>>([\s\S]+?)<<<END_EDIT>>>/);
     if (editMatch?.[1]) {
       const ops = parseEditOps(editMatch[1].trim());
       if (ops.length > 0) {
-        if (activeSession) {
-          activeSession.editSuggestions = [...(activeSession.editSuggestions ?? []), ops];
-          await saveSession(activeSession);
-        }
         startLoadingAnimation();
-        await applyPendingEditsViaApi(ops);
+        const applied = await applyPendingEditsViaApi(ops);
         stopLoadingAnimation();
-        showEditReviewPanel(ops);
+        if (applied.length > 0) showEditReviewPanel(applied);
       }
+    } else {
+      // Missing-marker fallback: the model produced text but omitted the tags.
+      // Surface a clear error rather than silently dropping the response.
+      // (Claude Code pattern: never silently discard LLM output — always tell the user.)
+      console.warn('[Oddity GDocs] Edit response missing <<<EDIT>>> markers:', response.slice(0, 120));
+      showInlineError("The AI response was missing the expected format. Please try again.");
     }
     return;
   }
@@ -742,6 +933,8 @@ async function handleResponseActions(response: string): Promise<void> {
     } else {
       await pasteIntoDoc(essayContent + '\n\n');
       essayTabId = new URLSearchParams(window.location.search).get('tab') ?? 'default';
+      docHasContent = true; // doc now has content — update for router hard rule
+      docContext = essayContent;
       if (activeSession) {
         activeSession.essayContent = essayContent;
         activeSession.essayTabId = essayTabId;
@@ -751,6 +944,10 @@ async function handleResponseActions(response: string): Promise<void> {
       if (topicTextarea) topicTextarea.placeholder = getPlaceholder();
       if (followup) await pasteIntoDoc(`Oddity: ${followup}\n\n`);
     }
+  } else if (response.trim()) {
+    // Response arrived but has no recognized markers — surface it rather than silently dropping.
+    console.warn('[Oddity GDocs] Response had no recognized markers:', response.slice(0, 120));
+    showInlineError("The AI response was missing the expected format. Please try again.");
   }
 }
 
@@ -805,8 +1002,22 @@ function setInputEnabled(enabled: boolean) {
   if (commentBtn) commentBtn.disabled = !enabled;
 }
 
+function showInlineError(message: string): void {
+  if (!shadowWrapper) return;
+  const existing = shadowWrapper.querySelector('.oddity-inline-error');
+  existing?.remove();
+  const err = document.createElement('div');
+  err.className = 'oddity-inline-error';
+  err.style.cssText = 'background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:8px;';
+  err.textContent = message;
+  shadowWrapper.insertBefore(err, shadowWrapper.firstChild);
+  setTimeout(() => err.remove(), 6000);
+}
+
 // ─── MCQ flow ─────────────────────────────────────────────────────────────────
 async function fetchAllMcqQuestions(topic: string): Promise<McqQuestion[] | null> {
+  const freshDocText = await getApiDocText();
+  if (freshDocText) { docContext = freshDocText; docHasContent = true; }
   return new Promise((resolve) => {
     const hasExistingContent = docContext.trim().length > 0;
     const sections: string[] = [];
@@ -856,19 +1067,22 @@ const MCQ_OVERLAY_CSS = `
   *, *::before, *::after { box-sizing: border-box; }
   @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
   .mcq-backdrop { position: fixed; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 32px; z-index: 1; pointer-events: auto; }
-  .mcq-card { background: #fff; border-radius: 16px; padding: 22px 22px 16px; box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.07); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 16px; width: 480px; max-width: 90vw; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
+  .mcq-card { background: #fff; border-radius: 16px; padding: 22px 22px 16px; box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.07); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 14px; width: 480px; max-width: 90vw; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
   .mcq-header { display: flex; align-items: center; justify-content: space-between; }
   .mcq-dots { display: flex; align-items: center; gap: 4px; }
   .mcq-dot { width: 6px; height: 6px; border-radius: 50%; background: #e5e7eb; transition: background 0.2s; }
   .mcq-dot-filled { background: #1a1a1a; }
   .mcq-progress { font-size: 11px; font-weight: 500; color: #9aa0a6; font-variant-numeric: tabular-nums; }
-  .mcq-question { font-size: 14px; font-weight: 600; color: #1a1a1a; line-height: 1.5; }
+  .mcq-chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; background: #f0f2f5; color: #6b7280; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .mcq-question { font-size: 14px; font-weight: 600; color: #1a1a1a; line-height: 1.5; margin-top: 2px; }
   .mcq-options { display: flex; flex-direction: column; gap: 7px; }
-  .mcq-option { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 14px; border-radius: 10px; border: 1px solid #e8e8e2; background: #fff; color: #374151; font-size: 13px; font-family: inherit; cursor: pointer; transition: background 0.12s, border-color 0.12s; line-height: 1.4; width: 100%; }
+  .mcq-option { display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 10px 14px; border-radius: 10px; border: 1px solid #e8e8e2; background: #fff; color: #374151; font-size: 13px; font-family: inherit; cursor: pointer; transition: background 0.12s, border-color 0.12s; line-height: 1.4; width: 100%; }
   .mcq-option:hover { background: #f7f7f6; border-color: #d1d5db; }
   .mcq-option:disabled { opacity: 0.4; cursor: default; }
-  .mcq-option-label { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: #f0f2f5; color: #6b7280; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-  .mcq-option-text { flex: 1; font-weight: 500; }
+  .mcq-option-label { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: #f0f2f5; color: #6b7280; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .mcq-option-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+  .mcq-option-text { font-weight: 600; color: #1a1a1a; }
+  .mcq-option-desc { font-size: 11.5px; font-weight: 400; color: #6b7280; line-height: 1.4; }
   .mcq-other-input { flex: 1; border: none; outline: none; background: transparent; font-size: 13px; font-family: inherit; color: #1a1a1a; font-weight: 500; padding: 0; min-width: 0; }
   .mcq-other-submit { flex-shrink: 0; border: none; background: #1a1a1a; color: #fff; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; font-family: inherit; }
   .mcq-footer { display: flex; align-items: center; justify-content: space-between; }
@@ -877,13 +1091,11 @@ const MCQ_OVERLAY_CSS = `
 `;
 
 function renderMcqCard(question: McqQuestion): void {
-  // Remove previous card
   dismissMcqCard();
 
   const displayNum = mcqQuestionIndex + 1;
   const totalNum = Math.min(mcqAllQuestions.length, MAX_MCQ_QUESTIONS);
 
-  // Create a new centered fixed overlay
   const overlayHost = document.createElement('div');
   overlayHost.id = 'oddity-gdocs-mcq-overlay';
   overlayHost.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483646; pointer-events: none;';
@@ -897,13 +1109,12 @@ function renderMcqCard(question: McqQuestion): void {
 
   const backdrop = document.createElement('div');
   backdrop.className = 'mcq-backdrop';
-
   const card = document.createElement('div');
   card.className = 'mcq-card';
 
-  // Header: progress dots + "X / Y"
-  const header = document.createElement('div');
-  header.className = 'mcq-header';
+  // ── Top bar: progress dots + "X / Y" ────────────────────────────────────────
+  const topBar = document.createElement('div');
+  topBar.className = 'mcq-header';
   const dots = document.createElement('div');
   dots.className = 'mcq-dots';
   for (let i = 0; i < totalNum; i++) {
@@ -914,57 +1125,92 @@ function renderMcqCard(question: McqQuestion): void {
   const progress = document.createElement('span');
   progress.className = 'mcq-progress';
   progress.textContent = `${displayNum} / ${totalNum}`;
-  header.appendChild(dots);
-  header.appendChild(progress);
-  card.appendChild(header);
+  topBar.appendChild(dots);
+  topBar.appendChild(progress);
+  card.appendChild(topBar);
 
+  // ── Header chip (Claude Code: short topic tag above the question) ────────────
+  if (question.header) {
+    const chip = document.createElement('span');
+    chip.className = 'mcq-chip';
+    chip.textContent = question.header;
+    card.appendChild(chip);
+  }
+
+  // ── Question text ────────────────────────────────────────────────────────────
   const questionEl = document.createElement('div');
   questionEl.className = 'mcq-question';
   questionEl.textContent = question.question;
   card.appendChild(questionEl);
 
+  // ── Options (Claude Code: label + description per option) ────────────────────
   const optionsEl = document.createElement('div');
   optionsEl.className = 'mcq-options';
 
-  const aiOptions = question.options.slice(0, 3);
+  const aiOptions = question.options.slice(0, 4);
   aiOptions.forEach((opt, idx) => {
     const btn = document.createElement('button');
     btn.className = 'mcq-option';
-    const labelEl = document.createElement('span');
-    labelEl.className = 'mcq-option-label';
-    labelEl.textContent = MCQ_LABELS[idx] ?? String(idx + 1);
+
+    const letterEl = document.createElement('span');
+    letterEl.className = 'mcq-option-label';
+    letterEl.textContent = MCQ_LABELS[idx] ?? String(idx + 1);
+
+    const body = document.createElement('span');
+    body.className = 'mcq-option-body';
+
     const textEl = document.createElement('span');
     textEl.className = 'mcq-option-text';
-    textEl.textContent = opt;
-    btn.appendChild(labelEl);
-    btn.appendChild(textEl);
-    btn.addEventListener('click', () => handleMcqAnswer(opt, question.question));
+    textEl.textContent = opt.label;
+    body.appendChild(textEl);
+
+    // Description: one line explaining the trade-off (Claude Code AskUserQuestionTool pattern)
+    if (opt.description) {
+      const descEl = document.createElement('span');
+      descEl.className = 'mcq-option-desc';
+      descEl.textContent = opt.description;
+      body.appendChild(descEl);
+    }
+
+    btn.appendChild(letterEl);
+    btn.appendChild(body);
+    btn.addEventListener('click', () => handleMcqAnswer(opt.label, question.question));
     optionsEl.appendChild(btn);
   });
 
-  // "Other" option
+  // ── "Other" option — always added by UI, never by LLM (Claude Code pattern) ─
   const otherIdx = aiOptions.length;
   const otherBtn = document.createElement('button');
   otherBtn.className = 'mcq-option';
-  const otherLabelEl = document.createElement('span');
-  otherLabelEl.className = 'mcq-option-label';
-  otherLabelEl.textContent = MCQ_LABELS[otherIdx] ?? 'D';
+
+  const otherLetterEl = document.createElement('span');
+  otherLetterEl.className = 'mcq-option-label';
+  otherLetterEl.textContent = MCQ_LABELS[otherIdx] ?? String(otherIdx + 1);
+
+  const otherBody = document.createElement('span');
+  otherBody.className = 'mcq-option-body';
+
   const otherTextEl = document.createElement('span');
   otherTextEl.className = 'mcq-option-text';
   otherTextEl.textContent = 'Other';
-  otherBtn.appendChild(otherLabelEl);
-  otherBtn.appendChild(otherTextEl);
+  otherBody.appendChild(otherTextEl);
+
   const otherInput = document.createElement('input');
   otherInput.type = 'text';
   otherInput.className = 'mcq-other-input';
   otherInput.placeholder = 'Specify…';
   otherInput.style.display = 'none';
+
   const otherSubmit = document.createElement('button');
   otherSubmit.className = 'mcq-other-submit';
   otherSubmit.textContent = '→';
   otherSubmit.style.display = 'none';
-  otherBtn.appendChild(otherInput);
-  otherBtn.appendChild(otherSubmit);
+
+  otherBody.appendChild(otherInput);
+  otherBody.appendChild(otherSubmit);
+  otherBtn.appendChild(otherLetterEl);
+  otherBtn.appendChild(otherBody);
+
   const submitOther = () => {
     const val = otherInput.value.trim();
     if (!val) return;
@@ -988,7 +1234,7 @@ function renderMcqCard(question: McqQuestion): void {
   optionsEl.appendChild(otherBtn);
   card.appendChild(optionsEl);
 
-  // Footer: Previous button from Q2 onwards
+  // ── Footer: Previous button from Q2 onwards ──────────────────────────────────
   if (mcqQuestionIndex > 0) {
     const footer = document.createElement('div');
     footer.className = 'mcq-footer';
@@ -1126,48 +1372,188 @@ function generateEssay(): void {
     void saveSession(activeSession);
   }
 
-  chrome.runtime.sendMessage({ action: 'gdocsChat', payload: { messages, mode: 'essay' } });
+  sendGDocsChat(messages, 'essay');
+}
+
+// ─── Mode Router ─────────────────────────────────────────────────────────────
+async function routeRequest(text: string): Promise<'fast' | 'plan'> {
+  const docText = await getApiDocText();
+
+  // Hard rule: any document with existing content → always FAST.
+  // PLAN is only useful on a blank doc where the user wants a writing plan first.
+  if (
+    docText.trim().length > 0 ||
+    (activeSession?.essayContent?.trim() ?? '').length > 0 ||
+    docHasContent
+  ) {
+    return 'fast';
+  }
+
+  // Blank doc: ask LLM whether this is an exploratory request (PLAN) or a direct
+  // instruction (FAST, e.g. "write a paragraph about X").
+  const essayContent = '';
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { action: 'gdocsRoute', payload: { prompt: text, docContext: docText, essayContent } },
+      (result: { mode?: string } | undefined) => {
+        if (chrome.runtime.lastError) { resolve('fast'); return; }
+        resolve(result?.mode === 'PLAN' ? 'plan' : 'fast');
+      }
+    );
+  });
+}
+
+// ─── Fast Mode ────────────────────────────────────────────────────────────────
+function executeFastMode(text: string): void {
+  streaming = true;
+  pendingEditMode = true;
+  setInputEnabled(false);
+  startLoadingAnimation();
+
+  chatHistory.push({ role: 'user', content: text });
+  if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
+
+  // Fetch the document text from the Docs API (same source as findTextRange) so
+  // the AI's anchors exactly match what the edit applicator will search.
+  chrome.runtime.sendMessage(
+    { action: 'gdocsGetDocText', payload: { docId: activeDocId } },
+    (result: { text?: string; error?: string }) => {
+      const apiText = result?.text?.trim() ?? '';
+      const essayContent = apiText || activeSession?.essayContent?.trim() || docContext.trim();
+      if (activeSession) { activeSession.essayContent = essayContent; }
+
+      // Fast mode: each request is stateless — always send current doc + current
+      // request only. Previous assistant turns contain old FIND: anchors that no
+      // longer exist after edits are applied, which causes "anchor not found" errors.
+      const messages: GDocsMessage[] = [];
+      if (essayContent) {
+        messages.push({ role: 'user', content: `Here is the document:\n\n${essayContent}\n\nNow let's begin.` });
+        messages.push({ role: 'assistant', content: 'Got it. What edits would you like?' });
+      }
+      messages.push({ role: 'user', content: text });
+      sendGDocsChat(messages, 'fast');
+    }
+  );
+}
+
+// ─── Plan Mode ────────────────────────────────────────────────────────────────
+function startPlanModeFlow(text: string): void {
+  pendingPlanTopic = text;
+  mcqCompletionCallback = () => { generateOutline(); };
+  void startMcqFlow(text);
+}
+
+
+function isNewEssayRequest(prompt: string, existingContent: string): boolean {
+  if (existingContent.trim()) return false; // doc has content → always an edit
+  const writeKeywords = /\b(write|draft|create|compose|generate|make|produce|author)\b/i;
+  return writeKeywords.test(prompt); // blank doc + write intent → new essay
+}
+
+
+type OutlineContext =
+  | { previousOutline: string; feedback: string }
+  | { skeletonContext: string; followUpAnswers?: string };
+
+async function generateOutline(context?: OutlineContext): Promise<void> {
+  streaming = true;
+  pendingOutlineMode = true;
+  setInputEnabled(false);
+  startLoadingAnimation();
+
+  const docText = await getApiDocText();
+  const essayContent = docText || activeSession?.essayContent?.trim() || '';
+
+  const qaText = mcqPreviousQA.length > 0
+    ? '\n\nWriter preferences:\n' + mcqPreviousQA.map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`).join('\n\n')
+    : '';
+
+  const messages: GDocsMessage[] = [];
+  if (essayContent) {
+    messages.push({ role: 'user', content: `Document:\n\n${essayContent}` });
+    messages.push({ role: 'assistant', content: 'Got it.' });
+  }
+  const isNewEssay = isNewEssayRequest(pendingPlanTopic, essayContent);
+  const outlineRequest = isNewEssay
+    ? `Request: ${pendingPlanTopic}${qaText}\n\nGenerate a structured writing plan for this essay. Do not write the essay yet — only the outline.`
+    : `Request: ${pendingPlanTopic}${qaText}\n\nGenerate a concise outline of the proposed changes to the document.`;
+
+  messages.push({ role: 'user', content: outlineRequest });
+
+  if (context && 'previousOutline' in context) {
+    messages.push({ role: 'assistant', content: context.previousOutline });
+    messages.push({ role: 'user', content: `That's not quite right. Here's my feedback: ${context.feedback}\n\nPlease revise the outline.` });
+  } else if (context && 'skeletonContext' in context) {
+    messages.push({ role: 'assistant', content: `Here is my initial skeleton:\n\n${context.skeletonContext}` });
+    const followUp = context.followUpAnswers
+      ? `\n\nAdditional context from the writer: ${context.followUpAnswers}`
+      : '';
+    messages.push({ role: 'user', content: `Good start. Now generate the final detailed outline based on this skeleton.${followUp}` });
+  }
+
+  sendGDocsChat(messages, 'outline');
+}
+
+async function executePlanEdits(outline: string): Promise<void> {
+  streaming = true;
+  setInputEnabled(false);
+  startLoadingAnimation();
+
+  const docText = await getApiDocText();
+  const essayContent = docText || activeSession?.essayContent?.trim() || '';
+  if (activeSession) { activeSession.essayContent = essayContent; }
+
+  const isNewEssay = isNewEssayRequest(pendingPlanTopic, essayContent);
+
+  const qaText = mcqPreviousQA.length > 0
+    ? '\n\nWriter preferences:\n' + mcqPreviousQA.map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`).join('\n\n')
+    : '';
+
+  chatHistory.push({ role: 'user', content: pendingPlanTopic });
+  if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
+
+  const messages: GDocsMessage[] = [];
+
+  if (isNewEssay) {
+    // New essay: send in essay mode so <<<ESSAY>>> markers are handled
+    pendingEditMode = false;
+    messages.push({ role: 'user', content: `Topic: ${pendingPlanTopic}${qaText}` });
+    messages.push({ role: 'assistant', content: `Here is my writing plan:\n\n${outline}\n\nI will now write the full essay following this plan.` });
+    messages.push({ role: 'user', content: 'Great, please write the full essay now.' });
+    sendGDocsChat(messages, 'essay');
+  } else {
+    // Editing existing doc: send in edit mode so <<<EDIT>>> markers are handled
+    pendingEditMode = true;
+    messages.push({ role: 'user', content: `Here is the document:\n\n${essayContent}\n\nNow let's begin.` });
+    messages.push({ role: 'assistant', content: 'Got it. What edits would you like?' });
+    messages.push({ role: 'user', content: `Request: ${pendingPlanTopic}${qaText}` });
+    messages.push({ role: 'assistant', content: `Here is my plan:\n\n${outline}\n\nI'll now execute these changes.` });
+    messages.push({ role: 'user', content: 'Great, please execute all these changes now.' });
+    sendGDocsChat(messages, 'edit');
+  }
 }
 
 // ─── Topic submit / Edit mode send ───────────────────────────────────────────
 async function handleSubmit(text: string): Promise<void> {
   if (!text || streaming || mcqActive) return;
 
-  const hasExistingEssay = !!(activeSession?.essayContent?.trim());
-
-  if (hasExistingEssay || docHasContent) {
-    // Edit mode — essay or doc content already exists
-    streaming = true;
-    pendingEditMode = true;
+  let resolvedMode: 'fast' | 'plan';
+  if (userMode === 'auto') {
+    // Always call router — it handles both blank docs and existing content
     setInputEnabled(false);
     startLoadingAnimation();
-
-    // Re-scrape for freshest text; fall back to stored essay or activation-time scrape
-    const freshScrape = scrapeDocContext();
-    const essayContent = activeSession?.essayContent?.trim() || freshScrape.trim() || docContext.trim();
-
-    // Persist scraped content so Docs API edit targeting stays consistent
-    if (activeSession && !activeSession.essayContent && essayContent) {
-      activeSession.essayContent = essayContent;
-    }
-
-    chatHistory.push({ role: 'user', content: text });
-    if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
-
-    const editMessages: GDocsMessage[] = [];
-    if (essayContent) {
-      editMessages.push({ role: 'user', content: `Here is the essay to edit:\n\n${essayContent}\n\nNow let's begin.` });
-      editMessages.push({ role: 'assistant', content: "Got it. What edits would you like?" });
-    }
-    editMessages.push(...chatHistory);
-    chrome.runtime.sendMessage({ action: 'gdocsChat', payload: { messages: editMessages, mode: 'edit' } });
-    return;
+    resolvedMode = await routeRequest(text);
+    stopLoadingAnimation();
+    setInputEnabled(true);
+  } else {
+    resolvedMode = userMode;
   }
 
-  // No existing content — write a new essay using the text as the topic
-  mcqTopic = text;
-  mcqPreviousQA = [];
-  void generateEssay();
+  if (resolvedMode === 'fast') {
+    executeFastMode(text);
+  } else {
+    startPlanModeFlow(text);
+  }
 }
 
 // ─── Input bar ────────────────────────────────────────────────────────────────
@@ -1190,6 +1576,11 @@ function createInputBar(): void {
     .action-btn:hover { background: #e5e7eb; }
     .action-btn:disabled { opacity: 0.4; cursor: default; }
     .action-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+    /* Mode chips */
+    .mode-chips { display: flex; align-items: center; gap: 4px; }
+    .mode-chip { height: 26px; padding: 0 10px; border-radius: 9999px; border: 1px solid #e8e8e2; background: #fff; color: #6b7280; font-size: 11px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+    .mode-chip:hover { background: #f7f7f6; }
+    .mode-chip.active { background: #111; color: #fff; border-color: #111; }
     /* MCQ card */
     .mcq-card { background: #fff; border-radius: 16px; padding: 18px 18px 14px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 14px; }
     .mcq-header { display: flex; align-items: center; justify-content: space-between; }
@@ -1237,6 +1628,29 @@ function createInputBar(): void {
   wrapper.className = 'wrapper';
   shadowWrapper = wrapper;
 
+  // ── Mode chips (Auto / Fast / Plan) ──
+  const modeChipsEl = document.createElement('div');
+  modeChipsEl.className = 'mode-chips';
+
+  const modes: Array<'auto' | 'fast' | 'plan'> = ['auto', 'fast', 'plan'];
+  const modeChipEls: Map<string, HTMLButtonElement> = new Map();
+
+  for (const m of modes) {
+    const chip = document.createElement('button');
+    chip.className = 'mode-chip' + (m === userMode ? ' active' : '');
+    chip.textContent = m.charAt(0).toUpperCase() + m.slice(1);
+    chip.addEventListener('click', () => {
+      userMode = m;
+      modeChipEls.forEach((el, key) => {
+        el.className = 'mode-chip' + (key === m ? ' active' : '');
+      });
+    });
+    modeChipEls.set(m, chip);
+    modeChipsEl.appendChild(chip);
+  }
+
+  wrapper.appendChild(modeChipsEl);
+
   // ── Notes button ──
   commentBtn = document.createElement('button');
   commentBtn.className = 'action-btn';
@@ -1264,7 +1678,7 @@ async function activate(essayContext?: { prompt: string; answers: Record<string,
     if (existingSession) await chrome.storage.local.set({ [sessionKey(docId)]: existingSession });
   }
 
-  docContext = scrapeDocContext();
+  docContext = await getApiDocText();
   docHasContent = docContext.trim().length > 0;
   createInputBar();
 
@@ -1306,6 +1720,12 @@ function deactivate() {
   activeTabId = '';
   essayTabId = '';
   pendingEditMode = false;
+  pendingOutlineMode = false;
+  pendingSkeletonMode = false;
+  pendingSkeletonApproval = false;
+  pendingPlanTopic = '';
+  currentOutlineText = '';
+  currentSkeletonText = '';
   activeSession = null;
   mcqActive = false;
   mcqPreviousQA = [];
@@ -1314,6 +1734,7 @@ function deactivate() {
   mcqTopic = '';
   importedContext = '';
   streaming = false;
+  userMode = 'auto';
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -1336,34 +1757,10 @@ document.addEventListener('oddity:gdocs:planmode', (e: Event) => {
   mcqMemos = memos ?? [];
 
   if (fastMode) {
-    // Fast mode: skip MCQ unless the doc is blank (new essay needed)
-    const freshScrape = scrapeDocContext();
-    const essayContent = activeSession?.essayContent?.trim() || freshScrape.trim() || docContext.trim();
-    if (essayContent) {
-      // Existing content — go straight to edit
-      if (activeSession && !activeSession.essayContent) {
-        activeSession.essayContent = essayContent;
-        void saveSession(activeSession);
-      }
-      streaming = true;
-      pendingEditMode = true;
-      setInputEnabled(false);
-      startLoadingAnimation();
-      chatHistory.push({ role: 'user', content: effectiveTopic });
-      if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
-      const editMessages: GDocsMessage[] = [
-        { role: 'user', content: `Here is the essay to edit:\n\n${essayContent}\n\nNow let's begin.` },
-        { role: 'assistant', content: "Got it. What edits would you like?" },
-        ...chatHistory,
-      ];
-      chrome.runtime.sendMessage({ action: 'gdocsChat', payload: { messages: editMessages, mode: 'edit' } });
-      return;
-    }
-    // Blank doc — fall through to MCQ (need preferences for new essay)
+    executeFastMode(effectiveTopic);
+  } else {
+    startPlanModeFlow(effectiveTopic);
   }
-
-  mcqCompletionCallback = () => { void generateEssay(); };
-  void startMcqFlow(effectiveTopic);
 });
 
 // MCQ answer from argument box
@@ -1396,38 +1793,40 @@ document.addEventListener('oddity:gdocs:chat', (e: Event) => {
   mcqResources = resources ?? [];
   mcqMemos = memos ?? [];
 
-  // Re-scrape fresh — activation-time scrape may have been too early
-  const freshScrape = scrapeDocContext();
-  const essayContent = activeSession?.essayContent?.trim() || freshScrape.trim() || docContext.trim();
-
-  if (essayContent) {
-    // Existing content: go straight to edit — never show MCQ for edits
-    if (activeSession && !activeSession.essayContent) {
-      activeSession.essayContent = essayContent;
-      void saveSession(activeSession);
-    }
-    streaming = true;
-    pendingEditMode = true;
-    setInputEnabled(false);
-    startLoadingAnimation();
-    chatHistory.push({ role: 'user', content: text });
-    if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
-    const editMessages: GDocsMessage[] = [
-      { role: 'user', content: `Here is the essay to edit:\n\n${essayContent}\n\nNow let's begin.` },
-      { role: 'assistant', content: "Got it. What edits would you like?" },
-      ...chatHistory,
-    ];
-    chrome.runtime.sendMessage({ action: 'gdocsChat', payload: { messages: editMessages, mode: 'edit' } });
-  } else if (fastMode) {
-    // Fast mode + blank doc: write directly from the prompt, skip MCQ
-    mcqTopic = text;
-    void generateEssay();
+  if (fastMode) {
+    executeFastMode(text);
   } else {
-    // Blank doc: run MCQ to gather preferences, then write new essay
-    mcqOriginalPrompt = text;
-    mcqCompletionCallback = () => { void generateEssay(); };
-    void startMcqFlow(text);
+    startPlanModeFlow(text);
   }
+});
+
+// ─── Outline approval events (from argument box) ──────────────────────────────
+document.addEventListener('oddity:gdocs:outline:continue', () => {
+  if (!currentOutlineText) return;
+  executePlanEdits(currentOutlineText);
+});
+
+document.addEventListener('oddity:gdocs:outline:reject', () => {
+  streaming = false;
+  pendingSkeletonApproval = false;
+  currentOutlineText = '';
+  currentSkeletonText = '';
+  pendingPlanTopic = '';
+  stopLoadingAnimation();
+  setInputEnabled(true);
+});
+
+document.addEventListener('oddity:gdocs:outline:other', (e: Event) => {
+  const { feedback } = (e as CustomEvent<{ feedback: string }>).detail;
+  if (pendingSkeletonApproval) {
+    // User provided follow-up answers — use them to refine the final outline
+    pendingSkeletonApproval = false;
+    generateOutline({ skeletonContext: currentSkeletonText, followUpAnswers: feedback });
+    return;
+  }
+  const previousOutline = currentOutlineText;
+  currentOutlineText = '';
+  generateOutline({ previousOutline, feedback });
 });
 
 document.addEventListener('oddity:annotation:fix-now', (e: Event) => {

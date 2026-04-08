@@ -129,10 +129,10 @@ function getGDocsTitle(): string {
   return raw || "My Document";
 }
 let gdocsPersonaName = "Terry";
-let gdocsChatMode: "auto" | "plan" = "auto";
-let gdocsFastMode = false;
+let gdocsChatMode: "auto" | "fast" | "plan" = "auto";
 let gdocsMemoMode: "memo" | "resource" = "memo";
 let gdocsActiveTab: "memo" | "resource" | "outline" = "memo";
+let gdocsExpandedCardId: string | null = null;
 let gdocsPersonaSubtitleEl: HTMLSpanElement | null = null;
 let gdocsTitleEl: HTMLSpanElement | null = null;
 let gdocsMemoTabBtn: HTMLButtonElement | null = null;
@@ -144,6 +144,12 @@ let gdocsResourceModeBtn: HTMLButtonElement | null = null;
 let gdocsModeDropdownBtn: HTMLButtonElement | null = null;
 let gdocsModeDropdownMenu: HTMLDivElement | null = null;
 let gdocsResourcePanelEl: HTMLDivElement | null = null;
+let gdocsOutlinePanelEl: HTMLDivElement | null = null;
+let gdocsOutlineTextEl: HTMLDivElement | null = null;
+let gdocsCurrentOutlineText = "";
+let gdocsOutlineContinueBtn: HTMLButtonElement | null = null;
+let gdocsOutlineRejectBtn: HTMLButtonElement | null = null;
+let gdocsOutlineOtherBtn: HTMLButtonElement | null = null;
 let gdocsChatInputAreaEl: HTMLDivElement | null = null;
 let gdocsArgBoxLoadingTimeout: ReturnType<typeof setTimeout> | null = null;
 let gdocsArgBoxLoadingActive = false;
@@ -163,6 +169,14 @@ const ARG_BOX_LOADING_QUESTIONS = [
   'Why do humans need stories?',
   'How does context change meaning?',
 ];
+
+// Renders plain text with **bold** markdown into an element safely (no XSS).
+function setOutlineText(el: HTMLDivElement, text: string): void {
+  el.innerHTML = text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br>");
+}
 
 function startArgBoxLoading(textarea: HTMLTextAreaElement): void {
   stopArgBoxLoading(textarea);
@@ -223,6 +237,7 @@ function stopArgBoxLoading(textarea: HTMLTextAreaElement): void {
 
 type GDocsResource = { name: string; size: string; type: "PDF" | "TXT" | "PNG" | "Text"; content: string };
 const gdocsResources: GDocsResource[] = [];
+const gdocsResourceSelected = new Set<GDocsResource>();
 
 function formatGDocsTimestamp(sortKey: string): string {
   let ms: number;
@@ -608,11 +623,12 @@ export function initArgumentsBox(): void {
       gdocsOutlineTabBtn!.classList.remove("active");
       if (listEl) listEl.style.display = "";
       if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "none";
     });
 
     gdocsResourceTabBtn = document.createElement("button");
     gdocsResourceTabBtn.className = "args-gdocs-tab";
-    gdocsResourceTabBtn.textContent = "Resource";
+    gdocsResourceTabBtn.textContent = "Context";
     gdocsResourceTabBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       gdocsActiveTab = "resource";
@@ -621,6 +637,7 @@ export function initArgumentsBox(): void {
       gdocsOutlineTabBtn!.classList.remove("active");
       if (listEl) listEl.style.display = "none";
       if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "none";
     });
 
     gdocsOutlineTabBtn = document.createElement("button");
@@ -633,6 +650,8 @@ export function initArgumentsBox(): void {
       gdocsResourceTabBtn!.classList.remove("active");
       gdocsOutlineTabBtn!.classList.add("active");
       if (listEl) listEl.style.display = "none";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "";
     });
 
     tabBarEl.appendChild(gdocsMemoTabBtn);
@@ -681,23 +700,139 @@ export function initArgumentsBox(): void {
     gdocsResourcePanelEl.className = "args-gdocs-resource-panel";
     gdocsResourcePanelEl.style.display = "none";
 
+    const saveResources = () => {
+      const key = `gdocsResources_${getPageUrl()}`;
+      chrome.storage.local.set({ [key]: gdocsResources }).catch(() => {});
+    };
+
     const renderResourceList = () => {
       gdocsResourcePanelEl!.innerHTML = "";
+
+      // Ensure all newly-added resources start selected
+      for (const res of gdocsResources) {
+        if (!gdocsResourceSelected.has(res)) gdocsResourceSelected.add(res);
+      }
 
       // Existing resources
       const resourceList = document.createElement("div");
       resourceList.className = "args-gdocs-resource-list";
+
+      // ── Select All row ──
+      const selectAllRow = document.createElement("div");
+      selectAllRow.className = "args-gdocs-select-all-row";
+
+      const selectAllChk = document.createElement("input");
+      selectAllChk.type = "checkbox";
+      selectAllChk.className = "args-gdocs-checkbox";
+      const allSelected = gdocsResources.length > 0 && gdocsResources.every(r => gdocsResourceSelected.has(r));
+      selectAllChk.checked = allSelected;
+      selectAllChk.indeterminate = !allSelected && gdocsResources.some(r => gdocsResourceSelected.has(r));
+
+      const selectAllLabel = document.createElement("span");
+      selectAllLabel.className = "args-gdocs-select-all-label";
+      selectAllLabel.textContent = "Select All";
+
+      selectAllChk.addEventListener("change", () => {
+        if (selectAllChk.checked) {
+          gdocsResources.forEach(r => gdocsResourceSelected.add(r));
+        } else {
+          gdocsResources.forEach(r => gdocsResourceSelected.delete(r));
+        }
+        renderResourceList();
+      });
+
+      selectAllRow.appendChild(selectAllChk);
+      selectAllRow.appendChild(selectAllLabel);
+      resourceList.appendChild(selectAllRow);
+
+      // Divider after select all
+      const selectAllDivider = document.createElement("div");
+      selectAllDivider.className = "args-gdocs-resource-divider";
+      resourceList.appendChild(selectAllDivider);
+
+      // ── Individual resource items ──
       for (const res of gdocsResources) {
         const item = document.createElement("div");
         item.className = "args-gdocs-resource-item";
+
+        // Checkbox
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.className = "args-gdocs-checkbox";
+        chk.checked = gdocsResourceSelected.has(res);
+        chk.addEventListener("change", (e) => {
+          e.stopPropagation();
+          if (chk.checked) gdocsResourceSelected.add(res);
+          else gdocsResourceSelected.delete(res);
+          // Update select-all state without full re-render
+          const allNow = gdocsResources.every(r => gdocsResourceSelected.has(r));
+          const someNow = gdocsResources.some(r => gdocsResourceSelected.has(r));
+          selectAllChk.checked = allNow;
+          selectAllChk.indeterminate = !allNow && someNow;
+        });
+
+        // Text content
+        const textCol = document.createElement("div");
+        textCol.className = "args-gdocs-resource-text-col";
         const name = document.createElement("div");
         name.className = "args-gdocs-resource-name";
         name.textContent = res.name;
         const meta = document.createElement("div");
         meta.className = "args-gdocs-resource-meta";
-        meta.textContent = res.type === "Text" ? "Text" : `${res.size} · ${res.type}`;
-        item.appendChild(name);
-        item.appendChild(meta);
+        if (res.type === "Text") {
+          textCol.appendChild(name);
+          if (res.content) {
+            const preview = document.createElement("div");
+            preview.className = "args-gdocs-resource-preview";
+            preview.textContent = res.content;
+            textCol.appendChild(preview);
+          }
+        } else {
+          meta.textContent = `${res.size} · ${res.type}`;
+          textCol.appendChild(name);
+          textCol.appendChild(meta);
+        }
+
+        // Three-dot menu
+        const menuBtn = document.createElement("button");
+        menuBtn.className = "args-gdocs-resource-menu-btn";
+        menuBtn.textContent = "⋮";
+        menuBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          // Remove existing open menus
+          document.querySelectorAll(".args-gdocs-resource-dropdown").forEach(el => el.remove());
+          const dropdown = document.createElement("div");
+          dropdown.className = "args-gdocs-resource-dropdown";
+          const deleteOpt = document.createElement("button");
+          deleteOpt.className = "args-gdocs-resource-dropdown-item args-gdocs-resource-dropdown-item--delete";
+          deleteOpt.textContent = "Delete";
+          deleteOpt.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            const idx = gdocsResources.indexOf(res);
+            if (idx !== -1) {
+              gdocsResources.splice(idx, 1);
+              gdocsResourceSelected.delete(res);
+            }
+            dropdown.remove();
+            saveResources();
+            renderResourceList();
+          });
+          dropdown.appendChild(deleteOpt);
+          menuBtn.style.position = "relative";
+          menuBtn.appendChild(dropdown);
+          const closeMenu = (ev: MouseEvent) => {
+            if (!dropdown.contains(ev.target as Node)) {
+              dropdown.remove();
+              document.removeEventListener("click", closeMenu);
+            }
+          };
+          setTimeout(() => document.addEventListener("click", closeMenu), 0);
+        });
+
+        item.appendChild(chk);
+        item.appendChild(textCol);
+        item.appendChild(menuBtn);
+
         const divider = document.createElement("div");
         divider.className = "args-gdocs-resource-divider";
         resourceList.appendChild(item);
@@ -711,8 +846,17 @@ export function initArgumentsBox(): void {
 
       const newTitle = document.createElement("div");
       newTitle.className = "args-gdocs-new-resource-title";
-      newTitle.textContent = "New Resource";
+      newTitle.textContent = "New Context";
       newSection.appendChild(newTitle);
+
+      // Name input
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.className = "args-gdocs-resource-name-input";
+      nameInput.placeholder = "Name";
+      nameInput.addEventListener("click", (e) => e.stopPropagation());
+      nameInput.addEventListener("keydown", (e) => e.stopPropagation());
+      newSection.appendChild(nameInput);
 
       // Radio row
       const radioRow = document.createElement("div");
@@ -802,17 +946,21 @@ export function initArgumentsBox(): void {
           reader.onload = () => {
             const content = ((reader.result as string) ?? "").slice(0, 8000);
             gdocsResources.push({ name: file.name, size, type: ext as GDocsResource["type"], content });
+            saveResources();
             renderResourceList();
           };
           reader.onerror = () => {
             gdocsResources.push({ name: file.name, size, type: ext as GDocsResource["type"], content: "" });
+            saveResources();
             renderResourceList();
           };
           reader.readAsText(file);
         } else {
           const text = textInput.value.trim();
           if (!text) return;
-          gdocsResources.push({ name: "Essay Prompt", size: "", type: "Text", content: text });
+          const name = nameInput.value.trim() || "Untitled";
+          gdocsResources.push({ name, size: "", type: "Text", content: text });
+          saveResources();
           renderResourceList();
         }
       });
@@ -822,8 +970,122 @@ export function initArgumentsBox(): void {
       gdocsResourcePanelEl!.appendChild(newSection);
     };
 
-    renderResourceList();
+    // Load persisted resources for this page
+    const storageKey = `gdocsResources_${getPageUrl()}`;
+    chrome.storage.local.get(storageKey).then((stored) => {
+      const saved = stored[storageKey];
+      if (Array.isArray(saved)) {
+        gdocsResources.push(...saved);
+      }
+      renderResourceList();
+    }).catch(() => renderResourceList());
     panelFace.appendChild(gdocsResourcePanelEl);
+
+    // ── GDocs Outline Panel ──
+    gdocsOutlinePanelEl = document.createElement("div");
+    gdocsOutlinePanelEl.className = "args-gdocs-outline-panel";
+    gdocsOutlinePanelEl.style.display = "none";
+
+
+    gdocsOutlineTextEl = document.createElement("div");
+    gdocsOutlineTextEl.className = "args-gdocs-outline-text";
+    setOutlineText(gdocsOutlineTextEl, "No outline yet. Submit a request in Plan mode to generate one.");
+    gdocsOutlinePanelEl.appendChild(gdocsOutlineTextEl);
+
+    // ── Continue / Reject / Other buttons ──
+    const outlineActions = document.createElement("div");
+    outlineActions.className = "args-gdocs-outline-actions";
+
+    const continueBtn = document.createElement("button");
+    gdocsOutlineContinueBtn = continueBtn;
+    continueBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-continue";
+    continueBtn.textContent = "Continue";
+    continueBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(new CustomEvent("oddity:gdocs:outline:continue"));
+    });
+
+    const rejectBtn = document.createElement("button");
+    gdocsOutlineRejectBtn = rejectBtn;
+    rejectBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-secondary";
+    rejectBtn.textContent = "Reject";
+    rejectBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(new CustomEvent("oddity:gdocs:outline:reject"));
+      // Reset outline panel to empty state
+      if (gdocsOutlineTextEl) setOutlineText(gdocsOutlineTextEl, "No outline yet. Submit a request in Plan mode to generate one.");
+      outlineOtherArea.style.display = "none";
+      outlineActions.style.display = "";
+    });
+
+    const otherBtn = document.createElement("button");
+    gdocsOutlineOtherBtn = otherBtn;
+    otherBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-secondary";
+    otherBtn.textContent = "Other";
+    otherBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      outlineActions.style.display = "none";
+      outlineOtherArea.style.display = "";
+      outlineFeedbackInput.focus();
+    });
+
+    outlineActions.appendChild(continueBtn);
+    outlineActions.appendChild(rejectBtn);
+    outlineActions.appendChild(otherBtn);
+    gdocsOutlinePanelEl.appendChild(outlineActions);
+
+    // ── "Other" feedback area ──
+    const outlineOtherArea = document.createElement("div");
+    outlineOtherArea.className = "args-gdocs-outline-other";
+    outlineOtherArea.style.display = "none";
+
+    const outlineFeedbackInput = document.createElement("textarea");
+    outlineFeedbackInput.className = "args-gdocs-outline-feedback";
+    outlineFeedbackInput.placeholder = "What would you like to change about this plan?";
+    outlineFeedbackInput.rows = 3;
+    outlineFeedbackInput.addEventListener("click", (e) => e.stopPropagation());
+    outlineFeedbackInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        submitFeedback();
+      }
+      e.stopPropagation();
+    });
+
+    const submitFeedbackBtn = document.createElement("button");
+    submitFeedbackBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-continue";
+    submitFeedbackBtn.textContent = "Regenerate →";
+
+    const cancelFeedbackBtn = document.createElement("button");
+    cancelFeedbackBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-secondary";
+    cancelFeedbackBtn.textContent = "Back";
+    cancelFeedbackBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      outlineOtherArea.style.display = "none";
+      outlineActions.style.display = "";
+    });
+
+    const submitFeedback = () => {
+      const feedback = outlineFeedbackInput.value.trim();
+      if (!feedback) return;
+      outlineFeedbackInput.value = "";
+      outlineOtherArea.style.display = "none";
+      outlineActions.style.display = "";
+      document.dispatchEvent(new CustomEvent("oddity:gdocs:outline:other", { detail: { feedback } }));
+    };
+
+    submitFeedbackBtn.addEventListener("click", (e) => { e.stopPropagation(); submitFeedback(); });
+
+    const outlineFeedbackRow = document.createElement("div");
+    outlineFeedbackRow.className = "args-gdocs-outline-feedback-row";
+    outlineFeedbackRow.appendChild(cancelFeedbackBtn);
+    outlineFeedbackRow.appendChild(submitFeedbackBtn);
+
+    outlineOtherArea.appendChild(outlineFeedbackInput);
+    outlineOtherArea.appendChild(outlineFeedbackRow);
+    gdocsOutlinePanelEl.appendChild(outlineOtherArea);
+
+    panelFace.appendChild(gdocsOutlinePanelEl);
   }
 
   // ── Sketch Content ──
@@ -866,6 +1128,21 @@ export function initArgumentsBox(): void {
 
   document.addEventListener("mousemove", listDragMoveHandler);
   document.addEventListener("mouseup", listDragUpHandler);
+
+  // Collapse GDocs expanded card when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!gdocsExpandedCardId) return;
+    const expandedCard = listEl?.querySelector<HTMLDivElement>(`.gdocs-arg-card--expanded`);
+    if (expandedCard && !expandedCard.contains(e.target as Node)) {
+      expandedCard.classList.remove("gdocs-arg-card--expanded");
+      const nextDivider = expandedCard.nextElementSibling;
+      if (nextDivider?.classList.contains("gdocs-arg-divider")) {
+        (nextDivider as HTMLElement).style.display = "";
+      }
+      gdocsExpandedCardId = null;
+      if (listEl) listEl.style.overflow = "";
+    }
+  });
 
   if (isGDocs()) {
     // ── GDocs chat section (replaces footer) ──
@@ -912,7 +1189,7 @@ export function initArgumentsBox(): void {
 
     const resourcePillBtn = document.createElement("button");
     resourcePillBtn.className = "args-gdocs-pill-btn";
-    resourcePillBtn.textContent = "Resource";
+    resourcePillBtn.textContent = "Context";
     gdocsResourceModeBtn = resourcePillBtn;
 
     memoPillBtn.addEventListener("click", (e) => {
@@ -946,52 +1223,39 @@ export function initArgumentsBox(): void {
     dropdownMenu.style.display = "none";
     gdocsModeDropdownMenu = dropdownMenu;
 
-    const autoOption = document.createElement("button");
-    autoOption.className = "args-gdocs-dropdown-option active";
-    autoOption.textContent = "Auto";
-    autoOption.addEventListener("click", (e) => {
-      e.stopPropagation();
-      gdocsChatMode = "auto";
-      dropdownBtn.textContent = "Auto ↓";
-      autoOption.classList.add("active");
-      planOption.classList.remove("active");
-      dropdownMenu.style.display = "none";
-    });
+    const modes: Array<{ key: "auto" | "fast" | "plan"; label: string }> = [
+      { key: "auto", label: "Auto" },
+      { key: "fast", label: "Fast" },
+      { key: "plan", label: "Plan" },
+    ];
 
-    const planOption = document.createElement("button");
-    planOption.className = "args-gdocs-dropdown-option";
-    planOption.textContent = "Plan";
-    planOption.addEventListener("click", (e) => {
-      e.stopPropagation();
-      gdocsChatMode = "plan";
-      dropdownBtn.textContent = "Plan ↓";
-      planOption.classList.add("active");
-      autoOption.classList.remove("active");
+    const optionEls: HTMLButtonElement[] = [];
+
+    const setMode = (key: "auto" | "fast" | "plan") => {
+      gdocsChatMode = key;
+      const chosen = modes.find(m => m.key === key)!;
+      dropdownBtn.textContent = `${chosen.label} ↓`;
+      optionEls.forEach((el, i) => el.classList.toggle("active", modes[i]!.key === key));
       dropdownMenu.style.display = "none";
-    });
+    };
+
+    for (const m of modes) {
+      const opt = document.createElement("button");
+      opt.className = "args-gdocs-dropdown-option" + (m.key === "auto" ? " active" : "");
+      opt.textContent = m.label;
+      opt.addEventListener("click", (e) => { e.stopPropagation(); setMode(m.key); });
+      optionEls.push(opt);
+      dropdownMenu.appendChild(opt);
+    }
 
     dropdownBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       dropdownMenu.style.display = dropdownMenu.style.display === "none" ? "" : "none";
     });
-    // Close dropdown on outside click
     document.addEventListener("click", () => { if (gdocsModeDropdownMenu) gdocsModeDropdownMenu.style.display = "none"; });
 
-    dropdownMenu.appendChild(autoOption);
-    dropdownMenu.appendChild(planOption);
     dropdownWrap.appendChild(dropdownBtn);
     dropdownWrap.appendChild(dropdownMenu);
-
-    // Fast mode toggle
-    const fastBtn = document.createElement("button");
-    fastBtn.className = "args-gdocs-fast-btn";
-    fastBtn.title = "Fast mode: skip clarification questions";
-    fastBtn.innerHTML = `<svg width="11" height="14" viewBox="0 0 11 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.5 0L0 9H5L4.5 16L11 7H6L6.5 0Z" fill="currentColor"/></svg>`;
-    fastBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      gdocsFastMode = !gdocsFastMode;
-      fastBtn.classList.toggle("active", gdocsFastMode);
-    });
 
     // Send button
     const sendBtn = document.createElement("button");
@@ -1004,28 +1268,26 @@ export function initArgumentsBox(): void {
       chatTextarea.value = "";
 
       const serializedResources = gdocsResources
-        .filter(r => r.content)
+        .filter(r => r.content && gdocsResourceSelected.has(r))
         .map(r => ({ name: r.name, content: r.content }));
       const serializedMemos = liveItems
         .filter(i => i.type === "reply")
         .map(i => ({ note: i.replyFullNote ?? i.replyHeader ?? "", reply: i.text }));
 
+      startArgBoxLoading(chatTextarea);
       if (gdocsChatMode === "plan") {
-        startArgBoxLoading(chatTextarea);
         document.dispatchEvent(new CustomEvent("oddity:gdocs:planmode", {
-          detail: { topic: text, resources: serializedResources, memos: serializedMemos, fastMode: gdocsFastMode }
+          detail: { topic: text, resources: serializedResources, memos: serializedMemos, fastMode: false }
         }));
       } else {
-        startArgBoxLoading(chatTextarea);
         document.dispatchEvent(new CustomEvent("oddity:gdocs:chat", {
-          detail: { text, memoMode: gdocsMemoMode, resources: serializedResources, memos: serializedMemos, fastMode: gdocsFastMode }
+          detail: { text, memoMode: gdocsMemoMode, resources: serializedResources, memos: serializedMemos, fastMode: gdocsChatMode === "fast" }
         }));
       }
     });
 
     chatBar.appendChild(modePills);
     chatBar.appendChild(dropdownWrap);
-    chatBar.appendChild(fastBtn);
     chatBar.appendChild(sendBtn);
     chatBox.appendChild(chatBar);
     chatInputArea.appendChild(chatBox);
@@ -1044,10 +1306,32 @@ export function initArgumentsBox(): void {
 
     document.addEventListener("oddity:gdocs:loading", () => {
       startArgBoxLoading(chatTextarea);
+      if (gdocsOutlineContinueBtn) gdocsOutlineContinueBtn.disabled = true;
+      if (gdocsOutlineRejectBtn) gdocsOutlineRejectBtn.disabled = true;
+      if (gdocsOutlineOtherBtn) gdocsOutlineOtherBtn.disabled = true;
     });
 
     document.addEventListener("oddity:gdocs:loading:done", () => {
       stopArgBoxLoading(chatTextarea);
+      if (gdocsOutlineContinueBtn) gdocsOutlineContinueBtn.disabled = false;
+      if (gdocsOutlineRejectBtn) gdocsOutlineRejectBtn.disabled = false;
+      if (gdocsOutlineOtherBtn) gdocsOutlineOtherBtn.disabled = false;
+    });
+
+    // ── Outline ready: switch to Outline tab and display content ──
+    document.addEventListener("oddity:gdocs:outline:ready", (e: Event) => {
+      const { outline } = (e as CustomEvent<{ outline: string }>).detail;
+      gdocsCurrentOutlineText = outline;
+      if (gdocsOutlineTextEl) setOutlineText(gdocsOutlineTextEl, outline);
+      stopArgBoxLoading(chatTextarea);
+      // Switch to Outline tab
+      gdocsActiveTab = "outline";
+      gdocsMemoTabBtn?.classList.remove("active");
+      gdocsResourceTabBtn?.classList.remove("active");
+      gdocsOutlineTabBtn?.classList.add("active");
+      if (listEl) listEl.style.display = "none";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "";
     });
 
     // Auto-expand when a Google Doc is activated
@@ -4220,6 +4504,8 @@ function renderList(): void {
 
   listEl.innerHTML = "";
   expandedCardId = null;
+  gdocsExpandedCardId = null;
+  listEl.style.overflow = "";
 
   if (allItems.length === 0) {
     listEl.style.visibility = "";
@@ -4264,9 +4550,178 @@ function renderList(): void {
       bodyEl.className = "gdocs-arg-body";
       bodyEl.textContent = item.text;
 
+      // ── Expanded footer (hidden until card is expanded) ──
+      const expandedFooter = document.createElement("div");
+      expandedFooter.className = "gdocs-arg-expanded-footer";
+
+      // "Go to highlight" link
+      const gotoLink = document.createElement("button");
+      gotoLink.className = "gdocs-arg-goto";
+      gotoLink.textContent = "Go to highlight";
+      gotoLink.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (item.annotationId) {
+          document.dispatchEvent(
+            new CustomEvent("oddity:scroll-to-annotation", {
+              detail: { annotationId: item.annotationId, itemType: item.type },
+            }),
+          );
+        }
+      });
+
+      // Action icons row
+      const actionsEl = document.createElement("div");
+      actionsEl.className = "gdocs-arg-actions";
+
+      // Copy button (copies annotation header + body)
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "gdocs-arg-icon-btn";
+      copyBtn.title = "Copy";
+      copyBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+      copyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const header = titleEl.textContent ?? "";
+        const body = item.text;
+        navigator.clipboard.writeText(`${header}\n\n${body}`).catch(() => {});
+        copyBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+        setTimeout(() => {
+          copyBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+        }, 1500);
+      });
+
+      // Edit button
+      const editBtn = document.createElement("button");
+      editBtn.className = "gdocs-arg-icon-btn";
+      editBtn.title = "Edit";
+      editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (bodyEl.dataset.editMode === "true") return;
+        bodyEl.dataset.editMode = "true";
+        const originalText = item.text;
+        const ta = document.createElement("textarea");
+        ta.className = "gdocs-arg-edit-textarea";
+        ta.value = originalText;
+        ta.addEventListener("keydown", (ev) => ev.stopPropagation());
+        ta.addEventListener("click", (ev) => ev.stopPropagation());
+        const editActions = document.createElement("div");
+        editActions.className = "gdocs-arg-edit-actions";
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "gdocs-arg-edit-save";
+        saveBtn.textContent = "Save";
+        saveBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const newText = ta.value.trim();
+          if (!newText) return;
+          item.text = newText;
+          bodyEl.textContent = newText;
+          bodyEl.style.display = "";
+          delete bodyEl.dataset.editMode;
+          ta.remove();
+          editActions.remove();
+          if (item.feedbackId) {
+            chrome.runtime.sendMessage({
+              action: "updateFeedback",
+              payload: { feedbackId: item.feedbackId, text: newText, url: getPageUrl() },
+            }).catch(() => {});
+          } else if (item.annotationId) {
+            chrome.runtime.sendMessage({
+              action: "updateAnnotation",
+              payload: { annotationId: item.annotationId, text: newText, url: getPageUrl() },
+            }).catch(() => {});
+          }
+        });
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "gdocs-arg-edit-cancel";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          bodyEl.style.display = "";
+          delete bodyEl.dataset.editMode;
+          ta.remove();
+          editActions.remove();
+        });
+        editActions.appendChild(saveBtn);
+        editActions.appendChild(cancelBtn);
+        bodyEl.style.display = "none";
+        bodyEl.after(ta, editActions);
+        ta.focus();
+      });
+
+      // Delete button
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "gdocs-arg-icon-btn gdocs-arg-icon-btn--delete";
+      deleteBtn.title = "Delete";
+      deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        gdocsExpandedCardId = null;
+        if (item.feedbackId) {
+          deletedFeedbackIds.add(item.feedbackId);
+          chrome.runtime.sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: item.feedbackId, contentHash: item.contentHash, url: getPageUrl() },
+          }).catch(() => {});
+          canonicalItems = canonicalItems.filter((i) => i.feedbackId !== item.feedbackId);
+          liveItems = liveItems.filter((i) => i.feedbackId !== item.feedbackId);
+          document.dispatchEvent(new CustomEvent("oddity:feedback-deleted", {
+            detail: { feedbackId: item.feedbackId, annotationId: item.annotationId },
+          }));
+        } else if (item.annotationId) {
+          deletedAnnotationIds.add(item.annotationId);
+          chrome.runtime.sendMessage({
+            action: "deleteAnnotation",
+            payload: { annotationId: item.annotationId, url: getPageUrl(), contentHash: item.contentHash ?? "" },
+          }).catch(() => {});
+          canonicalItems = canonicalItems.filter((i) => i.annotationId !== item.annotationId);
+          liveItems = liveItems.filter((i) => i.annotationId !== item.annotationId);
+          document.dispatchEvent(new CustomEvent("oddity:annotation-deleted", {
+            detail: { annotationId: item.annotationId },
+          }));
+        } else {
+          canonicalItems = canonicalItems.filter((i) => i.sortKey !== item.sortKey);
+          liveItems = liveItems.filter((i) => i.sortKey !== item.sortKey);
+        }
+        renderList();
+      });
+
+      actionsEl.appendChild(copyBtn);
+      actionsEl.appendChild(editBtn);
+      actionsEl.appendChild(deleteBtn);
+      expandedFooter.appendChild(gotoLink);
+      expandedFooter.appendChild(actionsEl);
+
       card.appendChild(titleEl);
       card.appendChild(tsEl);
       card.appendChild(bodyEl);
+      card.appendChild(expandedFooter);
+
+      // Toggle expand on click
+      card.addEventListener("click", () => {
+        const isExpanded = gdocsExpandedCardId === cardId;
+        // Collapse previously expanded card
+        if (gdocsExpandedCardId) {
+          const prev = listEl?.querySelector<HTMLDivElement>(`.gdocs-arg-card[data-card-id="${CSS.escape(gdocsExpandedCardId)}"]`);
+          if (prev) {
+            prev.classList.remove("gdocs-arg-card--expanded");
+            const prevDivider = prev.nextElementSibling;
+            if (prevDivider?.classList.contains("gdocs-arg-divider")) {
+              (prevDivider as HTMLElement).style.display = "";
+            }
+          }
+          gdocsExpandedCardId = null;
+          if (listEl) listEl.style.overflow = "";
+        }
+        if (!isExpanded) {
+          card.classList.add("gdocs-arg-card--expanded");
+          const nextDivider = card.nextElementSibling;
+          if (nextDivider?.classList.contains("gdocs-arg-divider")) {
+            (nextDivider as HTMLElement).style.display = "none";
+          }
+          gdocsExpandedCardId = cardId;
+          if (listEl) listEl.style.overflow = "visible";
+        }
+      });
 
       const divider = document.createElement("div");
       divider.className = "gdocs-arg-divider";
@@ -8252,6 +8707,115 @@ const ARGUMENTS_BOX_CSS = `
     margin: 0 16px;
   }
 
+  /* GDocs card expanded state */
+  .gdocs-arg-card--expanded {
+    position: relative;
+    z-index: 10;
+    margin: 4px -12px;
+    padding: 16px 28px 14px;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.13);
+    background: #FFFFFF;
+  }
+  .gdocs-arg-card--expanded .gdocs-arg-body {
+    -webkit-line-clamp: unset;
+    overflow: visible;
+    display: block;
+  }
+  .gdocs-arg-expanded-footer {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+  }
+  .gdocs-arg-card--expanded .gdocs-arg-expanded-footer {
+    display: flex;
+  }
+  .gdocs-arg-goto {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    color: #888;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .gdocs-arg-goto:hover {
+    color: #444;
+  }
+  .gdocs-arg-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .gdocs-arg-icon-btn {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: #999;
+    transition: color 0.12s, background 0.12s;
+  }
+  .gdocs-arg-icon-btn:hover {
+    color: #333;
+    background: #F2F2F2;
+  }
+  .gdocs-arg-icon-btn--delete:hover {
+    color: #D93025;
+    background: #FEF0EF;
+  }
+  .gdocs-arg-edit-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #333;
+    line-height: 1.55;
+    border: 1px solid #D0D0D0;
+    border-radius: 6px;
+    padding: 7px 9px;
+    resize: vertical;
+    outline: none;
+    margin-top: 4px;
+  }
+  .gdocs-arg-edit-textarea:focus {
+    border-color: #888;
+  }
+  .gdocs-arg-edit-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .gdocs-arg-edit-save {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    color: #FFF;
+    background: #1E2229;
+    padding: 4px 10px;
+    border-radius: 5px;
+  }
+  .gdocs-arg-edit-save:hover {
+    background: #333;
+  }
+  .gdocs-arg-edit-cancel {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #888;
+    padding: 4px 8px;
+  }
+  .gdocs-arg-edit-cancel:hover {
+    color: #333;
+  }
+
   /* GDocs resource panel */
   .args-gdocs-resource-panel {
     flex: 1;
@@ -8260,14 +8824,140 @@ const ARGUMENTS_BOX_CSS = `
     flex-direction: column;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   }
+  .args-gdocs-outline-panel {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+  .args-gdocs-outline-text {
+    flex: 1;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #374151;
+    white-space: pre-wrap;
+  }
+  .args-gdocs-outline-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .args-gdocs-outline-btn {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    transition: background 0.12s;
+  }
+  .args-gdocs-outline-btn-continue {
+    background: #111;
+    color: #fff;
+  }
+  .args-gdocs-outline-btn-continue:hover { background: #333; }
+  .args-gdocs-outline-btn-secondary {
+    background: #f0f2f5;
+    color: #6b7280;
+  }
+  .args-gdocs-outline-btn-secondary:hover { background: #e5e7eb; }
+  .args-gdocs-outline-other {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .args-gdocs-outline-feedback {
+    width: 100%;
+    border: 1px solid #e8e8e2;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    color: #1a1a1a;
+    outline: none;
+    resize: none;
+    background: #fff;
+  }
+  .args-gdocs-outline-feedback:focus { border-color: #9aa0a6; }
+  .args-gdocs-outline-feedback-row {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
   .args-gdocs-resource-list {
     flex: 1;
   }
+  .args-gdocs-select-all-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+  }
+  .args-gdocs-select-all-label {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #1E2229;
+  }
+  .args-gdocs-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #C4C4C4;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .args-gdocs-checkbox:checked {
+    border-color: #1E2229;
+    background: #1E2229;
+  }
+  .args-gdocs-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: 1.5px solid #fff;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg);
+  }
+  .args-gdocs-checkbox:indeterminate {
+    border-color: #1E2229;
+    background: #1E2229;
+  }
+  .args-gdocs-checkbox:indeterminate::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 6px;
+    width: 8px;
+    height: 1.5px;
+    background: #fff;
+  }
   .args-gdocs-resource-item {
-    padding: 12px 16px 8px;
+    padding: 10px 16px 10px;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .args-gdocs-resource-text-col {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
+    min-width: 0;
   }
   .args-gdocs-resource-name {
     font-size: 13px;
@@ -8278,6 +8968,61 @@ const ARGUMENTS_BOX_CSS = `
   .args-gdocs-resource-meta {
     font-size: 12px;
     color: #9AA0A6;
+  }
+  .args-gdocs-resource-preview {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.45;
+    margin-top: 3px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .args-gdocs-resource-menu-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 16px;
+    color: #ABABAB;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 4px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    transition: color 0.12s, background 0.12s;
+  }
+  .args-gdocs-resource-menu-btn:hover {
+    color: #555;
+    background: #F0F0F0;
+  }
+  .args-gdocs-resource-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: #FFFFFF;
+    border: 1px solid #E8E8E8;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    z-index: 100;
+    min-width: 110px;
+    overflow: hidden;
+  }
+  .args-gdocs-resource-dropdown-item {
+    all: unset;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    padding: 9px 14px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    box-sizing: border-box;
+    transition: background 0.1s;
+  }
+  .args-gdocs-resource-dropdown-item:hover {
+    background: #F5F5F5;
+  }
+  .args-gdocs-resource-dropdown-item--delete {
+    color: #D93025;
   }
   .args-gdocs-resource-divider {
     height: 1px;
@@ -8295,6 +9040,26 @@ const ARGUMENTS_BOX_CSS = `
     font-size: 13px;
     font-weight: 700;
     color: #1E2229;
+  }
+  .args-gdocs-resource-name-input {
+    all: unset;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E2229;
+    border-bottom: 1px solid #E0E0E0;
+    padding-bottom: 5px;
+    transition: border-color 0.15s;
+  }
+  .args-gdocs-resource-name-input:focus {
+    border-bottom-color: #1E2229;
+  }
+  .args-gdocs-resource-name-input::placeholder {
+    font-weight: 400;
+    color: #ABABAB;
   }
   .args-gdocs-radio-row {
     display: flex;

@@ -24,6 +24,7 @@ import {
   requestAnnotationsStreaming,
   requestGDocsChatStreaming,
   fetchAllGDocsMcqQuestions,
+  requestGDocsRoute,
   fetchGDocsSession,
   saveGDocsSession,
   requestSketchStreaming,
@@ -167,10 +168,31 @@ async function gdocsBatchUpdate(docId: string, token: string, requests: object[]
   if (!res.ok) throw new Error(`batchUpdate HTTP ${res.status}`);
 }
 
+// Normalize typographic characters that Google Docs substitutes automatically.
+// All replacements are strictly 1-to-1 (same character length) so that idx
+// values found in the normalized string map directly back to chars[].
+// Ported from Claude Code's FileEditTool/utils.ts findActualString logic.
+function normalizeDocText(text: string): string {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")   // curly single quotes → straight
+    .replace(/[\u201C\u201D]/g, '"')   // curly double quotes → straight
+    .replace(/\u2014/g, '-')           // em-dash → hyphen (1:1)
+    .replace(/\u2013/g, '-')           // en-dash → hyphen (1:1)
+    .replace(/\u00A0/g, ' ')           // non-breaking space → regular space
+    .replace(/\uFEFF/g, ' ')           // zero-width no-break space → space
+    .replace(/\u200B/g, ' ');          // zero-width space → space
+}
+
+type FindResult = {
+  start: number;
+  end: number;
+  count: number; // how many times the search string appears in the doc
+};
+
 function findTextRange(
   doc: any,
   searchText: string,
-): { start: number; end: number } | null {
+): FindResult | null {
   const chars: { index: number; char: string }[] = [];
 
   function extractContent(elements: any[]): void {
@@ -195,14 +217,59 @@ function findTextRange(
   }
 
   extractContent(doc.body?.content ?? []);
-
   const fullText = chars.map((c) => c.char).join("");
-  const idx = fullText.indexOf(searchText);
-  if (idx === -1) return null;
+
+  // Stage 1: exact match
+  let idx = fullText.indexOf(searchText);
+
+  // Stage 2: full typographic normalization (quotes, dashes, special spaces)
+  const normFull = normalizeDocText(fullText);
+  const normSearch = normalizeDocText(searchText);
+  if (idx === -1) {
+    idx = normFull.indexOf(normSearch);
+  }
+
+  // Stage 3: whitespace-collapse matching (handles DOM \n vs API \n divergence,
+  // double spaces, etc. — builds a position map back to chars[])
+  if (idx === -1) {
+    // Build a collapsed version and a map: collapsedIdx → charsIdx
+    const collapsedFull: string[] = [];
+    const collapseMap: number[] = []; // collapsedFull[i] came from chars[collapseMap[i]]
+    let prevSpace = false;
+    for (let i = 0; i < normFull.length; i++) {
+      const ch = normFull[i]!;
+      const isWS = /\s/.test(ch);
+      if (isWS && prevSpace) continue; // collapse
+      collapsedFull.push(isWS ? ' ' : ch);
+      collapseMap.push(i);
+      prevSpace = isWS;
+    }
+    const collapsedSearch = normSearch.replace(/\s+/g, ' ').trim();
+    const cfStr = collapsedFull.join('');
+    const cfIdx = cfStr.indexOf(collapsedSearch);
+    if (cfIdx !== -1) {
+      // Map back: collapseMap[cfIdx] is the index in normFull (= fullText, same length)
+      idx = collapseMap[cfIdx]!;
+      // Recalculate end using collapse map
+      const cfEndIdx = cfIdx + collapsedSearch.length - 1;
+      const endOrigIdx = collapseMap[cfEndIdx]!;
+      const count = (cfStr.split(collapsedSearch).length - 1);
+      return {
+        start: chars[idx]!.index,
+        end: chars[endOrigIdx]!.index + 1,
+        count,
+      };
+    }
+    return null;
+  }
+
+  // Count total occurrences using normalized text for uniqueness validation
+  const count = normFull.split(normSearch).length - 1;
 
   return {
     start: chars[idx]!.index,
-    end: chars[idx + searchText.length - 1]!.index + 1,
+    end: chars[idx + normSearch.length - 1]!.index + 1,
+    count,
   };
 }
 
@@ -1460,6 +1527,7 @@ chrome.runtime.onMessage.addListener(
             const doc = await fetchGDocsDocument(docId, token);
             const range = findTextRange(doc, findText);
             if (!range) return { error: "find text not found in document" };
+            if (range.count > 1) return { error: `ambiguous: "${findText.slice(0, 40)}" matches ${range.count} locations — provide a longer, unique string` };
 
             const ORANGE = { red: 0.988, green: 0.729, blue: 0.561 };
             const BLUE   = { red: 0.678, green: 0.847, blue: 0.961 };
@@ -1567,6 +1635,70 @@ chrome.runtime.onMessage.addListener(
           }
         }
 
+        case "gdocsApplyInsert": {
+          // Insert text after anchor, highlight inserted text blue
+          const { docId, afterText, insertText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            const range = findTextRange(doc, afterText);
+            if (!range) return { error: "anchor text not found in document" };
+            if (range.count > 1) return { error: `ambiguous: "${afterText.slice(0, 40)}" matches ${range.count} locations — provide a longer, unique anchor` };
+            const BLUE = { red: 0.678, green: 0.847, blue: 0.961 };
+            await gdocsBatchUpdate(docId, token, [
+              { insertText: { location: { index: range.end }, text: insertText } },
+              { updateTextStyle: {
+                  range: { startIndex: range.end, endIndex: range.end + insertText.length },
+                  textStyle: { backgroundColor: { color: { rgbColor: BLUE } } },
+                  fields: 'backgroundColor',
+              }},
+            ]);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsAcceptInsert": {
+          // Keep the insertion: clear blue highlight on inserted text
+          const { docId, afterText, insertText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            const range = findTextRange(doc, afterText + insertText);
+            if (!range) return { error: "anchor+insert text not found" };
+            const insertStart = range.start + afterText.length;
+            await gdocsBatchUpdate(docId, token, [{
+              updateTextStyle: {
+                range: { startIndex: insertStart, endIndex: insertStart + insertText.length },
+                textStyle: { backgroundColor: {} },
+                fields: 'backgroundColor',
+              },
+            }]);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsRevertInsert": {
+          // Revert the insertion: delete the inserted text
+          const { docId, afterText, insertText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            const range = findTextRange(doc, afterText + insertText);
+            if (!range) return { error: "anchor+insert text not found" };
+            const insertStart = range.start + afterText.length;
+            await gdocsBatchUpdate(docId, token, [{
+              deleteContentRange: { range: { startIndex: insertStart, endIndex: insertStart + insertText.length } },
+            }]);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
         case "injectNextNewTab": {
           // Listen for the next new tab and inject the content script into it.
           // Used for PDF→HTML conversion: content script opens a blob tab,
@@ -1648,6 +1780,7 @@ chrome.runtime.onMessage.addListener(
           if (!tabId) return { error: "No tab ID" };
 
           const { messages, mode } = message.payload;
+          const requestId = (message.payload as { requestId?: number }).requestId;
 
           (async () => {
             try {
@@ -1657,19 +1790,19 @@ chrome.runtime.onMessage.addListener(
                 (text) => {
                   chrome.tabs.sendMessage(tabId, {
                     action: "gdocsChatChunk",
-                    payload: { text },
+                    payload: { text, requestId },
                   }).catch(() => {});
                 },
               );
               chrome.tabs.sendMessage(tabId, {
                 action: "gdocsChatDone",
-                payload: {},
+                payload: { requestId },
               }).catch(() => {});
             } catch (err) {
               const error = err instanceof Error ? err.message : "Unknown error";
               chrome.tabs.sendMessage(tabId, {
                 action: "gdocsChatError",
-                payload: { error },
+                payload: { error, requestId },
               }).catch(() => {});
             }
           })();
@@ -1681,6 +1814,41 @@ chrome.runtime.onMessage.addListener(
           const { prompt, docContext } = message.payload;
           const result = await fetchAllGDocsMcqQuestions(prompt, docContext);
           return result;
+        }
+
+        case "gdocsRoute": {
+          const { prompt, docContext, essayContent } = message.payload;
+          const result = await requestGDocsRoute(prompt, docContext, essayContent);
+          return result;
+        }
+
+        case "gdocsGetDocText": {
+          const { docId } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            // Extract plain text from the document using the same path as findTextRange
+            const parts: string[] = [];
+            function extractText(elements: any[]): void {
+              for (const el of elements ?? []) {
+                if (el.paragraph) {
+                  for (const pe of el.paragraph.elements ?? []) {
+                    if (pe.textRun?.content) parts.push(pe.textRun.content);
+                  }
+                } else if (el.table) {
+                  for (const row of el.table.tableRows ?? []) {
+                    for (const cell of row.tableCells ?? []) {
+                      extractText(cell.content);
+                    }
+                  }
+                }
+              }
+            }
+            extractText(doc.body?.content ?? []);
+            return { text: parts.join('').slice(0, 12000) };
+          } catch (err) {
+            return { error: String(err) };
+          }
         }
 
         case "gdocsSessionLoad": {
