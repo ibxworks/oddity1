@@ -133,6 +133,9 @@ let gdocsChatMode: "auto" | "fast" | "plan" = "auto";
 let gdocsMemoMode: "memo" | "resource" = "memo";
 let gdocsActiveTab: "memo" | "resource" | "outline" = "memo";
 let gdocsExpandedCardId: string | null = null;
+let gdocsMemoEditMode = false;
+const gdocsMemoSelected = new Set<string>(); // sortKeys of selected memos
+let gdocsMemoPillEl: HTMLDivElement | null = null;
 let gdocsPersonaSubtitleEl: HTMLSpanElement | null = null;
 let gdocsTitleEl: HTMLSpanElement | null = null;
 let gdocsMemoTabBtn: HTMLButtonElement | null = null;
@@ -720,10 +723,12 @@ export function initArgumentsBox(): void {
       // ── Select All row ──
       const selectAllRow = document.createElement("div");
       selectAllRow.className = "args-gdocs-select-all-row";
+      selectAllRow.style.cursor = "pointer";
 
       const selectAllChk = document.createElement("input");
       selectAllChk.type = "checkbox";
       selectAllChk.className = "args-gdocs-checkbox";
+      selectAllChk.style.pointerEvents = "none";
       const allSelected = gdocsResources.length > 0 && gdocsResources.every(r => gdocsResourceSelected.has(r));
       selectAllChk.checked = allSelected;
       selectAllChk.indeterminate = !allSelected && gdocsResources.some(r => gdocsResourceSelected.has(r));
@@ -732,13 +737,22 @@ export function initArgumentsBox(): void {
       selectAllLabel.className = "args-gdocs-select-all-label";
       selectAllLabel.textContent = "Select All";
 
-      selectAllChk.addEventListener("change", () => {
-        if (selectAllChk.checked) {
+      selectAllRow.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const shouldSelect = !selectAllChk.checked || selectAllChk.indeterminate;
+        if (shouldSelect) {
           gdocsResources.forEach(r => gdocsResourceSelected.add(r));
+          selectAllChk.checked = true;
+          selectAllChk.indeterminate = false;
         } else {
           gdocsResources.forEach(r => gdocsResourceSelected.delete(r));
+          selectAllChk.checked = false;
+          selectAllChk.indeterminate = false;
         }
-        renderResourceList();
+        // Update individual checkboxes in-place
+        resourceList.querySelectorAll<HTMLInputElement>(".args-gdocs-resource-item .args-gdocs-checkbox").forEach((chk) => {
+          chk.checked = shouldSelect;
+        });
       });
 
       selectAllRow.appendChild(selectAllChk);
@@ -1163,6 +1177,28 @@ export function initArgumentsBox(): void {
     chatBox.appendChild(spinner);
     gdocsArgBoxSpinnerEl = spinner;
 
+    // "Memo ×" pill (shown when memo edit mode is active)
+    const memoPill = document.createElement("div");
+    memoPill.className = "args-gdocs-memo-pill";
+    memoPill.style.display = "none";
+    const memoPillText = document.createElement("span");
+    memoPillText.textContent = "Memo";
+    const memoPillX = document.createElement("button");
+    memoPillX.className = "args-gdocs-memo-pill-x";
+    memoPillX.textContent = "×";
+    memoPillX.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsMemoEditMode = false;
+      gdocsMemoSelected.clear();
+      memoPill.style.display = "none";
+      lastRenderedKey = "";
+      renderList();
+    });
+    memoPill.appendChild(memoPillText);
+    memoPill.appendChild(memoPillX);
+    gdocsMemoPillEl = memoPill;
+    chatBox.appendChild(memoPill);
+
     const chatTextarea = document.createElement("textarea");
     chatTextarea.className = "args-gdocs-chat-textarea";
     chatTextarea.placeholder = "Rewrite my essay into ...";
@@ -1175,39 +1211,35 @@ export function initArgumentsBox(): void {
     const chatBar = document.createElement("div");
     chatBar.className = "args-gdocs-chat-bar";
 
-    // Memo | Resource mode pills
+    // "Use Memo for edit" toggle button
     const modePills = document.createElement("div");
     modePills.className = "args-gdocs-mode-pills";
 
     const memoPillBtn = document.createElement("button");
     memoPillBtn.className = "args-gdocs-pill-btn active";
-    memoPillBtn.textContent = "Memo";
+    memoPillBtn.textContent = "Use Memo for edit";
     gdocsMemoModeBtn = memoPillBtn;
-
-    const pillDivider = document.createElement("div");
-    pillDivider.className = "args-gdocs-pill-divider";
-
-    const resourcePillBtn = document.createElement("button");
-    resourcePillBtn.className = "args-gdocs-pill-btn";
-    resourcePillBtn.textContent = "Context";
-    gdocsResourceModeBtn = resourcePillBtn;
 
     memoPillBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      gdocsMemoMode = "memo";
-      memoPillBtn.classList.add("active");
-      resourcePillBtn.classList.remove("active");
-    });
-    resourcePillBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      gdocsMemoMode = "resource";
-      resourcePillBtn.classList.add("active");
-      memoPillBtn.classList.remove("active");
+      // Switch to Memo tab
+      gdocsActiveTab = "memo";
+      gdocsMemoTabBtn!.classList.add("active");
+      gdocsResourceTabBtn!.classList.remove("active");
+      gdocsOutlineTabBtn!.classList.remove("active");
+      if (listEl) listEl.style.display = "";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "none";
+      // Enable memo edit mode — select all memos
+      gdocsMemoEditMode = true;
+      gdocsMemoSelected.clear();
+      const allItems = [...canonicalItems, ...liveItems].filter(i => i.type === "reply" || i.type === "manual");
+      allItems.forEach(i => gdocsMemoSelected.add(i.sortKey));
+      if (gdocsMemoPillEl) gdocsMemoPillEl.style.display = "";
+      renderList();
     });
 
     modePills.appendChild(memoPillBtn);
-    modePills.appendChild(pillDivider);
-    modePills.appendChild(resourcePillBtn);
 
     // Auto / Plan dropdown
     const dropdownWrap = document.createElement("div");
@@ -1270,9 +1302,11 @@ export function initArgumentsBox(): void {
       const serializedResources = gdocsResources
         .filter(r => r.content && gdocsResourceSelected.has(r))
         .map(r => ({ name: r.name, content: r.content }));
-      const serializedMemos = liveItems
-        .filter(i => i.type === "reply")
-        .map(i => ({ note: i.replyFullNote ?? i.replyHeader ?? "", reply: i.text }));
+      const allMemoItems = [...canonicalItems, ...liveItems].filter(i => i.type === "reply" || i.type === "manual");
+      const serializedMemos = (gdocsMemoEditMode
+        ? allMemoItems.filter(i => gdocsMemoSelected.has(i.sortKey))
+        : allMemoItems
+      ).map(i => ({ note: i.replyFullNote ?? i.replyHeader ?? "", reply: i.text }));
 
       startArgBoxLoading(chatTextarea);
       if (gdocsChatMode === "plan") {
@@ -1287,7 +1321,6 @@ export function initArgumentsBox(): void {
     });
 
     chatBar.appendChild(modePills);
-    chatBar.appendChild(dropdownWrap);
     chatBar.appendChild(sendBtn);
     chatBox.appendChild(chatBar);
     chatInputArea.appendChild(chatBox);
@@ -1378,11 +1411,11 @@ export function initArgumentsBox(): void {
   contentClip.appendChild(buildDashboardFace());
   containerEl.appendChild(contentClip);
 
-  // Track mouse position to show close button only in top 30%
+  // Track mouse position — show controls only when near the top header zone
   containerEl.addEventListener("mousemove", (e) => {
     if (!expanded) return;
     const rect = containerEl!.getBoundingClientRect();
-    const inTopZone = e.clientY < rect.top + rect.height * 0.3;
+    const inTopZone = e.clientY < rect.top + 70;
     if (inTopZone) {
       showTopBar();
     } else {
@@ -1763,6 +1796,7 @@ function updateModeToggleVisibility(): void {
   const wasHidden = modeToggleWrapperEl.style.display === "none";
   // Show when: box visible, signed in, not dimmed, AND (enabled OR expanded)
   const show =
+    !isGDocs() &&
     boxVisible &&
     !dimmed &&
     localAuthState === true &&
@@ -2551,11 +2585,13 @@ function showTopBar(): void {
     closeBtnHideTimer = null;
   }
   topBarEl?.classList.add("hovered");
+  containerEl?.classList.add("top-proximity");
 }
 
 function hideTopBar(): void {
   closeBtnHideTimer = setTimeout(() => {
     topBarEl?.classList.remove("hovered");
+    containerEl?.classList.remove("top-proximity");
     closeBtnHideTimer = null;
   }, 80);
 }
@@ -4507,6 +4543,47 @@ function renderList(): void {
   gdocsExpandedCardId = null;
   listEl.style.overflow = "";
 
+  // GDocs memo edit mode: inject "Select All" row at top
+  if (isGDocs() && gdocsMemoEditMode && allItems.length > 0) {
+    const selectAllRow = document.createElement("div");
+    selectAllRow.className = "args-gdocs-select-all-row";
+    selectAllRow.style.cursor = "pointer";
+    const selectAllChk = document.createElement("input");
+    selectAllChk.type = "checkbox";
+    selectAllChk.className = "args-gdocs-checkbox";
+    selectAllChk.style.pointerEvents = "none"; // row handles the click
+    const allSelected = allItems.every(i => gdocsMemoSelected.has(i.sortKey));
+    selectAllChk.checked = allSelected;
+    selectAllChk.indeterminate = !allSelected && allItems.some(i => gdocsMemoSelected.has(i.sortKey));
+    const selectAllLabel = document.createElement("span");
+    selectAllLabel.className = "args-gdocs-select-all-label";
+    selectAllLabel.textContent = "Select All";
+    selectAllRow.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const shouldSelect = !selectAllChk.checked || selectAllChk.indeterminate;
+      if (shouldSelect) {
+        allItems.forEach(i => gdocsMemoSelected.add(i.sortKey));
+        selectAllChk.checked = true;
+        selectAllChk.indeterminate = false;
+      } else {
+        allItems.forEach(i => gdocsMemoSelected.delete(i.sortKey));
+        selectAllChk.checked = false;
+        selectAllChk.indeterminate = false;
+      }
+      // Update individual card checkboxes in-place
+      listEl!.querySelectorAll<HTMLInputElement>(".gdocs-arg-card--selectable .args-gdocs-checkbox").forEach(chk => {
+        const cardId = (chk.closest(".gdocs-arg-card") as HTMLElement)?.dataset.cardId;
+        if (cardId) chk.checked = shouldSelect;
+      });
+    });
+    selectAllRow.appendChild(selectAllChk);
+    selectAllRow.appendChild(selectAllLabel);
+    listEl.appendChild(selectAllRow);
+    const divider = document.createElement("div");
+    divider.className = "gdocs-arg-divider";
+    listEl.appendChild(divider);
+  }
+
   if (allItems.length === 0) {
     listEl.style.visibility = "";
     const empty = document.createElement("div");
@@ -4691,13 +4768,32 @@ function renderList(): void {
       expandedFooter.appendChild(gotoLink);
       expandedFooter.appendChild(actionsEl);
 
-      card.appendChild(titleEl);
-      card.appendChild(tsEl);
-      card.appendChild(bodyEl);
-      card.appendChild(expandedFooter);
+      // Memo edit mode: add checkbox, disable expand
+      if (gdocsMemoEditMode) {
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.className = "args-gdocs-checkbox";
+        chk.checked = gdocsMemoSelected.has(cardId);
+        chk.addEventListener("change", (e) => {
+          e.stopPropagation();
+          if (chk.checked) gdocsMemoSelected.add(cardId);
+          else gdocsMemoSelected.delete(cardId);
+        });
+        card.classList.add("gdocs-arg-card--selectable");
+        card.appendChild(chk);
+      }
 
-      // Toggle expand on click
+      const contentCol = document.createElement("div");
+      contentCol.className = "gdocs-arg-card-content";
+      contentCol.appendChild(titleEl);
+      contentCol.appendChild(tsEl);
+      contentCol.appendChild(bodyEl);
+      contentCol.appendChild(expandedFooter);
+      card.appendChild(contentCol);
+
+      // Toggle expand on click (disabled in edit mode)
       card.addEventListener("click", () => {
+        if (gdocsMemoEditMode) return;
         const isExpanded = gdocsExpandedCardId === cardId;
         // Collapse previously expanded card
         if (gdocsExpandedCardId) {
@@ -4786,18 +4882,105 @@ function renderList(): void {
     replyBar.className = "note-reply-bar";
     const replyInput = document.createElement("input");
     replyInput.type = "text";
-    replyInput.placeholder = "Add a note...";
+    replyInput.placeholder = "Thoughts?";
     replyInput.className = "note-reply-input";
 
     const submitArgReply = () => {
       const text = replyInput.value.trim();
       if (!text) return;
 
-      // Add bubble immediately
-      const bubble = document.createElement("div");
-      bubble.className = "note-reply-bubble";
-      bubble.textContent = text;
-      repliesContainer.appendChild(bubble);
+      // Add reply item immediately
+      const replyItem = document.createElement("div");
+      replyItem.className = "note-reply-item";
+
+      const replyText = document.createElement("div");
+      replyText.className = "note-reply-text";
+      replyText.textContent = text;
+
+      const replyMeta = document.createElement("div");
+      replyMeta.className = "note-reply-meta";
+
+      const replyEditBtn = document.createElement("button");
+      replyEditBtn.className = "note-reply-action-btn";
+      replyEditBtn.title = "Edit";
+      replyEditBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.1641 1.33105C19.7393 -0.243794 22.2929 -0.243751 23.8682 1.33105C25.4435 2.90636 25.4435 5.46083 23.8682 7.03613L8.41699 22.4883C7.76597 23.1393 6.94983 23.6009 6.05664 23.8242L1.26465 25.0225C0.608468 25.1865 0.0136891 24.5917 0.177734 23.9355L1.37598 19.1436C1.59927 18.2504 2.0609 17.4342 2.71191 16.7832L18.1641 1.33105ZM16.4727 5.55664L3.97949 18.0508C3.55812 18.4722 3.25879 19 3.11426 19.5781L2.33887 22.6787L5.62207 22.0859C6.20018 21.9414 6.72804 21.6421 7.14941 21.2207L19.6426 8.72656L16.4727 5.55664ZM22.6016 2.59863C21.726 1.72311 20.3062 1.72311 19.4307 2.59863L17.8457 4.18359L20.9092 7.24805L22.6016 5.76953C23.4771 4.89404 23.477 3.47416 22.6016 2.59863Z" fill="currentColor"/></svg>`;
+      replyEditBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const current = replyText.dataset.editMode;
+        if (current === "true") return;
+        replyText.dataset.editMode = "true";
+        const oldText = replyText.textContent ?? "";
+        const ta = document.createElement("textarea");
+        ta.className = "note-edit-textarea";
+        ta.value = oldText;
+        const actions = document.createElement("div");
+        actions.className = "note-edit-actions";
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "note-save-btn";
+        saveBtn.textContent = "Save";
+        saveBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const newText = ta.value.trim();
+          if (!newText) return;
+          replyText.textContent = newText;
+          replyText.style.display = "";
+          delete replyText.dataset.editMode;
+          ta.remove();
+          actions.remove();
+          if (replyItem.dataset.feedbackId) {
+            chrome.runtime.sendMessage({
+              action: "updateFeedback",
+              payload: {
+                feedbackId: replyItem.dataset.feedbackId,
+                replyText: newText,
+                contentHash: item.contentHash,
+                url: getPageUrl(),
+              },
+            }).catch(() => {});
+          }
+        });
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "note-cancel-btn";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          replyText.style.display = "";
+          delete replyText.dataset.editMode;
+          ta.remove();
+          actions.remove();
+        });
+        actions.appendChild(saveBtn);
+        actions.appendChild(cancelBtn);
+        replyText.style.display = "none";
+        replyText.after(ta, actions);
+      });
+
+      const replyDeleteBtn = document.createElement("button");
+      replyDeleteBtn.className = "note-reply-action-btn";
+      replyDeleteBtn.title = "Delete";
+      replyDeleteBtn.innerHTML = `<svg width="11" height="14" viewBox="0 0 22 27" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.9219 7.43945C19.5106 7.28746 20.0695 7.65114 20.1689 8.25781C20.1871 8.36904 20.1904 8.48758 20.1904 8.61621C20.1916 12.9442 20.1921 17.2726 20.1914 21.6006C20.191 23.8874 18.6924 25.7032 16.4473 26.127C16.1796 26.1775 15.898 26.1959 15.6172 26.1963C12.4044 26.2013 9.19156 26.2003 5.97852 26.1992C3.69159 26.1985 1.85256 24.6628 1.45312 22.418C1.41441 22.2002 1.39474 21.976 1.39453 21.7549C1.39094 17.3332 1.39019 12.9109 1.39355 8.48926C1.3939 8.11363 1.54191 7.815 1.7627 7.62891C1.98301 7.44332 2.28797 7.35899 2.62695 7.43457C3.04346 7.52748 3.36132 7.89535 3.39258 8.32715C3.39551 8.62207 3.39648 20.6787 3.39648 20.6787L3.39648 20.6855C3.41225 21.17 3.37743 21.7036 3.45996 22.1953C3.65247 23.341 4.68451 24.1899 5.83789 24.1924C9.13566 24.1995 12.4336 24.1998 15.7314 24.1924C17.1037 24.1893 18.1861 23.0585 18.1865 21.6758C18.188 17.2823 18.1867 12.8885 18.1875 8.49512C18.1876 7.94499 18.484 7.55251 18.9219 7.43945Z" fill="currentColor"/><path d="M7.26953 0.203125C9.62027 0.198508 11.9716 0.199014 14.3223 0.204102C14.6616 0.204899 14.922 0.314719 15.0977 0.492188C15.2735 0.670059 15.3822 0.934127 15.3848 1.27637C15.3898 1.9497 15.3867 2.62192 15.3867 3.29785V3.7998H15.9141C17.3757 3.79981 18.8361 3.79648 20.2969 3.80078C20.9586 3.80273 21.3942 4.24054 21.3867 4.82031C21.3799 5.3401 20.9666 5.77238 20.4453 5.80176C20.3502 5.8071 20.2583 5.80371 20.1475 5.80371H1.2666C0.639678 5.80015 0.20525 5.37415 0.200195 4.81543C0.195178 4.24231 0.62806 3.8045 1.26758 3.80176C2.72789 3.7955 4.1877 3.79982 5.64941 3.7998H6.1709L6.18359 3.61328C6.18866 3.53651 6.20002 3.43702 6.2002 3.34961C6.20145 2.65408 6.19707 1.96406 6.20215 1.27148C6.20465 0.931308 6.31364 0.668386 6.49023 0.491211C6.66684 0.314264 6.92879 0.203859 7.26953 0.203125ZM8.20312 3.7998H13.3838V2.21973H8.20312V3.7998Z" fill="currentColor"/></svg>`;
+      replyDeleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const fid = replyItem.dataset.feedbackId;
+        if (fid) {
+          chrome.runtime.sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: fid, contentHash: item.contentHash, url: getPageUrl() },
+          }).catch(() => {});
+        }
+        replyItem.remove();
+      });
+
+      replyMeta.appendChild(replyEditBtn);
+      replyMeta.appendChild(replyDeleteBtn);
+      replyItem.appendChild(replyText);
+      replyItem.appendChild(replyMeta);
+
+      const divider = document.createElement("div");
+      divider.className = "note-reply-divider";
+      replyItem.appendChild(divider);
+
+      repliesContainer.appendChild(replyItem);
       repliesContainer.scrollTop = repliesContainer.scrollHeight;
 
       // Send to background
@@ -4816,7 +4999,7 @@ function renderList(): void {
           })
           .then((fb: any) => {
             if (fb?.id) {
-              bubble.dataset.feedbackId = fb.id;
+              replyItem.dataset.feedbackId = fb.id;
               window.dispatchEvent(
                 new CustomEvent("oddity:feedback-added", {
                   detail: { feedback: fb, contentHash: item.contentHash ?? "" },
@@ -5033,10 +5216,6 @@ function renderList(): void {
     });
     iconGroup.appendChild(editBtn);
     iconGroup.appendChild(deleteBtn);
-
-    feedbackRow.appendChild(pillGroup);
-    feedbackRow.appendChild(iconGroup);
-    expandedInner.appendChild(feedbackRow);
 
     expandedContent.appendChild(expandedInner);
 
@@ -5596,9 +5775,35 @@ function initModeToggleOverlay(): void {
   modeToggleEl.className = "mode-toggle";
   modeToggleEl.dataset.active = "overview";
 
-  // Close button only — Overview/Depth removed
+  modeToggleSliderEl = document.createElement("div");
+  modeToggleSliderEl.className = "mode-slider";
+
+  modeToggleOverviewBtn = document.createElement("button");
+  modeToggleOverviewBtn.className = "mode-btn mode-active";
+  modeToggleOverviewBtn.textContent = "Overview";
+  modeToggleOverviewBtn.dataset.mode = "overview";
+
+  modeToggleDepthBtn = document.createElement("button");
+  modeToggleDepthBtn.className = "mode-btn";
+  modeToggleDepthBtn.textContent = "Depth";
+  modeToggleDepthBtn.dataset.mode = "depth";
+
+  modeToggleEl.addEventListener("click", (e: MouseEvent) => {
+    e.stopPropagation();
+    if (!extensionEnabled) return;
+    const target = (e.target as HTMLElement).closest("[data-mode]") as HTMLElement | null;
+    if (!target || !modeToggleEl) return;
+    const mode = target.dataset.mode as string;
+    if (mode === modeToggleEl.dataset.active) return;
+    modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
+    modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
+    modeToggleEl.dataset.active = mode;
+    syncModeToggleSlider();
+    document.dispatchEvent(new CustomEvent("oddity:modeChange", { detail: { mode } }));
+  });
+
   const modeCloseBtnEl = document.createElement("button");
-  modeCloseBtnEl.className = "mode-close-btn mode-close-only";
+  modeCloseBtnEl.className = "mode-close-btn";
   modeCloseBtnEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   modeCloseBtnEl.addEventListener("click", (e: MouseEvent) => {
     e.stopPropagation();
@@ -5611,6 +5816,9 @@ function initModeToggleOverlay(): void {
     }
   });
 
+  modeToggleEl.appendChild(modeToggleSliderEl);
+  modeToggleEl.appendChild(modeToggleOverviewBtn);
+  modeToggleEl.appendChild(modeToggleDepthBtn);
   modeToggleEl.appendChild(modeCloseBtnEl);
   modeToggleWrapperEl.appendChild(modeToggleEl);
 
@@ -5785,9 +5993,6 @@ const ARGUMENTS_BOX_CSS = `
     display: flex;
   }
 
-  .mode-toggle:has(.mode-close-only) {
-    padding: 4px;
-  }
 
   /* Dark mode overrides when expanded (with-close) */
   .mode-toggle.with-close {
@@ -5915,7 +6120,7 @@ const ARGUMENTS_BOX_CSS = `
     pointer-events: none;
   }
 
-  .args-container.expanded .args-resize-handle {
+  .args-container.expanded.top-proximity .args-resize-handle {
     display: block;
   }
 
@@ -6001,7 +6206,7 @@ const ARGUMENTS_BOX_CSS = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 16px 0;
+    padding: 22px 16px 8px;
     flex-shrink: 0;
   }
 
@@ -6293,15 +6498,44 @@ const ARGUMENTS_BOX_CSS = `
     margin-top: 6px;
   }
 
-  .arg-card .note-reply-bubble {
-    background: rgba(255,255,255,0.08);
-    border-radius: 8px;
-    padding: 4px 10px;
+  .arg-card .note-reply-item {
+    padding: 8px 0 0;
+  }
+
+  .arg-card .note-reply-text {
     font-size: var(--oddity-note-size);
-    margin-bottom: 3px;
-    word-break: break-word;
+    color: #999;
     font-family: 'Inter', system-ui, sans-serif;
-    color: #FFFFFF;
+    word-break: break-word;
+    line-height: 1.45;
+    margin-bottom: 4px;
+  }
+
+  .arg-card .note-reply-meta {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .arg-card .note-reply-action-btn {
+    all: unset;
+    cursor: pointer;
+    color: #888;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+
+  .arg-card .note-reply-action-btn:hover {
+    opacity: 1;
+  }
+
+  .arg-card .note-reply-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.1);
   }
 
   .arg-card .note-reply-bar {
@@ -6338,7 +6572,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: #748DBF;
+    background: #1E2229;
     color: #fff;
     font-size: 13px;
     display: flex;
@@ -6984,9 +7218,20 @@ const ARGUMENTS_BOX_CSS = `
     color: #293038;
   }
 
-  :host([data-theme="light"]) .arg-card .note-reply-bubble {
-    color: #293038;
-    background: rgba(0, 0, 0, 0.06);
+  :host([data-theme="light"]) .arg-card .note-reply-text {
+    color: #555;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-reply-action-btn {
+    color: #555;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-reply-divider {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  :host([data-theme="light"]) .arg-card .note-reply-send {
+    background: #1E2229;
   }
 
   :host([data-theme="light"]) .arg-card .note-icon-btn,
@@ -7261,7 +7506,7 @@ const ARGUMENTS_BOX_CSS = `
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 8px;
+    border-radius: 50%;
     cursor: pointer;
     color: #858E97;
     background: rgba(255, 255, 255, 0.9);
@@ -7330,7 +7575,7 @@ const ARGUMENTS_BOX_CSS = `
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 8px;
+    border-radius: 50%;
     cursor: pointer;
     color: #858E97;
     background: rgba(255, 255, 255, 0.9);
@@ -8665,6 +8910,33 @@ const ARGUMENTS_BOX_CSS = `
     padding: 0;
   }
 
+  /* Memo edit mode pill */
+  .args-gdocs-memo-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: #1E2229;
+    color: #FFFFFF;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 3px 8px 3px 10px;
+    border-radius: 999px;
+    width: fit-content;
+    margin-bottom: 6px;
+  }
+  .args-gdocs-memo-pill-x {
+    all: unset;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0.7;
+    padding: 0 1px;
+  }
+  .args-gdocs-memo-pill-x:hover {
+    opacity: 1;
+  }
+
   /* GDocs arg cards */
   .gdocs-arg-card {
     padding: 16px 16px 12px;
@@ -8674,6 +8946,21 @@ const ARGUMENTS_BOX_CSS = `
   }
   .gdocs-arg-card:hover {
     background: #FAFAFA;
+  }
+  .gdocs-arg-card--selectable {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: default;
+  }
+  .gdocs-arg-card--selectable .args-gdocs-checkbox {
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .gdocs-arg-card-content {
+    flex: 1;
+    min-width: 0;
   }
   .gdocs-arg-title {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -8908,17 +9195,11 @@ const ARGUMENTS_BOX_CSS = `
     -webkit-appearance: none;
     width: 16px;
     height: 16px;
-    border: 1.5px solid #C4C4C4;
     border-radius: 4px;
-    background: #fff;
+    background: #E5E5E5;
     cursor: pointer;
     flex-shrink: 0;
     position: relative;
-    transition: border-color 0.12s, background 0.12s;
-  }
-  .args-gdocs-checkbox:checked {
-    border-color: #1E2229;
-    background: #1E2229;
   }
   .args-gdocs-checkbox:checked::after {
     content: '';
@@ -8927,14 +9208,10 @@ const ARGUMENTS_BOX_CSS = `
     top: 1px;
     width: 5px;
     height: 9px;
-    border: 1.5px solid #fff;
+    border: 1.8px solid #8C9096;
     border-top: none;
     border-left: none;
     transform: rotate(45deg);
-  }
-  .args-gdocs-checkbox:indeterminate {
-    border-color: #1E2229;
-    background: #1E2229;
   }
   .args-gdocs-checkbox:indeterminate::after {
     content: '';
@@ -8942,8 +9219,8 @@ const ARGUMENTS_BOX_CSS = `
     left: 3px;
     top: 6px;
     width: 8px;
-    height: 1.5px;
-    background: #fff;
+    height: 1.8px;
+    background: #8C9096;
   }
   .args-gdocs-resource-item {
     padding: 10px 16px 10px;
@@ -9188,11 +9465,6 @@ const ARGUMENTS_BOX_CSS = `
     flex-shrink: 0;
   }
   .args-gdocs-mode-pills {
-    display: flex;
-    align-items: center;
-    background: #EDEDED;
-    border-radius: 4px;
-    overflow: hidden;
     flex-shrink: 0;
   }
   .args-gdocs-pill-btn {
@@ -9202,23 +9474,17 @@ const ARGUMENTS_BOX_CSS = `
     font-size: 13px;
     font-weight: 400;
     color: #8C9096;
-    padding: 6px 12px;
+    background: #EDEDED;
+    padding: 7px 16px;
+    border-radius: 10px;
     white-space: nowrap;
     transition: background 0.15s, color 0.15s;
   }
-  .args-gdocs-pill-btn.active {
-    color: #1E2229;
-    font-weight: 500;
-  }
-  .args-gdocs-pill-btn:hover:not(.active) {
-    background: rgba(0,0,0,0.06);
-    color: #555;
+  .args-gdocs-pill-btn:hover {
+    background: #E4E4E4;
   }
   .args-gdocs-pill-divider {
-    width: 1px;
-    height: 16px;
-    background: #FFFFFF;
-    flex-shrink: 0;
+    display: none;
   }
   .args-gdocs-dropdown-wrap {
     position: relative;

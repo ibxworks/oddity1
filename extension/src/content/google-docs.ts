@@ -225,6 +225,10 @@ function getGDocsHighlightColor(type: AnnotationType): { red: number; green: num
 }
 let _correctionQueue: CorrectionJob[] = [];
 let _correctionRunning = false;
+
+export function clearGDocsCorrectionQueue(): void {
+  _correctionQueue = [];
+}
 /** Jobs that completed successfully — kept for reference. */
 const _completedJobs: CorrectionJob[] = [];
 

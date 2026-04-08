@@ -1563,12 +1563,8 @@ function createInputBar(): void {
     .action-btn { height: 30px; padding: 0 12px; border-radius: 9999px; border: none; background: #f0f2f5; color: #374151; font-size: 11px; font-weight: 600; font-family: inherit; letter-spacing: 0.02em; cursor: pointer; display: flex; align-items: center; gap: 4px; flex-shrink: 0; transition: background 0.15s; white-space: nowrap; }
     .action-btn:hover { background: #e5e7eb; }
     .action-btn:disabled { opacity: 0.4; cursor: default; }
-    .action-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
-    /* Mode chips */
-    .mode-chips { display: flex; align-items: center; gap: 4px; }
-    .mode-chip { height: 26px; padding: 0 10px; border-radius: 9999px; border: 1px solid #e8e8e2; background: #fff; color: #6b7280; font-size: 11px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; }
-    .mode-chip:hover { background: #f7f7f6; }
-    .mode-chip.active { background: #111; color: #fff; border-color: #111; }
+    .action-btn--provoke { background: #1E2229; color: #fff; border-radius: 10px; height: auto; padding: 12px 24px; font-size: 15px; font-weight: 500; letter-spacing: 0; }
+    .action-btn--provoke:hover { background: #2a3040; }
     /* MCQ card */
     .mcq-card { background: #fff; border-radius: 16px; padding: 18px 18px 14px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 14px; }
     .mcq-header { display: flex; align-items: center; justify-content: space-between; }
@@ -1616,34 +1612,10 @@ function createInputBar(): void {
   wrapper.className = 'wrapper';
   shadowWrapper = wrapper;
 
-  // ── Mode chips (Auto / Fast / Plan) ──
-  const modeChipsEl = document.createElement('div');
-  modeChipsEl.className = 'mode-chips';
-
-  const modes: Array<'auto' | 'fast' | 'plan'> = ['auto', 'fast', 'plan'];
-  const modeChipEls: Map<string, HTMLButtonElement> = new Map();
-
-  for (const m of modes) {
-    const chip = document.createElement('button');
-    chip.className = 'mode-chip' + (m === userMode ? ' active' : '');
-    chip.textContent = m.charAt(0).toUpperCase() + m.slice(1);
-    chip.addEventListener('click', () => {
-      userMode = m;
-      modeChipEls.forEach((el, key) => {
-        el.className = 'mode-chip' + (key === m ? ' active' : '');
-      });
-    });
-    modeChipEls.set(m, chip);
-    modeChipsEl.appendChild(chip);
-  }
-
-  wrapper.appendChild(modeChipsEl);
-
-  // ── Notes button ──
+  // ── Provoke me button ──
   commentBtn = document.createElement('button');
-  commentBtn.className = 'action-btn';
-  commentBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M10 2H2a1 1 0 00-1 1v5a1 1 0 001 1h2l2 2 2-2h2a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>Notes`;
-  commentBtn.title = 'Re-run annotations';
+  commentBtn.className = 'action-btn action-btn--provoke';
+  commentBtn.textContent = 'Provoke me';
   commentBtn.addEventListener('click', () => document.dispatchEvent(new CustomEvent('oddity:gdocs:re-annotate')));
 
   wrapper.appendChild(commentBtn);
