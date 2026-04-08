@@ -52,6 +52,11 @@ let mcqQuestionIndex = 0;
 let mcqAllQuestions: McqQuestion[] = [];
 let mcqTopic = '';
 let mcqCardEl: HTMLElement | null = null;
+let mcqOverlayEl: HTMLElement | null = null;
+let mcqCompletionCallback: (() => void) | null = null;
+let mcqOriginalPrompt = '';
+let mcqResources: Array<{ name: string; content: string }> = [];
+let mcqMemos: Array<{ note: string; reply: string }> = [];
 const MAX_MCQ_QUESTIONS = 5;
 
 // ─── Chat history (for edit mode) ─────────────────────────────────────────────
@@ -771,6 +776,7 @@ const LOADING_QUESTIONS = [
 let loadingAnimInterval: ReturnType<typeof setInterval> | null = null;
 
 function startLoadingAnimation(): void {
+  document.dispatchEvent(new CustomEvent('oddity:gdocs:loading'));
   if (!topicTextarea) return;
   topicTextarea.value = '';
   let idx = Math.floor(Math.random() * LOADING_QUESTIONS.length);
@@ -782,6 +788,7 @@ function startLoadingAnimation(): void {
 }
 
 function stopLoadingAnimation(): void {
+  document.dispatchEvent(new CustomEvent('oddity:gdocs:loading:done'));
   if (loadingAnimInterval) { clearInterval(loadingAnimInterval); loadingAnimInterval = null; }
   if (topicTextarea) topicTextarea.placeholder = getPlaceholder();
 }
@@ -801,9 +808,33 @@ function setInputEnabled(enabled: boolean) {
 // ─── MCQ flow ─────────────────────────────────────────────────────────────────
 async function fetchAllMcqQuestions(topic: string): Promise<McqQuestion[] | null> {
   return new Promise((resolve) => {
-    const mergedContext = [docContext, importedContext].filter(Boolean).join('\n\n');
+    const hasExistingContent = docContext.trim().length > 0;
+    const sections: string[] = [];
+
+    if (hasExistingContent) {
+      sections.push(`EXISTING DOCUMENT CONTENT:\n${docContext}`);
+    }
+    if (importedContext) {
+      sections.push(`IMPORTED CONTENT:\n${importedContext}`);
+    }
+    if (mcqResources.length > 0) {
+      const resourcesText = mcqResources
+        .map(r => `[${r.name}]: ${r.content}`)
+        .join('\n\n');
+      sections.push(`RESOURCES:\n${resourcesText}`);
+    }
+    if (mcqMemos.length > 0) {
+      const memosText = mcqMemos
+        .map(m => `Annotation: "${m.note}"\nMemo: "${m.reply}"`)
+        .join('\n\n');
+      sections.push(`MARGIN NOTE MEMOS:\n${memosText}`);
+    }
+    sections.push(`TASK MODE: ${hasExistingContent ? 'Editing existing essay' : 'Writing new essay'}`);
+
+    const enrichedContext = sections.join('\n\n---\n\n');
+
     chrome.runtime.sendMessage(
-      { action: 'gdocsMcqQuestions', payload: { prompt: topic, docContext: mergedContext } },
+      { action: 'gdocsMcqQuestions', payload: { prompt: topic, docContext: enrichedContext } },
       (result: McqQuestion[] | { error?: string } | undefined) => {
         if (chrome.runtime.lastError) { console.error('[Oddity GDocs] MCQ fetch error:', chrome.runtime.lastError); resolve(null); return; }
         if (!result || !Array.isArray(result)) { console.error('[Oddity GDocs] MCQ error:', result); resolve(null); return; }
@@ -816,15 +847,56 @@ async function fetchAllMcqQuestions(topic: string): Promise<McqQuestion[] | null
 function dismissMcqCard(): void {
   mcqCardEl?.remove();
   mcqCardEl = null;
+  if (mcqOverlayEl) { mcqOverlayEl.remove(); mcqOverlayEl = null; }
 }
 
 const MCQ_LABELS = ['A', 'B', 'C', 'D'];
 
+const MCQ_OVERLAY_CSS = `
+  *, *::before, *::after { box-sizing: border-box; }
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
+  .mcq-backdrop { position: fixed; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 32px; z-index: 1; pointer-events: auto; }
+  .mcq-card { background: #fff; border-radius: 16px; padding: 22px 22px 16px; box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.07); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 16px; width: 480px; max-width: 90vw; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
+  .mcq-header { display: flex; align-items: center; justify-content: space-between; }
+  .mcq-dots { display: flex; align-items: center; gap: 4px; }
+  .mcq-dot { width: 6px; height: 6px; border-radius: 50%; background: #e5e7eb; transition: background 0.2s; }
+  .mcq-dot-filled { background: #1a1a1a; }
+  .mcq-progress { font-size: 11px; font-weight: 500; color: #9aa0a6; font-variant-numeric: tabular-nums; }
+  .mcq-question { font-size: 14px; font-weight: 600; color: #1a1a1a; line-height: 1.5; }
+  .mcq-options { display: flex; flex-direction: column; gap: 7px; }
+  .mcq-option { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 14px; border-radius: 10px; border: 1px solid #e8e8e2; background: #fff; color: #374151; font-size: 13px; font-family: inherit; cursor: pointer; transition: background 0.12s, border-color 0.12s; line-height: 1.4; width: 100%; }
+  .mcq-option:hover { background: #f7f7f6; border-color: #d1d5db; }
+  .mcq-option:disabled { opacity: 0.4; cursor: default; }
+  .mcq-option-label { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: #f0f2f5; color: #6b7280; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .mcq-option-text { flex: 1; font-weight: 500; }
+  .mcq-other-input { flex: 1; border: none; outline: none; background: transparent; font-size: 13px; font-family: inherit; color: #1a1a1a; font-weight: 500; padding: 0; min-width: 0; }
+  .mcq-other-submit { flex-shrink: 0; border: none; background: #1a1a1a; color: #fff; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; font-family: inherit; }
+  .mcq-footer { display: flex; align-items: center; justify-content: space-between; }
+  .mcq-footer-action { border: none; background: none; font-size: 12px; color: #9aa0a6; cursor: pointer; font-family: inherit; padding: 0; transition: color 0.15s; }
+  .mcq-footer-action:hover { color: #374151; }
+`;
+
 function renderMcqCard(question: McqQuestion): void {
-  if (!shadowWrapper) return;
+  // Remove previous card
   dismissMcqCard();
 
   const displayNum = mcqQuestionIndex + 1;
+  const totalNum = Math.min(mcqAllQuestions.length, MAX_MCQ_QUESTIONS);
+
+  // Create a new centered fixed overlay
+  const overlayHost = document.createElement('div');
+  overlayHost.id = 'oddity-gdocs-mcq-overlay';
+  overlayHost.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483646; pointer-events: none;';
+  document.body.appendChild(overlayHost);
+  mcqOverlayEl = overlayHost;
+
+  const shadow = overlayHost.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent = MCQ_OVERLAY_CSS;
+  shadow.appendChild(style);
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'mcq-backdrop';
 
   const card = document.createElement('div');
   card.className = 'mcq-card';
@@ -832,19 +904,16 @@ function renderMcqCard(question: McqQuestion): void {
   // Header: progress dots + "X / Y"
   const header = document.createElement('div');
   header.className = 'mcq-header';
-
   const dots = document.createElement('div');
   dots.className = 'mcq-dots';
-  for (let i = 0; i < MAX_MCQ_QUESTIONS; i++) {
+  for (let i = 0; i < totalNum; i++) {
     const dot = document.createElement('span');
     dot.className = i < displayNum ? 'mcq-dot mcq-dot-filled' : 'mcq-dot';
     dots.appendChild(dot);
   }
-
   const progress = document.createElement('span');
   progress.className = 'mcq-progress';
-  progress.textContent = `${displayNum} / ${MAX_MCQ_QUESTIONS}`;
-
+  progress.textContent = `${displayNum} / ${totalNum}`;
   header.appendChild(dots);
   header.appendChild(progress);
   card.appendChild(header);
@@ -857,100 +926,84 @@ function renderMcqCard(question: McqQuestion): void {
   const optionsEl = document.createElement('div');
   optionsEl.className = 'mcq-options';
 
-  // Render AI-generated options (up to 3)
   const aiOptions = question.options.slice(0, 3);
   aiOptions.forEach((opt, idx) => {
     const btn = document.createElement('button');
     btn.className = 'mcq-option';
-
     const labelEl = document.createElement('span');
     labelEl.className = 'mcq-option-label';
     labelEl.textContent = MCQ_LABELS[idx] ?? String(idx + 1);
-
     const textEl = document.createElement('span');
     textEl.className = 'mcq-option-text';
     textEl.textContent = opt;
-
     btn.appendChild(labelEl);
     btn.appendChild(textEl);
     btn.addEventListener('click', () => handleMcqAnswer(opt, question.question));
     optionsEl.appendChild(btn);
   });
 
-  // "Other" option — always the 4th choice
+  // "Other" option
   const otherIdx = aiOptions.length;
   const otherBtn = document.createElement('button');
   otherBtn.className = 'mcq-option';
-
   const otherLabelEl = document.createElement('span');
   otherLabelEl.className = 'mcq-option-label';
   otherLabelEl.textContent = MCQ_LABELS[otherIdx] ?? 'D';
-
   const otherTextEl = document.createElement('span');
-  otherTextEl.className = 'mcq-option-text mcq-option-other-text';
+  otherTextEl.className = 'mcq-option-text';
   otherTextEl.textContent = 'Other';
-
   otherBtn.appendChild(otherLabelEl);
   otherBtn.appendChild(otherTextEl);
-
-  // Inline input that replaces the button text on click
   const otherInput = document.createElement('input');
   otherInput.type = 'text';
   otherInput.className = 'mcq-other-input';
   otherInput.placeholder = 'Specify…';
   otherInput.style.display = 'none';
-
   const otherSubmit = document.createElement('button');
   otherSubmit.className = 'mcq-other-submit';
   otherSubmit.textContent = '→';
   otherSubmit.style.display = 'none';
-
   otherBtn.appendChild(otherInput);
   otherBtn.appendChild(otherSubmit);
-
   const submitOther = () => {
     const val = otherInput.value.trim();
     if (!val) return;
     handleMcqAnswer(val, question.question);
   };
-
   otherBtn.addEventListener('click', (e) => {
-    if (otherInput.style.display !== 'none') return; // already expanded
+    if (otherInput.style.display !== 'none') return;
     e.stopPropagation();
-    // Expand into input mode
     otherTextEl.style.display = 'none';
     otherInput.style.display = 'block';
     otherSubmit.style.display = 'flex';
     otherBtn.style.borderColor = '#1a1a1a';
     otherInput.focus();
   });
-
   otherInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); submitOther(); }
     e.stopPropagation();
   });
   otherInput.addEventListener('click', (e) => e.stopPropagation());
   otherSubmit.addEventListener('click', (e) => { e.stopPropagation(); submitOther(); });
-
   optionsEl.appendChild(otherBtn);
   card.appendChild(optionsEl);
 
-  const footer = document.createElement('div');
-  footer.className = 'mcq-footer';
+  // Footer: Previous button from Q2 onwards
+  if (mcqQuestionIndex > 0) {
+    const footer = document.createElement('div');
+    footer.className = 'mcq-footer';
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'mcq-footer-action';
+    prevBtn.textContent = '← Previous';
+    prevBtn.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('oddity:gdocs:mcq:prev'));
+    });
+    footer.appendChild(prevBtn);
+    card.appendChild(footer);
+  }
 
-  const skipBtn = document.createElement('button');
-  skipBtn.className = 'mcq-skip';
-  skipBtn.textContent = 'Skip to writing';
-  skipBtn.addEventListener('click', () => {
-    dismissMcqCard();
-    mcqActive = false;
-    void generateEssay();
-  });
-  footer.appendChild(skipBtn);
-  card.appendChild(footer);
-
-  // Insert at top of wrapper (above the input bar)
-  shadowWrapper.insertBefore(card, shadowWrapper.firstChild);
+  backdrop.appendChild(card);
+  shadow.appendChild(backdrop);
   mcqCardEl = card;
 }
 
@@ -959,13 +1012,17 @@ function handleMcqAnswer(answer: string, question: string): void {
   mcqPreviousQA.push({ question, answer });
   mcqQuestionIndex++;
 
-  if (mcqQuestionIndex >= mcqAllQuestions.length) {
-    dismissMcqCard();
+  if (mcqQuestionIndex >= mcqAllQuestions.length || mcqQuestionIndex >= MAX_MCQ_QUESTIONS) {
     mcqActive = false;
-    void generateEssay();
+    dismissMcqCard();
+    document.dispatchEvent(new CustomEvent('oddity:gdocs:mcq:done'));
+    const cb = mcqCompletionCallback;
+    mcqCompletionCallback = null;
+    cb?.();
     return;
   }
 
+  dispatchMcqQuestion();
   renderMcqCard(mcqAllQuestions[mcqQuestionIndex]!);
 }
 
@@ -1003,6 +1060,19 @@ async function readFileAsText(file: File): Promise<string> {
   });
 }
 
+function dispatchMcqQuestion(): void {
+  const question = mcqAllQuestions[mcqQuestionIndex];
+  if (!question) return;
+  document.dispatchEvent(new CustomEvent('oddity:gdocs:mcq:question', {
+    detail: {
+      question: question.question,
+      options: question.options,
+      index: mcqQuestionIndex,
+      total: Math.min(mcqAllQuestions.length, MAX_MCQ_QUESTIONS),
+    }
+  }));
+}
+
 async function startMcqFlow(topic: string): Promise<void> {
   mcqTopic = topic;
   mcqActive = true;
@@ -1010,26 +1080,22 @@ async function startMcqFlow(topic: string): Promise<void> {
   mcqQuestionIndex = 0;
   mcqAllQuestions = [];
 
-  setInputEnabled(false);
-  startLoadingAnimation();
+  // Signal loading to argument box (textarea already shows cycling placeholder)
+  document.dispatchEvent(new CustomEvent('oddity:gdocs:mcq:loading'));
 
   const questions = await fetchAllMcqQuestions(topic);
-  stopLoadingAnimation();
 
   if (!questions || questions.length === 0) {
     mcqActive = false;
-    setInputEnabled(true);
-    if (topicTextarea) {
-      topicTextarea.placeholder = 'Failed to load questions. Try again.';
-      setTimeout(() => { if (topicTextarea) topicTextarea.placeholder = getPlaceholder(); }, 4000);
-    }
+    document.dispatchEvent(new CustomEvent('oddity:gdocs:mcq:done'));
+    const cb = mcqCompletionCallback;
+    mcqCompletionCallback = null;
+    cb?.();
     return;
   }
 
   mcqAllQuestions = questions;
-  setInputEnabled(true);
-  if (topicTextarea) { topicTextarea.disabled = true; topicTextarea.value = ''; topicTextarea.placeholder = 'Select an answer to continue…'; }
-  if (submitBtn) submitBtn.disabled = true;
+  dispatchMcqQuestion();
   renderMcqCard(mcqAllQuestions[0]!);
 }
 
@@ -1076,10 +1142,18 @@ async function handleSubmit(text: string): Promise<void> {
     setInputEnabled(false);
     startLoadingAnimation();
 
+    // Re-scrape for freshest text; fall back to stored essay or activation-time scrape
+    const freshScrape = scrapeDocContext();
+    const essayContent = activeSession?.essayContent?.trim() || freshScrape.trim() || docContext.trim();
+
+    // Persist scraped content so Docs API edit targeting stays consistent
+    if (activeSession && !activeSession.essayContent && essayContent) {
+      activeSession.essayContent = essayContent;
+    }
+
     chatHistory.push({ role: 'user', content: text });
     if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
 
-    const essayContent = activeSession?.essayContent ?? docContext;
     const editMessages: GDocsMessage[] = [];
     if (essayContent) {
       editMessages.push({ role: 'user', content: `Here is the essay to edit:\n\n${essayContent}\n\nNow let's begin.` });
@@ -1250,15 +1324,110 @@ document.addEventListener('oddity:gdocs:activate', (e: Event) => {
 
 // Plan mode trigger from the argument box panel
 document.addEventListener('oddity:gdocs:planmode', (e: Event) => {
-  const { topic } = (e as CustomEvent<{ topic: string }>).detail;
+  const { topic, resources, memos, fastMode } = (e as CustomEvent<{
+    topic: string;
+    resources: Array<{ name: string; content: string }>;
+    memos: Array<{ note: string; reply: string }>;
+    fastMode: boolean;
+  }>).detail;
   const effectiveTopic = topic || mcqTopic || 'My essay';
+  mcqOriginalPrompt = effectiveTopic;
+  mcqResources = resources ?? [];
+  mcqMemos = memos ?? [];
+
+  if (fastMode) {
+    // Fast mode: skip MCQ unless the doc is blank (new essay needed)
+    const freshScrape = scrapeDocContext();
+    const essayContent = activeSession?.essayContent?.trim() || freshScrape.trim() || docContext.trim();
+    if (essayContent) {
+      // Existing content — go straight to edit
+      if (activeSession && !activeSession.essayContent) {
+        activeSession.essayContent = essayContent;
+        void saveSession(activeSession);
+      }
+      streaming = true;
+      pendingEditMode = true;
+      setInputEnabled(false);
+      startLoadingAnimation();
+      chatHistory.push({ role: 'user', content: effectiveTopic });
+      if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
+      const editMessages: GDocsMessage[] = [
+        { role: 'user', content: `Here is the essay to edit:\n\n${essayContent}\n\nNow let's begin.` },
+        { role: 'assistant', content: "Got it. What edits would you like?" },
+        ...chatHistory,
+      ];
+      chrome.runtime.sendMessage({ action: 'gdocsChat', payload: { messages: editMessages, mode: 'edit' } });
+      return;
+    }
+    // Blank doc — fall through to MCQ (need preferences for new essay)
+  }
+
+  mcqCompletionCallback = () => { void generateEssay(); };
   void startMcqFlow(effectiveTopic);
 });
 
+// MCQ answer from argument box
+document.addEventListener('oddity:gdocs:mcq:answer', (e: Event) => {
+  const { answer, question } = (e as CustomEvent<{ answer: string; question: string }>).detail;
+  handleMcqAnswer(answer, question);
+});
+
+// Previous question from argument box
+document.addEventListener('oddity:gdocs:mcq:prev', () => {
+  if (mcqQuestionIndex <= 0 || mcqPreviousQA.length === 0) return;
+  mcqPreviousQA.pop();
+  mcqQuestionIndex--;
+  dispatchMcqQuestion();
+  renderMcqCard(mcqAllQuestions[mcqQuestionIndex]!);
+});
+
+// Skip to writing from argument box
+
 // Chat trigger from the argument box panel (Auto mode)
 document.addEventListener('oddity:gdocs:chat', (e: Event) => {
-  const { text } = (e as CustomEvent<{ text: string; memoMode: string }>).detail;
-  if (text) void handleSubmit(text);
+  const { text, resources, memos, fastMode } = (e as CustomEvent<{
+    text: string;
+    memoMode: string;
+    resources: Array<{ name: string; content: string }>;
+    memos: Array<{ note: string; reply: string }>;
+    fastMode: boolean;
+  }>).detail;
+  if (!text) return;
+  mcqResources = resources ?? [];
+  mcqMemos = memos ?? [];
+
+  // Re-scrape fresh — activation-time scrape may have been too early
+  const freshScrape = scrapeDocContext();
+  const essayContent = activeSession?.essayContent?.trim() || freshScrape.trim() || docContext.trim();
+
+  if (essayContent) {
+    // Existing content: go straight to edit — never show MCQ for edits
+    if (activeSession && !activeSession.essayContent) {
+      activeSession.essayContent = essayContent;
+      void saveSession(activeSession);
+    }
+    streaming = true;
+    pendingEditMode = true;
+    setInputEnabled(false);
+    startLoadingAnimation();
+    chatHistory.push({ role: 'user', content: text });
+    if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
+    const editMessages: GDocsMessage[] = [
+      { role: 'user', content: `Here is the essay to edit:\n\n${essayContent}\n\nNow let's begin.` },
+      { role: 'assistant', content: "Got it. What edits would you like?" },
+      ...chatHistory,
+    ];
+    chrome.runtime.sendMessage({ action: 'gdocsChat', payload: { messages: editMessages, mode: 'edit' } });
+  } else if (fastMode) {
+    // Fast mode + blank doc: write directly from the prompt, skip MCQ
+    mcqTopic = text;
+    void generateEssay();
+  } else {
+    // Blank doc: run MCQ to gather preferences, then write new essay
+    mcqOriginalPrompt = text;
+    mcqCompletionCallback = () => { void generateEssay(); };
+    void startMcqFlow(text);
+  }
 });
 
 document.addEventListener('oddity:annotation:fix-now', (e: Event) => {

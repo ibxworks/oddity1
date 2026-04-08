@@ -130,6 +130,7 @@ function getGDocsTitle(): string {
 }
 let gdocsPersonaName = "Terry";
 let gdocsChatMode: "auto" | "plan" = "auto";
+let gdocsFastMode = false;
 let gdocsMemoMode: "memo" | "resource" = "memo";
 let gdocsActiveTab: "memo" | "resource" | "outline" = "memo";
 let gdocsPersonaSubtitleEl: HTMLSpanElement | null = null;
@@ -142,6 +143,86 @@ let gdocsMemoModeBtn: HTMLButtonElement | null = null;
 let gdocsResourceModeBtn: HTMLButtonElement | null = null;
 let gdocsModeDropdownBtn: HTMLButtonElement | null = null;
 let gdocsModeDropdownMenu: HTMLDivElement | null = null;
+let gdocsResourcePanelEl: HTMLDivElement | null = null;
+let gdocsChatInputAreaEl: HTMLDivElement | null = null;
+let gdocsArgBoxLoadingTimeout: ReturnType<typeof setTimeout> | null = null;
+let gdocsArgBoxLoadingActive = false;
+let gdocsArgBoxSpinnerEl: HTMLElement | null = null;
+
+const ARG_BOX_LOADING_QUESTIONS = [
+  'What shapes your core beliefs?',
+  'How does language affect thought?',
+  'Why do patterns repeat in history?',
+  'What defines a just society?',
+  'When does change become necessary?',
+  'How do ideas spread and evolve?',
+  'What makes an argument compelling?',
+  'Why does art outlast empires?',
+  'How does power shape narrative?',
+  'What is the cost of certainty?',
+  'Why do humans need stories?',
+  'How does context change meaning?',
+];
+
+function startArgBoxLoading(textarea: HTMLTextAreaElement): void {
+  stopArgBoxLoading(textarea);
+  textarea.disabled = true;
+  textarea.value = '';
+  textarea.style.color = '#ABABAB';
+  if (gdocsArgBoxSpinnerEl) gdocsArgBoxSpinnerEl.classList.add('visible');
+  gdocsArgBoxLoadingActive = true;
+
+  let idx = Math.floor(Math.random() * ARG_BOX_LOADING_QUESTIONS.length);
+
+  function schedule(fn: () => void, ms: number): void {
+    gdocsArgBoxLoadingTimeout = setTimeout(fn, ms);
+  }
+
+  function typeOut(text: string, charIdx: number, onDone: () => void): void {
+    if (!gdocsArgBoxLoadingActive) return;
+    textarea.value = text.slice(0, charIdx);
+    if (charIdx < text.length) {
+      schedule(() => typeOut(text, charIdx + 1, onDone), 32);
+    } else {
+      schedule(onDone, 120);
+    }
+  }
+
+  function showDots(dotCount: number, cycles: number, onDone: () => void): void {
+    if (!gdocsArgBoxLoadingActive) return;
+    const base = ARG_BOX_LOADING_QUESTIONS[idx]!;
+    textarea.value = base + '.'.repeat(dotCount);
+    const nextDots = (dotCount % 3) + 1;
+    const nextCycles = nextDots === 1 ? cycles - 1 : cycles;
+    if (nextCycles < 0) {
+      schedule(onDone, 350);
+    } else {
+      schedule(() => showDots(nextDots, nextCycles, onDone), 380);
+    }
+  }
+
+  function runNext(): void {
+    if (!gdocsArgBoxLoadingActive) return;
+    idx = (idx + 1) % ARG_BOX_LOADING_QUESTIONS.length;
+    textarea.value = '';
+    schedule(() => typeOut(ARG_BOX_LOADING_QUESTIONS[idx]!, 0, () => showDots(1, 1, runNext)), 200);
+  }
+
+  typeOut(ARG_BOX_LOADING_QUESTIONS[idx]!, 0, () => showDots(1, 1, runNext));
+}
+
+function stopArgBoxLoading(textarea: HTMLTextAreaElement): void {
+  gdocsArgBoxLoadingActive = false;
+  if (gdocsArgBoxLoadingTimeout) { clearTimeout(gdocsArgBoxLoadingTimeout); gdocsArgBoxLoadingTimeout = null; }
+  textarea.disabled = false;
+  textarea.value = '';
+  textarea.style.color = '';
+  textarea.placeholder = 'Rewrite my essay into ...';
+  if (gdocsArgBoxSpinnerEl) gdocsArgBoxSpinnerEl.classList.remove('visible');
+}
+
+type GDocsResource = { name: string; size: string; type: "PDF" | "TXT" | "PNG" | "Text"; content: string };
+const gdocsResources: GDocsResource[] = [];
 
 function formatGDocsTimestamp(sortKey: string): string {
   let ms: number;
@@ -526,6 +607,7 @@ export function initArgumentsBox(): void {
       gdocsResourceTabBtn!.classList.remove("active");
       gdocsOutlineTabBtn!.classList.remove("active");
       if (listEl) listEl.style.display = "";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
     });
 
     gdocsResourceTabBtn = document.createElement("button");
@@ -538,6 +620,7 @@ export function initArgumentsBox(): void {
       gdocsResourceTabBtn!.classList.add("active");
       gdocsOutlineTabBtn!.classList.remove("active");
       if (listEl) listEl.style.display = "none";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "";
     });
 
     gdocsOutlineTabBtn = document.createElement("button");
@@ -592,6 +675,157 @@ export function initArgumentsBox(): void {
   panelFace.appendChild(listEl);
   renderList();
 
+  // ── GDocs Resource Panel ──
+  if (isGDocs()) {
+    gdocsResourcePanelEl = document.createElement("div");
+    gdocsResourcePanelEl.className = "args-gdocs-resource-panel";
+    gdocsResourcePanelEl.style.display = "none";
+
+    const renderResourceList = () => {
+      gdocsResourcePanelEl!.innerHTML = "";
+
+      // Existing resources
+      const resourceList = document.createElement("div");
+      resourceList.className = "args-gdocs-resource-list";
+      for (const res of gdocsResources) {
+        const item = document.createElement("div");
+        item.className = "args-gdocs-resource-item";
+        const name = document.createElement("div");
+        name.className = "args-gdocs-resource-name";
+        name.textContent = res.name;
+        const meta = document.createElement("div");
+        meta.className = "args-gdocs-resource-meta";
+        meta.textContent = res.type === "Text" ? "Text" : `${res.size} · ${res.type}`;
+        item.appendChild(name);
+        item.appendChild(meta);
+        const divider = document.createElement("div");
+        divider.className = "args-gdocs-resource-divider";
+        resourceList.appendChild(item);
+        resourceList.appendChild(divider);
+      }
+      gdocsResourcePanelEl!.appendChild(resourceList);
+
+      // New Resource form
+      const newSection = document.createElement("div");
+      newSection.className = "args-gdocs-new-resource";
+
+      const newTitle = document.createElement("div");
+      newTitle.className = "args-gdocs-new-resource-title";
+      newTitle.textContent = "New Resource";
+      newSection.appendChild(newTitle);
+
+      // Radio row
+      const radioRow = document.createElement("div");
+      radioRow.className = "args-gdocs-radio-row";
+      const uid = `res-${Date.now()}`;
+
+      const pasteRadio = document.createElement("input");
+      pasteRadio.type = "radio"; pasteRadio.name = uid; pasteRadio.id = `${uid}-paste`; pasteRadio.checked = true;
+      const pasteLabel = document.createElement("label");
+      pasteLabel.htmlFor = `${uid}-paste`; pasteLabel.textContent = "Paste text";
+
+      const fileRadio = document.createElement("input");
+      fileRadio.type = "radio"; fileRadio.name = uid; fileRadio.id = `${uid}-file`;
+      const fileLabel = document.createElement("label");
+      fileLabel.htmlFor = `${uid}-file`; fileLabel.textContent = "File upload";
+
+      radioRow.appendChild(pasteRadio);
+      radioRow.appendChild(pasteLabel);
+      radioRow.appendChild(fileRadio);
+      radioRow.appendChild(fileLabel);
+      newSection.appendChild(radioRow);
+
+      // Text area (always visible, used for paste text or file preview)
+      const textInput = document.createElement("textarea");
+      textInput.className = "args-gdocs-resource-textarea";
+      textInput.placeholder = "Write here...";
+      textInput.addEventListener("click", (e) => e.stopPropagation());
+      textInput.addEventListener("keydown", (e) => e.stopPropagation());
+      newSection.appendChild(textInput);
+
+      // File input (hidden trigger)
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = ".txt,.md,.pdf,.doc,.docx,.png,.jpg";
+      fileInput.style.display = "none";
+      newSection.appendChild(fileInput);
+
+      // Track pending file for preview
+      let pendingFile: File | null = null;
+
+      pasteRadio.addEventListener("change", () => {
+        pendingFile = null;
+        textInput.value = "";
+        textInput.disabled = false;
+        textInput.placeholder = "Write here...";
+        textInput.style.color = "";
+      });
+      fileRadio.addEventListener("change", () => {
+        fileInput.value = "";
+        fileInput.click();
+      });
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files?.[0];
+        if (!file) {
+          // User cancelled picker — revert to paste
+          pasteRadio.checked = true;
+          pendingFile = null;
+          textInput.disabled = false;
+          textInput.placeholder = "Write here...";
+          textInput.style.color = "";
+          return;
+        }
+        const size = file.size > 1024 * 1024
+          ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+          : `${(file.size / 1024).toFixed(0)} KB`;
+        pendingFile = file;
+        textInput.disabled = true;
+        textInput.value = `${file.name}  (${size})`;
+        textInput.style.color = "#888";
+      });
+
+      // Save row
+      const saveRow = document.createElement("div");
+      saveRow.className = "args-gdocs-resource-save-row";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "args-gdocs-resource-save-btn";
+      saveBtn.textContent = "Save";
+      saveBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (pendingFile) {
+          const file = pendingFile;
+          const ext = file.name.split(".").pop()?.toUpperCase() ?? "FILE";
+          const size = file.size > 1024 * 1024
+            ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+            : `${(file.size / 1024).toFixed(0)} KB`;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const content = ((reader.result as string) ?? "").slice(0, 8000);
+            gdocsResources.push({ name: file.name, size, type: ext as GDocsResource["type"], content });
+            renderResourceList();
+          };
+          reader.onerror = () => {
+            gdocsResources.push({ name: file.name, size, type: ext as GDocsResource["type"], content: "" });
+            renderResourceList();
+          };
+          reader.readAsText(file);
+        } else {
+          const text = textInput.value.trim();
+          if (!text) return;
+          gdocsResources.push({ name: "Essay Prompt", size: "", type: "Text", content: text });
+          renderResourceList();
+        }
+      });
+      saveRow.appendChild(saveBtn);
+      newSection.appendChild(saveRow);
+
+      gdocsResourcePanelEl!.appendChild(newSection);
+    };
+
+    renderResourceList();
+    panelFace.appendChild(gdocsResourcePanelEl);
+  }
+
   // ── Sketch Content ──
   sketchContentEl = document.createElement("div");
   sketchContentEl.className = "args-sketch-content";
@@ -639,8 +873,18 @@ export function initArgumentsBox(): void {
     chatSection.className = "args-gdocs-chat-section";
     chatSection.addEventListener("click", (e) => e.stopPropagation());
 
+    // ── Input area (textarea + bar) ──
+    const chatInputArea = document.createElement("div");
+    chatInputArea.className = "args-gdocs-chat-input-area";
+    gdocsChatInputAreaEl = chatInputArea;
+
     const chatBox = document.createElement("div");
     chatBox.className = "args-gdocs-chat-box";
+
+    const spinner = document.createElement("div");
+    spinner.className = "args-gdocs-spinner";
+    chatBox.appendChild(spinner);
+    gdocsArgBoxSpinnerEl = spinner;
 
     const chatTextarea = document.createElement("textarea");
     chatTextarea.className = "args-gdocs-chat-textarea";
@@ -724,8 +968,6 @@ export function initArgumentsBox(): void {
       planOption.classList.add("active");
       autoOption.classList.remove("active");
       dropdownMenu.style.display = "none";
-      // Trigger MCQ flow
-      document.dispatchEvent(new CustomEvent("oddity:gdocs:planmode", { detail: { topic: chatTextarea.value.trim() } }));
     });
 
     dropdownBtn.addEventListener("click", (e) => {
@@ -740,6 +982,17 @@ export function initArgumentsBox(): void {
     dropdownWrap.appendChild(dropdownBtn);
     dropdownWrap.appendChild(dropdownMenu);
 
+    // Fast mode toggle
+    const fastBtn = document.createElement("button");
+    fastBtn.className = "args-gdocs-fast-btn";
+    fastBtn.title = "Fast mode: skip clarification questions";
+    fastBtn.innerHTML = `<svg width="11" height="14" viewBox="0 0 11 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.5 0L0 9H5L4.5 16L11 7H6L6.5 0Z" fill="currentColor"/></svg>`;
+    fastBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsFastMode = !gdocsFastMode;
+      fastBtn.classList.toggle("active", gdocsFastMode);
+    });
+
     // Send button
     const sendBtn = document.createElement("button");
     sendBtn.className = "args-gdocs-send-btn";
@@ -748,19 +1001,59 @@ export function initArgumentsBox(): void {
       e.stopPropagation();
       const text = chatTextarea.value.trim();
       if (!text) return;
+      chatTextarea.value = "";
+
+      const serializedResources = gdocsResources
+        .filter(r => r.content)
+        .map(r => ({ name: r.name, content: r.content }));
+      const serializedMemos = liveItems
+        .filter(i => i.type === "reply")
+        .map(i => ({ note: i.replyFullNote ?? i.replyHeader ?? "", reply: i.text }));
+
       if (gdocsChatMode === "plan") {
-        document.dispatchEvent(new CustomEvent("oddity:gdocs:planmode", { detail: { topic: text } }));
+        startArgBoxLoading(chatTextarea);
+        document.dispatchEvent(new CustomEvent("oddity:gdocs:planmode", {
+          detail: { topic: text, resources: serializedResources, memos: serializedMemos, fastMode: gdocsFastMode }
+        }));
       } else {
-        document.dispatchEvent(new CustomEvent("oddity:gdocs:chat", { detail: { text, memoMode: gdocsMemoMode } }));
+        startArgBoxLoading(chatTextarea);
+        document.dispatchEvent(new CustomEvent("oddity:gdocs:chat", {
+          detail: { text, memoMode: gdocsMemoMode, resources: serializedResources, memos: serializedMemos, fastMode: gdocsFastMode }
+        }));
       }
     });
 
     chatBar.appendChild(modePills);
     chatBar.appendChild(dropdownWrap);
+    chatBar.appendChild(fastBtn);
     chatBar.appendChild(sendBtn);
     chatBox.appendChild(chatBar);
-    chatSection.appendChild(chatBox);
+    chatInputArea.appendChild(chatBox);
+    chatSection.appendChild(chatInputArea);
+
     panelFace.appendChild(chatSection);
+
+    // ── MCQ event listeners (MCQ renders centered on screen; these manage loading state) ──
+    document.addEventListener("oddity:gdocs:mcq:question", () => {
+      stopArgBoxLoading(chatTextarea);
+    });
+
+    document.addEventListener("oddity:gdocs:mcq:done", () => {
+      stopArgBoxLoading(chatTextarea);
+    });
+
+    document.addEventListener("oddity:gdocs:loading", () => {
+      startArgBoxLoading(chatTextarea);
+    });
+
+    document.addEventListener("oddity:gdocs:loading:done", () => {
+      stopArgBoxLoading(chatTextarea);
+    });
+
+    // Auto-expand when a Google Doc is activated
+    document.addEventListener("oddity:gdocs:activated", () => {
+      if (!expanded) toggle();
+    });
   } else {
     // ── Standard footer ──
     footerEl = document.createElement("div");
@@ -4781,17 +5074,17 @@ function handleCopy(btn: HTMLButtonElement): void {
 /** Position the mode toggle: next to FAB when collapsed, inside the top bar when expanded. */
 function syncModeTogglePosition(): void {
   if (!modeToggleWrapperEl || !containerEl || !modeToggleEl) return;
-  if (expanded && topBarEl) {
-    // Move toggle into the top bar
-    if (modeToggleWrapperEl.parentElement !== topBarEl) {
-      topBarEl.insertBefore(modeToggleWrapperEl, topBarEl.firstChild);
+  if (expanded) {
+    // Pin to containerEl so it stays centered over the panel
+    if (modeToggleWrapperEl.parentElement !== containerEl) {
+      containerEl.appendChild(modeToggleWrapperEl);
     }
     modeToggleEl.classList.add("with-close");
-    modeToggleWrapperEl.style.top = "";
-    modeToggleWrapperEl.style.left = "";
+    modeToggleWrapperEl.style.position = "absolute";
+    modeToggleWrapperEl.style.top = "-40px";
+    modeToggleWrapperEl.style.left = "50%";
     modeToggleWrapperEl.style.transform = "";
-    modeToggleWrapperEl.style.transformOrigin = "";
-    modeToggleWrapperEl.style.position = "static";
+    modeToggleWrapperEl.style.transformOrigin = "center center";
   } else if (outerWrapperEl) {
     // Move toggle back to outerWrapper (next to FAB)
     if (modeToggleWrapperEl.parentElement !== outerWrapperEl) {
@@ -4799,6 +5092,10 @@ function syncModeTogglePosition(): void {
     }
     modeToggleEl.classList.remove("with-close");
     modeToggleWrapperEl.style.position = "absolute";
+    modeToggleWrapperEl.style.top = "";
+    modeToggleWrapperEl.style.left = "";
+    modeToggleWrapperEl.style.transform = "";
+    modeToggleWrapperEl.style.transformOrigin = "";
     const toggleH =
       modeToggleWrapperEl.offsetHeight > 0
         ? modeToggleWrapperEl.offsetHeight
@@ -4922,9 +5219,24 @@ const ARGUMENTS_BOX_CSS = `
   /* ── Mode toggle (moves with the FAB) ── */
 
   .args-mode-toggle-wrapper {
-    pointer-events: auto;
+    pointer-events: none;
     position: absolute;
     z-index: 3;
+    display: block;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+  }
+
+  .args-container.expanded:hover .args-mode-toggle-wrapper,
+  .args-mode-toggle-wrapper:hover {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .args-mode-toggle-wrapper {
+    transform: translateX(-50%) translateY(10px);
+    transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .args-outer-wrapper:has(.args-container.dashboard) .args-mode-toggle-wrapper {
@@ -4999,7 +5311,7 @@ const ARGUMENTS_BOX_CSS = `
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 8px;
+    border-radius: 50%;
     cursor: pointer;
     color: #858E97;
     background: transparent;
@@ -5010,12 +5322,16 @@ const ARGUMENTS_BOX_CSS = `
 
   .mode-close-btn:hover {
     color: #696F77;
-    background: rgba(0, 0, 0, 0.06);
+    background: rgba(0, 0, 0, 0.08);
   }
 
   .mode-toggle.with-close .mode-close-btn,
   .mode-close-btn.mode-close-only {
     display: flex;
+  }
+
+  .mode-toggle:has(.mode-close-only) {
+    padding: 4px;
   }
 
   /* Dark mode overrides when expanded (with-close) */
@@ -7936,21 +8252,153 @@ const ARGUMENTS_BOX_CSS = `
     margin: 0 16px;
   }
 
+  /* GDocs resource panel */
+  .args-gdocs-resource-panel {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+  .args-gdocs-resource-list {
+    flex: 1;
+  }
+  .args-gdocs-resource-item {
+    padding: 12px 16px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .args-gdocs-resource-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E2229;
+    line-height: 1.3;
+  }
+  .args-gdocs-resource-meta {
+    font-size: 12px;
+    color: #9AA0A6;
+  }
+  .args-gdocs-resource-divider {
+    height: 1px;
+    background: #F0F0F0;
+    margin: 0 16px;
+  }
+  .args-gdocs-new-resource {
+    padding: 14px 16px 12px;
+    border-top: 1px solid #F0F0F0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .args-gdocs-new-resource-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1E2229;
+  }
+  .args-gdocs-radio-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #1E2229;
+  }
+  .args-gdocs-radio-row input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid #C4C4C4;
+    background: #fff;
+    cursor: pointer;
+    margin: 0;
+    flex-shrink: 0;
+    position: relative;
+    transition: border-color 0.15s;
+  }
+  .args-gdocs-radio-row input[type="radio"]:checked {
+    border-color: #22c55e;
+    border-width: 4px;
+    background: #fff;
+  }
+  .args-gdocs-radio-row label {
+    cursor: pointer;
+    color: #1E2229;
+    font-size: 13px;
+    margin-right: 8px;
+  }
+  .args-gdocs-resource-textarea {
+    all: unset;
+    display: block;
+    width: 100%;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #1E2229;
+    line-height: 1.5;
+    resize: none;
+    height: 60px;
+    box-sizing: border-box;
+    overflow-y: auto;
+  }
+  .args-gdocs-resource-textarea::placeholder {
+    color: #ABABAB;
+  }
+  .args-gdocs-resource-save-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .args-gdocs-resource-save-btn {
+    all: unset;
+    cursor: pointer;
+    background: #1E2229;
+    color: #FFFFFF;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 16px;
+    border-radius: 9999px;
+    transition: opacity 0.15s;
+  }
+  .args-gdocs-resource-save-btn:hover {
+    opacity: 0.8;
+  }
+
   /* GDocs chat section */
   .args-gdocs-chat-section {
     flex-shrink: 0;
-    padding: 10px 12px 12px;
+    padding: 8px 8px 10px;
     background: #FFFFFF;
-    border-top: 1px solid #F0F0F0;
   }
   .args-gdocs-chat-box {
     background: #FFFFFF;
     border: 1px solid #E8E8E8;
-    border-radius: 12px;
+    border-radius: 5px;
     padding: 12px 12px 8px;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    position: relative;
+  }
+  @keyframes args-gdocs-spin {
+    to { transform: rotate(360deg); }
+  }
+  .args-gdocs-spinner {
+    display: none;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 1.5px solid #E0E0E0;
+    border-top-color: #ABABAB;
+    animation: args-gdocs-spin 0.75s linear infinite;
+    pointer-events: none;
+  }
+  .args-gdocs-spinner.visible {
+    display: block;
   }
   .args-gdocs-chat-textarea {
     all: unset;
@@ -7961,8 +8409,9 @@ const ARGUMENTS_BOX_CSS = `
     color: #1E2229;
     line-height: 1.5;
     resize: none;
-    min-height: 48px;
+    min-height: 80px;
     box-sizing: border-box;
+    flex: 1;
   }
   .args-gdocs-chat-textarea::placeholder {
     color: #ABABAB;
@@ -7971,15 +8420,13 @@ const ARGUMENTS_BOX_CSS = `
     display: flex;
     align-items: center;
     gap: 8px;
-    background: #F5F5F5;
-    border-radius: 8px;
-    padding: 4px 4px 4px 6px;
+    flex-shrink: 0;
   }
   .args-gdocs-mode-pills {
     display: flex;
     align-items: center;
-    background: #EAEAEA;
-    border-radius: 8px;
+    background: #EDEDED;
+    border-radius: 4px;
     overflow: hidden;
     flex-shrink: 0;
   }
@@ -7987,24 +8434,25 @@ const ARGUMENTS_BOX_CSS = `
     all: unset;
     cursor: pointer;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 12px;
-    color: #888;
-    padding: 5px 12px;
+    font-size: 13px;
+    font-weight: 400;
+    color: #8C9096;
+    padding: 6px 12px;
     white-space: nowrap;
-    transition: color 0.15s, background 0.15s;
+    transition: background 0.15s, color 0.15s;
   }
   .args-gdocs-pill-btn.active {
     color: #1E2229;
     font-weight: 500;
   }
   .args-gdocs-pill-btn:hover:not(.active) {
+    background: rgba(0,0,0,0.06);
     color: #555;
-    background: rgba(0,0,0,0.04);
   }
   .args-gdocs-pill-divider {
     width: 1px;
-    height: 14px;
-    background: #D0D0D0;
+    height: 16px;
+    background: #FFFFFF;
     flex-shrink: 0;
   }
   .args-gdocs-dropdown-wrap {
@@ -8059,6 +8507,25 @@ const ARGUMENTS_BOX_CSS = `
     font-weight: 600;
     color: #1E2229;
   }
+  .args-gdocs-fast-btn {
+    all: unset;
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    color: #C4C4C4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  .args-gdocs-fast-btn:hover {
+    color: #1E2229;
+  }
+  .args-gdocs-fast-btn.active {
+    color: #F59E0B;
+  }
   .args-gdocs-send-btn {
     all: unset;
     cursor: pointer;
@@ -8071,7 +8538,6 @@ const ARGUMENTS_BOX_CSS = `
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    margin-left: auto;
     transition: opacity 0.15s;
   }
   .args-gdocs-send-btn:hover {
