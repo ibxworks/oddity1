@@ -53,12 +53,14 @@ export const PLAN_FEATURES = {
     customPdfSubtitle: false,
     pdfAnnotation: false,
     sketchPad: false,
+    publicFigurePersonas: false,
   },
   standard: {
     sallyPersonality: true,
     customPdfSubtitle: true,
     pdfAnnotation: true,
     sketchPad: true,
+    publicFigurePersonas: true,
   },
 } as const satisfies Record<UserTier, Record<string, boolean>>;
 

@@ -140,6 +140,8 @@ let dashProfileNameEl: HTMLSpanElement | null = null;
 let dashProfileAvatarEl: HTMLSpanElement | null = null;
 let dashTierBadgeEl: HTMLElement | null = null;
 let dashDensityBtns: HTMLButtonElement[] = [];
+let dashPublicFigureSelect: HTMLSelectElement | null = null;
+let dashPublicFigureRow: HTMLDivElement | null = null;
 let dashFontSelect: HTMLSelectElement | null = null;
 let dashFontSizeSelect: HTMLSelectElement | null = null;
 let dashPersonaSelect: HTMLElement | null = null;
@@ -1261,6 +1263,27 @@ let signOutCb: (() => void) | null = null;
 
 /** Update the dashboard's personality display (avatar, select, buttons, bubble). */
 export function updateDashboardPersonality(personality: string): void {
+  if (personality.startsWith("pf:")) {
+    // Public figure: deactivate core buttons, select in dropdown, use Terry avatar
+    dashDensityBtns.forEach((b) => b.classList.remove("args-dash-density-active"));
+    if (dashPublicFigureSelect) {
+      dashPublicFigureSelect.value = personality;
+      const pfDisplayName =
+        dashPublicFigureSelect.selectedOptions[0]?.textContent ?? "Public Figure";
+      if (dashPersonaSelect) dashPersonaSelect.textContent = pfDisplayName;
+    }
+    if (dashPersonaAvatarImgEl) {
+      dashPersonaAvatarImgEl.src = chrome.runtime.getURL("Terry.png");
+      dashPersonaAvatarImgEl.alt = "Terry";
+    }
+    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = "#fff";
+    if (bubbleLogoImgEl) {
+      bubbleLogoImgEl.src = chrome.runtime.getURL("Terry.png");
+      bubbleLogoImgEl.alt = "Terry";
+    }
+    return;
+  }
+
   const display = personality.charAt(0).toUpperCase() + personality.slice(1);
   if (dashPersonaSelect) dashPersonaSelect.textContent = display;
   if (dashPersonaAvatarImgEl) {
@@ -1276,6 +1299,7 @@ export function updateDashboardPersonality(personality: string): void {
       b.dataset.intensity === personality,
     ),
   );
+  if (dashPublicFigureSelect) dashPublicFigureSelect.value = "";
   if (bubbleLogoImgEl) {
     bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
     bubbleLogoImgEl.alt = display;
@@ -1284,6 +1308,27 @@ export function updateDashboardPersonality(personality: string): void {
 
 export function setSignOutCallback(cb: () => void): void {
   signOutCb = cb;
+}
+
+/** Populate the public figure dropdown from the personas list. */
+export function setPublicFigurePersonas(
+  personas: Array<{ slug: string; displayName: string }>,
+): void {
+  if (!dashPublicFigureSelect || !dashPublicFigureRow) return;
+
+  // Clear existing options except "None"
+  while (dashPublicFigureSelect.options.length > 1) {
+    dashPublicFigureSelect.remove(1);
+  }
+
+  for (const p of personas) {
+    const opt = document.createElement("option");
+    opt.value = `pf:${p.slug}`;
+    opt.textContent = p.displayName;
+    dashPublicFigureSelect.appendChild(opt);
+  }
+
+  dashPublicFigureRow.style.display = personas.length > 0 ? "" : "none";
 }
 
 export function handleRemoteSignOut(): void {
@@ -1400,6 +1445,8 @@ export function destroyArgumentsBox(): void {
   dashUserEmail = "";
   dashUserTier = "free";
   dashDensityBtns = [];
+  dashPublicFigureSelect = null;
+  dashPublicFigureRow = null;
   dashFontSelect = null;
   dashFontSizeSelect = null;
   dashPersonaSelect = null;
@@ -1995,6 +2042,37 @@ function buildDashboardFace(): HTMLDivElement {
   personalityRow.appendChild(personalityLabel);
   personalityRow.appendChild(personalityGroup);
   section.appendChild(personalityRow);
+
+  // Public Figure dropdown row (hidden until personas loaded)
+  dashPublicFigureRow = document.createElement("div");
+  dashPublicFigureRow.className = "args-dash-row";
+  dashPublicFigureRow.style.display = "none";
+  const pfLabel = document.createElement("span");
+  pfLabel.className = "args-dash-label";
+  pfLabel.textContent = "Public Figure";
+  dashPublicFigureSelect = document.createElement("select");
+  dashPublicFigureSelect.className = "args-dash-select";
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "None";
+  dashPublicFigureSelect.appendChild(noneOpt);
+  dashPublicFigureSelect.addEventListener("change", () => {
+    const value = dashPublicFigureSelect!.value;
+    chrome.storage.local.get("preferences").then((stored) => {
+      const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+      if (!value) {
+        // Revert to terry
+        chrome.storage.local.set({ preferences: { ...prefs, depth_personality: "terry" } });
+      } else {
+        // Deactivate core buttons
+        dashDensityBtns.forEach((b) => b.classList.remove("args-dash-density-active"));
+        chrome.storage.local.set({ preferences: { ...prefs, depth_personality: value } });
+      }
+    });
+  });
+  dashPublicFigureRow.appendChild(pfLabel);
+  dashPublicFigureRow.appendChild(dashPublicFigureSelect);
+  section.appendChild(dashPublicFigureRow);
 
   // Font row
   const fontRow = document.createElement("div");

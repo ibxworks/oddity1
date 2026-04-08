@@ -25,6 +25,7 @@ import {
   requestSketchStreaming,
   getPdfPageSummaries as apiGetPdfPageSummaries,
   generatePdfPageSummary as apiGeneratePdfPageSummary,
+  getPublicFigurePersonas,
   saveAnnotation,
   UsageLimitError,
 } from "./api-client.js";
@@ -347,6 +348,26 @@ chrome.runtime.onMessage.addListener(
         case "getAdapters": {
           const adapters = await getAdapters();
           return { adapters };
+        }
+
+        case "getPersonas": {
+          try {
+            // Serve cached list immediately, refresh in background
+            const stored = await chrome.storage.local.get("publicFigurePersonas");
+            const cached = stored["publicFigurePersonas"] as Array<{ slug: string; displayName: string }> | undefined;
+            if (cached) {
+              // Refresh cache silently in background
+              getPublicFigurePersonas().then(personas => {
+                chrome.storage.local.set({ publicFigurePersonas: personas }).catch(() => {});
+              }).catch(() => {});
+              return { personas: cached };
+            }
+            const personas = await getPublicFigurePersonas();
+            await chrome.storage.local.set({ publicFigurePersonas: personas });
+            return { personas };
+          } catch {
+            return { personas: [] };
+          }
         }
 
         case "openPopup": {
