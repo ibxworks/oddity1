@@ -64,6 +64,7 @@ import {
   scrollPdfSummaryToPage,
   triggerOptimizePrompt,
   pasteIntoChatbot,
+  setPublicFigurePersonas,
 } from "./renderer/arguments-box.js";
 import { initOptimizeButton, destroyOptimizeButton } from "./renderer/optimize-button.js";
 import {
@@ -1020,6 +1021,16 @@ async function init(): Promise<void> {
   // Set tier immediately so all tier-gated features work without opening dashboard
   if (authStatus?.user?.tier) {
     setDashUserTier(authStatus.user.tier);
+  }
+
+  // Load public figure personas for Standard tier users
+  if (authStatus?.user?.tier === "standard") {
+    sendMessage<{ personas: Array<{ slug: string; displayName: string }> }>({
+      action: "getPersonas",
+      payload: {},
+    }).then((result) => {
+      setPublicFigurePersonas(result.personas ?? []);
+    }).catch(() => {});
   }
 
   if (!authStatus?.authenticated) {

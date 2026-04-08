@@ -2,7 +2,14 @@
 
 export type AnnotationMode = 'overview' | 'depth';
 export type ViewMode = 'overview' | 'depth' | 'all';
-export type DepthPersonality = 'terry' | 'jerry' | 'sally';
+export type DepthPersonality = 'terry' | 'jerry' | 'sally' | `pf:${string}`;
+
+// ─── Public Figure Personas ───
+
+export type PublicFigurePersona = {
+  slug: string;
+  displayName: string;
+};
 
 // ─── Overview Labels ───
 
@@ -283,6 +290,8 @@ export type ExtensionMessage =
       action: "getAdapters";
       payload: Record<string, never>;
     }
+  | { action: "getPersonas"; payload: Record<string, never> }
+  | { action: "personasResponse"; payload: { personas: PublicFigurePersona[] } }
   | {
       action: "adaptersResponse";
       payload: {
