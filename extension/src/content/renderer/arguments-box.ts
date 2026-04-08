@@ -119,6 +119,47 @@ let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
+
+// ─── Google Docs mode ───
+function isGDocs(): boolean {
+  return location.hostname === "docs.google.com";
+}
+function getGDocsTitle(): string {
+  const raw = document.title.replace(/\s*-\s*Google Docs\s*$/i, "").trim();
+  return raw || "My Document";
+}
+let gdocsPersonaName = "Terry";
+let gdocsChatMode: "auto" | "plan" = "auto";
+let gdocsMemoMode: "memo" | "resource" = "memo";
+let gdocsActiveTab: "memo" | "resource" | "outline" = "memo";
+let gdocsPersonaSubtitleEl: HTMLSpanElement | null = null;
+let gdocsTitleEl: HTMLSpanElement | null = null;
+let gdocsMemoTabBtn: HTMLButtonElement | null = null;
+let gdocsResourceTabBtn: HTMLButtonElement | null = null;
+let gdocsOutlineTabBtn: HTMLButtonElement | null = null;
+let gdocsChatTextarea: HTMLTextAreaElement | null = null;
+let gdocsMemoModeBtn: HTMLButtonElement | null = null;
+let gdocsResourceModeBtn: HTMLButtonElement | null = null;
+let gdocsModeDropdownBtn: HTMLButtonElement | null = null;
+let gdocsModeDropdownMenu: HTMLDivElement | null = null;
+
+function formatGDocsTimestamp(sortKey: string): string {
+  let ms: number;
+  if (sortKey.startsWith("live-")) {
+    ms = parseInt(sortKey.slice(5), 10);
+  } else {
+    ms = new Date(sortKey).getTime();
+  }
+  if (isNaN(ms)) return "";
+  const d = new Date(ms);
+  const month = d.toLocaleString("en-US", { month: "short" });
+  const day = d.getDate();
+  const hour = d.getHours();
+  const min = d.getMinutes().toString().padStart(2, "0");
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const h12 = hour % 12 || 12;
+  return `${month} ${day}, ${h12}:${min} ${ampm}`;
+}
 let pdfDetected = false;
 let pdfPanelEl: HTMLDivElement | null = null;
 let pdfRunCb: (() => void) | null = null;
@@ -345,48 +386,46 @@ export function initArgumentsBox(): void {
   panelFace.className = "args-panel-face";
   panelFace.addEventListener("click", (e) => e.stopPropagation());
 
-  // ── Panel header: "Argument Box" + icon buttons ──
+  // ── Panel header ──
   const panelHeader = document.createElement("div");
   panelHeader.className = "args-panel-header";
 
   const mainTitle = document.createElement("span");
   mainTitle.className = "args-main-title";
-  mainTitle.textContent = "Argument Box";
+
+  if (isGDocs()) {
+    // Back arrow + doc title
+    const backArrow = document.createElement("span");
+    backArrow.className = "args-gdocs-back";
+    backArrow.textContent = "←";
+    backArrow.addEventListener("click", (e) => { e.stopPropagation(); toggle(); });
+    mainTitle.appendChild(backArrow);
+    const titleText = document.createElement("span");
+    titleText.className = "args-gdocs-title-text";
+    titleText.textContent = getGDocsTitle();
+    gdocsTitleEl = titleText;
+    mainTitle.appendChild(titleText);
+    // Keep title in sync if doc title changes
+    const titleObs = new MutationObserver(() => {
+      if (gdocsTitleEl) gdocsTitleEl.textContent = getGDocsTitle();
+    });
+    titleObs.observe(document.querySelector("title") ?? document.head, { subtree: true, childList: true, characterData: true });
+  } else {
+    mainTitle.textContent = "Argument Box";
+  }
 
   const headerIcons = document.createElement("div");
   headerIcons.className = "args-header-icons";
 
-  const addBtn = document.createElement("button");
-  addBtn.className = "args-header-icon-btn";
-  addBtn.title = "Add";
-  addBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 19 19" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8.5" width="1.5" height="18.5" rx="0.5" fill="currentColor"/><rect x="18.5" y="8.5" width="1.5" height="18.5" rx="0.5" transform="rotate(90 18.5 8.5)" fill="currentColor"/></svg>`;
-  // ── Plus-button tooltip ──
-  const addTooltip = document.createElement("div");
-  addTooltip.className = "add-tooltip";
-  addTooltip.innerHTML = `
-    <span class="add-tooltip-title">Add your thoughts</span>
-    <span class="add-tooltip-desc">Highlight text on the page, then click <b>+</b> to attach your note.</span>
-  `;
-  addBtn.style.position = "relative";
-  addBtn.appendChild(addTooltip);
-
-  addBtn.addEventListener("click", (e) => {
+  // Dashboard (sliders) button — replaces old + button
+  const dashboardBtn = document.createElement("button");
+  dashboardBtn.className = "args-header-icon-btn";
+  dashboardBtn.title = "Dashboard";
+  dashboardBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="1" y1="5" x2="19" y2="5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="6" cy="5" r="2.2" fill="currentColor"/><line x1="1" y1="10" x2="19" y2="10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="13" cy="10" r="2.2" fill="currentColor"/><line x1="1" y1="15" x2="19" y2="15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="15" r="2.2" fill="currentColor"/></svg>`;
+  dashboardBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    addTooltip.classList.toggle("visible");
-  });
-
-  // Close tooltip when clicking outside
-  document.addEventListener("click", () => {
-    addTooltip.classList.remove("visible");
-  });
-
-  const copyIconBtn = document.createElement("button");
-  copyIconBtn.className = "args-header-icon-btn";
-  copyIconBtn.title = "Copy";
-  copyIconBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.4883 5.5H7.94922C6.59655 5.5 5.5 6.59655 5.5 7.94922V17.4883C5.5 18.8409 6.59655 19.9375 7.94922 19.9375H17.4883C18.8409 19.9375 19.9375 18.8409 19.9375 17.4883V7.94922C19.9375 6.59655 18.8409 5.5 17.4883 5.5Z" stroke="currentColor" stroke-width="1.375" stroke-linejoin="round"/><path d="M16.4785 5.5L16.5 4.46875C16.4982 3.83113 16.2441 3.22014 15.7932 2.76928C15.3424 2.31841 14.7314 2.06431 14.0938 2.0625H4.8125C4.08382 2.06465 3.38559 2.35508 2.87034 2.87034C2.35508 3.38559 2.06465 4.08382 2.0625 4.8125V14.0938C2.06431 14.7314 2.31841 15.3424 2.76928 15.7932C3.22014 16.2441 3.83113 16.4982 4.46875 16.5H5.5" stroke="currentColor" stroke-width="1.375" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  copyIconBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    handleCopy(copyIconBtn);
+    if (!expanded) toggle();
+    showDashboard();
   });
 
   const exportIconBtn = document.createElement("button");
@@ -402,17 +441,48 @@ export function initArgumentsBox(): void {
     );
   });
 
-  headerIcons.appendChild(addBtn);
-  headerIcons.appendChild(copyIconBtn);
+  const copyIconBtn = document.createElement("button");
+  copyIconBtn.className = "args-header-icon-btn";
+  copyIconBtn.title = "Copy";
+  copyIconBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.4883 5.5H7.94922C6.59655 5.5 5.5 6.59655 5.5 7.94922V17.4883C5.5 18.8409 6.59655 19.9375 7.94922 19.9375H17.4883C18.8409 19.9375 19.9375 18.8409 19.9375 17.4883V7.94922C19.9375 6.59655 18.8409 5.5 17.4883 5.5Z" stroke="currentColor" stroke-width="1.375" stroke-linejoin="round"/><path d="M16.4785 5.5L16.5 4.46875C16.4982 3.83113 16.2441 3.22014 15.7932 2.76928C15.3424 2.31841 14.7314 2.06431 14.0938 2.0625H4.8125C4.08382 2.06465 3.38559 2.35508 2.87034 2.87034C2.35508 3.38559 2.06465 4.08382 2.0625 4.8125V14.0938C2.06431 14.7314 2.31841 15.3424 2.76928 15.7932C3.22014 16.2441 3.83113 16.4982 4.46875 16.5H5.5" stroke="currentColor" stroke-width="1.375" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  copyIconBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    handleCopy(copyIconBtn);
+  });
+
+  headerIcons.appendChild(dashboardBtn);
   headerIcons.appendChild(exportIconBtn);
+  headerIcons.appendChild(copyIconBtn);
 
   panelHeader.appendChild(mainTitle);
   panelHeader.appendChild(headerIcons);
   panelFace.appendChild(panelHeader);
 
+  // ── GDocs persona subtitle ──
+  if (isGDocs()) {
+    const personaSubtitle = document.createElement("div");
+    personaSubtitle.className = "args-gdocs-persona";
+    const personaText = document.createElement("span");
+    personaText.className = "args-gdocs-persona-text";
+    personaText.textContent = `Writing with ${gdocsPersonaName}`;
+    gdocsPersonaSubtitleEl = personaText;
+    personaSubtitle.appendChild(personaText);
+    panelFace.appendChild(personaSubtitle);
+    // Load persona name from storage
+    chrome.storage.local.get("preferences", (result) => {
+      const prefs = result["preferences"] as Record<string, unknown> | undefined;
+      const personality = (prefs?.depth_personality as string) ?? "terry";
+      gdocsPersonaName = personality.charAt(0).toUpperCase() + personality.slice(1);
+      if (gdocsPersonaSubtitleEl) {
+        gdocsPersonaSubtitleEl.textContent = `Writing with ${gdocsPersonaName}`;
+      }
+    });
+  }
+
   // ── Purpose section ──
   const purposeSection = document.createElement("div");
   purposeSection.className = "args-purpose-section";
+  if (isGDocs()) purposeSection.style.display = "none";
 
   const purposeLabel = document.createElement("span");
   purposeLabel.className = "args-purpose-label";
@@ -442,35 +512,78 @@ export function initArgumentsBox(): void {
 
   // ── Tab Bar ──
   tabBarEl = document.createElement("div");
-  tabBarEl.className = "args-tab-bar";
+  tabBarEl.className = isGDocs() ? "args-tab-bar args-tab-bar--gdocs" : "args-tab-bar";
 
-  notesTabBtn = document.createElement("button");
-  notesTabBtn.className = "args-tab active";
-  notesTabBtn.textContent = "Notes";
-  notesTabBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    switchTab("notes");
-  });
+  if (isGDocs()) {
+    // GDocs tabs: Memo | Resource | Outline
+    gdocsMemoTabBtn = document.createElement("button");
+    gdocsMemoTabBtn.className = "args-gdocs-tab active";
+    gdocsMemoTabBtn.textContent = "Memo";
+    gdocsMemoTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsActiveTab = "memo";
+      gdocsMemoTabBtn!.classList.add("active");
+      gdocsResourceTabBtn!.classList.remove("active");
+      gdocsOutlineTabBtn!.classList.remove("active");
+      if (listEl) listEl.style.display = "";
+    });
 
-  sketchTabBtn = document.createElement("button");
-  sketchTabBtn.className = "args-tab";
-  sketchTabBtn.textContent = isChatbotMode ? "Prompt" : "Sketch";
-  sketchTabBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    switchTab("sketch");
-  });
+    gdocsResourceTabBtn = document.createElement("button");
+    gdocsResourceTabBtn.className = "args-gdocs-tab";
+    gdocsResourceTabBtn.textContent = "Resource";
+    gdocsResourceTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsActiveTab = "resource";
+      gdocsMemoTabBtn!.classList.remove("active");
+      gdocsResourceTabBtn!.classList.add("active");
+      gdocsOutlineTabBtn!.classList.remove("active");
+      if (listEl) listEl.style.display = "none";
+    });
 
-  tabBarEl.appendChild(notesTabBtn);
-  tabBarEl.appendChild(sketchTabBtn);
-  pdfSummaryTabBtn = document.createElement("button");
-  pdfSummaryTabBtn.className = "args-tab";
-  pdfSummaryTabBtn.textContent = "Summaries";
-  pdfSummaryTabBtn.style.display = "none";
-  pdfSummaryTabBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    switchTab("summaries");
-  });
-  tabBarEl.appendChild(pdfSummaryTabBtn);
+    gdocsOutlineTabBtn = document.createElement("button");
+    gdocsOutlineTabBtn.className = "args-gdocs-tab";
+    gdocsOutlineTabBtn.textContent = "Outline";
+    gdocsOutlineTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsActiveTab = "outline";
+      gdocsMemoTabBtn!.classList.remove("active");
+      gdocsResourceTabBtn!.classList.remove("active");
+      gdocsOutlineTabBtn!.classList.add("active");
+      if (listEl) listEl.style.display = "none";
+    });
+
+    tabBarEl.appendChild(gdocsMemoTabBtn);
+    tabBarEl.appendChild(gdocsResourceTabBtn);
+    tabBarEl.appendChild(gdocsOutlineTabBtn);
+  } else {
+    notesTabBtn = document.createElement("button");
+    notesTabBtn.className = "args-tab active";
+    notesTabBtn.textContent = "Notes";
+    notesTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      switchTab("notes");
+    });
+
+    sketchTabBtn = document.createElement("button");
+    sketchTabBtn.className = "args-tab";
+    sketchTabBtn.textContent = isChatbotMode ? "Prompt" : "Sketch";
+    sketchTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      switchTab("sketch");
+    });
+
+    tabBarEl.appendChild(notesTabBtn);
+    tabBarEl.appendChild(sketchTabBtn);
+    pdfSummaryTabBtn = document.createElement("button");
+    pdfSummaryTabBtn.className = "args-tab";
+    pdfSummaryTabBtn.textContent = "Summaries";
+    pdfSummaryTabBtn.style.display = "none";
+    pdfSummaryTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      switchTab("summaries");
+    });
+    tabBarEl.appendChild(pdfSummaryTabBtn);
+  }
   panelFace.appendChild(tabBarEl);
 
   // ── List ──
@@ -520,39 +633,169 @@ export function initArgumentsBox(): void {
   document.addEventListener("mousemove", listDragMoveHandler);
   document.addEventListener("mouseup", listDragUpHandler);
 
-  // ── Footer ──
-  footerEl = document.createElement("div");
-  const footer = footerEl;
-  footer.className = "args-footer";
+  if (isGDocs()) {
+    // ── GDocs chat section (replaces footer) ──
+    const chatSection = document.createElement("div");
+    chatSection.className = "args-gdocs-chat-section";
+    chatSection.addEventListener("click", (e) => e.stopPropagation());
 
-  const sketchBtn = document.createElement("button");
-  sketchBtn.className = "args-sketch-btn";
-  sketchBtn.textContent = getSketchActionLabel();
-  sketchBtnEl = sketchBtn;
-  sketchBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    handleSketch();
-  });
-  footer.appendChild(sketchBtn);
+    const chatBox = document.createElement("div");
+    chatBox.className = "args-gdocs-chat-box";
 
-  footerTextEl = document.createElement("span");
-  footerTextEl.className = "args-footer-text";
-  footerTextEl.textContent = "Go to Dashboard";
-  chrome.runtime.sendMessage(
-    { action: "getAuthStatus", payload: {} },
-    (result) => {
-      if (!result?.authenticated) {
-        footerTextEl!.textContent = "Sign in";
+    const chatTextarea = document.createElement("textarea");
+    chatTextarea.className = "args-gdocs-chat-textarea";
+    chatTextarea.placeholder = "Rewrite my essay into ...";
+    chatTextarea.rows = 3;
+    chatTextarea.addEventListener("click", (e) => e.stopPropagation());
+    chatTextarea.addEventListener("keydown", (e) => e.stopPropagation());
+    gdocsChatTextarea = chatTextarea;
+    chatBox.appendChild(chatTextarea);
+
+    const chatBar = document.createElement("div");
+    chatBar.className = "args-gdocs-chat-bar";
+
+    // Memo | Resource mode pills
+    const modePills = document.createElement("div");
+    modePills.className = "args-gdocs-mode-pills";
+
+    const memoPillBtn = document.createElement("button");
+    memoPillBtn.className = "args-gdocs-pill-btn active";
+    memoPillBtn.textContent = "Memo";
+    gdocsMemoModeBtn = memoPillBtn;
+
+    const pillDivider = document.createElement("div");
+    pillDivider.className = "args-gdocs-pill-divider";
+
+    const resourcePillBtn = document.createElement("button");
+    resourcePillBtn.className = "args-gdocs-pill-btn";
+    resourcePillBtn.textContent = "Resource";
+    gdocsResourceModeBtn = resourcePillBtn;
+
+    memoPillBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsMemoMode = "memo";
+      memoPillBtn.classList.add("active");
+      resourcePillBtn.classList.remove("active");
+    });
+    resourcePillBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsMemoMode = "resource";
+      resourcePillBtn.classList.add("active");
+      memoPillBtn.classList.remove("active");
+    });
+
+    modePills.appendChild(memoPillBtn);
+    modePills.appendChild(pillDivider);
+    modePills.appendChild(resourcePillBtn);
+
+    // Auto / Plan dropdown
+    const dropdownWrap = document.createElement("div");
+    dropdownWrap.className = "args-gdocs-dropdown-wrap";
+
+    const dropdownBtn = document.createElement("button");
+    dropdownBtn.className = "args-gdocs-dropdown-btn";
+    dropdownBtn.textContent = "Auto ↓";
+    gdocsModeDropdownBtn = dropdownBtn;
+
+    const dropdownMenu = document.createElement("div");
+    dropdownMenu.className = "args-gdocs-dropdown-menu";
+    dropdownMenu.style.display = "none";
+    gdocsModeDropdownMenu = dropdownMenu;
+
+    const autoOption = document.createElement("button");
+    autoOption.className = "args-gdocs-dropdown-option active";
+    autoOption.textContent = "Auto";
+    autoOption.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsChatMode = "auto";
+      dropdownBtn.textContent = "Auto ↓";
+      autoOption.classList.add("active");
+      planOption.classList.remove("active");
+      dropdownMenu.style.display = "none";
+    });
+
+    const planOption = document.createElement("button");
+    planOption.className = "args-gdocs-dropdown-option";
+    planOption.textContent = "Plan";
+    planOption.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsChatMode = "plan";
+      dropdownBtn.textContent = "Plan ↓";
+      planOption.classList.add("active");
+      autoOption.classList.remove("active");
+      dropdownMenu.style.display = "none";
+      // Trigger MCQ flow
+      document.dispatchEvent(new CustomEvent("oddity:gdocs:planmode", { detail: { topic: chatTextarea.value.trim() } }));
+    });
+
+    dropdownBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dropdownMenu.style.display = dropdownMenu.style.display === "none" ? "" : "none";
+    });
+    // Close dropdown on outside click
+    document.addEventListener("click", () => { if (gdocsModeDropdownMenu) gdocsModeDropdownMenu.style.display = "none"; });
+
+    dropdownMenu.appendChild(autoOption);
+    dropdownMenu.appendChild(planOption);
+    dropdownWrap.appendChild(dropdownBtn);
+    dropdownWrap.appendChild(dropdownMenu);
+
+    // Send button
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "args-gdocs-send-btn";
+    sendBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 12 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.05377 0.219671C5.76087 -0.0732222 5.286 -0.0732222 4.99311 0.219671L0.220136 4.99264C-0.0727572 5.28553 -0.0727572 5.76041 0.220136 6.0533C0.51303 6.3462 0.987903 6.3462 1.2808 6.0533L5.52344 1.81066L9.76608 6.0533C10.059 6.3462 10.5338 6.3462 10.8267 6.0533C11.1196 5.76041 11.1196 5.28553 10.8267 4.99264L6.05377 0.219671ZM5.52344 15.75H6.27344L6.27344 0.750001H5.52344H4.77344L4.77344 15.75H5.52344Z" fill="white"/></svg>`;
+    sendBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const text = chatTextarea.value.trim();
+      if (!text) return;
+      if (gdocsChatMode === "plan") {
+        document.dispatchEvent(new CustomEvent("oddity:gdocs:planmode", { detail: { topic: text } }));
+      } else {
+        document.dispatchEvent(new CustomEvent("oddity:gdocs:chat", { detail: { text, memoMode: gdocsMemoMode } }));
       }
-    },
-  );
-  footerTextEl.addEventListener("click", (e) => {
-    e.stopPropagation();
-    showDashboard();
-  });
-  footer.appendChild(footerTextEl);
+    });
 
-  panelFace.appendChild(footer);
+    chatBar.appendChild(modePills);
+    chatBar.appendChild(dropdownWrap);
+    chatBar.appendChild(sendBtn);
+    chatBox.appendChild(chatBar);
+    chatSection.appendChild(chatBox);
+    panelFace.appendChild(chatSection);
+  } else {
+    // ── Standard footer ──
+    footerEl = document.createElement("div");
+    const footer = footerEl;
+    footer.className = "args-footer";
+
+    const sketchBtn = document.createElement("button");
+    sketchBtn.className = "args-sketch-btn";
+    sketchBtn.textContent = getSketchActionLabel();
+    sketchBtnEl = sketchBtn;
+    sketchBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handleSketch();
+    });
+    footer.appendChild(sketchBtn);
+
+    footerTextEl = document.createElement("span");
+    footerTextEl.className = "args-footer-text";
+    footerTextEl.textContent = "Go to Dashboard";
+    chrome.runtime.sendMessage(
+      { action: "getAuthStatus", payload: {} },
+      (result) => {
+        if (!result?.authenticated) {
+          footerTextEl!.textContent = "Sign in";
+        }
+      },
+    );
+    footerTextEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showDashboard();
+    });
+    footer.appendChild(footerTextEl);
+
+    panelFace.appendChild(footer);
+  }
 
   contentClip.appendChild(panelFace);
   contentClip.appendChild(buildDashboardFace());
@@ -3697,6 +3940,49 @@ function renderList(): void {
 
   for (const item of allItems) {
     const cardId = item.sortKey;
+
+    if (isGDocs()) {
+      // ── GDocs card: title + timestamp + body (flow layout) ──
+      const card = document.createElement("div");
+      card.className = "gdocs-arg-card";
+      card.dataset.cardId = cardId;
+
+      const titleEl = document.createElement("div");
+      titleEl.className = "gdocs-arg-title";
+      if (item.type === "reply") {
+        const excerpt = item.replyHeader ?? "";
+        titleEl.textContent = excerpt
+          ? `Reply to \u201c${excerpt}\u201d`
+          : "Reply";
+      } else {
+        const src = item.quote || item.text;
+        const MAX = 38;
+        titleEl.textContent =
+          src.length > MAX
+            ? `Memo on \u201c${src.slice(0, MAX)}\u2026\u201d`
+            : `Memo on \u201c${src}\u201d`;
+      }
+
+      const tsEl = document.createElement("div");
+      tsEl.className = "gdocs-arg-timestamp";
+      tsEl.textContent = formatGDocsTimestamp(item.sortKey);
+
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "gdocs-arg-body";
+      bodyEl.textContent = item.text;
+
+      card.appendChild(titleEl);
+      card.appendChild(tsEl);
+      card.appendChild(bodyEl);
+
+      const divider = document.createElement("div");
+      divider.className = "gdocs-arg-divider";
+
+      listEl.appendChild(card);
+      listEl.appendChild(divider);
+      continue;
+    }
+
     const card = document.createElement("div");
     card.className = "arg-card";
     card.dataset.cardId = cardId;
@@ -4041,14 +4327,20 @@ function renderList(): void {
     listEl.appendChild(card);
   }
 
-  // Measure collapsed heights then fix positions — mirrors margin notes' rAF approach.
-  // Cards are position:absolute so expanding one never shifts siblings.
-  // Only layout if the container is expanded; otherwise defer until it opens
-  // (measuring at 56px collapsed width produces incorrect tall card heights).
-  if (expanded) {
-    scheduleLayout();
+  if (isGDocs()) {
+    // GDocs: flow layout, no absolute positioning needed
+    listEl.style.visibility = "";
+    listEl.style.height = "";
   } else {
-    layoutPending = true;
+    // Measure collapsed heights then fix positions — mirrors margin notes' rAF approach.
+    // Cards are position:absolute so expanding one never shifts siblings.
+    // Only layout if the container is expanded; otherwise defer until it opens
+    // (measuring at 56px collapsed width produces incorrect tall card heights).
+    if (expanded) {
+      scheduleLayout();
+    } else {
+      layoutPending = true;
+    }
   }
 }
 
@@ -4552,40 +4844,9 @@ function initModeToggleOverlay(): void {
   modeToggleEl.className = "mode-toggle";
   modeToggleEl.dataset.active = "overview";
 
-  modeToggleSliderEl = document.createElement("div");
-  modeToggleSliderEl.className = "mode-slider";
-
-  modeToggleOverviewBtn = document.createElement("button");
-  modeToggleOverviewBtn.className = "mode-btn mode-active";
-  modeToggleOverviewBtn.textContent = "Overview";
-  modeToggleOverviewBtn.dataset.mode = "overview";
-
-  modeToggleDepthBtn = document.createElement("button");
-  modeToggleDepthBtn.className = "mode-btn";
-  modeToggleDepthBtn.textContent = "Depth";
-  modeToggleDepthBtn.dataset.mode = "depth";
-
-  modeToggleEl.addEventListener("click", (e: MouseEvent) => {
-    e.stopPropagation();
-    if (!extensionEnabled) return; // Do nothing when Oddity 1 is off
-    const target = (e.target as HTMLElement).closest(
-      "[data-mode]",
-    ) as HTMLElement | null;
-    if (!target || !modeToggleEl) return;
-    const mode = target.dataset.mode as string;
-    if (mode === modeToggleEl.dataset.active) return;
-    modeToggleOverviewBtn!.classList.toggle("mode-active", mode === "overview");
-    modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
-    modeToggleEl.dataset.active = mode;
-    syncModeToggleSlider();
-    document.dispatchEvent(
-      new CustomEvent("oddity:modeChange", { detail: { mode } }),
-    );
-  });
-
-  // Close button lives inside the toggle as a third grid column (visible only when expanded)
+  // Close button only — Overview/Depth removed
   const modeCloseBtnEl = document.createElement("button");
-  modeCloseBtnEl.className = "mode-close-btn";
+  modeCloseBtnEl.className = "mode-close-btn mode-close-only";
   modeCloseBtnEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   modeCloseBtnEl.addEventListener("click", (e: MouseEvent) => {
     e.stopPropagation();
@@ -4598,9 +4859,6 @@ function initModeToggleOverlay(): void {
     }
   });
 
-  modeToggleEl.appendChild(modeToggleSliderEl);
-  modeToggleEl.appendChild(modeToggleOverviewBtn);
-  modeToggleEl.appendChild(modeToggleDepthBtn);
   modeToggleEl.appendChild(modeCloseBtnEl);
   modeToggleWrapperEl.appendChild(modeToggleEl);
 
@@ -4644,10 +4902,10 @@ const ARGUMENTS_BOX_CSS = `
     transition: opacity 0.2s ease;
     position: absolute;
     top: 0px;
-    right: 11px;
+    left: 11px;
     z-index: 3;
     transform: scale(0.81);
-    transform-origin: right center;
+    transform-origin: left center;
   }
 
   .args-toggle-bar.visible {
@@ -4680,8 +4938,9 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .mode-toggle {
-    display: grid;
-    grid-template-columns: auto auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 3px;
     background: #E6E6E6;
     border-radius: 10px;
@@ -4691,7 +4950,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .mode-toggle.with-close {
-    grid-template-columns: auto auto auto;
+    /* no change needed — already flex */
   }
 
   .mode-slider {
@@ -4754,7 +5013,8 @@ const ARGUMENTS_BOX_CSS = `
     background: rgba(0, 0, 0, 0.06);
   }
 
-  .mode-toggle.with-close .mode-close-btn {
+  .mode-toggle.with-close .mode-close-btn,
+  .mode-close-btn.mode-close-only {
     display: flex;
   }
 
@@ -4847,9 +5107,9 @@ const ARGUMENTS_BOX_CSS = `
   .args-container.expanded {
     width: var(--panel-width, 300px);
     height: calc(100vh - 90px + 32px);
-    border-radius: 16px;
+    border-radius: 0;
     box-shadow: none;
-    border: 1px solid #363636;
+    border: 1.5px solid #E5E5E5;
     cursor: default;
     background: transparent;
     backdrop-filter: none;
@@ -5873,7 +6133,7 @@ const ARGUMENTS_BOX_CSS = `
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    border-color: #E7E7E7;
+    border-color: #E5E5E5;
   }
 
   :host([data-theme="light"]) .args-container.expanded::after {
@@ -7543,5 +7803,287 @@ const ARGUMENTS_BOX_CSS = `
     color: #444;
     border-color: #ddd;
     box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  }
+
+  /* ── Google Docs panel styles ── */
+
+  /* Panel face in GDocs mode: white background, flex column */
+  .args-container.expanded .args-panel-face {
+    background: #FFFFFF;
+  }
+
+  /* Header: back arrow + title */
+  .args-gdocs-back {
+    cursor: pointer;
+    font-size: 16px;
+    color: #1E2229;
+    margin-right: 8px;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+  .args-gdocs-back:hover {
+    opacity: 1;
+  }
+  .args-gdocs-title-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1E2229;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+
+  /* Override args-main-title to flex when in GDocs */
+  .args-panel-header .args-main-title:has(.args-gdocs-back) {
+    display: flex;
+    align-items: center;
+  }
+
+  /* Persona subtitle */
+  .args-gdocs-persona {
+    padding: 0 16px 10px;
+    margin-top: -4px;
+  }
+  .args-gdocs-persona-text {
+    font-family: 'Fragment Mono', 'Courier New', monospace;
+    font-size: 11px;
+    color: #888;
+    font-weight: 400;
+  }
+
+  /* GDocs tab bar */
+  .args-tab-bar--gdocs {
+    border-bottom: 1px solid #E8E8E8;
+    padding: 0 16px;
+    gap: 0;
+  }
+
+  .args-gdocs-tab {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: #B0B0B0;
+    padding: 0 16px 10px 0;
+    margin-right: 8px;
+    position: relative;
+    transition: color 0.15s;
+  }
+  .args-gdocs-tab:first-child {
+    padding-left: 0;
+  }
+  .args-gdocs-tab.active {
+    color: #1E2229;
+    font-weight: 600;
+  }
+  .args-gdocs-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 16px;
+    height: 2px;
+    background: #1E2229;
+    border-radius: 1px;
+  }
+
+  /* GDocs list: flow layout, not absolute */
+  .args-panel-face:has(.args-gdocs-chat-section) .args-list {
+    position: static;
+    height: auto;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  /* GDocs arg cards */
+  .gdocs-arg-card {
+    padding: 16px 16px 12px;
+    cursor: pointer;
+    background: #FFFFFF;
+    transition: background 0.1s;
+  }
+  .gdocs-arg-card:hover {
+    background: #FAFAFA;
+  }
+  .gdocs-arg-title {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #1E2229;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+  }
+  .gdocs-arg-timestamp {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #ABABAB;
+    margin-bottom: 7px;
+  }
+  .gdocs-arg-body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #333;
+    line-height: 1.55;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .gdocs-arg-divider {
+    height: 1px;
+    background: #F0F0F0;
+    margin: 0 16px;
+  }
+
+  /* GDocs chat section */
+  .args-gdocs-chat-section {
+    flex-shrink: 0;
+    padding: 10px 12px 12px;
+    background: #FFFFFF;
+    border-top: 1px solid #F0F0F0;
+  }
+  .args-gdocs-chat-box {
+    background: #FFFFFF;
+    border: 1px solid #E8E8E8;
+    border-radius: 12px;
+    padding: 12px 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .args-gdocs-chat-textarea {
+    all: unset;
+    display: block;
+    width: 100%;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #1E2229;
+    line-height: 1.5;
+    resize: none;
+    min-height: 48px;
+    box-sizing: border-box;
+  }
+  .args-gdocs-chat-textarea::placeholder {
+    color: #ABABAB;
+  }
+  .args-gdocs-chat-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #F5F5F5;
+    border-radius: 8px;
+    padding: 4px 4px 4px 6px;
+  }
+  .args-gdocs-mode-pills {
+    display: flex;
+    align-items: center;
+    background: #EAEAEA;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .args-gdocs-pill-btn {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    color: #888;
+    padding: 5px 12px;
+    white-space: nowrap;
+    transition: color 0.15s, background 0.15s;
+  }
+  .args-gdocs-pill-btn.active {
+    color: #1E2229;
+    font-weight: 500;
+  }
+  .args-gdocs-pill-btn:hover:not(.active) {
+    color: #555;
+    background: rgba(0,0,0,0.04);
+  }
+  .args-gdocs-pill-divider {
+    width: 1px;
+    height: 14px;
+    background: #D0D0D0;
+    flex-shrink: 0;
+  }
+  .args-gdocs-dropdown-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .args-gdocs-dropdown-btn {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    color: #666;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: transparent;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .args-gdocs-dropdown-btn:hover {
+    background: rgba(0,0,0,0.06);
+    color: #1E2229;
+  }
+  .args-gdocs-dropdown-menu {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    background: #FFFFFF;
+    border: 1px solid #E8E8E8;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    overflow: hidden;
+    z-index: 10;
+    min-width: 100px;
+  }
+  .args-gdocs-dropdown-option {
+    all: unset;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12.5px;
+    color: #555;
+    transition: background 0.1s;
+    box-sizing: border-box;
+  }
+  .args-gdocs-dropdown-option:hover {
+    background: #F5F5F5;
+    color: #1E2229;
+  }
+  .args-gdocs-dropdown-option.active {
+    font-weight: 600;
+    color: #1E2229;
+  }
+  .args-gdocs-send-btn {
+    all: unset;
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #1E2229;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: auto;
+    transition: opacity 0.15s;
+  }
+  .args-gdocs-send-btn:hover {
+    opacity: 0.8;
+  }
+
+  /* Keep panel header readable (white bg in GDocs) */
+  .args-panel-face:has(.args-gdocs-chat-section) .args-panel-header {
+    border-bottom: none;
+  }
+  .args-panel-face:has(.args-gdocs-chat-section) .args-main-title,
+  .args-panel-face:has(.args-gdocs-chat-section) .args-header-icon-btn {
+    color: #1E2229;
   }
 `;

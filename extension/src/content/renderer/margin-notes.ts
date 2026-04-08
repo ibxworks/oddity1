@@ -429,14 +429,16 @@ function addInlinePopover(
       scheduleInlineHide(annotation.id);
     }
   });
-  // Clicking/focusing the reply input should pin the popover so it stays open
+  // Clicking/focusing the reply input should expand and pin the popover so it stays open
   el.addEventListener("focusin", (e) => {
     const target = e.target as HTMLElement;
-    if (target.matches("input, textarea") && pinnedId !== annotation.id) {
-      pinnedId = annotation.id;
-      expandedId = annotation.id;
-      hostEl?.classList.add("has-pinned");
+    if (target.matches("input, textarea")) {
       el.classList.add("expanded");
+      expandedId = annotation.id;
+      if (pinnedId !== annotation.id) {
+        pinnedId = annotation.id;
+        hostEl?.classList.add("has-pinned");
+      }
     }
   });
 
@@ -1913,13 +1915,15 @@ function createNoteElement(
     dimOtherNotes(annotation.id);
   });
 
-  // Focusing an input/textarea pins the note so it stays expanded
+  // Focusing an input/textarea expands and pins the note so it stays expanded
   el.addEventListener("focusin", (e) => {
     const target = e.target as HTMLElement;
-    if (target.matches("input, textarea") && pinnedId !== annotation.id) {
-      pinnedId = annotation.id;
-      hostEl?.classList.add("has-pinned");
+    if (target.matches("input, textarea")) {
       expandMarginNote(annotation.id);
+      if (pinnedId !== annotation.id) {
+        pinnedId = annotation.id;
+        hostEl?.classList.add("has-pinned");
+      }
     }
   });
 
@@ -2567,7 +2571,7 @@ const MARGIN_NOTES_CSS = `
   .oddity-note {
     position: fixed;
     width: ${NOTE_EXPANDED_WIDTH}px;
-    padding: 20px 25px 27px 25px;
+    padding: 20px 25px 10px 25px;
     font-family: var(--oddity-note-font);
     font-size: var(--oddity-note-size);
     line-height: 1.6;
@@ -2876,7 +2880,7 @@ const MARGIN_NOTES_CSS = `
     flex: 1;
     min-width: 0;
     border-radius: 100px;
-    padding: 5px 12px 5px 0;
+    padding: 5px 12px;
     font-size: var(--oddity-note-size);
     font-weight: 350;
     color: #293038;
@@ -2928,6 +2932,7 @@ const MARGIN_NOTES_CSS = `
   .note-reply-section .note-pill-group {
     grid-area: pills;
     display: none;
+    justify-self: start;
   }
 
   .note-reply-section .note-reply-send {

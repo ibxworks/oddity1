@@ -42,12 +42,7 @@ let essayTabId = '';
 let pendingEditMode = false;
 let docHasContent = false;
 let activeSession: OddityGDocsSession | null = null;
-let loadingOverlayEl: HTMLElement | null = null;
-let loadingStatusEl: HTMLElement | null = null;
 let reviewPanelEl: HTMLElement | null = null;
-
-// ─── Welcome card state ───────────────────────────────────────────────────────
-let welcomeCardEl: HTMLElement | null = null;
 let importedContext = '';
 
 // ─── MCQ state ────────────────────────────────────────────────────────────────
@@ -140,7 +135,7 @@ chrome.runtime.onMessage.addListener((message) => {
     handleResponseActions(response)
       .then(() => {
         streaming = false;
-        hideLoadingOverlay();
+        stopLoadingAnimation();
         setInputEnabled(true);
         if (activeSession) {
           activeSession.chatHistory = [...chatHistory];
@@ -150,7 +145,7 @@ chrome.runtime.onMessage.addListener((message) => {
       .catch((err) => {
         console.error('[Oddity GDocs] Response handling error:', err);
         streaming = false;
-        hideLoadingOverlay();
+        stopLoadingAnimation();
         setInputEnabled(true);
       });
   } else if (message.action === 'gdocsChatError') {
@@ -159,7 +154,7 @@ chrome.runtime.onMessage.addListener((message) => {
     currentStreamText = '';
     streaming = false;
     pendingEditMode = false;
-    hideLoadingOverlay();
+    stopLoadingAnimation();
     setInputEnabled(true);
     if (topicTextarea) {
       topicTextarea.placeholder = `Error: ${errMsg.slice(0, 60)}`;
@@ -169,8 +164,7 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 function getPlaceholder(): string {
-  const currentTabId = new URLSearchParams(window.location.search).get('tab') ?? 'default';
-  if (essayTabId && currentTabId === essayTabId) return 'Ask for edits…';
+  if (activeSession?.essayContent?.trim() || docHasContent) return 'Ask for edits…';
   return 'What do you want to write about?';
 }
 
@@ -556,7 +550,7 @@ async function addDepthAnnotationsAsComments(): Promise<void> {
   }
   if (commentBtn) commentBtn.disabled = true;
   setInputEnabled(false);
-  showLoadingOverlay(`Adding ${annotations.length} depth comments…`);
+  startLoadingAnimation();
   for (const ann of annotations) {
     const label = ann.type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     const commentText = `[${label}] ${ann.content.note}${ann.content.question ? '\n\n' + ann.content.question : ''}`;
@@ -567,7 +561,7 @@ async function addDepthAnnotationsAsComments(): Promise<void> {
     const contentHash = await sha256hex(text);
     registerGDocsCommentAnnotations(annotations, contentHash);
   }
-  hideLoadingOverlay();
+  stopLoadingAnimation();
   if (commentBtn) commentBtn.disabled = false;
   setInputEnabled(true);
 }
@@ -688,12 +682,12 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
   keepAllBtn.addEventListener('click', () => {
     dismissReviewPanel();
     setInputEnabled(false);
-    showLoadingOverlay('Applying changes…');
+    startLoadingAnimation();
     void (async () => {
       for (const op of ops) {
         await callDocApi('gdocsAcceptEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace });
       }
-      hideLoadingOverlay();
+      stopLoadingAnimation();
       setInputEnabled(true);
     })();
   });
@@ -701,12 +695,12 @@ function showEditReviewPanel(ops: Array<{ find: string; replace: string }>): voi
   revertAllBtn.addEventListener('click', () => {
     dismissReviewPanel();
     setInputEnabled(false);
-    showLoadingOverlay('Reverting changes…');
+    startLoadingAnimation();
     void (async () => {
       for (const op of ops) {
         await callDocApi('gdocsRevertEdit', { docId: activeDocId, findText: op.find, replaceText: op.replace });
       }
-      hideLoadingOverlay();
+      stopLoadingAnimation();
       setInputEnabled(true);
     })();
   });
@@ -724,9 +718,9 @@ async function handleResponseActions(response: string): Promise<void> {
           activeSession.editSuggestions = [...(activeSession.editSuggestions ?? []), ops];
           await saveSession(activeSession);
         }
-        showLoadingOverlay('Highlighting changes…');
+        startLoadingAnimation();
         await applyPendingEditsViaApi(ops);
-        hideLoadingOverlay();
+        stopLoadingAnimation();
         showEditReviewPanel(ops);
       }
     }
@@ -755,39 +749,41 @@ async function handleResponseActions(response: string): Promise<void> {
   }
 }
 
-// ─── Loading overlay ──────────────────────────────────────────────────────────
-function showLoadingOverlay(status: string): void {
-  if (loadingOverlayEl) { if (loadingStatusEl) loadingStatusEl.textContent = status; return; }
-  const host = document.createElement('div');
-  host.id = 'oddity-gdocs-loading-host';
-  host.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483645; pointer-events: all;';
-  document.body.appendChild(host);
-  loadingOverlayEl = host;
-  const shadow = host.attachShadow({ mode: 'open' });
-  const style = document.createElement('style');
-  style.textContent = `
-    *, *::before, *::after { box-sizing: border-box; }
-    .overlay { position: fixed; inset: 0; backdrop-filter: blur(6px) saturate(0.8); -webkit-backdrop-filter: blur(6px) saturate(0.8); background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; }
-    .card { background: #fff; border-radius: 16px; padding: 28px 32px; box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 220px; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
-    .logo { width: 36px; height: 36px; border-radius: 8px; object-fit: contain; }
-    .spinner { width: 28px; height: 28px; border: 2.5px solid #e8e8e2; border-top-color: #111; border-radius: 50%; animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .status { font-size: 13px; font-weight: 500; color: #1a1a1a; text-align: center; line-height: 1.4; letter-spacing: 0.01em; }
-  `;
-  shadow.appendChild(style);
-  const overlay = document.createElement('div'); overlay.className = 'overlay';
-  const card = document.createElement('div'); card.className = 'card';
-  const logo = document.createElement('img'); logo.className = 'logo'; logo.src = chrome.runtime.getURL('Oddity1-Logo.png'); logo.alt = 'Oddity';
-  const spinner = document.createElement('div'); spinner.className = 'spinner';
-  const statusEl = document.createElement('div'); statusEl.className = 'status'; statusEl.textContent = status; loadingStatusEl = statusEl;
-  card.appendChild(logo); card.appendChild(spinner); card.appendChild(statusEl);
-  overlay.appendChild(card); shadow.appendChild(overlay);
+// ─── Loading animation (inline placeholder cycling) ───────────────────────────
+const LOADING_QUESTIONS = [
+  'What shapes your core beliefs?',
+  'How does language affect thought?',
+  'Why do patterns repeat in history?',
+  'What defines a just society?',
+  'When does change become necessary?',
+  'How do ideas spread and evolve?',
+  'What makes an argument compelling?',
+  'Why does art outlast empires?',
+  'How does power shape narrative?',
+  'What is the cost of certainty?',
+  'Why do humans need stories?',
+  'How does context change meaning?',
+  'What drives people to dissent?',
+  'When is silence more powerful?',
+  'How do incentives shape behavior?',
+];
+
+let loadingAnimInterval: ReturnType<typeof setInterval> | null = null;
+
+function startLoadingAnimation(): void {
+  if (!topicTextarea) return;
+  topicTextarea.value = '';
+  let idx = Math.floor(Math.random() * LOADING_QUESTIONS.length);
+  topicTextarea.placeholder = LOADING_QUESTIONS[idx]!;
+  loadingAnimInterval = setInterval(() => {
+    idx = (idx + 1) % LOADING_QUESTIONS.length;
+    if (topicTextarea) topicTextarea.placeholder = LOADING_QUESTIONS[idx]!;
+  }, 2000);
 }
 
-function hideLoadingOverlay(): void {
-  loadingOverlayEl?.remove();
-  loadingOverlayEl = null;
-  loadingStatusEl = null;
+function stopLoadingAnimation(): void {
+  if (loadingAnimInterval) { clearInterval(loadingAnimInterval); loadingAnimInterval = null; }
+  if (topicTextarea) topicTextarea.placeholder = getPlaceholder();
 }
 
 function setInputEnabled(enabled: boolean) {
@@ -796,8 +792,6 @@ function setInputEnabled(enabled: boolean) {
     if (enabled) {
       topicTextarea.placeholder = getPlaceholder();
       topicTextarea.focus();
-    } else {
-      topicTextarea.placeholder = 'Thinking…';
     }
   }
   if (submitBtn) submitBtn.disabled = !enabled;
@@ -975,11 +969,6 @@ function handleMcqAnswer(answer: string, question: string): void {
   renderMcqCard(mcqAllQuestions[mcqQuestionIndex]!);
 }
 
-function dismissWelcomeCard(): void {
-  welcomeCardEl?.remove();
-  welcomeCardEl = null;
-}
-
 async function readFileAsText(file: File): Promise<string> {
   // PDF: send to background for conversion
   if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
@@ -1014,104 +1003,6 @@ async function readFileAsText(file: File): Promise<string> {
   });
 }
 
-function renderWelcomeCard(): void {
-  if (!shadowWrapper) return;
-  dismissWelcomeCard();
-
-  const card = document.createElement('div');
-  card.className = 'welcome-card';
-
-  const label = document.createElement('div');
-  label.className = 'welcome-label';
-  label.textContent = 'Oddity · First Principles';
-  card.appendChild(label);
-
-  const title = document.createElement('div');
-  title.className = 'welcome-title';
-  title.textContent = 'Build your argument from the ground up';
-  card.appendChild(title);
-
-  const topicInput = document.createElement('input');
-  topicInput.className = 'welcome-input';
-  topicInput.placeholder = 'What do you want to write about?';
-  topicInput.type = 'text';
-  card.appendChild(topicInput);
-
-  // File import row
-  const fileRow = document.createElement('div');
-  fileRow.className = 'welcome-file-row';
-
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.accept = '.txt,.md,.pdf,.doc,.docx';
-  fileInput.style.display = 'none';
-  fileRow.appendChild(fileInput);
-
-  const fileBtn = document.createElement('button');
-  fileBtn.className = 'welcome-file-btn';
-  fileBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 5l3-4 3 4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9h10" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg> Import resource`;
-
-  const fileName = document.createElement('span');
-  fileName.className = 'welcome-file-name';
-  fileName.textContent = 'Optional';
-
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files?.[0];
-    if (file) {
-      fileName.textContent = file.name;
-      fileBtn.classList.add('has-file');
-    } else {
-      fileName.textContent = 'Optional';
-      fileBtn.classList.remove('has-file');
-    }
-  });
-  fileBtn.addEventListener('click', () => fileInput.click());
-
-  fileRow.appendChild(fileBtn);
-  fileRow.appendChild(fileName);
-  card.appendChild(fileRow);
-
-  const startBtn = document.createElement('button');
-  startBtn.className = 'welcome-start';
-  startBtn.textContent = 'Start';
-  startBtn.disabled = true;
-
-  const doStart = async () => {
-    const topic = topicInput.value.trim();
-    if (!topic) return;
-    startBtn.disabled = true;
-    startBtn.textContent = 'Loading…';
-
-    // Read imported file if present
-    const file = fileInput.files?.[0];
-    if (file) {
-      try {
-        importedContext = await readFileAsText(file);
-      } catch {
-        importedContext = '';
-      }
-    } else {
-      importedContext = '';
-    }
-
-    dismissWelcomeCard();
-    void startMcqFlow(topic);
-  };
-
-  topicInput.addEventListener('input', () => {
-    startBtn.disabled = topicInput.value.trim().length === 0;
-  });
-  topicInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !startBtn.disabled) void doStart();
-  });
-  startBtn.addEventListener('click', () => void doStart());
-  card.appendChild(startBtn);
-
-  shadowWrapper.insertBefore(card, shadowWrapper.firstChild);
-  welcomeCardEl = card;
-  setTimeout(() => topicInput.focus(), 50);
-}
-
 async function startMcqFlow(topic: string): Promise<void> {
   mcqTopic = topic;
   mcqActive = true;
@@ -1120,10 +1011,10 @@ async function startMcqFlow(topic: string): Promise<void> {
   mcqAllQuestions = [];
 
   setInputEnabled(false);
-  showLoadingOverlay('Preparing questions…');
+  startLoadingAnimation();
 
   const questions = await fetchAllMcqQuestions(topic);
-  hideLoadingOverlay();
+  stopLoadingAnimation();
 
   if (!questions || questions.length === 0) {
     mcqActive = false;
@@ -1145,7 +1036,7 @@ async function startMcqFlow(topic: string): Promise<void> {
 function generateEssay(): void {
   streaming = true;
   setInputEnabled(false);
-  showLoadingOverlay('Writing your essay…');
+  startLoadingAnimation();
 
   const messages: GDocsMessage[] = [];
   if (docContext) {
@@ -1176,22 +1067,19 @@ function generateEssay(): void {
 async function handleSubmit(text: string): Promise<void> {
   if (!text || streaming || mcqActive) return;
 
-  const currentTabId = new URLSearchParams(window.location.search).get('tab') ?? 'default';
-  // Edit mode if: on the designated essay tab, OR essay exists but no tab was ever set (inline essay)
-  const isEditTab = (!!essayTabId && currentTabId === essayTabId) ||
-                    (!essayTabId && !!(activeSession?.essayContent?.trim()));
+  const hasExistingEssay = !!(activeSession?.essayContent?.trim());
 
-  if (isEditTab) {
-    // Edit mode on essay tab
+  if (hasExistingEssay || docHasContent) {
+    // Edit mode — essay or doc content already exists
     streaming = true;
     pendingEditMode = true;
     setInputEnabled(false);
-    showLoadingOverlay('Editing your essay…');
+    startLoadingAnimation();
 
     chatHistory.push({ role: 'user', content: text });
     if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
 
-    const essayContent = activeSession?.essayContent ?? '';
+    const essayContent = activeSession?.essayContent ?? docContext;
     const editMessages: GDocsMessage[] = [];
     if (essayContent) {
       editMessages.push({ role: 'user', content: `Here is the essay to edit:\n\n${essayContent}\n\nNow let's begin.` });
@@ -1202,15 +1090,17 @@ async function handleSubmit(text: string): Promise<void> {
     return;
   }
 
-  // Topic entry — start MCQ flow
-  void startMcqFlow(text);
+  // No existing content — write a new essay using the text as the topic
+  mcqTopic = text;
+  mcqPreviousQA = [];
+  void generateEssay();
 }
 
 // ─── Input bar ────────────────────────────────────────────────────────────────
 function createInputBar(): void {
   const host = document.createElement('div');
   host.id = 'oddity-gdocs-input-host';
-  host.style.cssText = 'all: initial; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 2147483646; width: 520px;';
+  host.style.cssText = 'all: initial; position: fixed; bottom: 24px; left: 24px; z-index: 2147483646; width: 520px;';
   document.body.appendChild(host);
   inputBar = host;
 
@@ -1220,18 +1110,8 @@ function createInputBar(): void {
   style.textContent = `
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
     *, *::before, *::after { box-sizing: border-box; }
-    .wrapper { display: flex; flex-direction: column; gap: 8px; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; }
-    .bar { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 9999px; padding: 8px 8px 8px 18px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; }
-    textarea { flex: 1; resize: none; border: none; outline: none; font-family: inherit; font-size: 13px; line-height: 1.4; color: #1a1a1a; background: transparent; max-height: 120px; overflow-y: auto; padding: 0; margin: 0; display: block; }
-    textarea::placeholder { color: #9aa0a6; }
-    textarea:disabled { opacity: 0.45; }
-    .send { width: 34px; height: 34px; border-radius: 9999px; border: none; background: #111; color: #fff; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
-    .send:hover { background: #333; }
-    .send:disabled { background: #e8e8e2; color: #9aa0a6; cursor: default; }
-    .close { width: 0; height: 28px; border-radius: 9999px; border: none; background: none; color: #9aa0a6; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; overflow: hidden; opacity: 0; pointer-events: none; transition: width 0.22s cubic-bezier(0.34,1.56,0.64,1), opacity 0.15s; }
-    .close:hover { color: #374151; }
-    .show-close .close { width: 28px; opacity: 1; pointer-events: all; }
-    .actions { display: flex; align-items: center; gap: 6px; padding: 0 4px; }
+    .wrapper { display: flex; flex-direction: column; gap: 8px; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; align-items: flex-start; }
+    .actions { display: flex; align-items: center; gap: 6px; padding: 0; }
     .action-btn { height: 30px; padding: 0 12px; border-radius: 9999px; border: none; background: #f0f2f5; color: #374151; font-size: 11px; font-weight: 600; font-family: inherit; letter-spacing: 0.02em; cursor: pointer; display: flex; align-items: center; gap: 4px; flex-shrink: 0; transition: background 0.15s; white-space: nowrap; }
     .action-btn:hover { background: #e5e7eb; }
     .action-btn:disabled { opacity: 0.4; cursor: default; }
@@ -1255,22 +1135,6 @@ function createInputBar(): void {
     .mcq-footer { display: flex; justify-content: flex-end; }
     .mcq-skip { border: none; background: none; font-size: 11px; color: #9aa0a6; cursor: pointer; font-family: inherit; padding: 0; }
     .mcq-skip:hover { color: #374151; }
-    /* Welcome card */
-    .welcome-card { background: #fff; border-radius: 16px; padding: 20px 20px 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 10px; }
-    .welcome-label { font-size: 10px; font-weight: 600; color: #9aa0a6; letter-spacing: 0.08em; text-transform: uppercase; }
-    .welcome-title { font-size: 14px; font-weight: 700; color: #1a1a1a; line-height: 1.3; }
-    .welcome-input { width: 100%; padding: 8px 12px; border-radius: 9999px; border: 1px solid #e8e8e2; font-size: 13px; font-family: inherit; color: #1a1a1a; outline: none; background: #f9f9f8; transition: border-color 0.15s; }
-    .welcome-input:focus { border-color: #111; background: #fff; }
-    .welcome-input::placeholder { color: #9aa0a6; }
-    .welcome-file-row { display: flex; align-items: center; gap: 8px; }
-    .welcome-file-btn { height: 28px; padding: 0 12px; border-radius: 9999px; border: 1px solid #e8e8e2; background: #f9f9f8; color: #6b7280; font-size: 11px; font-weight: 500; font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: background 0.15s, border-color 0.15s; flex-shrink: 0; }
-    .welcome-file-btn:hover { background: #f0f2f5; border-color: #d1d5db; }
-    .welcome-file-btn.has-file { border-color: #111; color: #111; }
-    .welcome-file-name { font-size: 11px; color: #9aa0a6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .welcome-footer { display: flex; align-items: center; justify-content: flex-end; }
-    .welcome-start { height: 32px; padding: 0 18px; border-radius: 9999px; border: none; background: #111; color: #fff; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; align-self: flex-end; }
-    .welcome-start:hover:not(:disabled) { background: #333; }
-    .welcome-start:disabled { background: #e8e8e2; color: #9aa0a6; cursor: default; }
     /* Edit review panel */
     .review-panel { background: #fff; border-radius: 16px; padding: 12px 14px 10px; box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06); border: 0.5px solid #e8e8e2; display: flex; flex-direction: column; gap: 8px; }
     .review-header { display: flex; align-items: center; justify-content: space-between; }
@@ -1299,69 +1163,15 @@ function createInputBar(): void {
   wrapper.className = 'wrapper';
   shadowWrapper = wrapper;
 
-  // ── Input pill ──
-  const bar = document.createElement('div');
-  bar.className = 'bar';
-
-  topicTextarea = document.createElement('textarea');
-  topicTextarea.placeholder = getPlaceholder();
-  topicTextarea.rows = 1;
-  topicTextarea.addEventListener('input', () => {
-    topicTextarea!.style.height = 'auto';
-    topicTextarea!.style.height = `${Math.min(topicTextarea!.scrollHeight, 120)}px`;
-  });
-  topicTextarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      const val = topicTextarea!.value.trim();
-      if (val) { topicTextarea!.value = ''; topicTextarea!.style.height = 'auto'; void handleSubmit(val); }
-    }
-  });
-
-  submitBtn = document.createElement('button');
-  submitBtn.className = 'send';
-  submitBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 12V4M8 4L4.5 7.5M8 4L11.5 7.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  submitBtn.title = 'Submit';
-  submitBtn.addEventListener('click', () => {
-    const val = topicTextarea!.value.trim();
-    if (val) { topicTextarea!.value = ''; topicTextarea!.style.height = 'auto'; void handleSubmit(val); }
-  });
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.textContent = '×';
-  closeBtn.title = 'Close Oddity';
-  closeBtn.addEventListener('click', deactivate);
-
-  bar.appendChild(topicTextarea);
-  bar.appendChild(submitBtn);
-  bar.appendChild(closeBtn);
-
-  bar.addEventListener('mousemove', (e) => {
-    const rect = bar.getBoundingClientRect();
-    wrapper.classList.toggle('show-close', e.clientX - rect.left > rect.width * 0.75);
-  });
-  bar.addEventListener('mouseleave', () => wrapper.classList.remove('show-close'));
-
-  // ── Actions row ──
-  const actionsRow = document.createElement('div');
-  actionsRow.className = 'actions';
-
+  // ── Notes button ──
   commentBtn = document.createElement('button');
   commentBtn.className = 'action-btn';
   commentBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M10 2H2a1 1 0 00-1 1v5a1 1 0 001 1h2l2 2 2-2h2a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>Notes`;
   commentBtn.title = 'Re-run annotations';
   commentBtn.addEventListener('click', () => document.dispatchEvent(new CustomEvent('oddity:gdocs:re-annotate')));
 
-  actionsRow.appendChild(commentBtn);
-
-  wrapper.appendChild(actionsRow);
-  wrapper.appendChild(bar);
+  wrapper.appendChild(commentBtn);
   shadow.appendChild(wrapper);
-
-  // Textarea starts locked; renderWelcomeCard (called from activate) will unlock it
-  topicTextarea.disabled = true;
-  if (submitBtn) submitBtn.disabled = true;
 }
 
 // ─── Activate / deactivate ────────────────────────────────────────────────────
@@ -1388,10 +1198,6 @@ async function activate(essayContext?: { prompt: string; answers: Record<string,
     chatHistory.push(...existingSession.chatHistory);
     activeSession = existingSession;
     essayTabId = existingSession.essayTabId ?? '';
-    // Unlock the input — existing session, skip welcome card
-    if (topicTextarea) { topicTextarea.disabled = false; topicTextarea.placeholder = getPlaceholder(); }
-    if (submitBtn) submitBtn.disabled = false;
-    setTimeout(() => topicTextarea?.focus(), 100);
     // Re-register annotations for reply observer
     void fetchAnnotationsForDoc().then(async (annotations) => {
       if (!annotations.length) return;
@@ -1410,13 +1216,11 @@ async function activate(essayContext?: { prompt: string; answers: Record<string,
   } else {
     activeSession = { docId, tabId, chatHistory: [], createdAt: Date.now() };
     await saveSession(activeSession);
-    // Fresh session — show welcome card
-    renderWelcomeCard();
   }
 }
 
 function deactivate() {
-  dismissWelcomeCard();
+  stopLoadingAnimation();
   dismissMcqCard();
   dismissReviewPanel();
   if (inputBar) { inputBar.remove(); inputBar = null; }
@@ -1442,4 +1246,23 @@ function deactivate() {
 document.addEventListener('oddity:gdocs:activate', (e: Event) => {
   const context = (e as CustomEvent<{ prompt: string; answers: Record<string, string> } | undefined>).detail;
   void activate(context ?? undefined);
+});
+
+// Plan mode trigger from the argument box panel
+document.addEventListener('oddity:gdocs:planmode', (e: Event) => {
+  const { topic } = (e as CustomEvent<{ topic: string }>).detail;
+  const effectiveTopic = topic || mcqTopic || 'My essay';
+  void startMcqFlow(effectiveTopic);
+});
+
+// Chat trigger from the argument box panel (Auto mode)
+document.addEventListener('oddity:gdocs:chat', (e: Event) => {
+  const { text } = (e as CustomEvent<{ text: string; memoMode: string }>).detail;
+  if (text) void handleSubmit(text);
+});
+
+document.addEventListener('oddity:annotation:fix-now', (e: Event) => {
+  const { anchorText, note, replyText } = (e as CustomEvent<{ annotationId: string; anchorText: string; note: string; replyText: string }>).detail;
+  const prompt = `Fix the following passage based on this annotation feedback.\n\nPassage: "${anchorText}"\nAnnotation: ${note}${replyText ? `\nUser note: ${replyText}` : ''}`;
+  void handleSubmit(prompt);
 });
