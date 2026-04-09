@@ -78,10 +78,12 @@ function clearOddityPreviewArtifacts(root: ParentNode): void {
     parent.removeChild(span);
   });
 
-  root.querySelectorAll<HTMLElement>("[data-oddity-highlight-bg]").forEach((el) => {
-    el.style.backgroundColor = "";
-    delete el.dataset.oddityHighlightBg;
-  });
+  root
+    .querySelectorAll<HTMLElement>("[data-oddity-highlight-bg]")
+    .forEach((el) => {
+      el.style.backgroundColor = "";
+      delete el.dataset.oddityHighlightBg;
+    });
 }
 
 function sanitizePreviewClone(pageEl: HTMLElement): HTMLElement {
@@ -92,15 +94,17 @@ function sanitizePreviewClone(pageEl: HTMLElement): HTMLElement {
   clone.removeAttribute("data-page-no");
 
   clone.setAttribute("aria-hidden", "true");
-  clone.querySelectorAll<HTMLElement>(
-    "a, button, input, select, textarea, [tabindex], [contenteditable]",
-  ).forEach((el) => {
-    el.setAttribute("tabindex", "-1");
-    el.setAttribute("aria-hidden", "true");
-    if (el.hasAttribute("contenteditable")) {
-      el.setAttribute("contenteditable", "false");
-    }
-  });
+  clone
+    .querySelectorAll<HTMLElement>(
+      "a, button, input, select, textarea, [tabindex], [contenteditable]",
+    )
+    .forEach((el) => {
+      el.setAttribute("tabindex", "-1");
+      el.setAttribute("aria-hidden", "true");
+      if (el.hasAttribute("contenteditable")) {
+        el.setAttribute("contenteditable", "false");
+      }
+    });
 
   return clone;
 }
@@ -129,7 +133,8 @@ function getElementDimension(
   );
   if (computedValue > 0) return computedValue;
 
-  const scrollValue = dimension === "width" ? element.scrollWidth : element.scrollHeight;
+  const scrollValue =
+    dimension === "width" ? element.scrollWidth : element.scrollHeight;
   if (scrollValue > 0) return scrollValue;
 
   return dimension === "width"
@@ -361,7 +366,7 @@ function ensureSummaryStyles(): void {
     }
 
     .oddity-pdf-summary-text {
-      font-size: 13px;
+      font-size: 16.25px;
       line-height: 1.6;
       color: #334155;
     }
@@ -759,7 +764,10 @@ export class PdfPageSummaryController {
     icon.setAttribute("stroke-linejoin", "round");
     icon.setAttribute("aria-hidden", "true");
     const path1 = document.createElementNS(svgNS, "path");
-    path1.setAttribute("d", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z");
+    path1.setAttribute(
+      "d",
+      "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z",
+    );
     const path2 = document.createElementNS(svgNS, "polyline");
     path2.setAttribute("points", "14 2 14 8 20 8");
     const path3 = document.createElementNS(svgNS, "line");
@@ -850,14 +858,14 @@ export class PdfPageSummaryController {
 
     if (state.summary?.summary && !state.showPreview) {
       card.appendChild(this.buildSummaryCardHeader(state));
-      
+
       const content = document.createElement("div");
       content.className = "oddity-pdf-summary-card-content";
 
       const text = document.createElement("div");
       text.className = "oddity-pdf-summary-text";
       text.textContent = state.summary.summary;
-      
+
       content.appendChild(text);
 
       const actionBtn = document.createElement("button");
@@ -876,7 +884,7 @@ export class PdfPageSummaryController {
     }
 
     card.appendChild(this.buildPreviewCardHeader(state.page.pageLabel));
-    
+
     const content = document.createElement("div");
     content.className = "oddity-pdf-summary-card-content";
     content.appendChild(createPreviewFrame(state.page.element));
@@ -900,7 +908,7 @@ export class PdfPageSummaryController {
         void this.requestPageSummary(state.page.pageNo);
       });
     }
-    
+
     content.appendChild(actionBtn);
     card.appendChild(content);
   }
