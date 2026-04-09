@@ -982,3 +982,362 @@ function extractCompleteObjects(buffer: string): {
 export function getGeminiReliabilityCounters(): Record<string, number> {
   return { ...reliabilityCounters };
 }
+
+// ─── GDocs Chat Streaming ─────────────────────────────────────────────────────
+
+export type GDocsChatMode = "chat" | "tree" | "essay" | "edit" | "fast" | "outline";
+
+type GDocsChatMessage = { role: "user" | "assistant"; content: string };
+
+type GDocsChatStreamOptions = GeminiRequestOptions & {
+  onChunk?: (text: string) => void;
+};
+
+const _gdocsPrompts = promptsConfig as Record<string, unknown>;
+const gdocsPromptMap: Record<GDocsChatMode, string> = {
+  chat: (_gdocsPrompts.gdocs_chat_prompt as string) ?? "",
+  tree: (_gdocsPrompts.gdocs_tree_prompt as string) ?? "",
+  essay: (_gdocsPrompts.gdocs_essay_prompt as string) ?? "",
+  edit: (_gdocsPrompts.gdocs_edit_prompt as string) ?? "",
+  fast: (_gdocsPrompts.gdocs_fast_prompt as string) ?? "",
+  outline: (_gdocsPrompts.gdocs_plan_outline_prompt as string) ?? "",
+};
+
+// Reasoning model for long-form generation and complex structural edits
+const reasoningModelName = "gemini-2.5-pro";
+// Minimal model override per mode — undefined means use the default modelName
+const gdocsModelMap: Partial<Record<GDocsChatMode, string>> = {
+  essay: reasoningModelName,
+  edit: reasoningModelName,
+};
+// Per-mode maxOutputTokens. edit/essay use the reasoning model and can produce
+// large structured responses (many REPLACE blocks, full essays) — 2048 is too
+// small and causes truncation before <<<END_EDIT>>> / <<<END_ESSAY>>> is emitted.
+const gdocsMaxTokensMap: Partial<Record<GDocsChatMode, number>> = {
+  edit: 8192,
+  essay: 8192,
+};
+
+// All valid chat modes — any unknown mode string gets rejected before reaching Gemini
+const VALID_GDOCS_MODES = new Set<string>(Object.keys(gdocsPromptMap));
+
+export function isValidGDocsChatMode(mode: string): mode is GDocsChatMode {
+  return VALID_GDOCS_MODES.has(mode);
+}
+
+async function consumeGDocsChatStreamAttempt(
+  entry: ClientEntry,
+  messages: GDocsChatMessage[],
+  mode: GDocsChatMode,
+  options: GDocsChatStreamOptions,
+): Promise<string> {
+  const systemPrompt = gdocsPromptMap[mode];
+  if (!systemPrompt) {
+    throw new Error(`[gdocs] Unknown mode "${mode}" — no system prompt defined`);
+  }
+  const effectiveModel = gdocsModelMap[mode] ?? modelName;
+  const maxOutputTokens = gdocsMaxTokensMap[mode] ?? 2048;
+  const model = entry.client.getGenerativeModel({
+    model: effectiveModel,
+    systemInstruction: systemPrompt,
+    generationConfig: {
+      responseMimeType: "text/plain" as const,
+      maxOutputTokens,
+      temperature: 0.7,
+    },
+  });
+
+  const contents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  const streamResult = await model.generateContentStream(
+    { contents },
+    getRequestOptions(options.signal),
+  );
+
+  let responseError: unknown = null;
+  const responseSettled = streamResult.response
+    .then(() => undefined)
+    .catch((error) => { responseError = error; });
+
+  let fullText = "";
+  try {
+    for await (const chunk of streamResult.stream) {
+      const delta = chunk.text();
+      if (!delta) continue;
+      fullText += delta;
+      options.onChunk?.(delta);
+    }
+  } catch (error) {
+    await responseSettled;
+    throw error;
+  }
+
+  await responseSettled;
+  if (responseError) throw responseError;
+  return fullText;
+}
+
+export async function generateGDocsChatStream(
+  messages: GDocsChatMessage[],
+  mode: GDocsChatMode,
+  options: GDocsChatStreamOptions = {},
+): Promise<string> {
+  const attempts = buildClientAttemptPlan();
+  let lastError: GeminiOperationError | null = null;
+  let emittedText = false;
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const entry = attempts[index]!;
+    const attemptNumber = index + 1;
+
+    try {
+      return await consumeGDocsChatStreamAttempt(entry, messages, mode, {
+        ...options,
+        onChunk: (chunk) => {
+          emittedText = true;
+          options.onChunk?.(chunk);
+        },
+      });
+    } catch (error) {
+      const operationError = toGeminiOperationError(
+        error,
+        entry.keyIndex,
+        attemptNumber,
+        options.signal,
+      );
+      lastError = operationError;
+
+      if (!operationError.retryable || options.signal?.aborted || emittedText) {
+        throw operationError;
+      }
+
+      if (index >= attempts.length - 1) break;
+
+      incrementCounter("retries");
+      const nextEntry = attempts[index + 1]!;
+      if (nextEntry.keyIndex !== entry.keyIndex) incrementCounter("key_rotations");
+
+      await waitBeforeRetry(attemptNumber, options.signal);
+    }
+  }
+
+  throw lastError ?? new Error("GDocs chat stream failed without attempts");
+}
+
+// ─── MCQ Question Generation ──────────────────────────────────────────────────
+
+// Ported from Claude Code's AskUserQuestionTool schema:
+// - header: short chip/tag label shown above the question (≤12 chars)
+// - options: 2-4 choices, each with a label (1-5 words) + description (trade-off explanation)
+// - The UI always adds an "Other" freeform option automatically — do NOT include it here
+export type McqOption = {
+  label: string;       // 1-5 words, displayed as the selectable choice
+  description: string; // short explanation of trade-offs or implications
+};
+
+export type McqQuestion = {
+  question: string;    // full question text, ends with "?"
+  header: string;      // ≤12 char chip label (e.g. "Tone", "Audience")
+  options: McqOption[]; // 2-4 options, best default FIRST marked "(Recommended)"
+};
+
+const mcqPromptTemplate: string = (_gdocsPrompts.gdocs_mcq_prompt as string) ?? "";
+
+function parseMcqOption(raw: unknown): McqOption | null {
+  if (typeof raw === "string") {
+    // backward-compat: plain string → use as label, empty description
+    return { label: raw.slice(0, 60), description: "" };
+  }
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj?.label !== "string") return null;
+  return {
+    label: obj.label.slice(0, 60),
+    description: typeof obj.description === "string" ? obj.description.slice(0, 120) : "",
+  };
+}
+
+export async function generateAllMcqQuestions(
+  prompt: string,
+  docContext: string,
+): Promise<McqQuestion[]> {
+  const docContextText = docContext.trim()
+    ? `Existing document content:\n${docContext.trim()}\n\n`
+    : "";
+
+  const filledPrompt = mcqPromptTemplate
+    .replace("{docContext}", docContextText)
+    .replace("{prompt}", prompt);
+
+  try {
+    ensureClientsConfigured();
+    const entry = genAIClients[0]!;
+    const model = entry.client.getGenerativeModel({
+      model: modelName,
+      generationConfig: { maxOutputTokens: 1536, temperature: 0.8 },
+    });
+
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: filledPrompt }] }],
+    });
+
+    const text = result.response.text().trim();
+    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(cleaned) as unknown;
+    const arr = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as Record<string, unknown>).questions)
+        ? (parsed as Record<string, unknown>).questions as unknown[]
+        : null;
+
+    if (arr) {
+      const questions: McqQuestion[] = arr
+        .filter((item): item is Record<string, unknown> =>
+          typeof (item as Record<string, unknown>).question === "string" &&
+          Array.isArray((item as Record<string, unknown>).options)
+        )
+        .map((item) => {
+          const opts = (item.options as unknown[])
+            .map(parseMcqOption)
+            .filter((o): o is McqOption => o !== null)
+            .slice(0, 4); // Claude Code caps at 4 options
+          return {
+            question: item.question as string,
+            header: typeof item.header === "string" ? item.header.slice(0, 12) : "",
+            options: opts,
+          };
+        })
+        // Uniqueness guard (from Claude Code): drop duplicate question texts
+        .filter((q, i, arr) => arr.findIndex(x => x.question === q.question) === i)
+        .filter(q => q.options.length >= 2) // must have at least 2 options
+        .slice(0, 5);
+
+      if (questions.length > 0) return questions;
+    }
+  } catch (err) {
+    console.error("[generateAllMcqQuestions] Error:", err instanceof Error ? err.message : err);
+  }
+
+  // Fallback: 5 generic questions with descriptions
+  return [
+    {
+      question: `What is the main goal of your writing about "${prompt.slice(0, 40)}"?`,
+      header: "Goal",
+      options: [
+        { label: "Inform readers (Recommended)", description: "Present facts and analysis objectively" },
+        { label: "Argue a position", description: "Persuade the reader toward a specific view" },
+        { label: "Explore perspectives", description: "Weigh multiple sides without a fixed conclusion" },
+      ],
+    },
+    {
+      question: "Who is your primary audience?",
+      header: "Audience",
+      options: [
+        { label: "General readers (Recommended)", description: "No assumed background knowledge" },
+        { label: "Domain experts", description: "Can use technical language and skip basics" },
+        { label: "Students / beginners", description: "Needs definitions and step-by-step explanations" },
+      ],
+    },
+    {
+      question: "What tone are you aiming for?",
+      header: "Tone",
+      options: [
+        { label: "Formal & academic (Recommended)", description: "Structured, cited, suitable for essays" },
+        { label: "Conversational", description: "Approachable, uses first person, flows naturally" },
+        { label: "Persuasive & direct", description: "Assertive, action-oriented, emotionally engaging" },
+      ],
+    },
+    {
+      question: "How comprehensive should the coverage be?",
+      header: "Depth",
+      options: [
+        { label: "High-level overview", description: "Broad strokes, key takeaways only" },
+        { label: "Moderate depth (Recommended)", description: "Core arguments with supporting evidence" },
+        { label: "Comprehensive", description: "Exhaustive — every angle, every counterargument" },
+      ],
+    },
+    {
+      question: "What should readers take away?",
+      header: "Takeaway",
+      options: [
+        { label: "Clear understanding (Recommended)", description: "Readers leave knowing more than before" },
+        { label: "Changed opinion", description: "Readers adopt or seriously reconsider your position" },
+        { label: "Actionable next steps", description: "Readers know exactly what to do next" },
+      ],
+    },
+  ];
+}
+
+// ─── Mode Router ──────────────────────────────────────────────────────────────
+
+export type GDocsRouteMode = "FAST" | "PLAN";
+
+export type GDocsRouteResult = {
+  mode: GDocsRouteMode;
+  confidence: "high" | "low";
+  reasoning: string;
+};
+
+const routerSystemPrompt: string = (_gdocsPrompts.gdocs_router_prompt as string) ?? "";
+const routerDeepSystemPrompt: string = (_gdocsPrompts.gdocs_router_deep_prompt as string) ?? "";
+const routerModelName = "gemini-2.0-flash";
+
+function parseRouteResult(text: string): GDocsRouteResult {
+  const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const parsed = JSON.parse(cleaned) as { mode?: string; confidence?: string; reasoning?: string };
+  const mode: GDocsRouteMode = parsed.mode === "PLAN" ? "PLAN" : "FAST";
+  const confidence: "high" | "low" = parsed.confidence === "low" ? "low" : "high";
+  return { mode, confidence, reasoning: parsed.reasoning ?? "" };
+}
+
+export async function generateGDocsRoute(
+  prompt: string,
+  docContext: string,
+  essayContent?: string,
+): Promise<GDocsRouteResult> {
+  const docText = (essayContent?.trim() || docContext?.trim()) ?? "";
+  const userMessage = `User request: ${prompt}${docText ? `\n\nDocument:\n${docText.slice(0, 4000)}` : ""}`;
+
+  try {
+    ensureClientsConfigured();
+    const entry = genAIClients[0]!;
+
+    // Stage 1: quick classification
+    const stage1Model = entry.client.getGenerativeModel({
+      model: routerModelName,
+      systemInstruction: routerSystemPrompt,
+      generationConfig: { maxOutputTokens: 150, temperature: 0.1 },
+    });
+
+    const stage1Result = await stage1Model.generateContent({
+      contents: [{ role: "user", parts: [{ text: userMessage }] }],
+    });
+
+    const stage1 = parseRouteResult(stage1Result.response.text().trim());
+
+    // Stage 2: deeper reasoning for uncertain cases
+    if (stage1.confidence === "low") {
+      try {
+        const stage2Model = entry.client.getGenerativeModel({
+          model: routerModelName,
+          systemInstruction: routerDeepSystemPrompt,
+          generationConfig: { maxOutputTokens: 256, temperature: 0.3 },
+        });
+        const stage2Result = await stage2Model.generateContent({
+          contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        });
+        return parseRouteResult(stage2Result.response.text().trim());
+      } catch {
+        // Stage 2 failed — fall back to FAST (safe default)
+        return { mode: "FAST", confidence: "low", reasoning: "stage2-fallback" };
+      }
+    }
+
+    return stage1;
+  } catch (err) {
+    console.error("[generateGDocsRoute] Error:", err instanceof Error ? err.message : err);
+    return { mode: "FAST", confidence: "low", reasoning: "fallback" };
+  }
+}

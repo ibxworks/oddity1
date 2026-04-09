@@ -148,7 +148,9 @@
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -H \"$AUTH\" \"https://us.posthog.com/api/projects/355832/dashboards/1410914/?refresh=force_blocking\")",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -H \"$AUTH\" \"https://us.posthog.com/api/projects/355832/dashboards/1410930/?refresh=force_blocking\")",
       "mcp__chrome-devtools__list_pages",
-      "Bash(grep -n \"annotation_cache\\\\|intensity_check\\\\|intensity\" /Users/realtonypark/Developer/oddity1/backend/migrations/*.sql)"
+      "Bash(grep -n \"annotation_cache\\\\|intensity_check\\\\|intensity\" /Users/realtonypark/Developer/oddity1/backend/migrations/*.sql)",
+      "Bash(python3:*)",
+      "Bash(echo \"Exit: $?\")"
     ]
   },
   "enableAllProjectMcpServers": true,

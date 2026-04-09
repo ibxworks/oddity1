@@ -1,7 +1,10 @@
 import type { Annotation, AnnotationType } from '@oddity/shared';
+import { getVisual } from './styles.js';
+import { getThemeMode } from './theme-detector.js';
 
 const OVERLAY_ID = 'oddity-overlay';
-const Z_INDEX = 2147483646;
+// Overlay highlights sit below annotation cards (2147483645) and page-dim (2147483644)
+const Z_INDEX = 2147483643;
 
 let overlayEl: HTMLDivElement | null = null;
 /** Inner wrapper whose transform is updated on scroll instead of recreating DOM. */
@@ -11,7 +14,7 @@ let emphasizedId: string | null = null;
 
 // ─── Position Cache ───
 // Store absolute (page-level) rects so we never call getClientRects() on scroll.
-type AbsoluteRect = { left: number; top: number; width: number; height: number };
+export type AbsoluteRect = { left: number; top: number; width: number; height: number };
 let cachedRects: Map<string, AbsoluteRect[]> = new Map();
 
 // Baseline scroll offsets recorded when the cache was last built.
@@ -93,6 +96,95 @@ export function initOverlay(): HTMLDivElement {
   return overlayEl;
 }
 
+type OverlayEventCallbacks = {
+  onHoverStart: (annotationId: string) => void;
+  onHoverEnd: (annotationId: string) => void;
+  onClick: (annotationId: string) => void;
+};
+let overlayCallbacks: OverlayEventCallbacks | null = null;
+
+/**
+ * In GDocs mode all rects are pointer-events:none so editing clicks reach the canvas.
+ * Hover/click are instead detected via document-level listeners that hit-test against
+ * the cached absolute rects.
+ */
+let gdocsMode = false;
+
+/**
+ * Register hover/click callbacks for canvas-mode overlay divs.
+ * Called once after initOverlay() to enable interactivity on overlay rects.
+ */
+export function setOverlayEventCallbacks(cbs: OverlayEventCallbacks): void {
+  overlayCallbacks = cbs;
+  // Event delegation on the wrapper using mouseover/mouseout (these bubble, mouseenter/leave don't)
+  wrapperEl?.addEventListener('mouseover', (e) => {
+    const id = (e.target as HTMLElement)?.dataset?.annotationId;
+    if (id) overlayCallbacks?.onHoverStart(id);
+  });
+  wrapperEl?.addEventListener('mouseout', (e) => {
+    const id = (e.target as HTMLElement)?.dataset?.annotationId;
+    if (id) overlayCallbacks?.onHoverEnd(id);
+  });
+  wrapperEl?.addEventListener('click', (e) => {
+    const id = (e.target as HTMLElement)?.dataset?.annotationId;
+    if (id) { e.stopPropagation(); overlayCallbacks?.onClick(id); }
+  });
+}
+
+/**
+ * Switch to GDocs interaction mode.
+ *
+ * All overlay rects become pointer-events:none so clicks reach the GDocs canvas
+ * for text editing. Hover and click on annotations are detected via document-level
+ * listeners that hit-test against the cached absolute rects.
+ *
+ * Returns a cleanup function.
+ */
+export function enableGDocsInteractionMode(scrollContainer: HTMLElement): () => void {
+  gdocsMode = true;
+  redraw(); // repaint rects as pointer-events:none
+
+  const hitTest = (clientX: number, clientY: number): string | null => {
+    const scrollTop  = scrollContainer.scrollTop;
+    const scrollLeft = scrollContainer.scrollLeft;
+    for (const [id, rects] of cachedRects) {
+      for (const r of rects) {
+        const vLeft = r.left - scrollLeft;
+        const vTop  = r.top  - scrollTop;
+        if (clientX >= vLeft && clientX <= vLeft + r.width &&
+            clientY >= vTop  && clientY <= vTop  + r.height) {
+          return id;
+        }
+      }
+    }
+    return null;
+  };
+
+  let hoveredId: string | null = null;
+
+  const onMouseMove = (e: MouseEvent) => {
+    const id = hitTest(e.clientX, e.clientY);
+    if (id === hoveredId) return;
+    if (hoveredId) overlayCallbacks?.onHoverEnd(hoveredId);
+    if (id) overlayCallbacks?.onHoverStart(id);
+    hoveredId = id;
+  };
+
+  const onClick = (e: MouseEvent) => {
+    const id = hitTest(e.clientX, e.clientY);
+    if (id) overlayCallbacks?.onClick(id);
+  };
+
+  document.addEventListener('mousemove', onMouseMove, { passive: true });
+  document.addEventListener('click',     onClick,     { passive: true });
+
+  return () => {
+    gdocsMode = false;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('click',     onClick);
+  };
+}
+
 /**
  * Render highlight/underline rectangles for an annotation's resolved range.
  * Rects are cached at absolute (page-level) coordinates and the wrapper's
@@ -108,9 +200,32 @@ export function renderAnnotation(annotation: Annotation, range: Range): void {
 }
 
 /**
+ * Render an annotation using pre-computed absolute rects (no Range needed).
+ * Used for Google Docs where Range.getClientRects() is unreliable on canvas-rendered text.
+ * Rects are stored as-is; resize recalculation is skipped for these entries
+ * (positions are refreshed on next full re-render via rerenderAll).
+ */
+export function renderAnnotationWithRects(annotation: Annotation, rects: AbsoluteRect[]): void {
+  if (!overlayEl) initOverlay();
+  activeRanges.push({ annotation, range: null as unknown as Range });
+  cachedRects.set(annotation.id, rects);
+  pendingBatch.push({ annotation });
+  scheduleBatchFlush();
+}
+
+/**
  * Clear all rendered annotations from the overlay.
+ * Also cancels any pending rAF batch flush to prevent stale items from rendering
+ * after the overlay is rebuilt (e.g. during rerenderAll after annotation deletion).
  */
 export function clearOverlay(): void {
+  // Cancel pending batch flush so stale pendingBatch items don't render
+  // after the new items are queued by the re-render that follows.
+  if (batchRafId !== null) {
+    cancelAnimationFrame(batchRafId);
+    batchRafId = null;
+  }
+  pendingBatch = [];
   if (wrapperEl) {
     wrapperEl.innerHTML = '';
   }
@@ -134,6 +249,16 @@ export function setOverlayVisible(visible: boolean): void {
   if (overlayEl) {
     overlayEl.style.display = visible ? '' : 'none';
   }
+}
+
+/**
+ * Register a custom scroll container (e.g. Google Docs' internal scroller).
+ * Call once after init so the wrapper transform tracks the container's scroll.
+ */
+export function setScrollContainer(el: Element): void {
+  scrollContainer = el;
+  baseContainerScrollLeft = el.scrollLeft;
+  baseContainerScrollTop = el.scrollTop;
 }
 
 /**
@@ -219,6 +344,53 @@ export function deemphasizeAnnotation(): void {
 }
 
 /**
+ * Shift all cached rects whose absolute top is below thresholdAbsY by dyPx.
+ * Used for live position updates when the user inserts or deletes lines in GDocs.
+ */
+export function shiftRectsBelow(thresholdAbsY: number, dyPx: number): void {
+  for (const [id, rects] of cachedRects) {
+    cachedRects.set(id, rects.map(r =>
+      r.top > thresholdAbsY ? { ...r, top: r.top + dyPx } : r
+    ));
+  }
+  redraw();
+}
+
+/**
+ * Immediately shift the left edge of annotations whose first rect sits on the
+ * same visual line as the cursor and starts to the right of caretAbsX.
+ *
+ * Called on every printable keystroke so the overlay doesn't lag behind typed
+ * text inserted before an annotation on the same line.  Uses direct DOM style
+ * updates instead of a full redraw to keep keystroke latency minimal.
+ */
+export function shiftRectsOnLine(
+  absY: number,
+  lineH: number,
+  caretAbsX: number,
+  dx: number,
+): void {
+  if (!wrapperEl || dx === 0) return;
+  for (const [id, rects] of cachedRects) {
+    const r = rects[0];
+    if (!r) continue;
+    // On the cursor's line
+    if (Math.abs(r.top - absY) >= lineH) continue;
+    // Starts at or to the right of the cursor (annotation is ahead of where we're typing)
+    if (r.left < caretAbsX - 5) continue;
+    // Update the cache
+    cachedRects.set(id, [{ ...r, left: r.left + dx }, ...rects.slice(1)]);
+    // Update the first overlay element for this annotation in-place (avoids full redraw)
+    for (const child of Array.from(wrapperEl.children) as HTMLElement[]) {
+      if (child.dataset.annotationId === id) {
+        child.style.left = `${parseFloat(child.style.left || '0') + dx}px`;
+        break; // only the first rect element needs to shift
+      }
+    }
+  }
+}
+
+/**
  * Destroy the overlay completely.
  */
 export function destroyOverlay(): void {
@@ -248,15 +420,29 @@ function drawCachedAnnotationInto(parent: Node, annotation: Annotation): void {
 
     // Rects are stored at absolute page coordinates; the wrapper's transform
     // shifts them into the viewport.
+    let bgCss = '';
+    let borderCss = '';
+    if (gdocsMode) {
+      // GDocs: use getVisual colors but transparent background so the native highlight shows through.
+      // Pointer events are handled via document-level hit-testing instead.
+      const visual = getVisual(annotation.type, getThemeMode(), annotation.label, false, true);
+      borderCss = visual.underlineStyle ? `border-bottom: ${visual.underlineStyle};` : '';
+    }
+    // Non-GDocs: rects are transparent with pointer-events:none. Colors come from
+    // the injected anchor <span> elements in the DOM text (via anchors.ts).
+    const pointerEvents = 'none';
     el.style.cssText = `
       position: absolute;
       left: ${rect.left}px;
       top: ${rect.top}px;
       width: ${rect.width}px;
       height: ${rect.height}px;
-      pointer-events: none;
+      pointer-events: ${pointerEvents};
       transition: filter 0.15s;
       z-index: 1;
+      box-sizing: border-box;
+      ${bgCss}
+      ${borderCss}
       ${isEmphasized ? 'filter: brightness(1.4);' : ''}
     `;
 
@@ -300,8 +486,8 @@ function recalculateCache(): void {
   baseContainerScrollLeft = scrollContainer?.scrollLeft ?? 0;
   baseContainerScrollTop = scrollContainer?.scrollTop ?? 0;
 
-  cachedRects.clear();
   for (const { annotation, range } of activeRanges) {
+    if (!range) continue; // Pre-computed rects (e.g. Google Docs) — keep as-is
     cacheAnnotationRects(annotation, range);
   }
   redraw();

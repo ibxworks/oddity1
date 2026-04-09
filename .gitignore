@@ -9,3 +9,5 @@ dist/
 .vercel
 .vite
 .worktrees/
+claude_source_code/
+key.pem

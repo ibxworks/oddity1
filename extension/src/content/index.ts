@@ -83,6 +83,7 @@ import {
   clearMarginNotes,
   collapseAllMarginNotes,
   destroyMarginNotes,
+  refreshMarginNotePositions,
   expandMarginNote,
   filterMarginNotesByTypes,
   initMarginNotes,
@@ -92,6 +93,8 @@ import {
   onAnchorHoverStart,
   removeMarginNote,
   setMarginNoteMode,
+  setMarginNotesGDocsMode,
+  setMarginNotesPersonality,
   setMarginNotesVisible,
   updateMarginNoteText,
   updateMarginNotesStyle,
@@ -103,9 +106,38 @@ import {
   filterByTypes,
   initOverlay,
   renderAnnotation,
+  renderAnnotationWithRects,
+  removeAnnotation,
   setOverlayVisible,
+  setOverlayEventCallbacks,
+  setScrollContainer,
+  shiftRectsBelow,
+  shiftRectsOnLine,
+  enableGDocsInteractionMode,
+  type AbsoluteRect,
 } from "./renderer/overlay.js";
 import { invalidateTextNodeIndex, resolveSelector } from "./selector.js";
+import {
+  isGoogleDocs,
+  isGoogleDocsEditorReady,
+  getGoogleDocsId,
+  detectGoogleDocsRegions,
+  extractGoogleDocsText,
+  findAnnotationRects,
+  createRangeFromNode,
+  setGDocsDebugUnderline,
+  setupGDocsEditTracking,
+  initGDocsRectCache,
+  getGDocsAnchorRects,
+  deleteGDocsRect,
+  clearAllGDocsRects,
+  saveGDocsAnnotationsToStorage,
+  fetchGoogleDocsText,
+  clearGDocsCorrectionQueue,
+  shiftGDocsAnchorRectsBelow,
+  shiftGDocsAnchorRectsOnLine,
+} from "./google-docs.js";
+import "./gdocs.js"; // registers oddity:gdocs:activate listener
 import { createStabilityWatcher } from "./stability.js";
 import { getPageUrl } from "./page-url.js";
 import { setThemeOverride } from "./renderer/theme-detector.js";
@@ -160,6 +192,17 @@ window.addEventListener("unhandledrejection", (e) => {
 });
 
 // ─── State ───
+
+/** Canvas-mode synthetic anchor elements, keyed by annotation id. */
+const gdocsAnchors = new Map<string, { el: HTMLSpanElement; rect: AbsoluteRect }>();
+/** Annotation objects keyed by id, populated during GDocs rendering for cursor correction. */
+const gdocsAnnotationCache = new Map<string, Annotation>();
+/** Pending GDocs canvas annotations awaiting cursor-based position correction. */
+const gdocsRenderPending = new Map<string, { annotation: Annotation; noteFeedback: ReturnType<typeof Array.prototype.filter>; regionId: string }>();
+/** Unlisten fn for the GDocs scroll container scroll listener. */
+let gdocsScrollUnlisten: (() => void) | null = null;
+/** True while Oddity GDocs AI edits are pending review — suppresses rerenderAll. */
+let gdocsEditingInProgress = false;
 
 const annotatedRegions = new Set<string>();
 const pendingRegions = new Set<string>();
@@ -643,6 +686,7 @@ function startAnchorGuard(): void {
       clearAllAnchors();
       clearOverlay();
       clearMarginNotes();
+      clearGdocsAnchors();
       for (const r of regions) invalidateTextNodeIndex(r.element);
       for (const r of regionByHash.values()) invalidateTextNodeIndex(r.element);
 
@@ -995,14 +1039,21 @@ async function init(): Promise<void> {
   // Always start in overview mode on page load for stability.
   // Mode is not restored from storage — the user switches manually after load.
   // (Restoring caused cross-tab interference and unpredictable state on refresh.)
+
+  // Overview mode is disabled for Google Docs — always start in depth mode.
+  if (isGoogleDocs()) {
+    currentMode = "depth";
+    visibleTypes = [...ALL_DEPTH_TYPES, "user_written"];
+  }
   if (prefs.depth_personality) {
     const storedPersonality = prefs.depth_personality as string;
     currentPersonality =
       storedPersonality === "gary"
         ? "sally"
         : (storedPersonality as DepthPersonality);
+    setMarginNotesPersonality(currentPersonality);
   }
-  // currentMode defaults to "overview" (line 315), visibleTypes to overview types (line 317)
+  // currentMode defaults to "overview" (see declaration above), visibleTypes to overview types
   setMarginNoteMode(currentMode);
 
   if (prefs.enabled === false) {
@@ -1090,9 +1141,490 @@ async function init(): Promise<void> {
   }
 }
 
+// ─── Google Docs Canvas Anchor Helpers ───
+
+/** Remove all synthetic anchor spans from the DOM and clear the map. */
+function clearGdocsAnchors(): void {
+  for (const { el } of gdocsAnchors.values()) el.remove();
+  gdocsAnchors.clear();
+}
+
+/**
+ * Update a synthetic anchor's fixed viewport position from its stored absolute rect
+ * and the scroll container's current scroll offsets.
+ * Call just before triggering hover/click so positionInlinePopover gets a fresh rect.
+ */
+function updateGdocsAnchorPosition(id: string, scrollEl: HTMLElement): void {
+  const entry = gdocsAnchors.get(id);
+  if (!entry) return;
+  const { el, rect } = entry;
+  el.style.top = `${rect.top - scrollEl.scrollTop}px`;
+  el.style.left = `${rect.left - scrollEl.scrollLeft}px`;
+}
+
+// ─── Google Docs Pipeline ───
+
+async function startGoogleDocsPipeline(): Promise<void> {
+  // Disconnect any previous observer to avoid duplicates on re-init (e.g. manual run)
+  activeBodyObserver?.disconnect();
+  activeBodyObserver = null;
+
+  initOverlay();
+  initManualAnnotations();
+  initKeyboardNav();
+  initArgumentsBox();
+  setInputTextProvider(collectInputText);
+  setArgumentsBoxEnabled(enabled);
+  setOverlayVisible(true);
+  setMarginNotesVisible(true);
+  initMarginNotes(document.body);
+
+  // Load persisted state (rects + annotations) from storage.
+  // If found, restore immediately without hitting the API.
+  const _gdocsDocId = getGoogleDocsId();
+  const _cachedState = _gdocsDocId ? await initGDocsRectCache(_gdocsDocId) : null;
+
+  // Poll for the editor to be ready — Google Docs loads its content asynchronously.
+  // Once paragraphs appear, run detection and then watch for further changes.
+  await waitForGoogleDocsEditor();
+
+  regions = detectGoogleDocsRegions();
+  if (regions.length > 0 && !marginNotesInitFromBody) {
+    initMarginNotes(regions[0]!.element);
+    marginNotesInitFromBody = true;
+  }
+
+  // Register GDocs scroll container so overlay highlights move with document scroll
+  const scrollEl = regions.length > 0 ? (regions[0]!.element as HTMLElement) : null;
+  if (scrollEl) {
+    setScrollContainer(scrollEl);
+
+    // On each scroll, refresh all synthetic anchor viewport positions and re-run
+    // margin-note vertical positioning so cards track their highlights.
+    gdocsScrollUnlisten?.();
+    const onGdocsScroll = () => {
+      for (const id of gdocsAnchors.keys()) {
+        updateGdocsAnchorPosition(id, scrollEl);
+      }
+      refreshMarginNotePositions();
+    };
+    scrollEl.addEventListener('scroll', onGdocsScroll, { passive: true });
+    gdocsScrollUnlisten = () => scrollEl.removeEventListener('scroll', onGdocsScroll);
+
+    // Live position tracking: immediately shift overlays on Enter/Delete, and
+    // silently re-run Cmd+F corrections after the user pauses typing.
+    setupGDocsEditTracking(scrollEl);
+
+    // Activate the GDocs chat UI (essay/writing/MCQ/notes) — Standard tier only.
+    const gdocsAuth = await sendMessage<{ authenticated: boolean; user?: { tier: string } }>({
+      action: "getAuthStatus",
+      payload: {},
+    });
+    if (gdocsAuth?.user?.tier === "standard") {
+      document.dispatchEvent(new CustomEvent('oddity:gdocs:activate'));
+    }
+
+    // GDocs interaction mode: overlay rects are pointer-events:none so editing
+    // clicks reach the canvas; hover/click are detected via document-level hit-testing.
+    enableGDocsInteractionMode(scrollEl);
+  }
+
+  // Render annotations at their cursor-corrected positions as the find queue processes.
+  // Also handles re-corrections when the document is edited (pending will be null).
+  document.addEventListener('oddity-gdocs-corrected', (e: Event) => {
+    const { id, rects } = (e as CustomEvent<{ id: string; rects: AbsoluteRect[] }>).detail;
+    // Use the first rect for anchor-span positioning (top-left of first line).
+    const rect = rects[0]!;
+    const scrollEl = regions[0]?.element as HTMLElement | undefined;
+    const scrollTop  = scrollEl?.scrollTop  ?? 0;
+    const scrollLeft = scrollEl?.scrollLeft ?? 0;
+
+    const pending = gdocsRenderPending.get(id);
+    if (pending) {
+      // First-time render
+      gdocsRenderPending.delete(id);
+      const { annotation, noteFeedback, regionId: pendingRegionId } = pending;
+
+      removeAnnotation(id);
+      renderAnnotationWithRects(annotation, rects);
+      gdocsAnnotationCache.set(id, annotation);
+
+      gdocsAnchors.get(id)?.el.remove();
+      const syntheticAnchor = document.createElement('span');
+      syntheticAnchor.textContent = '\u00A0';
+      syntheticAnchor.style.cssText = `position:fixed;left:${rect.left - scrollLeft}px;top:${rect.top - scrollTop}px;width:${rect.width}px;height:${rect.height}px;font-size:${rect.height}px;line-height:1;pointer-events:none;overflow:hidden;`;
+      document.body.appendChild(syntheticAnchor);
+      gdocsAnchors.set(id, { el: syntheticAnchor, rect });
+
+      const anchorRange = document.createRange();
+      anchorRange.selectNodeContents(syntheticAnchor);
+      addMarginNote(annotation, anchorRange, noteFeedback, handleAnnotationDeleted, pendingRegionId, null);
+    } else {
+      // Re-correction after edit — update position without recreating the margin note.
+      const annotation = gdocsAnnotationCache.get(id);
+      if (!annotation) return;
+
+      removeAnnotation(id);
+      renderAnnotationWithRects(annotation, rects);
+
+      const anchor = gdocsAnchors.get(id);
+      if (anchor) {
+        anchor.rect = rect;
+        anchor.el.style.left = `${rect.left - scrollLeft}px`;
+        anchor.el.style.top  = `${rect.top  - scrollTop}px`;
+        anchor.el.style.width  = `${rect.width}px`;
+        anchor.el.style.height = `${rect.height}px`;
+        anchor.el.style.fontSize = `${rect.height}px`;
+      }
+      refreshMarginNotePositions();
+    }
+  });
+
+  // When anchor text is deleted from the document, remove its overlay and margin note.
+  document.addEventListener('oddity-gdocs-anchor-deleted', (e: Event) => {
+    const { id } = (e as CustomEvent<{ id: string }>).detail;
+    handleAnnotationDeleted(id);
+  });
+
+  // Immediate line-shift updates: when the user presses Enter or deletes a line,
+  // shift all overlay rects and synthetic anchors below the cursor by ±lineHeight.
+  document.addEventListener('oddity-gdocs-line-shift', (e: Event) => {
+    const { thresholdAbsY, dyPx } = (e as CustomEvent<{ thresholdAbsY: number; dyPx: number }>).detail;
+    const scrollEl2 = regions[0]?.element as HTMLElement | undefined;
+    const scrollTop2  = scrollEl2?.scrollTop  ?? 0;
+    const scrollLeft2 = scrollEl2?.scrollLeft ?? 0;
+
+    shiftRectsBelow(thresholdAbsY, dyPx);
+    shiftGDocsAnchorRectsBelow(thresholdAbsY, dyPx);
+
+    for (const entry of gdocsAnchors.values()) {
+      if (entry.rect.top > thresholdAbsY) {
+        entry.rect = { ...entry.rect, top: entry.rect.top + dyPx };
+        entry.el.style.top = `${entry.rect.top - scrollTop2}px`;
+        entry.el.style.left = `${entry.rect.left - scrollLeft2}px`;
+      }
+    }
+    refreshMarginNotePositions();
+  });
+
+  // Immediate same-line X-shift: when the user types a printable character or
+  // deletes on the same line as an annotation that sits to the right of the cursor,
+  // push that annotation's overlay left edge right (or left) by the character width.
+  // This fires every keyframe so the overlay never bleeds into the typed text.
+  document.addEventListener('oddity-gdocs-char-shift', (e: Event) => {
+    const { absY, lineH, caretAbsX, dxPx } =
+      (e as CustomEvent<{ absY: number; lineH: number; caretAbsX: number; dxPx: number }>).detail;
+    const scrollEl2 = regions[0]?.element as HTMLElement | undefined;
+    const scrollTop2  = scrollEl2?.scrollTop  ?? 0;
+    const scrollLeft2 = scrollEl2?.scrollLeft ?? 0;
+
+    shiftRectsOnLine(absY, lineH, caretAbsX, dxPx);
+    shiftGDocsAnchorRectsOnLine(absY, lineH, caretAbsX, dxPx);
+
+    for (const entry of gdocsAnchors.values()) {
+      const r = entry.rect;
+      if (Math.abs(r.top - absY) >= lineH) continue;
+      if (r.left < caretAbsX - 5) continue;
+      entry.rect = { ...r, left: r.left + dxPx };
+      entry.el.style.left = `${entry.rect.left - scrollLeft2}px`;
+      entry.el.style.top  = `${entry.rect.top  - scrollTop2}px`;
+    }
+    refreshMarginNotePositions();
+  });
+
+  // Register overlay event callbacks so canvas-mode highlight rects are interactive.
+  // Refresh anchor position just before triggering hover/click so positionInlinePopover
+  // sees the correct current viewport coordinates.
+  setOverlayEventCallbacks({
+    onHoverStart: (id) => { if (scrollEl) updateGdocsAnchorPosition(id, scrollEl); onAnchorHoverStart(id); },
+    onHoverEnd: (id) => onAnchorHoverEnd(id),
+    onClick: (id) => { if (scrollEl) updateGdocsAnchorPosition(id, scrollEl); onAnchorClick(id); },
+  });
+
+  // If cached state exists, restore annotations directly without fetching doc text or API.
+  // We bypass findAnnotationRects (which needs _cachedDocText) and directly populate
+  // gdocsRenderPending + dispatch oddity-gdocs-corrected for each annotation with known rects.
+  if (_cachedState?.annotations?.length && regions.length > 0) {
+    const { annotations: cachedAnns, regionId: cachedRegionId } = _cachedState;
+    regionByHash.set(cachedRegionId, regions[0]!);
+    activeHashes.set(regions[0]!.element, cachedRegionId);
+    const store = currentMode === 'overview' ? overviewAnnotations : depthAnnotations;
+    setAnnotationsPreservingUserWritten(store, cachedRegionId, cachedAnns);
+
+    const feedback = effectiveFeedbackMap().get(cachedRegionId) ?? [];
+    for (const annotation of cachedAnns) {
+      const rects = getGDocsAnchorRects(annotation.id);
+      if (!rects) continue;
+      const noteFeedback = feedback.filter(f => f.annotation_id === annotation.id);
+      gdocsRenderPending.set(annotation.id, { annotation, noteFeedback, regionId: cachedRegionId });
+      // Dispatch after this synchronous block so the oddity-gdocs-corrected listener is ready.
+      const id = annotation.id;
+      setTimeout(() => {
+        document.dispatchEvent(new CustomEvent('oddity-gdocs-corrected', { detail: { id, rects } }));
+      }, 0);
+    }
+    syncArgumentsBox();
+  }
+
+  // Listen for re-annotate event from the GDocs chat UI Notes button.
+  document.addEventListener('oddity:gdocs:re-annotate', () => {
+    const docId = getGoogleDocsId();
+
+    // Collect anchor texts before clearing stores (for GDocs highlight removal).
+    const anchorTexts: string[] = [];
+    for (const anns of [...overviewAnnotations.values(), ...depthAnnotations.values()]) {
+      for (const a of anns) {
+        const t = a.anchor.exact;
+        if (t) anchorTexts.push(t);
+      }
+    }
+
+    // Clear all overlays and DOM anchors.
+    clearOverlay();
+    clearAllAnchors();
+    clearMarginNotes();
+    clearGdocsAnchors();
+
+    // Clear annotation stores.
+    overviewAnnotations.clear();
+    depthAnnotations.clear();
+    overviewFeedback.clear();
+    depthFeedback.clear();
+    gdocsAnnotationCache.clear();
+    gdocsRenderPending.clear();
+
+    // Clear GDocs position cache.
+    if (docId) clearAllGDocsRects(docId);
+
+    // Remove GDocs native highlights from the document (fire-and-forget).
+    if (docId && anchorTexts.length > 0) {
+      sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts } })
+        .catch(() => {});
+    }
+
+    // Re-run annotation pipeline.
+    annotatedRegions.clear();
+    pendingRegions.clear();
+    overviewGenerated.clear();
+    depthGenerated.clear();
+    activeHashes.clear();
+    for (const region of regions) {
+      handleStableRegion(region, region.element);
+    }
+  });
+
+  // Hide annotations while the Oddity GDocs editor is applying AI edits.
+  document.addEventListener('oddity:gdocs:edit-start', () => {
+    gdocsEditingInProgress = true;
+
+    // Collect all anchor texts before clearing caches.
+    const anchorTexts: string[] = [];
+    for (const store of [overviewAnnotations, depthAnnotations] as Array<Map<string, Annotation[]>>) {
+      for (const anns of store.values()) {
+        for (const a of anns) {
+          if (a.anchor?.exact) anchorTexts.push(a.anchor.exact);
+        }
+      }
+    }
+
+    // Remove GDocs native highlights from the document.
+    const docId = getGoogleDocsId();
+    if (docId && anchorTexts.length > 0) {
+      sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts } }).catch(() => {});
+      clearAllGDocsRects(docId);
+    }
+
+    // Clear stale correction state so no old jobs re-apply highlights during editing.
+    clearGDocsCorrectionQueue();
+    gdocsRenderPending.clear();
+    gdocsAnnotationCache.clear();
+
+    setOverlayVisible(false);
+    setMarginNotesVisible(false);
+    clearOverlay();
+    clearAllAnchors();
+    clearMarginNotes();
+    clearGdocsAnchors();
+  });
+
+  // After editing resolves: filter out annotations whose anchor is gone, re-render survivors.
+  document.addEventListener('oddity:gdocs:edit-done', () => {
+    gdocsEditingInProgress = false;
+    const docId = getGoogleDocsId();
+    const restore = () => { setOverlayVisible(true); setMarginNotesVisible(true); rerenderAll(); syncArgumentsBox(); };
+    if (!docId) { restore(); return; }
+
+    void fetchGoogleDocsText(docId).then(docText => {
+      if (!docText) { restore(); return; }
+
+      const invalidAnchorTexts: string[] = [];
+      for (const store of [overviewAnnotations, depthAnnotations] as Array<Map<string, Annotation[]>>) {
+        for (const [regionId, anns] of store) {
+          const surviving = anns.filter(a => {
+            const exact = a.anchor?.exact;
+            if (!exact || !docText.includes(exact)) {
+              if (exact) invalidAnchorTexts.push(exact);
+              gdocsAnnotationCache.delete(a.id);
+              gdocsRenderPending.delete(a.id);
+              return false;
+            }
+            return true;
+          });
+          if (surviving.length === 0) store.delete(regionId);
+          else store.set(regionId, surviving);
+        }
+      }
+
+      if (invalidAnchorTexts.length > 0) {
+        sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts: invalidAnchorTexts } })
+          .catch(() => {});
+      }
+
+      // Clear position cache so surviving annotations re-run the highlight pipeline fresh.
+      clearAllGDocsRects(docId);
+
+      restore();
+    });
+  });
+
+  // Watch for new content appearing (lazy loading, SPA navigation within Docs).
+  // Debounced — GDocs makes hundreds of DOM mutations per second during editing.
+  const knownRegions = new WeakSet<Element>(regions.map(r => r.element));
+  let rescanTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const pageObserver = new MutationObserver(() => {
+    if (rescanTimer) return;
+    rescanTimer = setTimeout(() => {
+      rescanTimer = null;
+      const newRegions = detectGoogleDocsRegions();
+      for (const region of newRegions) {
+        if (knownRegions.has(region.element)) continue;
+        knownRegions.add(region.element);
+        regions.push(region);
+        if (!marginNotesInitFromBody) {
+          initMarginNotes(region.element);
+          marginNotesInitFromBody = true;
+        }
+      }
+    }, 1500);
+  });
+
+  pageObserver.observe(document.body, { childList: true, subtree: true });
+  activeBodyObserver = pageObserver;
+}
+
+
+/**
+ * Wait until the Google Docs editor shell is in the DOM.
+ * We only need the container element — text is fetched via export URL, not DOM scraping.
+ * Polls every 300ms for up to 8s, then proceeds regardless.
+ */
+function waitForGoogleDocsEditor(): Promise<void> {
+  return new Promise((resolve) => {
+    if (isGoogleDocsEditorReady()) {
+      resolve();
+      return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 27; // ~8s max (27 × 300ms)
+    const interval = setInterval(() => {
+      attempts++;
+      // Also accept if any known editor selector is present, even without paragraph content
+      const editorPresent = !!document.querySelector('.kix-appview-editor, .kix-page');
+      if (isGoogleDocsEditorReady() || editorPresent || attempts >= maxAttempts) {
+        clearInterval(interval);
+        resolve();
+      }
+    }, 300);
+  });
+}
+
+function renderGoogleDocsAnnotations(regionId: string, annotations: Annotation[]): void {
+  const region =
+    regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
+  if (!region) return;
+
+  if (!region.element.isConnected) return;
+
+  const feedback = effectiveFeedbackMap().get(regionId) ?? [];
+
+  const visible = annotations.filter((a) => visibleTypes.includes(a.type));
+  const backgroundTypes = new Set<AnnotationType>(['core_claim', 'insight']);
+  visible.sort((a, b) => {
+    if (a.type === 'user_written' && b.type !== 'user_written') return 1;
+    if (b.type === 'user_written' && a.type !== 'user_written') return -1;
+    return (backgroundTypes.has(a.type) ? 0 : 1) - (backgroundTypes.has(b.type) ? 0 : 1);
+  });
+
+  for (const annotation of visible) {
+    try {
+      const { rects: computedRects, anchorNode } = findAnnotationRects(region, annotation);
+      // When the live computation returns nothing (e.g. _cachedDocText not yet
+      // populated, or transient layout miss during rerenderAll), fall back to the
+      // last known rects stored by the canvas scanner so the annotation is
+      // rendered immediately rather than getting stuck in gdocsRenderPending.
+      // The scanner's heartbeat will correct the position within ~1.5 s if needed.
+      const storedRects = computedRects.length === 0 ? (getGDocsAnchorRects(annotation.id) ?? []) : [];
+      const rects = computedRects.length > 0 ? computedRects : storedRects;
+      if (rects.length === 0) {
+        // Canvas mode: position not yet known — store for deferred render when cursor correction fires.
+        if (isGoogleDocs()) {
+          const noteFeedback = feedback.filter(f => f.annotation_id === annotation.id);
+          gdocsRenderPending.set(annotation.id, { annotation, noteFeedback, regionId });
+        } else {
+        }
+        continue;
+      }
+
+      renderAnnotationWithRects(annotation, rects);
+      gdocsAnnotationCache.set(annotation.id, annotation);
+
+      const noteFeedback = feedback.filter(f => f.annotation_id === annotation.id);
+      // Use DOM anchorNode if available (DOM mode), otherwise create a synthetic
+      // fixed-position element at the rect location for margin note anchoring (canvas mode).
+      let anchorRange: Range | null = anchorNode ? createRangeFromNode(anchorNode) : null;
+      if (!anchorRange && rects.length > 0 && region) {
+        const rect = rects[0]!;
+        const scrollTop = (region.element as HTMLElement).scrollTop;
+        const scrollLeft = (region.element as HTMLElement).scrollLeft;
+        const viewportTop = rect.top - scrollTop;
+        const viewportLeft = rect.left - scrollLeft;
+
+        // Remove any existing anchor for this annotation (re-render case)
+        gdocsAnchors.get(annotation.id)?.el.remove();
+
+        // Use a non-breaking space so getClientRects() returns a valid rect.
+        // Font-size matches rect height so the rect geometry is accurate.
+        const syntheticAnchor = document.createElement('span');
+        syntheticAnchor.textContent = '\u00A0';
+        syntheticAnchor.style.cssText = `position:fixed;left:${viewportLeft}px;top:${viewportTop}px;width:${rect.width}px;height:${rect.height}px;font-size:${rect.height}px;line-height:1;pointer-events:none;overflow:hidden;`;
+        document.body.appendChild(syntheticAnchor);
+
+        gdocsAnchors.set(annotation.id, { el: syntheticAnchor, rect });
+
+        anchorRange = document.createRange();
+        anchorRange.selectNodeContents(syntheticAnchor);
+      }
+      if (anchorRange) {
+        addMarginNote(annotation, anchorRange, noteFeedback, handleAnnotationDeleted, regionId, null);
+      }
+    } catch (err) {
+      console.warn(`[Oddity 1] GDocs render failed for annotation ${annotation.id}:`, err);
+    }
+  }
+}
+
 async function startPipeline(): Promise<void> {
   if (pipelineInitialized) return;
   pipelineInitialized = true;
+
+  // ── Google Docs fast-path ──
+  if (isGoogleDocs()) {
+    setMarginNotesGDocsMode(true);
+    await startGoogleDocsPipeline();
+    return;
+  }
 
   // Fetch adapters from service worker
   const response = await sendMessage<{ adapters: SiteAdapter[] }>({
@@ -1334,8 +1866,9 @@ async function handleStableRegion(
   }
 
   // Extract text first so we can use contentHash as the dedup key
-  const extracted =
-    region.source === "readability"
+  const extracted = isGoogleDocs()
+    ? await extractGoogleDocsText(region)
+    : region.source === "readability"
       ? extractWithReadability()
       : extractText(region);
 
@@ -1481,8 +2014,9 @@ async function handleStableRegionForMode(
 
   const generated = requestMode === "overview" ? overviewGenerated : depthGenerated;
 
-  const extracted =
-    region.source === "readability"
+  const extracted = isGoogleDocs()
+    ? await extractGoogleDocsText(region)
+    : region.source === "readability"
       ? extractWithReadability()
       : extractText(region);
 
@@ -1631,15 +2165,23 @@ async function tryUrlPrediction(): Promise<void> {
 // ─── Annotation Deletion ───
 
 function handleAnnotationDeleted(annotationId: string): void {
+  // Prevent duplicate handling — if this id was already processed (e.g. from
+  // a redundant message), bail out immediately so we don't re-run rerenderAll.
+  if (deletedAnnotationIds.has(annotationId)) return;
+
   // Track locally so in-flight server responses don't re-add it
   deletedAnnotationIds.add(annotationId);
 
-  // Find the contentHash for this annotation so we can tell the server
+  // Capture anchor text BEFORE removing from stores so we can remove the
+  // native GDocs highlight for this annotation (see below).
+  let deletedAnchorText: string | undefined;
   let deletedContentHash: string | undefined;
   for (const store of [overviewAnnotations, depthAnnotations]) {
     for (const [regionId, annotations] of store) {
-      if (annotations.some((a) => a.id === annotationId)) {
+      const ann = annotations.find((a) => a.id === annotationId);
+      if (ann) {
         deletedContentHash = regionId;
+        deletedAnchorText = ann.anchor?.exact;
       }
       const filtered = annotations.filter((a) => a.id !== annotationId);
       if (filtered.length !== annotations.length) {
@@ -1667,6 +2209,32 @@ function handleAnnotationDeleted(annotationId: string): void {
       contentHash: deletedContentHash ?? "",
     },
   });
+
+  // Remove persisted anchor rect for this annotation (GDocs only)
+  const docId = getGoogleDocsId();
+  if (docId) {
+    deleteGDocsRect(docId, annotationId);
+
+    // Remove the native GDocs highlight that was applied for this annotation.
+    // Without this, the scanner keeps seeing the orphaned highlight and will
+    // misassign it to neighbouring annotations, corrupting their positions and
+    // eventually firing spurious oddity-gdocs-anchor-deleted events that wipe
+    // other annotations from all stores (and from storage), which is why
+    // other overlays disappear and don't come back after a page refresh.
+    if (deletedAnchorText) {
+      sendMessage({
+        action: 'gdocsRemoveHighlights',
+        payload: { docId, anchorTexts: [deletedAnchorText] },
+      }).catch(() => {});
+    }
+  }
+
+  // Clean up GDocs-specific render caches for the deleted annotation.
+  // Stale entries in these maps are harmless by themselves but can cause
+  // the oddity-gdocs-corrected handler to run stale code paths when the
+  // scanner later fires correction events.
+  gdocsAnnotationCache.delete(annotationId);
+  gdocsRenderPending.delete(annotationId);
 
   // Remove from DOM
   removeAnchors(annotationId);
@@ -1784,6 +2352,17 @@ function resolveChunkRange(root: Element, annotation: Annotation): ChunkRange | 
 }
 
 function renderAnnotations(regionId: string, annotations: Annotation[]): void {
+  // Google Docs uses canvas rendering — skip DOM anchor injection and use pretext-based rects
+  if (isGoogleDocs()) {
+    renderGoogleDocsAnnotations(regionId, annotations);
+    // Persist annotations so they survive service worker restarts between page loads.
+    const docId = getGoogleDocsId();
+    if (docId && annotations.length > 0) {
+      saveGDocsAnnotationsToStorage(docId, regionId, annotations);
+    }
+    return;
+  }
+
   const region =
     regionByHash.get(regionId) ?? regions.find((r) => r.id === regionId);
   const root = region?.element ?? document.body;
@@ -1892,6 +2471,9 @@ function rerenderAll(): void {
   clearOverlay();
   clearAllAnchors();
   clearMarginNotes();
+  clearGdocsAnchors();
+
+  if (gdocsEditingInProgress) return;
 
   for (const [regionId, annotations] of effectiveAnnotations()) {
     renderAnnotations(regionId, annotations);
@@ -1911,6 +2493,7 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   clearOverlay();
   clearAllAnchors();
   clearMarginNotes();
+  clearGdocsAnchors();
 
   // Invalidate text-node index for all regions — clearAllAnchors mutates the
   // DOM (unwraps spans, normalizes text nodes) which makes cached indices stale.
@@ -1920,7 +2503,8 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   // Update state
   currentMode = newMode;
   setMarginNoteMode(newMode);
-  if (newPersonality) currentPersonality = newPersonality;
+  if (newPersonality) { currentPersonality = newPersonality; setMarginNotesPersonality(newPersonality); }
+  if (isGoogleDocs()) setGDocsDebugUnderline(newMode === 'depth');
 
   // Update visible types for new mode
   visibleTypes = [
@@ -2070,15 +2654,20 @@ onMessage((message: ExtensionMessage) => {
     }
     case "annotationReady": {
       // Progressive rendering: single annotation from streaming pipeline
+      // GDocs uses its own deferred rendering pipeline (gdocsRenderPending / oddity-gdocs-corrected)
+      // so streaming annotations should never be processed here on a GDocs page.
+      if (isGoogleDocs()) break;
+
       const { regionId: streamRegionId, annotation } = message.payload;
 
       // Skip annotations that were locally deleted (in-flight response race)
       if (deletedAnnotationIds.has(annotation.id)) break;
 
-      // Stale guard — check both plain and mode-prefixed pending keys
+      // Stale guard — check both plain and mode-prefixed pending keys.
+      // Also accept if the region is known (regionByHash) to handle mode-switch races.
       const plainPending = pendingRegions.has(streamRegionId);
       const modePending = pendingRegions.has(`${annotation.mode}:${streamRegionId}`);
-      if (!plainPending && !modePending) break;
+      if (!plainPending && !modePending && !regionByHash.has(streamRegionId)) break;
       streamedRegions.add(streamRegionId);
       longWaitManager.handleFirstAnnotation(streamRegionId);
       dismissNoticeToast(); // Dismiss PF "is thinking" toast when first annotation arrives
@@ -2204,11 +2793,14 @@ onMessage((message: ExtensionMessage) => {
       const responseFbStore = responseMode === "overview" ? overviewFeedback : depthFeedback;
       const responseGenerated = responseMode === "overview" ? overviewGenerated : depthGenerated;
 
-      // Stale response guard — check both plain and mode-prefixed pending keys
+      // Stale response guard — check both plain and mode-prefixed pending keys.
+      // Also accept if the region hash is known (regionByHash) — this handles the case
+      // where pendingRegions was cleared by a mode switch while a request was in-flight.
       const modePendingKey = `${responseMode}:${regionId}`;
       const isPlainPending = pendingRegions.has(regionId);
       const isModePending = pendingRegions.has(modePendingKey);
-      if (!isPlainPending && !isModePending && !responseGenerated.has(regionId)) {
+      const isKnownRegion = regionByHash.has(regionId);
+      if (!isPlainPending && !isModePending && !responseGenerated.has(regionId) && !isKnownRegion) {
         console.log(
           `[Oddity 1] Ignoring stale ${responseMode} response for ${regionId.slice(0, 12)}…`,
         );
@@ -2246,6 +2838,7 @@ onMessage((message: ExtensionMessage) => {
           clearOverlay();
           clearAllAnchors();
           clearMarginNotes();
+          clearGdocsAnchors();
           for (const [rid, anns] of effectiveAnnotations()) {
             renderAnnotations(rid, anns);
           }
@@ -2278,6 +2871,7 @@ onMessage((message: ExtensionMessage) => {
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
+        clearGdocsAnchors();
         for (const [rid, anns] of effectiveAnnotations()) {
           renderAnnotations(rid, anns);
         }
@@ -2325,11 +2919,13 @@ onMessage((message: ExtensionMessage) => {
       } else if (personalityChanged) {
         // Personality only affects depth annotations — preserve user-written notes and their feedback
         currentPersonality = newPersonality;
+        setMarginNotesPersonality(newPersonality);
         updateDashboardPersonality(newPersonality);
         setDepthPersonaName(newPersonality.startsWith("pf:") ? (pfDisplayNames.get(newPersonality) ?? null) : null);
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
+        clearGdocsAnchors();
 
         // Preserve user-written annotations and their feedback before clearing
         const savedUserWritten = new Map<string, Annotation[]>();
@@ -2716,6 +3312,12 @@ document.addEventListener("oddity:manualAnnotationCreated", (e) => {
       store.set(contentHash, list);
     }
   }
+});
+
+// GDocs canvas mode: manual.ts fires this after storing the annotation so the
+// GDocs pipeline can resolve its pixel rects and render the margin note.
+document.addEventListener("oddity:gdocs:rerenderAnnotations", () => {
+  if (isGoogleDocs()) rerenderAll();
 });
 
 // ─── Annotation / Feedback Edit Sync ───

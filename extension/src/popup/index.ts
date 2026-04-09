@@ -99,7 +99,7 @@ let isSignUpMode = true;
 
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
-  annotation_mode: "overview",
+  annotation_mode: "depth",
   depth_personality: "terry",
   visible_types: [],
   enabled_sites: [],
