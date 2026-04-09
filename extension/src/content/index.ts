@@ -15,6 +15,7 @@ import { ALL_ANNOTATION_TYPES, ALL_DEPTH_TYPES, ALL_OVERVIEW_TYPES, DEFAULT_ENAB
 import { sha256 } from "../shared/hash.js";
 import { onMessage, sendMessage } from "../shared/messaging.js";
 import { showAuthToast } from "./auth-toast.js";
+import { dismissNoticeToast, showNoticeToast } from "./notice-toast.js";
 import { createChatObserver, type ChatObserver } from "./chat-observer.js";
 import { getChatbotDisplayName } from "./chatbot-ui.js";
 import { detectReadingRegions, type DetectedRegion } from "./detector.js";
@@ -340,6 +341,7 @@ let blocked = false;
 let enabled = true;
 let currentMode: ViewMode = "overview";
 let currentPersonality: DepthPersonality = "jerry";
+const pfDisplayNames = new Map<string, string>();
 let visibleTypes: AnnotationType[] = [...ALL_OVERVIEW_TYPES, "user_written"];
 let regions: DetectedRegion[] = [];
 let pipelineInitialized = false;
@@ -1028,7 +1030,14 @@ async function init(): Promise<void> {
     action: "getPersonas",
     payload: {},
   }).then((result) => {
-    setPublicFigurePersonas(result.personas ?? []);
+    const personas = result.personas ?? [];
+    pfDisplayNames.clear();
+    for (const p of personas) pfDisplayNames.set(`pf:${p.slug}`, p.displayName);
+    setPublicFigurePersonas(personas);
+    // Re-sync argbox display if current personality was a pf: slug set before personas loaded
+    if (currentPersonality.startsWith("pf:")) {
+      updateDashboardPersonality(currentPersonality);
+    }
   }).catch(() => {});
 
   if (!authStatus?.authenticated) {
@@ -1383,6 +1392,13 @@ async function handleStableRegion(
   if (isLong) {
     longWaitManager.start(contentHash);
   }
+
+  const isPfDepth = currentMode === "depth" && currentPersonality.startsWith("pf:");
+  if (isPfDepth) {
+    const displayName = pfDisplayNames.get(currentPersonality) ?? "Public Figure";
+    showNoticeToast(`${displayName} is thinking...`, true);
+  }
+
   console.log(
     `[Oddity 1] Requesting annotations for region ${region.id} (hash: ${contentHash.slice(0, 12)}…)`,
   );
@@ -1400,6 +1416,10 @@ async function handleStableRegion(
         wordCount: extracted.wordCount,
       },
     });
+
+    // sendMessage resolved — dismiss toast (streaming already dismissed it on first chunk;
+    // this handles cache-hit paths where annotationReady chunks never fire)
+    if (isPfDepth) dismissNoticeToast();
 
     // Aborted request — silently ignore (a newer request superseded this one)
     if (result && "aborted" in result) {
@@ -1432,6 +1452,7 @@ async function handleStableRegion(
       console.debug(`[Oddity 1] Message channel closed (expected during streaming)`);
       return;
     }
+    if (isPfDepth) dismissNoticeToast();
     if (errStr.includes("Auth") || errStr.includes("401")) {
       console.warn(
         "[Oddity 1] Not signed in — open the Oddity extension to sign in",
@@ -1489,6 +1510,12 @@ async function handleStableRegionForMode(
   modes.add(requestMode);
   pendingModeByHash.set(contentHash, modes);
 
+  const isPfDepthMode = requestMode === "depth" && currentPersonality.startsWith("pf:");
+  if (isPfDepthMode) {
+    const displayName = pfDisplayNames.get(currentPersonality) ?? "Public Figure";
+    showNoticeToast(`${displayName} is thinking...`, true);
+  }
+
   console.log(
     `[Oddity 1] Requesting ${requestMode} annotations for region ${region.id} (hash: ${contentHash.slice(0, 12)}…)`,
   );
@@ -1506,6 +1533,10 @@ async function handleStableRegionForMode(
         wordCount: extracted.wordCount,
       },
     });
+
+    // sendMessage resolved — dismiss toast (streaming already dismissed it on first chunk;
+    // this handles cache-hit paths where annotationReady chunks never fire)
+    if (isPfDepthMode) dismissNoticeToast();
 
     if (result && "aborted" in result) {
       pendingRegions.delete(pendingKey);
@@ -1537,6 +1568,7 @@ async function handleStableRegionForMode(
       console.debug(`[Oddity 1] Message channel closed (expected during streaming)`);
       return;
     }
+    if (isPfDepthMode) dismissNoticeToast();
     if (errStr.includes("Auth") || errStr.includes("401")) {
       showAuthToast();
     } else {
@@ -2047,6 +2079,7 @@ onMessage((message: ExtensionMessage) => {
       if (!plainPending && !modePending) break;
       streamedRegions.add(streamRegionId);
       longWaitManager.handleFirstAnnotation(streamRegionId);
+      dismissNoticeToast(); // Dismiss PF "is thinking" toast when first annotation arrives
       hideEmptyAnnotationsBubble();
 
       // Always store the annotation regardless of current visible types —

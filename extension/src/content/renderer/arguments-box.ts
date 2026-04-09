@@ -159,6 +159,7 @@ let dashSignOutPopoverEmailEl: HTMLSpanElement | null = null;
 let dashSignOutPopoverPlanEl: HTMLSpanElement | null = null;
 let dashUserEmail = "";
 let dashUserTier = "free";
+const pfDisplayNames = new Map<string, string>();
 let dashSignInViewEl: HTMLDivElement | null = null;
 let dashSignInEmailEl: HTMLInputElement | null = null;
 let dashSignInPasswordEl: HTMLInputElement | null = null;
@@ -180,10 +181,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.preferences) return;
   const prefs = (changes.preferences.newValue ?? {}) as Record<string, unknown>;
   const personality = (prefs.depth_personality as string) ?? "terry";
-  const display = personality.charAt(0).toUpperCase() + personality.slice(1);
+  const logoName = personality.startsWith("pf:") ? "Terry" : personality.charAt(0).toUpperCase() + personality.slice(1);
   if (bubbleLogoImgEl) {
-    bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
-    bubbleLogoImgEl.alt = display;
+    bubbleLogoImgEl.src = chrome.runtime.getURL(`${logoName}.png`);
+    bubbleLogoImgEl.alt = logoName;
   }
 });
 
@@ -243,11 +244,10 @@ export function initArgumentsBox(): void {
       );
       // Sync bubble logo to stored persona
       const personality = (prefs.depth_personality as string) ?? "terry";
-      const display =
-        personality.charAt(0).toUpperCase() + personality.slice(1);
+      const logoName = personality.startsWith("pf:") ? "Terry" : personality.charAt(0).toUpperCase() + personality.slice(1);
       if (bubbleLogoImgEl) {
-        bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
-        bubbleLogoImgEl.alt = display;
+        bubbleLogoImgEl.src = chrome.runtime.getURL(`${logoName}.png`);
+        bubbleLogoImgEl.alt = logoName;
       }
     }
   });
@@ -1268,8 +1268,7 @@ export function updateDashboardPersonality(personality: string): void {
     dashDensityBtns.forEach((b) => b.classList.remove("args-dash-density-active"));
     if (dashPublicFigureSelect) {
       dashPublicFigureSelect.value = personality;
-      const pfDisplayName =
-        dashPublicFigureSelect.selectedOptions[0]?.textContent ?? "Public Figure";
+      const pfDisplayName = pfDisplayNames.get(personality) ?? "Public Figure";
       if (dashPersonaSelect) dashPersonaSelect.textContent = pfDisplayName;
     }
     if (dashPersonaAvatarImgEl) {
@@ -1314,6 +1313,12 @@ export function setSignOutCallback(cb: () => void): void {
 export function setPublicFigurePersonas(
   personas: Array<{ slug: string; displayName: string }>,
 ): void {
+  // Always populate display name map (used even before dropdown is built)
+  pfDisplayNames.clear();
+  for (const p of personas) {
+    pfDisplayNames.set(`pf:${p.slug}`, p.displayName);
+  }
+
   if (!dashPublicFigureSelect || !dashPublicFigureRow) return;
 
   // Clear existing options except "None"
@@ -2764,19 +2769,35 @@ async function loadDashboardPrefs(): Promise<void> {
       | undefined,
   );
   // Derive display name from depth_personality (single source of truth)
-  const persona = personality.charAt(0).toUpperCase() + personality.slice(1);
-  if (dashPersonaSelect) dashPersonaSelect.textContent = persona;
-  if (dashPersonaAvatarImgEl) {
-    dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
-    dashPersonaAvatarImgEl.alt = persona;
+  if (personality.startsWith("pf:")) {
+    const pfName = pfDisplayNames.get(personality) ?? "Public Figure";
+    if (dashPersonaSelect) dashPersonaSelect.textContent = pfName;
+    if (dashPersonaAvatarImgEl) {
+      dashPersonaAvatarImgEl.src = chrome.runtime.getURL("Terry.png");
+      dashPersonaAvatarImgEl.alt = "Terry";
+    }
+    if (bubbleLogoImgEl) {
+      bubbleLogoImgEl.src = chrome.runtime.getURL("Terry.png");
+      bubbleLogoImgEl.alt = "Terry";
+    }
+    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = "#fff";
+    dashDensityBtns.forEach((btn) => btn.classList.remove("args-dash-density-active"));
+    if (dashPublicFigureSelect) dashPublicFigureSelect.value = personality;
+  } else {
+    const persona = personality.charAt(0).toUpperCase() + personality.slice(1);
+    if (dashPersonaSelect) dashPersonaSelect.textContent = persona;
+    if (dashPersonaAvatarImgEl) {
+      dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
+      dashPersonaAvatarImgEl.alt = persona;
+    }
+    if (bubbleLogoImgEl) {
+      bubbleLogoImgEl.src = chrome.runtime.getURL(`${persona}.png`);
+      bubbleLogoImgEl.alt = persona;
+    }
+    if (dashPersonaCircleEl)
+      dashPersonaCircleEl.style.background =
+        persona === "Jerry" ? "#FDCB24" : "#fff";
   }
-  if (bubbleLogoImgEl) {
-    bubbleLogoImgEl.src = chrome.runtime.getURL(`${persona}.png`);
-    bubbleLogoImgEl.alt = persona;
-  }
-  if (dashPersonaCircleEl)
-    dashPersonaCircleEl.style.background =
-      persona === "Jerry" ? "#FDCB24" : "#fff";
   // If the site is not enabled (dimmed), force toggle to OFF
   const enabled = dimmed ? false : prefs.enabled !== false;
   if (dashToggleInput) dashToggleInput.checked = enabled;
