@@ -99,7 +99,7 @@ let isSignUpMode = true;
 
 let currentPrefs: Required<UserPreferences> = {
   enabled: true,
-  annotation_mode: "overview",
+  annotation_mode: "depth",
   depth_personality: "terry",
   visible_types: [],
   enabled_sites: [],
@@ -117,6 +117,7 @@ let currentUser: {
 
 let upgradeToastEl: HTMLDivElement | null = null;
 let upgradeToastTimer: number | null = null;
+const personaDisplayNames = new Map<string, string>();
 
 // ─── Font appearance ───
 
@@ -190,8 +191,7 @@ function applyPrefsToUI(): void {
       btn.classList.remove("active");
     }
     publicFigureSelect.value = rawPersonality;
-    const pfDisplayName =
-      publicFigureSelect.selectedOptions[0]?.textContent ?? "Public Figure";
+    const pfDisplayName = personaDisplayNames.get(rawPersonality) ?? "Public Figure";
     profilePersonaSelect.textContent = pfDisplayName;
     applyPersonaVisuals("Terry"); // use Terry avatar for all PF personas
   } else {
@@ -490,11 +490,13 @@ async function loadPublicFigurePersonas(): Promise<void> {
     const personas = result.personas ?? [];
     if (personas.length === 0) return;
 
-    // Populate dropdown options (preserve "None" first option)
+    // Populate display name map and dropdown options (preserve "None" first option)
+    personaDisplayNames.clear();
     while (publicFigureSelect.options.length > 1) {
       publicFigureSelect.remove(1);
     }
     for (const p of personas) {
+      personaDisplayNames.set(`pf:${p.slug}`, p.displayName);
       const opt = document.createElement("option");
       opt.value = `pf:${p.slug}`;
       opt.textContent = p.displayName;
@@ -503,10 +505,8 @@ async function loadPublicFigurePersonas(): Promise<void> {
 
     publicFigureRow.style.display = "";
 
-    // If current personality is already a pf: slug, sync the UI
-    if (currentPrefs.depth_personality?.startsWith("pf:")) {
-      applyPrefsToUI();
-    }
+    // Re-apply UI now that display names are available (fixes race condition on init)
+    applyPrefsToUI();
   } catch {
     // Personas unavailable — keep row hidden
   }

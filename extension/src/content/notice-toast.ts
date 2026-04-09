@@ -5,7 +5,27 @@ let toastEl: HTMLDivElement | null = null;
 let messageEl: HTMLSpanElement | null = null;
 let hideTimer: number | null = null;
 
-export function showNoticeToast(message: string): void {
+export function dismissNoticeToast(): void {
+  if (hideTimer !== null) {
+    window.clearTimeout(hideTimer);
+    hideTimer = null;
+  }
+
+  if (!host || !toastEl) {
+    cleanupNoticeToast(host);
+    return;
+  }
+
+  const localHost = host;
+  const localToast = toastEl;
+
+  localToast.classList.add("hiding");
+  localToast.addEventListener("animationend", () => cleanupNoticeToast(localHost), {
+    once: true,
+  });
+}
+
+export function showNoticeToast(message: string, persistent = false): void {
   if (!document.body) return;
 
   if (!host) {
@@ -64,31 +84,14 @@ export function showNoticeToast(message: string): void {
 
   if (hideTimer !== null) {
     window.clearTimeout(hideTimer);
-  }
-
-  hideTimer = window.setTimeout(() => {
-    dismissNoticeToast();
-  }, 3000);
-}
-
-function dismissNoticeToast(): void {
-  if (hideTimer !== null) {
-    window.clearTimeout(hideTimer);
     hideTimer = null;
   }
 
-  if (!host || !toastEl) {
-    cleanupNoticeToast(host);
-    return;
+  if (!persistent) {
+    hideTimer = window.setTimeout(() => {
+      dismissNoticeToast();
+    }, 3000);
   }
-
-  const localHost = host;
-  const localToast = toastEl;
-
-  localToast.classList.add("hiding");
-  localToast.addEventListener("animationend", () => cleanupNoticeToast(localHost), {
-    once: true,
-  });
 }
 
 function cleanupNoticeToast(localHost: HTMLElement | null): void {

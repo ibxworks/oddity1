@@ -595,3 +595,181 @@ function uint8ToBase64(bytes: Uint8Array): string {
   }
   return btoa(binary);
 }
+
+// ─── GDocs Chat Streaming ─────────────────────────────────────────────────────
+
+export async function requestGDocsChatStreaming(
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  mode: "chat" | "tree" | "essay" | "edit" | "fast" | "outline",
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Accept": "text/event-stream",
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${BACKEND_URL}/api/gdocs-chat`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ messages, mode }),
+      signal,
+    });
+  }
+
+  let res = await doFetch(await getAccessToken());
+
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) throw new AuthError();
+    res = await doFetch(retryToken);
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`requestGDocsChatStreaming failed (${res.status}): ${body}`);
+  }
+  if (!res.body) throw new Error("No response body for gdocs-chat SSE stream");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.error) throw new Error(event.error);
+          if (event.text && !event.done) onChunk(event.text);
+        } catch {
+          // Skip malformed events
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+// ─── GDocs MCQ ────────────────────────────────────────────────────────────────
+
+export type McqQuestion = { question: string; options: string[] };
+
+export async function fetchAllGDocsMcqQuestions(
+  prompt: string,
+  docContext: string,
+): Promise<McqQuestion[]> {
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${BACKEND_URL}/api/gdocs-mcq`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt, docContext }),
+    });
+  }
+
+  let res = await doFetch(await getAccessToken());
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) throw new AuthError();
+    res = await doFetch(retryToken);
+  }
+  if (!res.ok) throw new Error(`fetchAllGDocsMcqQuestions failed: ${res.status}`);
+  return res.json() as Promise<McqQuestion[]>;
+}
+
+// ─── GDocs Route (mode classifier) ───────────────────────────────────────────
+
+export type GDocsRouteMode = "FAST" | "PLAN";
+
+export async function requestGDocsRoute(
+  prompt: string,
+  docContext: string,
+  essayContent: string,
+): Promise<{ mode: GDocsRouteMode; reasoning: string }> {
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${BACKEND_URL}/api/gdocs-route`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt, docContext, essayContent }),
+    });
+  }
+
+  let res = await doFetch(await getAccessToken());
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) throw new AuthError();
+    res = await doFetch(retryToken);
+  }
+  if (!res.ok) throw new Error(`requestGDocsRoute failed: ${res.status}`);
+  return res.json() as Promise<{ mode: GDocsRouteMode; reasoning: string }>;
+}
+
+// ─── GDocs Session (cloud sync) ───────────────────────────────────────────────
+
+export type GDocsSessionData = {
+  chatHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  essayVersions: string[];
+  editSuggestions: Array<Array<{ find: string; replace: string }>>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function fetchGDocsSession(docId: string): Promise<GDocsSessionData | null> {
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${BACKEND_URL}/api/gdocs-session?docId=${encodeURIComponent(docId)}`, {
+      method: "GET",
+      headers,
+    });
+  }
+
+  let res = await doFetch(await getAccessToken());
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) throw new AuthError();
+    res = await doFetch(retryToken);
+  }
+  if (!res.ok) throw new Error(`fetchGDocsSession failed: ${res.status}`);
+  const body = await res.json() as { session: GDocsSessionData | null };
+  return body.session;
+}
+
+export async function saveGDocsSession(
+  docId: string,
+  chatHistory: Array<{ role: "user" | "assistant"; content: string }>,
+  essayVersions: string[],
+  editSuggestions: Array<Array<{ find: string; replace: string }>>,
+): Promise<void> {
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${BACKEND_URL}/api/gdocs-session`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ docId, chatHistory, essayVersions, editSuggestions }),
+    });
+  }
+
+  let res = await doFetch(await getAccessToken());
+  if (res.status === 401) {
+    const retryToken = await refreshAccessToken();
+    if (!retryToken) throw new AuthError();
+    res = await doFetch(retryToken);
+  }
+  if (!res.ok) throw new Error(`saveGDocsSession failed: ${res.status}`);
+}

@@ -58,6 +58,13 @@ let escapeListener: ((e: KeyboardEvent) => void) | null = null;
 let outsideClickListener: ((e: MouseEvent) => void) | null = null;
 let tempHighlightContainer: HTMLDivElement | null = null;
 let isMouseDragging = false;
+let mouseDownX = 0;
+let mouseDownY = 0;
+
+// GDocs canvas mode: window.getSelection() doesn't reflect visual selections.
+// We capture text via copy-event interception and position via kix-selection-overlay.
+let gdocsSelectedText: string | null = null;
+let gdocsAnchorRect: DOMRect | null = null;
 
 /**
  * Initialize manual annotation creation UI.
@@ -74,12 +81,48 @@ export function initManualAnnotations(): void {
     // Don't track clicks on our own UI (FAB / editor) as drags
     if (fabHost?.contains(target) || editorHost?.contains(target)) return;
     isMouseDragging = true;
+    mouseDownX = e.clientX;
+    mouseDownY = e.clientY;
   };
-  mouseUpListener = () => {
+  mouseUpListener = (e: MouseEvent) => {
     if (!isMouseDragging) return;
     isMouseDragging = false;
-    // Check selection after drag completes
-    handleSelectionChange();
+
+    if (window.location.hostname === 'docs.google.com') {
+      // GDocs canvas mode — skip DOM selection handling entirely.
+      const dx = e.clientX - mouseDownX;
+      const dy = e.clientY - mouseDownY;
+      if (Math.sqrt(dx * dx + dy * dy) < 5) return;
+
+      // Simulate Ctrl+C on the GDocs editor so GDocs writes canvas selection to clipboard.
+      // document.execCommand('copy') only copies DOM selection (empty in GDocs).
+      const editorEl = document.querySelector<HTMLElement>('.kix-appview-editor') ?? document.body;
+      editorEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', ctrlKey: true, bubbles: true, cancelable: true }));
+      editorEl.dispatchEvent(new KeyboardEvent('keyup',   { key: 'c', code: 'KeyC', ctrlKey: true, bubbles: true, cancelable: true }));
+
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      // Delay to let GDocs process the copy event before reading clipboard
+      setTimeout(() => {
+        navigator.clipboard.readText().then(text => {
+          const trimmed = text.trim();
+          if (trimmed.length >= 2) {
+            gdocsSelectedText = trimmed;
+            gdocsAnchorRect = new DOMRect(clientX, clientY, 0, 0);
+            showGDocsFab(gdocsAnchorRect);
+          } else {
+            gdocsSelectedText = null;
+            gdocsAnchorRect = null;
+          }
+        }).catch(() => {
+          gdocsSelectedText = null;
+          gdocsAnchorRect = null;
+        });
+      }, 150);
+    } else {
+      // Non-GDocs: use normal DOM selection
+      handleSelectionChange();
+    }
   };
   document.addEventListener('mousedown', mouseDownListener);
   document.addEventListener('mouseup', mouseUpListener);
@@ -160,77 +203,49 @@ function handleSelectionChange(): void {
 
 // ─── Floating Action Button ───
 
-function showFab(range: Range): void {
-  dismissFab();
+const PENCIL_SVG = `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="20" fill="#748DBF"/><path d="M25.1904 9.96387C26.5284 8.62594 28.6981 8.62607 30.0361 9.96387C31.3741 11.3019 31.3741 13.4716 30.0361 14.8096L16.792 28.0537C16.238 28.6077 15.5433 29.0014 14.7832 29.1914L10.6758 30.2178C10.1365 30.3526 9.64773 29.8645 9.78223 29.3252L10.8096 25.2168C10.9996 24.4569 11.3924 23.7629 11.9463 23.209L25.1904 9.96387ZM23.6963 13.541L12.9883 24.25C12.6231 24.6152 12.3635 25.0732 12.2383 25.5742L11.5742 28.2324L11.5088 28.4912L11.7676 28.4268L14.4258 27.7617C14.9267 27.6365 15.3848 27.3778 15.75 27.0127L21.1045 21.6582L26.458 16.3027L26.5713 16.1904L26.458 16.0771L23.9229 13.541L23.8096 13.4287L23.6963 13.541ZM28.9941 11.0059C28.2314 10.2433 26.9951 10.2432 26.2324 11.0059L24.9639 12.2734L24.8516 12.3867L24.9639 12.5L27.5 15.0352L27.6123 15.1484L27.7256 15.0352L28.9941 13.7676C29.7569 13.0049 29.7569 11.7686 28.9941 11.0059Z" fill="white" stroke="#748DBF" stroke-width="0.32"/></svg>`;
 
+function mountFab(left: number, top: number, onClick: (e: MouseEvent) => void): void {
   fabHost = document.createElement('div');
-  fabHost.style.cssText = 'position: absolute; z-index: 2147483647; pointer-events: auto;';
+  fabHost.id = 'oddity-manual-fab';
+  fabHost.style.cssText = `position: fixed; left: ${left}px; top: ${top}px; pointer-events: auto; z-index: 2147483647;`;
   document.body.appendChild(fabHost);
-
   fabShadow = fabHost.attachShadow({ mode: 'closed' });
 
-  const rect = range.getBoundingClientRect();
-  const scrollX = window.scrollX;
-  const scrollY = window.scrollY;
-
-  fabHost.style.left = `${rect.right + scrollX + 4}px`;
-  fabHost.style.top = `${rect.top + scrollY - 4}px`;
-
   const button = document.createElement('button');
-  button.innerHTML = `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="20" fill="#748DBF"/><path d="M25.1904 9.96387C26.5284 8.62594 28.6981 8.62607 30.0361 9.96387C31.3741 11.3019 31.3741 13.4716 30.0361 14.8096L16.792 28.0537C16.238 28.6077 15.5433 29.0014 14.7832 29.1914L10.6758 30.2178C10.1365 30.3526 9.64773 29.8645 9.78223 29.3252L10.8096 25.2168C10.9996 24.4569 11.3924 23.7629 11.9463 23.209L25.1904 9.96387ZM23.6963 13.541L12.9883 24.25C12.6231 24.6152 12.3635 25.0732 12.2383 25.5742L11.5742 28.2324L11.5088 28.4912L11.7676 28.4268L14.4258 27.7617C14.9267 27.6365 15.3848 27.3778 15.75 27.0127L21.1045 21.6582L26.458 16.3027L26.5713 16.1904L26.458 16.0771L23.9229 13.541L23.8096 13.4287L23.6963 13.541ZM28.9941 11.0059C28.2314 10.2433 26.9951 10.2432 26.2324 11.0059L24.9639 12.2734L24.8516 12.3867L24.9639 12.5L27.5 15.0352L27.6123 15.1484L27.7256 15.0352L28.9941 13.7676C29.7569 13.0049 29.7569 11.7686 28.9941 11.0059Z" fill="white" stroke="#748DBF" stroke-width="0.32"/></svg>`;
+  button.innerHTML = PENCIL_SVG;
   button.setAttribute('aria-label', 'Annotate selection');
-  button.style.cssText = `
-    all: initial;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: transparent;
-    cursor: pointer;
-    border: none;
-    padding: 0;
-    transition: transform 0.1s;
-    box-sizing: border-box;
-  `;
-
-  button.addEventListener('mouseenter', () => {
-    button.style.transform = 'scale(1.1)';
-  });
-  button.addEventListener('mouseleave', () => {
-    button.style.transform = 'scale(1)';
-  });
-  button.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Convert OS selection to Oddity's highlight immediately
-    applyTempHighlight();
-    window.getSelection()?.removeAllRanges();
-    showEditor();
-  });
-
+  button.style.cssText = `all: initial; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: transparent; cursor: pointer; border: none; padding: 0; transition: transform 0.1s; box-sizing: border-box;`;
+  button.addEventListener('mouseenter', () => { button.style.transform = 'scale(1.1)'; });
+  button.addEventListener('mouseleave', () => { button.style.transform = 'scale(1)'; });
+  button.addEventListener('click', onClick);
   fabShadow.appendChild(button);
 
-  // Dismiss on Escape
   escapeListener = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      dismissFab();
-      dismissEditor();
-    }
+    if (e.key === 'Escape') { dismissFab(); dismissEditor(); }
   };
   document.addEventListener('keydown', escapeListener);
 
-  // Dismiss on outside click (delayed to avoid immediate dismissal)
   setTimeout(() => {
     outsideClickListener = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (fabHost && fabHost.contains(target)) return;
-      if (editorHost && editorHost.contains(target)) return;
+      if (fabHost?.contains(target) || editorHost?.contains(target)) return;
       dismissFab();
     };
     document.addEventListener('mousedown', outsideClickListener);
   }, 100);
+}
+
+function showFab(range: Range): void {
+  dismissFab();
+  const rect = range.getBoundingClientRect();
+  mountFab(rect.right + 4, rect.top - 4, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    applyTempHighlight();
+    window.getSelection()?.removeAllRanges();
+    showEditor();
+  });
 }
 
 function dismissFab(): void {
@@ -246,6 +261,26 @@ function dismissFab(): void {
     document.removeEventListener('mousedown', outsideClickListener);
     outsideClickListener = null;
   }
+}
+
+// ─── GDocs Canvas Selection FAB ───
+
+/**
+ * Polls for kix-selection-overlay elements after a GDocs mouseup.
+ * If a selection exists, shows the FAB.
+ */
+/**
+ * Shows the pencil FAB for a GDocs canvas selection.
+ * Text was already captured in mouseUpListener; just show the FAB.
+ */
+function showGDocsFab(anchorRect: DOMRect): void {
+  dismissFab();
+  // Position FAB to the right of the mouse release point
+  mountFab(anchorRect.x + 8, anchorRect.y - 16, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showEditor();
+  });
 }
 
 // ─── Temporary Highlight (replaces OS selection visually) ───
@@ -311,27 +346,28 @@ function showEditor(): void {
   dismissFab();
   dismissEditor(true);
 
-  if (!currentRange) return;
+  // Determine anchor position (viewport-relative)
+  let anchorLeft: number;
+  let anchorTop: number;
 
-  const rangeRect = currentRange.getBoundingClientRect();
-  const scrollX = window.scrollX;
-  const scrollY = window.scrollY;
+  if (currentRange) {
+    const r = currentRange.getBoundingClientRect();
+    anchorLeft = r.left;
+    anchorTop = r.bottom + 8;
+  } else if (gdocsAnchorRect) {
+    anchorLeft = gdocsAnchorRect.left;
+    anchorTop = gdocsAnchorRect.bottom + 8;
+  } else {
+    return;
+  }
 
   editorHost = document.createElement('div');
-  editorHost.style.cssText = `
-    position: absolute;
-    z-index: 2147483647;
-    pointer-events: auto;
-    left: ${rangeRect.left + scrollX}px;
-    top: ${rangeRect.bottom + scrollY + 8}px;
-  `;
-  // Stop all keyboard events from leaking to the host page (e.g. Claude's chat input)
+  editorHost.id = 'oddity-manual-editor';
+  editorHost.style.cssText = `position: fixed; left: ${anchorLeft}px; top: ${anchorTop}px; z-index: 2147483647; pointer-events: auto;`;
   for (const evt of ['keydown', 'keyup', 'keypress', 'input', 'beforeinput'] as const) {
     editorHost.addEventListener(evt, (e) => e.stopPropagation());
   }
-
   document.body.appendChild(editorHost);
-
   editorShadow = editorHost.attachShadow({ mode: 'closed' });
 
   const colors = getThemeMode() === 'dark' ? DARK_COLORS : LIGHT_COLORS;
@@ -349,7 +385,7 @@ function showEditor(): void {
     border-radius: 16px;
     box-shadow: 0 4px 24px rgba(0,0,0,0.18);
     border: 1px solid ${colors.cardBorder};
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: var(--oddity-note-font, system-ui, -apple-system, sans-serif);
     font-size: 13px;
     color: ${colors.cardText};
     width: 320px;
@@ -366,7 +402,7 @@ function showEditor(): void {
   noteArea.rows = 3;
   noteArea.style.cssText = `
     all: initial;
-    font-family: system-ui, sans-serif;
+    font-family: var(--oddity-note-font, system-ui, sans-serif);
     font-size: 13px;
     padding: 6px 8px;
     border: 1px solid ${colors.inputBorder};
@@ -388,7 +424,7 @@ function showEditor(): void {
   cancelBtn.textContent = 'Cancel';
   cancelBtn.style.cssText = `
     all: initial;
-    font-family: system-ui, sans-serif;
+    font-family: var(--oddity-note-font, system-ui, sans-serif);
     font-size: 12px;
     padding: 6px 12px;
     border: 1px solid ${colors.cancelBorder};
@@ -404,7 +440,7 @@ function showEditor(): void {
   submitBtn.textContent = 'Save';
   submitBtn.style.cssText = `
     all: initial;
-    font-family: system-ui, sans-serif;
+    font-family: var(--oddity-note-font, system-ui, sans-serif);
     font-size: 12px;
     padding: 6px 12px;
     border: none;
@@ -423,6 +459,8 @@ function showEditor(): void {
   container.appendChild(buttonRow);
 
   editorShadow.appendChild(container);
+
+  setTimeout(() => noteArea.focus(), 50);
 
   // Escape to dismiss
   const editorEscapeListener = (e: KeyboardEvent) => {
@@ -445,26 +483,35 @@ function dismissEditor(keepHighlight = false): void {
 
 async function handleSubmit(note: string): Promise<void> {
   const type = 'user_written' as const;
-  if (!currentRange) return;
 
-  const exact = currentRange.toString().trim();
+  // GDocs canvas mode: no DOM range — use captured text from copy-event intercept.
+  const isGDocs = !currentRange && !!gdocsSelectedText;
+
+  if (!currentRange && !gdocsSelectedText) return;
+
+  const exact = isGDocs
+    ? gdocsSelectedText!
+    : currentRange!.toString().trim();
   if (!exact) return;
 
-  // Build prefix/suffix from surrounding text
-  const container = currentRange.commonAncestorContainer;
-  const root = container.nodeType === Node.ELEMENT_NODE
-    ? container as Element
-    : container.parentElement ?? document.body;
-  const fullText = root.textContent ?? '';
-  const idx = fullText.indexOf(exact);
-
+  let root: Element = document.body;
   let prefix: string | undefined;
   let suffix: string | undefined;
-  if (idx > 0) {
-    prefix = fullText.slice(Math.max(0, idx - 32), idx).trim();
-  }
-  if (idx >= 0 && idx + exact.length < fullText.length) {
-    suffix = fullText.slice(idx + exact.length, idx + exact.length + 32).trim();
+
+  if (!isGDocs) {
+    // Build prefix/suffix from surrounding text
+    const container = currentRange!.commonAncestorContainer;
+    root = container.nodeType === Node.ELEMENT_NODE
+      ? container as Element
+      : container.parentElement ?? document.body;
+    const fullText = root.textContent ?? '';
+    const idx = fullText.indexOf(exact);
+    if (idx > 0) {
+      prefix = fullText.slice(Math.max(0, idx - 32), idx).trim();
+    }
+    if (idx >= 0 && idx + exact.length < fullText.length) {
+      suffix = fullText.slice(idx + exact.length, idx + exact.length + 32).trim();
+    }
   }
 
   // Determine current mode from stored preferences
@@ -492,10 +539,19 @@ async function handleSubmit(note: string): Promise<void> {
     },
   };
 
-  // Use the hash computed by the main pipeline if available, otherwise fall back
-  const hashEl = root.closest('[data-oddity-hash]');
-  const contentHash = hashEl?.getAttribute('data-oddity-hash')
-    ?? await sha256(fullText.slice(0, 1000));
+  // For GDocs: find the hash-tagged region element set by the main pipeline.
+  // For other pages: walk up from the range's container.
+  let contentHash: string;
+  if (isGDocs) {
+    const hashEl = document.querySelector('[data-oddity-hash]');
+    contentHash = hashEl?.getAttribute('data-oddity-hash')
+      ?? await sha256(exact.slice(0, 1000));
+  } else {
+    const hashEl = root.closest('[data-oddity-hash]');
+    const fullText = root.textContent ?? '';
+    contentHash = hashEl?.getAttribute('data-oddity-hash')
+      ?? await sha256(fullText.slice(0, 1000));
+  }
 
   sendMessage({
     action: 'saveManualAnnotation',
@@ -510,13 +566,20 @@ async function handleSubmit(note: string): Promise<void> {
   // Remove temp highlight before rendering permanent one
   removeTempHighlight();
 
-  // Render immediately
-  renderManualAnnotation(annotation, root, contentHash);
+  // GDocs canvas: DOM rendering won't work — let the main pipeline handle it
+  // via the oddity:manualAnnotationCreated event below.
+  if (!isGDocs) {
+    renderManualAnnotation(annotation, root, contentHash);
+  }
 
-  // Notify index.ts to store the annotation so it survives mode switches
+  // Notify index.ts to store the annotation so it survives mode switches.
+  // For GDocs, also trigger a re-render so the annotation appears immediately.
   document.dispatchEvent(new CustomEvent('oddity:manualAnnotationCreated', {
     detail: { annotation, contentHash },
   }));
+  if (isGDocs) {
+    document.dispatchEvent(new CustomEvent('oddity:gdocs:rerenderAnnotations'));
+  }
 
   addLiveFeedback("✎", annotation.content.note, {
     quote: annotation.anchor.exact,
@@ -528,6 +591,8 @@ async function handleSubmit(note: string): Promise<void> {
   dismissEditor();
   window.getSelection()?.removeAllRanges();
   currentRange = null;
+  gdocsSelectedText = null;
+  gdocsAnchorRect = null;
 }
 
 function renderManualAnnotation(annotation: Annotation, root: Element, contentHash?: string): void {

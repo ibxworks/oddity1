@@ -27,6 +27,7 @@ export const DEFAULT_ENABLED_SITES: string[] = [
   "nytimes.com",
   "washingtonpost.com",
   "theatlantic.com",
+  "docs.google.com",
 ];
 
 // ─── Backend URL ───
@@ -54,6 +55,7 @@ export const PLAN_FEATURES = {
     pdfAnnotation: false,
     sketchPad: false,
     publicFigurePersonas: false,
+    googleDocs: false,
   },
   standard: {
     sallyPersonality: true,
@@ -61,6 +63,7 @@ export const PLAN_FEATURES = {
     pdfAnnotation: true,
     sketchPad: true,
     publicFigurePersonas: true,
+    googleDocs: true,
   },
 } as const satisfies Record<UserTier, Record<string, boolean>>;
 

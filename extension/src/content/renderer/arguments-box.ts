@@ -119,6 +119,147 @@ let notEnabledPanelEl: HTMLDivElement | null = null;
 let enableBubbleEl: HTMLDivElement | null = null;
 let emptyBubbleEl: HTMLDivElement | null = null;
 let blockedPanelEl: HTMLDivElement | null = null;
+
+// ─── Google Docs mode ───
+function isGDocs(): boolean {
+  return location.hostname === "docs.google.com";
+}
+function getGDocsTitle(): string {
+  const raw = document.title.replace(/\s*-\s*Google Docs\s*$/i, "").trim();
+  return raw || "My Document";
+}
+let gdocsPersonaName = "Terry";
+let gdocsChatMode: "auto" | "fast" | "plan" = "auto";
+let gdocsMemoMode: "memo" | "resource" = "memo";
+let gdocsActiveTab: "memo" | "resource" | "outline" = "memo";
+let gdocsExpandedCardId: string | null = null;
+let gdocsMemoEditMode = false;
+const gdocsMemoSelected = new Set<string>(); // sortKeys of selected memos
+let gdocsMemoPillEl: HTMLDivElement | null = null;
+let gdocsPersonaSubtitleEl: HTMLSpanElement | null = null;
+let gdocsTitleEl: HTMLSpanElement | null = null;
+let gdocsTitleObs: MutationObserver | null = null;
+let gdocsMemoTabBtn: HTMLButtonElement | null = null;
+let gdocsResourceTabBtn: HTMLButtonElement | null = null;
+let gdocsOutlineTabBtn: HTMLButtonElement | null = null;
+let gdocsChatTextarea: HTMLTextAreaElement | null = null;
+let gdocsMemoModeBtn: HTMLButtonElement | null = null;
+let gdocsResourceModeBtn: HTMLButtonElement | null = null;
+let gdocsModeDropdownBtn: HTMLButtonElement | null = null;
+let gdocsModeDropdownMenu: HTMLDivElement | null = null;
+let gdocsResourcePanelEl: HTMLDivElement | null = null;
+let gdocsOutlinePanelEl: HTMLDivElement | null = null;
+let gdocsOutlineTextEl: HTMLDivElement | null = null;
+let gdocsCurrentOutlineText = "";
+let gdocsOutlineContinueBtn: HTMLButtonElement | null = null;
+let gdocsOutlineRejectBtn: HTMLButtonElement | null = null;
+let gdocsOutlineOtherBtn: HTMLButtonElement | null = null;
+let gdocsChatInputAreaEl: HTMLDivElement | null = null;
+let gdocsArgBoxLoadingTimeout: ReturnType<typeof setTimeout> | null = null;
+let gdocsArgBoxLoadingActive = false;
+let gdocsArgBoxSpinnerEl: HTMLElement | null = null;
+
+const ARG_BOX_LOADING_QUESTIONS = [
+  'What shapes your core beliefs?',
+  'How does language affect thought?',
+  'Why do patterns repeat in history?',
+  'What defines a just society?',
+  'When does change become necessary?',
+  'How do ideas spread and evolve?',
+  'What makes an argument compelling?',
+  'Why does art outlast empires?',
+  'How does power shape narrative?',
+  'What is the cost of certainty?',
+  'Why do humans need stories?',
+  'How does context change meaning?',
+];
+
+// Renders plain text with **bold** markdown into an element safely (no XSS).
+function setOutlineText(el: HTMLDivElement, text: string): void {
+  el.innerHTML = text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br>");
+}
+
+function startArgBoxLoading(textarea: HTMLTextAreaElement): void {
+  stopArgBoxLoading(textarea);
+  textarea.disabled = true;
+  textarea.value = '';
+  textarea.style.color = '#ABABAB';
+  if (gdocsArgBoxSpinnerEl) gdocsArgBoxSpinnerEl.classList.add('visible');
+  gdocsArgBoxLoadingActive = true;
+
+  let idx = Math.floor(Math.random() * ARG_BOX_LOADING_QUESTIONS.length);
+
+  function schedule(fn: () => void, ms: number): void {
+    gdocsArgBoxLoadingTimeout = setTimeout(fn, ms);
+  }
+
+  function typeOut(text: string, charIdx: number, onDone: () => void): void {
+    if (!gdocsArgBoxLoadingActive) return;
+    textarea.value = text.slice(0, charIdx);
+    if (charIdx < text.length) {
+      schedule(() => typeOut(text, charIdx + 1, onDone), 32);
+    } else {
+      schedule(onDone, 120);
+    }
+  }
+
+  function showDots(dotCount: number, cycles: number, onDone: () => void): void {
+    if (!gdocsArgBoxLoadingActive) return;
+    const base = ARG_BOX_LOADING_QUESTIONS[idx]!;
+    textarea.value = base + '.'.repeat(dotCount);
+    const nextDots = (dotCount % 3) + 1;
+    const nextCycles = nextDots === 1 ? cycles - 1 : cycles;
+    if (nextCycles < 0) {
+      schedule(onDone, 350);
+    } else {
+      schedule(() => showDots(nextDots, nextCycles, onDone), 380);
+    }
+  }
+
+  function runNext(): void {
+    if (!gdocsArgBoxLoadingActive) return;
+    idx = (idx + 1) % ARG_BOX_LOADING_QUESTIONS.length;
+    textarea.value = '';
+    schedule(() => typeOut(ARG_BOX_LOADING_QUESTIONS[idx]!, 0, () => showDots(1, 1, runNext)), 200);
+  }
+
+  typeOut(ARG_BOX_LOADING_QUESTIONS[idx]!, 0, () => showDots(1, 1, runNext));
+}
+
+function stopArgBoxLoading(textarea: HTMLTextAreaElement): void {
+  gdocsArgBoxLoadingActive = false;
+  if (gdocsArgBoxLoadingTimeout) { clearTimeout(gdocsArgBoxLoadingTimeout); gdocsArgBoxLoadingTimeout = null; }
+  textarea.disabled = false;
+  textarea.value = '';
+  textarea.style.color = '';
+  textarea.placeholder = 'Rewrite my essay into ...';
+  if (gdocsArgBoxSpinnerEl) gdocsArgBoxSpinnerEl.classList.remove('visible');
+}
+
+type GDocsResource = { name: string; size: string; type: "PDF" | "TXT" | "PNG" | "Text"; content: string };
+const gdocsResources: GDocsResource[] = [];
+const gdocsResourceSelected = new Set<GDocsResource>();
+
+function formatGDocsTimestamp(sortKey: string): string {
+  let ms: number;
+  if (sortKey.startsWith("live-")) {
+    ms = parseInt(sortKey.slice(5), 10);
+  } else {
+    ms = new Date(sortKey).getTime();
+  }
+  if (isNaN(ms)) return "";
+  const d = new Date(ms);
+  const month = d.toLocaleString("en-US", { month: "short" });
+  const day = d.getDate();
+  const hour = d.getHours();
+  const min = d.getMinutes().toString().padStart(2, "0");
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const h12 = hour % 12 || 12;
+  return `${month} ${day}, ${h12}:${min} ${ampm}`;
+}
 let pdfDetected = false;
 let pdfPanelEl: HTMLDivElement | null = null;
 let pdfRunCb: (() => void) | null = null;
@@ -159,6 +300,7 @@ let dashSignOutPopoverEmailEl: HTMLSpanElement | null = null;
 let dashSignOutPopoverPlanEl: HTMLSpanElement | null = null;
 let dashUserEmail = "";
 let dashUserTier = "free";
+const pfDisplayNames = new Map<string, string>();
 let dashSignInViewEl: HTMLDivElement | null = null;
 let dashSignInEmailEl: HTMLInputElement | null = null;
 let dashSignInPasswordEl: HTMLInputElement | null = null;
@@ -180,10 +322,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.preferences) return;
   const prefs = (changes.preferences.newValue ?? {}) as Record<string, unknown>;
   const personality = (prefs.depth_personality as string) ?? "terry";
-  const display = personality.charAt(0).toUpperCase() + personality.slice(1);
+  const logoName = personality.startsWith("pf:") ? "Terry" : personality.charAt(0).toUpperCase() + personality.slice(1);
   if (bubbleLogoImgEl) {
-    bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
-    bubbleLogoImgEl.alt = display;
+    bubbleLogoImgEl.src = chrome.runtime.getURL(`${logoName}.png`);
+    bubbleLogoImgEl.alt = logoName;
   }
 });
 
@@ -243,11 +385,10 @@ export function initArgumentsBox(): void {
       );
       // Sync bubble logo to stored persona
       const personality = (prefs.depth_personality as string) ?? "terry";
-      const display =
-        personality.charAt(0).toUpperCase() + personality.slice(1);
+      const logoName = personality.startsWith("pf:") ? "Terry" : personality.charAt(0).toUpperCase() + personality.slice(1);
       if (bubbleLogoImgEl) {
-        bubbleLogoImgEl.src = chrome.runtime.getURL(`${display}.png`);
-        bubbleLogoImgEl.alt = display;
+        bubbleLogoImgEl.src = chrome.runtime.getURL(`${logoName}.png`);
+        bubbleLogoImgEl.alt = logoName;
       }
     }
   });
@@ -347,48 +488,47 @@ export function initArgumentsBox(): void {
   panelFace.className = "args-panel-face";
   panelFace.addEventListener("click", (e) => e.stopPropagation());
 
-  // ── Panel header: "Argument Box" + icon buttons ──
+  // ── Panel header ──
   const panelHeader = document.createElement("div");
   panelHeader.className = "args-panel-header";
 
   const mainTitle = document.createElement("span");
   mainTitle.className = "args-main-title";
-  mainTitle.textContent = "Argument Box";
+
+  if (isGDocs()) {
+    // Back arrow + doc title
+    const backArrow = document.createElement("span");
+    backArrow.className = "args-gdocs-back";
+    backArrow.textContent = "←";
+    backArrow.addEventListener("click", (e) => { e.stopPropagation(); toggle(); });
+    mainTitle.appendChild(backArrow);
+    const titleText = document.createElement("span");
+    titleText.className = "args-gdocs-title-text";
+    titleText.textContent = getGDocsTitle();
+    gdocsTitleEl = titleText;
+    mainTitle.appendChild(titleText);
+    // Keep title in sync if doc title changes
+    gdocsTitleObs?.disconnect();
+    gdocsTitleObs = new MutationObserver(() => {
+      if (gdocsTitleEl) gdocsTitleEl.textContent = getGDocsTitle();
+    });
+    gdocsTitleObs.observe(document.querySelector("title") ?? document.head, { subtree: true, childList: true, characterData: true });
+  } else {
+    mainTitle.textContent = "Argument Box";
+  }
 
   const headerIcons = document.createElement("div");
   headerIcons.className = "args-header-icons";
 
-  const addBtn = document.createElement("button");
-  addBtn.className = "args-header-icon-btn";
-  addBtn.title = "Add";
-  addBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 19 19" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8.5" width="1.5" height="18.5" rx="0.5" fill="currentColor"/><rect x="18.5" y="8.5" width="1.5" height="18.5" rx="0.5" transform="rotate(90 18.5 8.5)" fill="currentColor"/></svg>`;
-  // ── Plus-button tooltip ──
-  const addTooltip = document.createElement("div");
-  addTooltip.className = "add-tooltip";
-  addTooltip.innerHTML = `
-    <span class="add-tooltip-title">Add your thoughts</span>
-    <span class="add-tooltip-desc">Highlight text on the page, then click <b>+</b> to attach your note.</span>
-  `;
-  addBtn.style.position = "relative";
-  addBtn.appendChild(addTooltip);
-
-  addBtn.addEventListener("click", (e) => {
+  // Dashboard (sliders) button — replaces old + button
+  const dashboardBtn = document.createElement("button");
+  dashboardBtn.className = "args-header-icon-btn";
+  dashboardBtn.title = "Dashboard";
+  dashboardBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="1" y1="5" x2="19" y2="5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="6" cy="5" r="2.2" fill="currentColor"/><line x1="1" y1="10" x2="19" y2="10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="13" cy="10" r="2.2" fill="currentColor"/><line x1="1" y1="15" x2="19" y2="15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="15" r="2.2" fill="currentColor"/></svg>`;
+  dashboardBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    addTooltip.classList.toggle("visible");
-  });
-
-  // Close tooltip when clicking outside
-  document.addEventListener("click", () => {
-    addTooltip.classList.remove("visible");
-  });
-
-  const copyIconBtn = document.createElement("button");
-  copyIconBtn.className = "args-header-icon-btn";
-  copyIconBtn.title = "Copy";
-  copyIconBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.4883 5.5H7.94922C6.59655 5.5 5.5 6.59655 5.5 7.94922V17.4883C5.5 18.8409 6.59655 19.9375 7.94922 19.9375H17.4883C18.8409 19.9375 19.9375 18.8409 19.9375 17.4883V7.94922C19.9375 6.59655 18.8409 5.5 17.4883 5.5Z" stroke="currentColor" stroke-width="1.375" stroke-linejoin="round"/><path d="M16.4785 5.5L16.5 4.46875C16.4982 3.83113 16.2441 3.22014 15.7932 2.76928C15.3424 2.31841 14.7314 2.06431 14.0938 2.0625H4.8125C4.08382 2.06465 3.38559 2.35508 2.87034 2.87034C2.35508 3.38559 2.06465 4.08382 2.0625 4.8125V14.0938C2.06431 14.7314 2.31841 15.3424 2.76928 15.7932C3.22014 16.2441 3.83113 16.4982 4.46875 16.5H5.5" stroke="currentColor" stroke-width="1.375" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  copyIconBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    handleCopy(copyIconBtn);
+    if (!expanded) toggle();
+    showDashboard();
   });
 
   const exportIconBtn = document.createElement("button");
@@ -404,17 +544,48 @@ export function initArgumentsBox(): void {
     );
   });
 
-  headerIcons.appendChild(addBtn);
-  headerIcons.appendChild(copyIconBtn);
+  const copyIconBtn = document.createElement("button");
+  copyIconBtn.className = "args-header-icon-btn";
+  copyIconBtn.title = "Copy";
+  copyIconBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.4883 5.5H7.94922C6.59655 5.5 5.5 6.59655 5.5 7.94922V17.4883C5.5 18.8409 6.59655 19.9375 7.94922 19.9375H17.4883C18.8409 19.9375 19.9375 18.8409 19.9375 17.4883V7.94922C19.9375 6.59655 18.8409 5.5 17.4883 5.5Z" stroke="currentColor" stroke-width="1.375" stroke-linejoin="round"/><path d="M16.4785 5.5L16.5 4.46875C16.4982 3.83113 16.2441 3.22014 15.7932 2.76928C15.3424 2.31841 14.7314 2.06431 14.0938 2.0625H4.8125C4.08382 2.06465 3.38559 2.35508 2.87034 2.87034C2.35508 3.38559 2.06465 4.08382 2.0625 4.8125V14.0938C2.06431 14.7314 2.31841 15.3424 2.76928 15.7932C3.22014 16.2441 3.83113 16.4982 4.46875 16.5H5.5" stroke="currentColor" stroke-width="1.375" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  copyIconBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    handleCopy(copyIconBtn);
+  });
+
+  headerIcons.appendChild(dashboardBtn);
   headerIcons.appendChild(exportIconBtn);
+  headerIcons.appendChild(copyIconBtn);
 
   panelHeader.appendChild(mainTitle);
   panelHeader.appendChild(headerIcons);
   panelFace.appendChild(panelHeader);
 
+  // ── GDocs persona subtitle ──
+  if (isGDocs()) {
+    const personaSubtitle = document.createElement("div");
+    personaSubtitle.className = "args-gdocs-persona";
+    const personaText = document.createElement("span");
+    personaText.className = "args-gdocs-persona-text";
+    personaText.textContent = `Writing with ${gdocsPersonaName}`;
+    gdocsPersonaSubtitleEl = personaText;
+    personaSubtitle.appendChild(personaText);
+    panelFace.appendChild(personaSubtitle);
+    // Load persona name from storage
+    chrome.storage.local.get("preferences", (result) => {
+      const prefs = result["preferences"] as Record<string, unknown> | undefined;
+      const personality = (prefs?.depth_personality as string) ?? "terry";
+      gdocsPersonaName = personality.charAt(0).toUpperCase() + personality.slice(1);
+      if (gdocsPersonaSubtitleEl) {
+        gdocsPersonaSubtitleEl.textContent = `Writing with ${gdocsPersonaName}`;
+      }
+    });
+  }
+
   // ── Purpose section ──
   const purposeSection = document.createElement("div");
   purposeSection.className = "args-purpose-section";
+  if (isGDocs()) purposeSection.style.display = "none";
 
   const purposeLabel = document.createElement("span");
   purposeLabel.className = "args-purpose-label";
@@ -444,35 +615,84 @@ export function initArgumentsBox(): void {
 
   // ── Tab Bar ──
   tabBarEl = document.createElement("div");
-  tabBarEl.className = "args-tab-bar";
+  tabBarEl.className = isGDocs() ? "args-tab-bar args-tab-bar--gdocs" : "args-tab-bar";
 
-  notesTabBtn = document.createElement("button");
-  notesTabBtn.className = "args-tab active";
-  notesTabBtn.textContent = "Notes";
-  notesTabBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    switchTab("notes");
-  });
+  if (isGDocs()) {
+    // GDocs tabs: Memo | Resource | Outline
+    gdocsMemoTabBtn = document.createElement("button");
+    gdocsMemoTabBtn.className = "args-gdocs-tab active";
+    gdocsMemoTabBtn.textContent = "Memo";
+    gdocsMemoTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsActiveTab = "memo";
+      gdocsMemoTabBtn!.classList.add("active");
+      gdocsResourceTabBtn!.classList.remove("active");
+      gdocsOutlineTabBtn!.classList.remove("active");
+      if (listEl) listEl.style.display = "";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "none";
+    });
 
-  sketchTabBtn = document.createElement("button");
-  sketchTabBtn.className = "args-tab";
-  sketchTabBtn.textContent = isChatbotMode ? "Prompt" : "Sketch";
-  sketchTabBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    switchTab("sketch");
-  });
+    gdocsResourceTabBtn = document.createElement("button");
+    gdocsResourceTabBtn.className = "args-gdocs-tab";
+    gdocsResourceTabBtn.textContent = "Context";
+    gdocsResourceTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsActiveTab = "resource";
+      gdocsMemoTabBtn!.classList.remove("active");
+      gdocsResourceTabBtn!.classList.add("active");
+      gdocsOutlineTabBtn!.classList.remove("active");
+      if (listEl) listEl.style.display = "none";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "none";
+    });
 
-  tabBarEl.appendChild(notesTabBtn);
-  tabBarEl.appendChild(sketchTabBtn);
-  pdfSummaryTabBtn = document.createElement("button");
-  pdfSummaryTabBtn.className = "args-tab";
-  pdfSummaryTabBtn.textContent = "Summaries";
-  pdfSummaryTabBtn.style.display = "none";
-  pdfSummaryTabBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    switchTab("summaries");
-  });
-  tabBarEl.appendChild(pdfSummaryTabBtn);
+    gdocsOutlineTabBtn = document.createElement("button");
+    gdocsOutlineTabBtn.className = "args-gdocs-tab";
+    gdocsOutlineTabBtn.textContent = "Outline";
+    gdocsOutlineTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsActiveTab = "outline";
+      gdocsMemoTabBtn!.classList.remove("active");
+      gdocsResourceTabBtn!.classList.remove("active");
+      gdocsOutlineTabBtn!.classList.add("active");
+      if (listEl) listEl.style.display = "none";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "";
+    });
+
+    tabBarEl.appendChild(gdocsMemoTabBtn);
+    tabBarEl.appendChild(gdocsResourceTabBtn);
+    tabBarEl.appendChild(gdocsOutlineTabBtn);
+  } else {
+    notesTabBtn = document.createElement("button");
+    notesTabBtn.className = "args-tab active";
+    notesTabBtn.textContent = "Notes";
+    notesTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      switchTab("notes");
+    });
+
+    sketchTabBtn = document.createElement("button");
+    sketchTabBtn.className = "args-tab";
+    sketchTabBtn.textContent = isChatbotMode ? "Prompt" : "Sketch";
+    sketchTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      switchTab("sketch");
+    });
+
+    tabBarEl.appendChild(notesTabBtn);
+    tabBarEl.appendChild(sketchTabBtn);
+    pdfSummaryTabBtn = document.createElement("button");
+    pdfSummaryTabBtn.className = "args-tab";
+    pdfSummaryTabBtn.textContent = "Summaries";
+    pdfSummaryTabBtn.style.display = "none";
+    pdfSummaryTabBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      switchTab("summaries");
+    });
+    tabBarEl.appendChild(pdfSummaryTabBtn);
+  }
   panelFace.appendChild(tabBarEl);
 
   // ── List ──
@@ -480,6 +700,411 @@ export function initArgumentsBox(): void {
   listEl.className = "args-list";
   panelFace.appendChild(listEl);
   renderList();
+
+  // ── GDocs Resource Panel ──
+  if (isGDocs()) {
+    gdocsResourcePanelEl = document.createElement("div");
+    gdocsResourcePanelEl.className = "args-gdocs-resource-panel";
+    gdocsResourcePanelEl.style.display = "none";
+
+    const saveResources = () => {
+      const key = `gdocsResources_${getPageUrl()}`;
+      chrome.storage.local.set({ [key]: gdocsResources }).catch(() => {});
+    };
+
+    const renderResourceList = () => {
+      gdocsResourcePanelEl!.innerHTML = "";
+
+      // Ensure all newly-added resources start selected
+      for (const res of gdocsResources) {
+        if (!gdocsResourceSelected.has(res)) gdocsResourceSelected.add(res);
+      }
+
+      // Existing resources
+      const resourceList = document.createElement("div");
+      resourceList.className = "args-gdocs-resource-list";
+
+      // ── Select All row ──
+      const selectAllRow = document.createElement("div");
+      selectAllRow.className = "args-gdocs-select-all-row";
+      selectAllRow.style.cursor = "pointer";
+
+      const selectAllChk = document.createElement("input");
+      selectAllChk.type = "checkbox";
+      selectAllChk.className = "args-gdocs-checkbox";
+      selectAllChk.style.pointerEvents = "none";
+      const allSelected = gdocsResources.length > 0 && gdocsResources.every(r => gdocsResourceSelected.has(r));
+      selectAllChk.checked = allSelected;
+      selectAllChk.indeterminate = !allSelected && gdocsResources.some(r => gdocsResourceSelected.has(r));
+
+      const selectAllLabel = document.createElement("span");
+      selectAllLabel.className = "args-gdocs-select-all-label";
+      selectAllLabel.textContent = "Select All";
+
+      selectAllRow.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const shouldSelect = !selectAllChk.checked || selectAllChk.indeterminate;
+        if (shouldSelect) {
+          gdocsResources.forEach(r => gdocsResourceSelected.add(r));
+          selectAllChk.checked = true;
+          selectAllChk.indeterminate = false;
+        } else {
+          gdocsResources.forEach(r => gdocsResourceSelected.delete(r));
+          selectAllChk.checked = false;
+          selectAllChk.indeterminate = false;
+        }
+        // Update individual checkboxes in-place
+        resourceList.querySelectorAll<HTMLInputElement>(".args-gdocs-resource-item .args-gdocs-checkbox").forEach((chk) => {
+          chk.checked = shouldSelect;
+        });
+      });
+
+      selectAllRow.appendChild(selectAllChk);
+      selectAllRow.appendChild(selectAllLabel);
+      resourceList.appendChild(selectAllRow);
+
+      // Divider after select all
+      const selectAllDivider = document.createElement("div");
+      selectAllDivider.className = "args-gdocs-resource-divider";
+      resourceList.appendChild(selectAllDivider);
+
+      // ── Individual resource items ──
+      for (const res of gdocsResources) {
+        const item = document.createElement("div");
+        item.className = "args-gdocs-resource-item";
+
+        // Checkbox
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.className = "args-gdocs-checkbox";
+        chk.checked = gdocsResourceSelected.has(res);
+        chk.addEventListener("change", (e) => {
+          e.stopPropagation();
+          if (chk.checked) gdocsResourceSelected.add(res);
+          else gdocsResourceSelected.delete(res);
+          // Update select-all state without full re-render
+          const allNow = gdocsResources.every(r => gdocsResourceSelected.has(r));
+          const someNow = gdocsResources.some(r => gdocsResourceSelected.has(r));
+          selectAllChk.checked = allNow;
+          selectAllChk.indeterminate = !allNow && someNow;
+        });
+
+        // Text content
+        const textCol = document.createElement("div");
+        textCol.className = "args-gdocs-resource-text-col";
+        const name = document.createElement("div");
+        name.className = "args-gdocs-resource-name";
+        name.textContent = res.name;
+        const meta = document.createElement("div");
+        meta.className = "args-gdocs-resource-meta";
+        if (res.type === "Text") {
+          textCol.appendChild(name);
+          if (res.content) {
+            const preview = document.createElement("div");
+            preview.className = "args-gdocs-resource-preview";
+            preview.textContent = res.content;
+            textCol.appendChild(preview);
+          }
+        } else {
+          meta.textContent = `${res.size} · ${res.type}`;
+          textCol.appendChild(name);
+          textCol.appendChild(meta);
+        }
+
+        // Three-dot menu
+        const menuBtn = document.createElement("button");
+        menuBtn.className = "args-gdocs-resource-menu-btn";
+        menuBtn.textContent = "⋮";
+        menuBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          // Remove existing open menus
+          document.querySelectorAll(".args-gdocs-resource-dropdown").forEach(el => el.remove());
+          const dropdown = document.createElement("div");
+          dropdown.className = "args-gdocs-resource-dropdown";
+          const deleteOpt = document.createElement("button");
+          deleteOpt.className = "args-gdocs-resource-dropdown-item args-gdocs-resource-dropdown-item--delete";
+          deleteOpt.textContent = "Delete";
+          deleteOpt.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            const idx = gdocsResources.indexOf(res);
+            if (idx !== -1) {
+              gdocsResources.splice(idx, 1);
+              gdocsResourceSelected.delete(res);
+            }
+            dropdown.remove();
+            saveResources();
+            renderResourceList();
+          });
+          dropdown.appendChild(deleteOpt);
+          menuBtn.style.position = "relative";
+          menuBtn.appendChild(dropdown);
+          const closeMenu = (ev: MouseEvent) => {
+            if (!dropdown.contains(ev.target as Node)) {
+              dropdown.remove();
+              document.removeEventListener("click", closeMenu);
+            }
+          };
+          setTimeout(() => document.addEventListener("click", closeMenu), 0);
+        });
+
+        item.appendChild(chk);
+        item.appendChild(textCol);
+        item.appendChild(menuBtn);
+
+        const divider = document.createElement("div");
+        divider.className = "args-gdocs-resource-divider";
+        resourceList.appendChild(item);
+        resourceList.appendChild(divider);
+      }
+      gdocsResourcePanelEl!.appendChild(resourceList);
+
+      // New Resource form
+      const newSection = document.createElement("div");
+      newSection.className = "args-gdocs-new-resource";
+
+      const newTitle = document.createElement("div");
+      newTitle.className = "args-gdocs-new-resource-title";
+      newTitle.textContent = "New Context";
+      newSection.appendChild(newTitle);
+
+      // Name input
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.className = "args-gdocs-resource-name-input";
+      nameInput.placeholder = "Name";
+      nameInput.addEventListener("click", (e) => e.stopPropagation());
+      nameInput.addEventListener("keydown", (e) => e.stopPropagation());
+      newSection.appendChild(nameInput);
+
+      // Radio row
+      const radioRow = document.createElement("div");
+      radioRow.className = "args-gdocs-radio-row";
+      const uid = `res-${Date.now()}`;
+
+      const pasteRadio = document.createElement("input");
+      pasteRadio.type = "radio"; pasteRadio.name = uid; pasteRadio.id = `${uid}-paste`; pasteRadio.checked = true;
+      const pasteLabel = document.createElement("label");
+      pasteLabel.htmlFor = `${uid}-paste`; pasteLabel.textContent = "Paste text";
+
+      const fileRadio = document.createElement("input");
+      fileRadio.type = "radio"; fileRadio.name = uid; fileRadio.id = `${uid}-file`;
+      const fileLabel = document.createElement("label");
+      fileLabel.htmlFor = `${uid}-file`; fileLabel.textContent = "File upload";
+
+      radioRow.appendChild(pasteRadio);
+      radioRow.appendChild(pasteLabel);
+      radioRow.appendChild(fileRadio);
+      radioRow.appendChild(fileLabel);
+      newSection.appendChild(radioRow);
+
+      // Text area (always visible, used for paste text or file preview)
+      const textInput = document.createElement("textarea");
+      textInput.className = "args-gdocs-resource-textarea";
+      textInput.placeholder = "Write here...";
+      textInput.addEventListener("click", (e) => e.stopPropagation());
+      textInput.addEventListener("keydown", (e) => e.stopPropagation());
+      newSection.appendChild(textInput);
+
+      // File input (hidden trigger)
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = ".txt,.md,.pdf,.doc,.docx,.png,.jpg";
+      fileInput.style.display = "none";
+      newSection.appendChild(fileInput);
+
+      // Track pending file for preview
+      let pendingFile: File | null = null;
+
+      pasteRadio.addEventListener("change", () => {
+        pendingFile = null;
+        textInput.value = "";
+        textInput.disabled = false;
+        textInput.placeholder = "Write here...";
+        textInput.style.color = "";
+      });
+      fileRadio.addEventListener("change", () => {
+        fileInput.value = "";
+        fileInput.click();
+      });
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files?.[0];
+        if (!file) {
+          // User cancelled picker — revert to paste
+          pasteRadio.checked = true;
+          pendingFile = null;
+          textInput.disabled = false;
+          textInput.placeholder = "Write here...";
+          textInput.style.color = "";
+          return;
+        }
+        const size = file.size > 1024 * 1024
+          ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+          : `${(file.size / 1024).toFixed(0)} KB`;
+        pendingFile = file;
+        textInput.disabled = true;
+        textInput.value = `${file.name}  (${size})`;
+        textInput.style.color = "#888";
+      });
+
+      // Save row
+      const saveRow = document.createElement("div");
+      saveRow.className = "args-gdocs-resource-save-row";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "args-gdocs-resource-save-btn";
+      saveBtn.textContent = "Save";
+      saveBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (pendingFile) {
+          const file = pendingFile;
+          const ext = file.name.split(".").pop()?.toUpperCase() ?? "FILE";
+          const size = file.size > 1024 * 1024
+            ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+            : `${(file.size / 1024).toFixed(0)} KB`;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const content = ((reader.result as string) ?? "").slice(0, 8000);
+            gdocsResources.push({ name: file.name, size, type: ext as GDocsResource["type"], content });
+            saveResources();
+            renderResourceList();
+          };
+          reader.onerror = () => {
+            gdocsResources.push({ name: file.name, size, type: ext as GDocsResource["type"], content: "" });
+            saveResources();
+            renderResourceList();
+          };
+          reader.readAsText(file);
+        } else {
+          const text = textInput.value.trim();
+          if (!text) return;
+          const name = nameInput.value.trim() || "Untitled";
+          gdocsResources.push({ name, size: "", type: "Text", content: text });
+          saveResources();
+          renderResourceList();
+        }
+      });
+      saveRow.appendChild(saveBtn);
+      newSection.appendChild(saveRow);
+
+      gdocsResourcePanelEl!.appendChild(newSection);
+    };
+
+    // Load persisted resources for this page
+    const storageKey = `gdocsResources_${getPageUrl()}`;
+    chrome.storage.local.get(storageKey).then((stored) => {
+      const saved = stored[storageKey];
+      if (Array.isArray(saved)) {
+        gdocsResources.push(...saved);
+      }
+      renderResourceList();
+    }).catch(() => renderResourceList());
+    panelFace.appendChild(gdocsResourcePanelEl);
+
+    // ── GDocs Outline Panel ──
+    gdocsOutlinePanelEl = document.createElement("div");
+    gdocsOutlinePanelEl.className = "args-gdocs-outline-panel";
+    gdocsOutlinePanelEl.style.display = "none";
+
+
+    gdocsOutlineTextEl = document.createElement("div");
+    gdocsOutlineTextEl.className = "args-gdocs-outline-text";
+    setOutlineText(gdocsOutlineTextEl, "No outline yet. Submit a request in Plan mode to generate one.");
+    gdocsOutlinePanelEl.appendChild(gdocsOutlineTextEl);
+
+    // ── Continue / Reject / Other buttons ──
+    const outlineActions = document.createElement("div");
+    outlineActions.className = "args-gdocs-outline-actions";
+
+    const continueBtn = document.createElement("button");
+    gdocsOutlineContinueBtn = continueBtn;
+    continueBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-continue";
+    continueBtn.textContent = "Continue";
+    continueBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(new CustomEvent("oddity:gdocs:outline:continue"));
+    });
+
+    const rejectBtn = document.createElement("button");
+    gdocsOutlineRejectBtn = rejectBtn;
+    rejectBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-secondary";
+    rejectBtn.textContent = "Reject";
+    rejectBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(new CustomEvent("oddity:gdocs:outline:reject"));
+      // Reset outline panel to empty state
+      if (gdocsOutlineTextEl) setOutlineText(gdocsOutlineTextEl, "No outline yet. Submit a request in Plan mode to generate one.");
+      outlineOtherArea.style.display = "none";
+      outlineActions.style.display = "";
+    });
+
+    const otherBtn = document.createElement("button");
+    gdocsOutlineOtherBtn = otherBtn;
+    otherBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-secondary";
+    otherBtn.textContent = "Other";
+    otherBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      outlineActions.style.display = "none";
+      outlineOtherArea.style.display = "";
+      outlineFeedbackInput.focus();
+    });
+
+    outlineActions.appendChild(continueBtn);
+    outlineActions.appendChild(rejectBtn);
+    outlineActions.appendChild(otherBtn);
+    gdocsOutlinePanelEl.appendChild(outlineActions);
+
+    // ── "Other" feedback area ──
+    const outlineOtherArea = document.createElement("div");
+    outlineOtherArea.className = "args-gdocs-outline-other";
+    outlineOtherArea.style.display = "none";
+
+    const outlineFeedbackInput = document.createElement("textarea");
+    outlineFeedbackInput.className = "args-gdocs-outline-feedback";
+    outlineFeedbackInput.placeholder = "What would you like to change about this plan?";
+    outlineFeedbackInput.rows = 3;
+    outlineFeedbackInput.addEventListener("click", (e) => e.stopPropagation());
+    outlineFeedbackInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        submitFeedback();
+      }
+      e.stopPropagation();
+    });
+
+    const submitFeedbackBtn = document.createElement("button");
+    submitFeedbackBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-continue";
+    submitFeedbackBtn.textContent = "Regenerate →";
+
+    const cancelFeedbackBtn = document.createElement("button");
+    cancelFeedbackBtn.className = "args-gdocs-outline-btn args-gdocs-outline-btn-secondary";
+    cancelFeedbackBtn.textContent = "Back";
+    cancelFeedbackBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      outlineOtherArea.style.display = "none";
+      outlineActions.style.display = "";
+    });
+
+    const submitFeedback = () => {
+      const feedback = outlineFeedbackInput.value.trim();
+      if (!feedback) return;
+      outlineFeedbackInput.value = "";
+      outlineOtherArea.style.display = "none";
+      outlineActions.style.display = "";
+      document.dispatchEvent(new CustomEvent("oddity:gdocs:outline:other", { detail: { feedback } }));
+    };
+
+    submitFeedbackBtn.addEventListener("click", (e) => { e.stopPropagation(); submitFeedback(); });
+
+    const outlineFeedbackRow = document.createElement("div");
+    outlineFeedbackRow.className = "args-gdocs-outline-feedback-row";
+    outlineFeedbackRow.appendChild(cancelFeedbackBtn);
+    outlineFeedbackRow.appendChild(submitFeedbackBtn);
+
+    outlineOtherArea.appendChild(outlineFeedbackInput);
+    outlineOtherArea.appendChild(outlineFeedbackRow);
+    gdocsOutlinePanelEl.appendChild(outlineOtherArea);
+
+    panelFace.appendChild(gdocsOutlinePanelEl);
+  }
 
   // ── Sketch Content ──
   sketchContentEl = document.createElement("div");
@@ -522,49 +1147,279 @@ export function initArgumentsBox(): void {
   document.addEventListener("mousemove", listDragMoveHandler);
   document.addEventListener("mouseup", listDragUpHandler);
 
-  // ── Footer ──
-  footerEl = document.createElement("div");
-  const footer = footerEl;
-  footer.className = "args-footer";
-
-  const sketchBtn = document.createElement("button");
-  sketchBtn.className = "args-sketch-btn";
-  sketchBtn.textContent = getSketchActionLabel();
-  sketchBtnEl = sketchBtn;
-  sketchBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    handleSketch();
-  });
-  footer.appendChild(sketchBtn);
-
-  footerTextEl = document.createElement("span");
-  footerTextEl.className = "args-footer-text";
-  footerTextEl.textContent = "Go to Dashboard";
-  chrome.runtime.sendMessage(
-    { action: "getAuthStatus", payload: {} },
-    (result) => {
-      if (!result?.authenticated) {
-        footerTextEl!.textContent = "Sign in";
+  // Collapse GDocs expanded card when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!gdocsExpandedCardId) return;
+    const expandedCard = listEl?.querySelector<HTMLDivElement>(`.gdocs-arg-card--expanded`);
+    if (expandedCard && !expandedCard.contains(e.target as Node)) {
+      expandedCard.classList.remove("gdocs-arg-card--expanded");
+      const nextDivider = expandedCard.nextElementSibling;
+      if (nextDivider?.classList.contains("gdocs-arg-divider")) {
+        (nextDivider as HTMLElement).style.display = "";
       }
-    },
-  );
-  footerTextEl.addEventListener("click", (e) => {
-    e.stopPropagation();
-    showDashboard();
+      gdocsExpandedCardId = null;
+      if (listEl) listEl.style.overflow = "";
+    }
   });
-  footer.appendChild(footerTextEl);
 
-  panelFace.appendChild(footer);
+  if (isGDocs()) {
+    // ── GDocs chat section (replaces footer) ──
+    const chatSection = document.createElement("div");
+    chatSection.className = "args-gdocs-chat-section";
+    chatSection.addEventListener("click", (e) => e.stopPropagation());
+
+    // ── Input area (textarea + bar) ──
+    const chatInputArea = document.createElement("div");
+    chatInputArea.className = "args-gdocs-chat-input-area";
+    gdocsChatInputAreaEl = chatInputArea;
+
+    const chatBox = document.createElement("div");
+    chatBox.className = "args-gdocs-chat-box";
+
+    const spinner = document.createElement("div");
+    spinner.className = "args-gdocs-spinner";
+    chatBox.appendChild(spinner);
+    gdocsArgBoxSpinnerEl = spinner;
+
+    // "Memo ×" pill (shown when memo edit mode is active)
+    const memoPill = document.createElement("div");
+    memoPill.className = "args-gdocs-memo-pill";
+    memoPill.style.display = "none";
+    const memoPillText = document.createElement("span");
+    memoPillText.textContent = "Memo";
+    const memoPillX = document.createElement("button");
+    memoPillX.className = "args-gdocs-memo-pill-x";
+    memoPillX.textContent = "×";
+    memoPillX.addEventListener("click", (e) => {
+      e.stopPropagation();
+      gdocsMemoEditMode = false;
+      gdocsMemoSelected.clear();
+      memoPill.style.display = "none";
+      lastRenderedKey = "";
+      renderList();
+    });
+    memoPill.appendChild(memoPillText);
+    memoPill.appendChild(memoPillX);
+    gdocsMemoPillEl = memoPill;
+    chatBox.appendChild(memoPill);
+
+    const chatTextarea = document.createElement("textarea");
+    chatTextarea.className = "args-gdocs-chat-textarea";
+    chatTextarea.placeholder = "Rewrite my essay into ...";
+    chatTextarea.rows = 3;
+    chatTextarea.addEventListener("click", (e) => e.stopPropagation());
+    chatTextarea.addEventListener("keydown", (e) => e.stopPropagation());
+    gdocsChatTextarea = chatTextarea;
+    chatBox.appendChild(chatTextarea);
+
+    const chatBar = document.createElement("div");
+    chatBar.className = "args-gdocs-chat-bar";
+
+    // "Use Memo for edit" toggle button
+    const modePills = document.createElement("div");
+    modePills.className = "args-gdocs-mode-pills";
+
+    const memoPillBtn = document.createElement("button");
+    memoPillBtn.className = "args-gdocs-pill-btn active";
+    memoPillBtn.textContent = "Use Memo for edit";
+    gdocsMemoModeBtn = memoPillBtn;
+
+    memoPillBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Switch to Memo tab
+      gdocsActiveTab = "memo";
+      gdocsMemoTabBtn!.classList.add("active");
+      gdocsResourceTabBtn!.classList.remove("active");
+      gdocsOutlineTabBtn!.classList.remove("active");
+      if (listEl) listEl.style.display = "";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "none";
+      // Enable memo edit mode — select all memos
+      gdocsMemoEditMode = true;
+      gdocsMemoSelected.clear();
+      const allItems = [...canonicalItems, ...liveItems].filter(i => i.type === "reply" || i.type === "manual");
+      allItems.forEach(i => gdocsMemoSelected.add(i.sortKey));
+      if (gdocsMemoPillEl) gdocsMemoPillEl.style.display = "";
+      renderList();
+    });
+
+    modePills.appendChild(memoPillBtn);
+
+    // Auto / Plan dropdown
+    const dropdownWrap = document.createElement("div");
+    dropdownWrap.className = "args-gdocs-dropdown-wrap";
+
+    const dropdownBtn = document.createElement("button");
+    dropdownBtn.className = "args-gdocs-dropdown-btn";
+    dropdownBtn.textContent = "Auto ↓";
+    gdocsModeDropdownBtn = dropdownBtn;
+
+    const dropdownMenu = document.createElement("div");
+    dropdownMenu.className = "args-gdocs-dropdown-menu";
+    dropdownMenu.style.display = "none";
+    gdocsModeDropdownMenu = dropdownMenu;
+
+    const modes: Array<{ key: "auto" | "fast" | "plan"; label: string }> = [
+      { key: "auto", label: "Auto" },
+      { key: "fast", label: "Fast" },
+      { key: "plan", label: "Plan" },
+    ];
+
+    const optionEls: HTMLButtonElement[] = [];
+
+    const setMode = (key: "auto" | "fast" | "plan") => {
+      gdocsChatMode = key;
+      const chosen = modes.find(m => m.key === key)!;
+      dropdownBtn.textContent = `${chosen.label} ↓`;
+      optionEls.forEach((el, i) => el.classList.toggle("active", modes[i]!.key === key));
+      dropdownMenu.style.display = "none";
+    };
+
+    for (const m of modes) {
+      const opt = document.createElement("button");
+      opt.className = "args-gdocs-dropdown-option" + (m.key === "auto" ? " active" : "");
+      opt.textContent = m.label;
+      opt.addEventListener("click", (e) => { e.stopPropagation(); setMode(m.key); });
+      optionEls.push(opt);
+      dropdownMenu.appendChild(opt);
+    }
+
+    dropdownBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dropdownMenu.style.display = dropdownMenu.style.display === "none" ? "" : "none";
+    });
+    document.addEventListener("click", () => { if (gdocsModeDropdownMenu) gdocsModeDropdownMenu.style.display = "none"; });
+
+    dropdownWrap.appendChild(dropdownBtn);
+    dropdownWrap.appendChild(dropdownMenu);
+
+    // Send button
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "args-gdocs-send-btn";
+    sendBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 12 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.05377 0.219671C5.76087 -0.0732222 5.286 -0.0732222 4.99311 0.219671L0.220136 4.99264C-0.0727572 5.28553 -0.0727572 5.76041 0.220136 6.0533C0.51303 6.3462 0.987903 6.3462 1.2808 6.0533L5.52344 1.81066L9.76608 6.0533C10.059 6.3462 10.5338 6.3462 10.8267 6.0533C11.1196 5.76041 11.1196 5.28553 10.8267 4.99264L6.05377 0.219671ZM5.52344 15.75H6.27344L6.27344 0.750001H5.52344H4.77344L4.77344 15.75H5.52344Z" fill="white"/></svg>`;
+    sendBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const text = chatTextarea.value.trim();
+      if (!text) return;
+      chatTextarea.value = "";
+
+      const serializedResources = gdocsResources
+        .filter(r => r.content && gdocsResourceSelected.has(r))
+        .map(r => ({ name: r.name, content: r.content }));
+      const allMemoItems = [...canonicalItems, ...liveItems].filter(i => i.type === "reply" || i.type === "manual");
+      const serializedMemos = (gdocsMemoEditMode
+        ? allMemoItems.filter(i => gdocsMemoSelected.has(i.sortKey))
+        : allMemoItems
+      ).map(i => ({ note: i.replyFullNote ?? i.replyHeader ?? "", reply: i.text }));
+
+      startArgBoxLoading(chatTextarea);
+      if (gdocsChatMode === "plan") {
+        document.dispatchEvent(new CustomEvent("oddity:gdocs:planmode", {
+          detail: { topic: text, resources: serializedResources, memos: serializedMemos, fastMode: false }
+        }));
+      } else {
+        document.dispatchEvent(new CustomEvent("oddity:gdocs:chat", {
+          detail: { text, memoMode: gdocsMemoMode, resources: serializedResources, memos: serializedMemos, fastMode: gdocsChatMode === "fast" }
+        }));
+      }
+    });
+
+    chatBar.appendChild(modePills);
+    chatBar.appendChild(sendBtn);
+    chatBox.appendChild(chatBar);
+    chatInputArea.appendChild(chatBox);
+    chatSection.appendChild(chatInputArea);
+
+    panelFace.appendChild(chatSection);
+
+    // ── MCQ event listeners (MCQ renders centered on screen; these manage loading state) ──
+    document.addEventListener("oddity:gdocs:mcq:question", () => {
+      stopArgBoxLoading(chatTextarea);
+    });
+
+    document.addEventListener("oddity:gdocs:mcq:done", () => {
+      stopArgBoxLoading(chatTextarea);
+    });
+
+    document.addEventListener("oddity:gdocs:loading", () => {
+      startArgBoxLoading(chatTextarea);
+      if (gdocsOutlineContinueBtn) gdocsOutlineContinueBtn.disabled = true;
+      if (gdocsOutlineRejectBtn) gdocsOutlineRejectBtn.disabled = true;
+      if (gdocsOutlineOtherBtn) gdocsOutlineOtherBtn.disabled = true;
+    });
+
+    document.addEventListener("oddity:gdocs:loading:done", () => {
+      stopArgBoxLoading(chatTextarea);
+      if (gdocsOutlineContinueBtn) gdocsOutlineContinueBtn.disabled = false;
+      if (gdocsOutlineRejectBtn) gdocsOutlineRejectBtn.disabled = false;
+      if (gdocsOutlineOtherBtn) gdocsOutlineOtherBtn.disabled = false;
+    });
+
+    // ── Outline ready: switch to Outline tab and display content ──
+    document.addEventListener("oddity:gdocs:outline:ready", (e: Event) => {
+      const { outline } = (e as CustomEvent<{ outline: string }>).detail;
+      gdocsCurrentOutlineText = outline;
+      if (gdocsOutlineTextEl) setOutlineText(gdocsOutlineTextEl, outline);
+      stopArgBoxLoading(chatTextarea);
+      // Switch to Outline tab
+      gdocsActiveTab = "outline";
+      gdocsMemoTabBtn?.classList.remove("active");
+      gdocsResourceTabBtn?.classList.remove("active");
+      gdocsOutlineTabBtn?.classList.add("active");
+      if (listEl) listEl.style.display = "none";
+      if (gdocsResourcePanelEl) gdocsResourcePanelEl.style.display = "none";
+      if (gdocsOutlinePanelEl) gdocsOutlinePanelEl.style.display = "";
+    });
+
+    // Auto-expand when a Google Doc is activated
+    document.addEventListener("oddity:gdocs:activated", () => {
+      if (!expanded) toggle();
+    });
+  } else {
+    // ── Standard footer ──
+    footerEl = document.createElement("div");
+    const footer = footerEl;
+    footer.className = "args-footer";
+
+    const sketchBtn = document.createElement("button");
+    sketchBtn.className = "args-sketch-btn";
+    sketchBtn.textContent = getSketchActionLabel();
+    sketchBtnEl = sketchBtn;
+    sketchBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handleSketch();
+    });
+    footer.appendChild(sketchBtn);
+
+    footerTextEl = document.createElement("span");
+    footerTextEl.className = "args-footer-text";
+    footerTextEl.textContent = "Go to Dashboard";
+    chrome.runtime.sendMessage(
+      { action: "getAuthStatus", payload: {} },
+      (result) => {
+        if (!result?.authenticated) {
+          footerTextEl!.textContent = "Sign in";
+        }
+      },
+    );
+    footerTextEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showDashboard();
+    });
+    footer.appendChild(footerTextEl);
+
+    panelFace.appendChild(footer);
+  }
 
   contentClip.appendChild(panelFace);
   contentClip.appendChild(buildDashboardFace());
   containerEl.appendChild(contentClip);
 
-  // Track mouse position to show close button only in top 30%
+  // Track mouse position — show controls only when near the top header zone
   containerEl.addEventListener("mousemove", (e) => {
     if (!expanded) return;
     const rect = containerEl!.getBoundingClientRect();
-    const inTopZone = e.clientY < rect.top + rect.height * 0.3;
+    const inTopZone = e.clientY < rect.top + 70;
     if (inTopZone) {
       showTopBar();
     } else {
@@ -945,6 +1800,7 @@ function updateModeToggleVisibility(): void {
   const wasHidden = modeToggleWrapperEl.style.display === "none";
   // Show when: box visible, signed in, not dimmed, AND (enabled OR expanded)
   const show =
+    !isGDocs() &&
     boxVisible &&
     !dimmed &&
     localAuthState === true &&
@@ -1064,6 +1920,7 @@ export function scrollPdfSummaryToPage(pageNo: string): void {
     }
   }
 }
+
 
 export function setPdfCachedLabel(cached: boolean): void {
   pdfCachedLabel = cached;
@@ -1268,8 +2125,7 @@ export function updateDashboardPersonality(personality: string): void {
     dashDensityBtns.forEach((b) => b.classList.remove("args-dash-density-active"));
     if (dashPublicFigureSelect) {
       dashPublicFigureSelect.value = personality;
-      const pfDisplayName =
-        dashPublicFigureSelect.selectedOptions[0]?.textContent ?? "Public Figure";
+      const pfDisplayName = pfDisplayNames.get(personality) ?? "Public Figure";
       if (dashPersonaSelect) dashPersonaSelect.textContent = pfDisplayName;
     }
     if (dashPersonaAvatarImgEl) {
@@ -1314,6 +2170,12 @@ export function setSignOutCallback(cb: () => void): void {
 export function setPublicFigurePersonas(
   personas: Array<{ slug: string; displayName: string }>,
 ): void {
+  // Always populate display name map (used even before dropdown is built)
+  pfDisplayNames.clear();
+  for (const p of personas) {
+    pfDisplayNames.set(`pf:${p.slug}`, p.displayName);
+  }
+
   if (!dashPublicFigureSelect || !dashPublicFigureRow) return;
 
   // Clear existing options except "None"
@@ -1422,6 +2284,8 @@ export function destroyArgumentsBox(): void {
     document.removeEventListener("mouseup", listDragUpHandler);
     listDragUpHandler = null;
   }
+  gdocsTitleObs?.disconnect();
+  gdocsTitleObs = null;
   hostEl?.remove();
   hostEl = null;
   shadowRoot = null;
@@ -1790,11 +2654,13 @@ function showTopBar(): void {
     closeBtnHideTimer = null;
   }
   topBarEl?.classList.add("hovered");
+  containerEl?.classList.add("top-proximity");
 }
 
 function hideTopBar(): void {
   closeBtnHideTimer = setTimeout(() => {
     topBarEl?.classList.remove("hovered");
+    containerEl?.classList.remove("top-proximity");
     closeBtnHideTimer = null;
   }, 80);
 }
@@ -2764,19 +3630,35 @@ async function loadDashboardPrefs(): Promise<void> {
       | undefined,
   );
   // Derive display name from depth_personality (single source of truth)
-  const persona = personality.charAt(0).toUpperCase() + personality.slice(1);
-  if (dashPersonaSelect) dashPersonaSelect.textContent = persona;
-  if (dashPersonaAvatarImgEl) {
-    dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
-    dashPersonaAvatarImgEl.alt = persona;
+  if (personality.startsWith("pf:")) {
+    const pfName = pfDisplayNames.get(personality) ?? "Public Figure";
+    if (dashPersonaSelect) dashPersonaSelect.textContent = pfName;
+    if (dashPersonaAvatarImgEl) {
+      dashPersonaAvatarImgEl.src = chrome.runtime.getURL("Terry.png");
+      dashPersonaAvatarImgEl.alt = "Terry";
+    }
+    if (bubbleLogoImgEl) {
+      bubbleLogoImgEl.src = chrome.runtime.getURL("Terry.png");
+      bubbleLogoImgEl.alt = "Terry";
+    }
+    if (dashPersonaCircleEl) dashPersonaCircleEl.style.background = "#fff";
+    dashDensityBtns.forEach((btn) => btn.classList.remove("args-dash-density-active"));
+    if (dashPublicFigureSelect) dashPublicFigureSelect.value = personality;
+  } else {
+    const persona = personality.charAt(0).toUpperCase() + personality.slice(1);
+    if (dashPersonaSelect) dashPersonaSelect.textContent = persona;
+    if (dashPersonaAvatarImgEl) {
+      dashPersonaAvatarImgEl.src = chrome.runtime.getURL(`${persona}.png`);
+      dashPersonaAvatarImgEl.alt = persona;
+    }
+    if (bubbleLogoImgEl) {
+      bubbleLogoImgEl.src = chrome.runtime.getURL(`${persona}.png`);
+      bubbleLogoImgEl.alt = persona;
+    }
+    if (dashPersonaCircleEl)
+      dashPersonaCircleEl.style.background =
+        persona === "Jerry" ? "#FDCB24" : "#fff";
   }
-  if (bubbleLogoImgEl) {
-    bubbleLogoImgEl.src = chrome.runtime.getURL(`${persona}.png`);
-    bubbleLogoImgEl.alt = persona;
-  }
-  if (dashPersonaCircleEl)
-    dashPersonaCircleEl.style.background =
-      persona === "Jerry" ? "#FDCB24" : "#fff";
   // If the site is not enabled (dimmed), force toggle to OFF
   const enabled = dimmed ? false : prefs.enabled !== false;
   if (dashToggleInput) dashToggleInput.checked = enabled;
@@ -3780,6 +4662,49 @@ function renderList(): void {
 
   listEl.innerHTML = "";
   expandedCardId = null;
+  gdocsExpandedCardId = null;
+  listEl.style.overflow = "";
+
+  // GDocs memo edit mode: inject "Select All" row at top
+  if (isGDocs() && gdocsMemoEditMode && allItems.length > 0) {
+    const selectAllRow = document.createElement("div");
+    selectAllRow.className = "args-gdocs-select-all-row";
+    selectAllRow.style.cursor = "pointer";
+    const selectAllChk = document.createElement("input");
+    selectAllChk.type = "checkbox";
+    selectAllChk.className = "args-gdocs-checkbox";
+    selectAllChk.style.pointerEvents = "none"; // row handles the click
+    const allSelected = allItems.every(i => gdocsMemoSelected.has(i.sortKey));
+    selectAllChk.checked = allSelected;
+    selectAllChk.indeterminate = !allSelected && allItems.some(i => gdocsMemoSelected.has(i.sortKey));
+    const selectAllLabel = document.createElement("span");
+    selectAllLabel.className = "args-gdocs-select-all-label";
+    selectAllLabel.textContent = "Select All";
+    selectAllRow.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const shouldSelect = !selectAllChk.checked || selectAllChk.indeterminate;
+      if (shouldSelect) {
+        allItems.forEach(i => gdocsMemoSelected.add(i.sortKey));
+        selectAllChk.checked = true;
+        selectAllChk.indeterminate = false;
+      } else {
+        allItems.forEach(i => gdocsMemoSelected.delete(i.sortKey));
+        selectAllChk.checked = false;
+        selectAllChk.indeterminate = false;
+      }
+      // Update individual card checkboxes in-place
+      listEl!.querySelectorAll<HTMLInputElement>(".gdocs-arg-card--selectable .args-gdocs-checkbox").forEach(chk => {
+        const cardId = (chk.closest(".gdocs-arg-card") as HTMLElement)?.dataset.cardId;
+        if (cardId) chk.checked = shouldSelect;
+      });
+    });
+    selectAllRow.appendChild(selectAllChk);
+    selectAllRow.appendChild(selectAllLabel);
+    listEl.appendChild(selectAllRow);
+    const divider = document.createElement("div");
+    divider.className = "gdocs-arg-divider";
+    listEl.appendChild(divider);
+  }
 
   if (allItems.length === 0) {
     listEl.style.visibility = "";
@@ -3793,6 +4718,237 @@ function renderList(): void {
 
   for (const item of allItems) {
     const cardId = item.sortKey;
+
+    if (isGDocs()) {
+      // ── GDocs card: title + timestamp + body (flow layout) ──
+      const card = document.createElement("div");
+      card.className = "gdocs-arg-card";
+      card.dataset.cardId = cardId;
+
+      const titleEl = document.createElement("div");
+      titleEl.className = "gdocs-arg-title";
+      if (item.type === "reply") {
+        const excerpt = item.replyHeader ?? "";
+        titleEl.textContent = excerpt
+          ? `Reply to \u201c${excerpt}\u201d`
+          : "Reply";
+      } else {
+        const src = item.quote || item.text;
+        const MAX = 38;
+        titleEl.textContent =
+          src.length > MAX
+            ? `Memo on \u201c${src.slice(0, MAX)}\u2026\u201d`
+            : `Memo on \u201c${src}\u201d`;
+      }
+
+      const tsEl = document.createElement("div");
+      tsEl.className = "gdocs-arg-timestamp";
+      tsEl.textContent = formatGDocsTimestamp(item.sortKey);
+
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "gdocs-arg-body";
+      bodyEl.textContent = item.text;
+
+      // ── Expanded footer (hidden until card is expanded) ──
+      const expandedFooter = document.createElement("div");
+      expandedFooter.className = "gdocs-arg-expanded-footer";
+
+      // "Go to highlight" link
+      const gotoLink = document.createElement("button");
+      gotoLink.className = "gdocs-arg-goto";
+      gotoLink.textContent = "Go to highlight";
+      gotoLink.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (item.annotationId) {
+          document.dispatchEvent(
+            new CustomEvent("oddity:scroll-to-annotation", {
+              detail: { annotationId: item.annotationId, itemType: item.type },
+            }),
+          );
+        }
+      });
+
+      // Action icons row
+      const actionsEl = document.createElement("div");
+      actionsEl.className = "gdocs-arg-actions";
+
+      // Copy button (copies annotation header + body)
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "gdocs-arg-icon-btn";
+      copyBtn.title = "Copy";
+      copyBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+      copyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const header = titleEl.textContent ?? "";
+        const body = item.text;
+        navigator.clipboard.writeText(`${header}\n\n${body}`).catch(() => {});
+        copyBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+        setTimeout(() => {
+          copyBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+        }, 1500);
+      });
+
+      // Edit button
+      const editBtn = document.createElement("button");
+      editBtn.className = "gdocs-arg-icon-btn";
+      editBtn.title = "Edit";
+      editBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (bodyEl.dataset.editMode === "true") return;
+        bodyEl.dataset.editMode = "true";
+        const originalText = item.text;
+        const ta = document.createElement("textarea");
+        ta.className = "gdocs-arg-edit-textarea";
+        ta.value = originalText;
+        ta.addEventListener("keydown", (ev) => ev.stopPropagation());
+        ta.addEventListener("click", (ev) => ev.stopPropagation());
+        const editActions = document.createElement("div");
+        editActions.className = "gdocs-arg-edit-actions";
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "gdocs-arg-edit-save";
+        saveBtn.textContent = "Save";
+        saveBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const newText = ta.value.trim();
+          if (!newText) return;
+          item.text = newText;
+          bodyEl.textContent = newText;
+          bodyEl.style.display = "";
+          delete bodyEl.dataset.editMode;
+          ta.remove();
+          editActions.remove();
+          if (item.feedbackId) {
+            chrome.runtime.sendMessage({
+              action: "updateFeedback",
+              payload: { feedbackId: item.feedbackId, text: newText, url: getPageUrl() },
+            }).catch(() => {});
+          } else if (item.annotationId) {
+            chrome.runtime.sendMessage({
+              action: "updateAnnotation",
+              payload: { annotationId: item.annotationId, text: newText, url: getPageUrl() },
+            }).catch(() => {});
+          }
+        });
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "gdocs-arg-edit-cancel";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          bodyEl.style.display = "";
+          delete bodyEl.dataset.editMode;
+          ta.remove();
+          editActions.remove();
+        });
+        editActions.appendChild(saveBtn);
+        editActions.appendChild(cancelBtn);
+        bodyEl.style.display = "none";
+        bodyEl.after(ta, editActions);
+        ta.focus();
+      });
+
+      // Delete button
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "gdocs-arg-icon-btn gdocs-arg-icon-btn--delete";
+      deleteBtn.title = "Delete";
+      deleteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        gdocsExpandedCardId = null;
+        if (item.feedbackId) {
+          deletedFeedbackIds.add(item.feedbackId);
+          chrome.runtime.sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: item.feedbackId, contentHash: item.contentHash, url: getPageUrl() },
+          }).catch(() => {});
+          canonicalItems = canonicalItems.filter((i) => i.feedbackId !== item.feedbackId);
+          liveItems = liveItems.filter((i) => i.feedbackId !== item.feedbackId);
+          document.dispatchEvent(new CustomEvent("oddity:feedback-deleted", {
+            detail: { feedbackId: item.feedbackId, annotationId: item.annotationId },
+          }));
+        } else if (item.annotationId) {
+          deletedAnnotationIds.add(item.annotationId);
+          chrome.runtime.sendMessage({
+            action: "deleteAnnotation",
+            payload: { annotationId: item.annotationId, url: getPageUrl(), contentHash: item.contentHash ?? "" },
+          }).catch(() => {});
+          canonicalItems = canonicalItems.filter((i) => i.annotationId !== item.annotationId);
+          liveItems = liveItems.filter((i) => i.annotationId !== item.annotationId);
+          document.dispatchEvent(new CustomEvent("oddity:annotation-deleted", {
+            detail: { annotationId: item.annotationId },
+          }));
+        } else {
+          canonicalItems = canonicalItems.filter((i) => i.sortKey !== item.sortKey);
+          liveItems = liveItems.filter((i) => i.sortKey !== item.sortKey);
+        }
+        renderList();
+      });
+
+      actionsEl.appendChild(copyBtn);
+      actionsEl.appendChild(editBtn);
+      actionsEl.appendChild(deleteBtn);
+      expandedFooter.appendChild(gotoLink);
+      expandedFooter.appendChild(actionsEl);
+
+      // Memo edit mode: add checkbox, disable expand
+      if (gdocsMemoEditMode) {
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.className = "args-gdocs-checkbox";
+        chk.checked = gdocsMemoSelected.has(cardId);
+        chk.addEventListener("change", (e) => {
+          e.stopPropagation();
+          if (chk.checked) gdocsMemoSelected.add(cardId);
+          else gdocsMemoSelected.delete(cardId);
+        });
+        card.classList.add("gdocs-arg-card--selectable");
+        card.appendChild(chk);
+      }
+
+      const contentCol = document.createElement("div");
+      contentCol.className = "gdocs-arg-card-content";
+      contentCol.appendChild(titleEl);
+      contentCol.appendChild(tsEl);
+      contentCol.appendChild(bodyEl);
+      contentCol.appendChild(expandedFooter);
+      card.appendChild(contentCol);
+
+      // Toggle expand on click (disabled in edit mode)
+      card.addEventListener("click", () => {
+        if (gdocsMemoEditMode) return;
+        const isExpanded = gdocsExpandedCardId === cardId;
+        // Collapse previously expanded card
+        if (gdocsExpandedCardId) {
+          const prev = listEl?.querySelector<HTMLDivElement>(`.gdocs-arg-card[data-card-id="${CSS.escape(gdocsExpandedCardId)}"]`);
+          if (prev) {
+            prev.classList.remove("gdocs-arg-card--expanded");
+            const prevDivider = prev.nextElementSibling;
+            if (prevDivider?.classList.contains("gdocs-arg-divider")) {
+              (prevDivider as HTMLElement).style.display = "";
+            }
+          }
+          gdocsExpandedCardId = null;
+          if (listEl) listEl.style.overflow = "";
+        }
+        if (!isExpanded) {
+          card.classList.add("gdocs-arg-card--expanded");
+          const nextDivider = card.nextElementSibling;
+          if (nextDivider?.classList.contains("gdocs-arg-divider")) {
+            (nextDivider as HTMLElement).style.display = "none";
+          }
+          gdocsExpandedCardId = cardId;
+          if (listEl) listEl.style.overflow = "visible";
+        }
+      });
+
+      const divider = document.createElement("div");
+      divider.className = "gdocs-arg-divider";
+
+      listEl.appendChild(card);
+      listEl.appendChild(divider);
+      continue;
+    }
+
     const card = document.createElement("div");
     card.className = "arg-card";
     card.dataset.cardId = cardId;
@@ -3848,18 +5004,105 @@ function renderList(): void {
     replyBar.className = "note-reply-bar";
     const replyInput = document.createElement("input");
     replyInput.type = "text";
-    replyInput.placeholder = "Add a note...";
+    replyInput.placeholder = "Thoughts?";
     replyInput.className = "note-reply-input";
 
     const submitArgReply = () => {
       const text = replyInput.value.trim();
       if (!text) return;
 
-      // Add bubble immediately
-      const bubble = document.createElement("div");
-      bubble.className = "note-reply-bubble";
-      bubble.textContent = text;
-      repliesContainer.appendChild(bubble);
+      // Add reply item immediately
+      const replyItem = document.createElement("div");
+      replyItem.className = "note-reply-item";
+
+      const replyText = document.createElement("div");
+      replyText.className = "note-reply-text";
+      replyText.textContent = text;
+
+      const replyMeta = document.createElement("div");
+      replyMeta.className = "note-reply-meta";
+
+      const replyEditBtn = document.createElement("button");
+      replyEditBtn.className = "note-reply-action-btn";
+      replyEditBtn.title = "Edit";
+      replyEditBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.1641 1.33105C19.7393 -0.243794 22.2929 -0.243751 23.8682 1.33105C25.4435 2.90636 25.4435 5.46083 23.8682 7.03613L8.41699 22.4883C7.76597 23.1393 6.94983 23.6009 6.05664 23.8242L1.26465 25.0225C0.608468 25.1865 0.0136891 24.5917 0.177734 23.9355L1.37598 19.1436C1.59927 18.2504 2.0609 17.4342 2.71191 16.7832L18.1641 1.33105ZM16.4727 5.55664L3.97949 18.0508C3.55812 18.4722 3.25879 19 3.11426 19.5781L2.33887 22.6787L5.62207 22.0859C6.20018 21.9414 6.72804 21.6421 7.14941 21.2207L19.6426 8.72656L16.4727 5.55664ZM22.6016 2.59863C21.726 1.72311 20.3062 1.72311 19.4307 2.59863L17.8457 4.18359L20.9092 7.24805L22.6016 5.76953C23.4771 4.89404 23.477 3.47416 22.6016 2.59863Z" fill="currentColor"/></svg>`;
+      replyEditBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const current = replyText.dataset.editMode;
+        if (current === "true") return;
+        replyText.dataset.editMode = "true";
+        const oldText = replyText.textContent ?? "";
+        const ta = document.createElement("textarea");
+        ta.className = "note-edit-textarea";
+        ta.value = oldText;
+        const actions = document.createElement("div");
+        actions.className = "note-edit-actions";
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "note-save-btn";
+        saveBtn.textContent = "Save";
+        saveBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const newText = ta.value.trim();
+          if (!newText) return;
+          replyText.textContent = newText;
+          replyText.style.display = "";
+          delete replyText.dataset.editMode;
+          ta.remove();
+          actions.remove();
+          if (replyItem.dataset.feedbackId) {
+            chrome.runtime.sendMessage({
+              action: "updateFeedback",
+              payload: {
+                feedbackId: replyItem.dataset.feedbackId,
+                replyText: newText,
+                contentHash: item.contentHash,
+                url: getPageUrl(),
+              },
+            }).catch(() => {});
+          }
+        });
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "note-cancel-btn";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          replyText.style.display = "";
+          delete replyText.dataset.editMode;
+          ta.remove();
+          actions.remove();
+        });
+        actions.appendChild(saveBtn);
+        actions.appendChild(cancelBtn);
+        replyText.style.display = "none";
+        replyText.after(ta, actions);
+      });
+
+      const replyDeleteBtn = document.createElement("button");
+      replyDeleteBtn.className = "note-reply-action-btn";
+      replyDeleteBtn.title = "Delete";
+      replyDeleteBtn.innerHTML = `<svg width="11" height="14" viewBox="0 0 22 27" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.9219 7.43945C19.5106 7.28746 20.0695 7.65114 20.1689 8.25781C20.1871 8.36904 20.1904 8.48758 20.1904 8.61621C20.1916 12.9442 20.1921 17.2726 20.1914 21.6006C20.191 23.8874 18.6924 25.7032 16.4473 26.127C16.1796 26.1775 15.898 26.1959 15.6172 26.1963C12.4044 26.2013 9.19156 26.2003 5.97852 26.1992C3.69159 26.1985 1.85256 24.6628 1.45312 22.418C1.41441 22.2002 1.39474 21.976 1.39453 21.7549C1.39094 17.3332 1.39019 12.9109 1.39355 8.48926C1.3939 8.11363 1.54191 7.815 1.7627 7.62891C1.98301 7.44332 2.28797 7.35899 2.62695 7.43457C3.04346 7.52748 3.36132 7.89535 3.39258 8.32715C3.39551 8.62207 3.39648 20.6787 3.39648 20.6787L3.39648 20.6855C3.41225 21.17 3.37743 21.7036 3.45996 22.1953C3.65247 23.341 4.68451 24.1899 5.83789 24.1924C9.13566 24.1995 12.4336 24.1998 15.7314 24.1924C17.1037 24.1893 18.1861 23.0585 18.1865 21.6758C18.188 17.2823 18.1867 12.8885 18.1875 8.49512C18.1876 7.94499 18.484 7.55251 18.9219 7.43945Z" fill="currentColor"/><path d="M7.26953 0.203125C9.62027 0.198508 11.9716 0.199014 14.3223 0.204102C14.6616 0.204899 14.922 0.314719 15.0977 0.492188C15.2735 0.670059 15.3822 0.934127 15.3848 1.27637C15.3898 1.9497 15.3867 2.62192 15.3867 3.29785V3.7998H15.9141C17.3757 3.79981 18.8361 3.79648 20.2969 3.80078C20.9586 3.80273 21.3942 4.24054 21.3867 4.82031C21.3799 5.3401 20.9666 5.77238 20.4453 5.80176C20.3502 5.8071 20.2583 5.80371 20.1475 5.80371H1.2666C0.639678 5.80015 0.20525 5.37415 0.200195 4.81543C0.195178 4.24231 0.62806 3.8045 1.26758 3.80176C2.72789 3.7955 4.1877 3.79982 5.64941 3.7998H6.1709L6.18359 3.61328C6.18866 3.53651 6.20002 3.43702 6.2002 3.34961C6.20145 2.65408 6.19707 1.96406 6.20215 1.27148C6.20465 0.931308 6.31364 0.668386 6.49023 0.491211C6.66684 0.314264 6.92879 0.203859 7.26953 0.203125ZM8.20312 3.7998H13.3838V2.21973H8.20312V3.7998Z" fill="currentColor"/></svg>`;
+      replyDeleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const fid = replyItem.dataset.feedbackId;
+        if (fid) {
+          chrome.runtime.sendMessage({
+            action: "deleteFeedback",
+            payload: { feedbackId: fid, contentHash: item.contentHash, url: getPageUrl() },
+          }).catch(() => {});
+        }
+        replyItem.remove();
+      });
+
+      replyMeta.appendChild(replyEditBtn);
+      replyMeta.appendChild(replyDeleteBtn);
+      replyItem.appendChild(replyText);
+      replyItem.appendChild(replyMeta);
+
+      const divider = document.createElement("div");
+      divider.className = "note-reply-divider";
+      replyItem.appendChild(divider);
+
+      repliesContainer.appendChild(replyItem);
       repliesContainer.scrollTop = repliesContainer.scrollHeight;
 
       // Send to background
@@ -3878,7 +5121,7 @@ function renderList(): void {
           })
           .then((fb: any) => {
             if (fb?.id) {
-              bubble.dataset.feedbackId = fb.id;
+              replyItem.dataset.feedbackId = fb.id;
               window.dispatchEvent(
                 new CustomEvent("oddity:feedback-added", {
                   detail: { feedback: fb, contentHash: item.contentHash ?? "" },
@@ -4096,10 +5339,6 @@ function renderList(): void {
     iconGroup.appendChild(editBtn);
     iconGroup.appendChild(deleteBtn);
 
-    feedbackRow.appendChild(pillGroup);
-    feedbackRow.appendChild(iconGroup);
-    expandedInner.appendChild(feedbackRow);
-
     expandedContent.appendChild(expandedInner);
 
     card.appendChild(header);
@@ -4137,14 +5376,20 @@ function renderList(): void {
     listEl.appendChild(card);
   }
 
-  // Measure collapsed heights then fix positions — mirrors margin notes' rAF approach.
-  // Cards are position:absolute so expanding one never shifts siblings.
-  // Only layout if the container is expanded; otherwise defer until it opens
-  // (measuring at 56px collapsed width produces incorrect tall card heights).
-  if (expanded) {
-    scheduleLayout();
+  if (isGDocs()) {
+    // GDocs: flow layout, no absolute positioning needed
+    listEl.style.visibility = "";
+    listEl.style.height = "";
   } else {
-    layoutPending = true;
+    // Measure collapsed heights then fix positions — mirrors margin notes' rAF approach.
+    // Cards are position:absolute so expanding one never shifts siblings.
+    // Only layout if the container is expanded; otherwise defer until it opens
+    // (measuring at 56px collapsed width produces incorrect tall card heights).
+    if (expanded) {
+      scheduleLayout();
+    } else {
+      layoutPending = true;
+    }
   }
 }
 
@@ -4587,17 +5832,17 @@ function handleCopy(btn: HTMLButtonElement): void {
 /** Position the mode toggle: next to FAB when collapsed, inside the top bar when expanded. */
 function syncModeTogglePosition(): void {
   if (!modeToggleWrapperEl || !containerEl || !modeToggleEl) return;
-  if (expanded && topBarEl) {
-    // Move toggle into the top bar
-    if (modeToggleWrapperEl.parentElement !== topBarEl) {
-      topBarEl.insertBefore(modeToggleWrapperEl, topBarEl.firstChild);
+  if (expanded) {
+    // Pin to containerEl so it stays centered over the panel
+    if (modeToggleWrapperEl.parentElement !== containerEl) {
+      containerEl.appendChild(modeToggleWrapperEl);
     }
     modeToggleEl.classList.add("with-close");
-    modeToggleWrapperEl.style.top = "";
-    modeToggleWrapperEl.style.left = "";
+    modeToggleWrapperEl.style.position = "absolute";
+    modeToggleWrapperEl.style.top = "-40px";
+    modeToggleWrapperEl.style.left = "50%";
     modeToggleWrapperEl.style.transform = "";
-    modeToggleWrapperEl.style.transformOrigin = "";
-    modeToggleWrapperEl.style.position = "static";
+    modeToggleWrapperEl.style.transformOrigin = "center center";
   } else if (outerWrapperEl) {
     // Move toggle back to outerWrapper (next to FAB)
     if (modeToggleWrapperEl.parentElement !== outerWrapperEl) {
@@ -4605,6 +5850,10 @@ function syncModeTogglePosition(): void {
     }
     modeToggleEl.classList.remove("with-close");
     modeToggleWrapperEl.style.position = "absolute";
+    modeToggleWrapperEl.style.top = "";
+    modeToggleWrapperEl.style.left = "";
+    modeToggleWrapperEl.style.transform = "";
+    modeToggleWrapperEl.style.transformOrigin = "";
     const toggleH =
       modeToggleWrapperEl.offsetHeight > 0
         ? modeToggleWrapperEl.offsetHeight
@@ -4665,10 +5914,8 @@ function initModeToggleOverlay(): void {
 
   modeToggleEl.addEventListener("click", (e: MouseEvent) => {
     e.stopPropagation();
-    if (!extensionEnabled) return; // Do nothing when Oddity 1 is off
-    const target = (e.target as HTMLElement).closest(
-      "[data-mode]",
-    ) as HTMLElement | null;
+    if (!extensionEnabled) return;
+    const target = (e.target as HTMLElement).closest("[data-mode]") as HTMLElement | null;
     if (!target || !modeToggleEl) return;
     const mode = target.dataset.mode as string;
     if (mode === modeToggleEl.dataset.active) return;
@@ -4676,12 +5923,9 @@ function initModeToggleOverlay(): void {
     modeToggleDepthBtn!.classList.toggle("mode-active", mode === "depth");
     modeToggleEl.dataset.active = mode;
     syncModeToggleSlider();
-    document.dispatchEvent(
-      new CustomEvent("oddity:modeChange", { detail: { mode } }),
-    );
+    document.dispatchEvent(new CustomEvent("oddity:modeChange", { detail: { mode } }));
   });
 
-  // Close button lives inside the toggle as a third grid column (visible only when expanded)
   const modeCloseBtnEl = document.createElement("button");
   modeCloseBtnEl.className = "mode-close-btn";
   modeCloseBtnEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
@@ -4742,10 +5986,10 @@ const ARGUMENTS_BOX_CSS = `
     transition: opacity 0.2s ease;
     position: absolute;
     top: 0px;
-    right: 11px;
+    left: 11px;
     z-index: 3;
     transform: scale(0.81);
-    transform-origin: right center;
+    transform-origin: left center;
   }
 
   .args-toggle-bar.visible {
@@ -4762,9 +6006,24 @@ const ARGUMENTS_BOX_CSS = `
   /* ── Mode toggle (moves with the FAB) ── */
 
   .args-mode-toggle-wrapper {
-    pointer-events: auto;
+    pointer-events: none;
     position: absolute;
     z-index: 3;
+    display: block;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+  }
+
+  .args-container.expanded:hover .args-mode-toggle-wrapper,
+  .args-mode-toggle-wrapper:hover {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .args-mode-toggle-wrapper {
+    transform: translateX(-50%) translateY(10px);
+    transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .args-outer-wrapper:has(.args-container.dashboard) .args-mode-toggle-wrapper {
@@ -4778,8 +6037,9 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .mode-toggle {
-    display: grid;
-    grid-template-columns: auto auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 3px;
     background: #E6E6E6;
     border-radius: 10px;
@@ -4789,7 +6049,7 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   .mode-toggle.with-close {
-    grid-template-columns: auto auto auto;
+    /* no change needed — already flex */
   }
 
   .mode-slider {
@@ -4838,7 +6098,7 @@ const ARGUMENTS_BOX_CSS = `
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 8px;
+    border-radius: 50%;
     cursor: pointer;
     color: #858E97;
     background: transparent;
@@ -4849,12 +6109,14 @@ const ARGUMENTS_BOX_CSS = `
 
   .mode-close-btn:hover {
     color: #696F77;
-    background: rgba(0, 0, 0, 0.06);
+    background: rgba(0, 0, 0, 0.08);
   }
 
-  .mode-toggle.with-close .mode-close-btn {
+  .mode-toggle.with-close .mode-close-btn,
+  .mode-close-btn.mode-close-only {
     display: flex;
   }
+
 
   /* Dark mode overrides when expanded (with-close) */
   .mode-toggle.with-close {
@@ -4945,9 +6207,9 @@ const ARGUMENTS_BOX_CSS = `
   .args-container.expanded {
     width: var(--panel-width, 300px);
     height: calc(100vh - 90px + 32px);
-    border-radius: 16px;
+    border-radius: 0;
     box-shadow: none;
-    border: 1px solid #363636;
+    border: 1.5px solid #E5E5E5;
     cursor: default;
     background: transparent;
     backdrop-filter: none;
@@ -4982,7 +6244,7 @@ const ARGUMENTS_BOX_CSS = `
     pointer-events: none;
   }
 
-  .args-container.expanded .args-resize-handle {
+  .args-container.expanded.top-proximity .args-resize-handle {
     display: block;
   }
 
@@ -5068,7 +6330,7 @@ const ARGUMENTS_BOX_CSS = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 16px 0;
+    padding: 22px 16px 8px;
     flex-shrink: 0;
   }
 
@@ -5360,15 +6622,44 @@ const ARGUMENTS_BOX_CSS = `
     margin-top: 6px;
   }
 
-  .arg-card .note-reply-bubble {
-    background: rgba(255,255,255,0.08);
-    border-radius: 8px;
-    padding: 4px 10px;
+  .arg-card .note-reply-item {
+    padding: 8px 0 0;
+  }
+
+  .arg-card .note-reply-text {
     font-size: var(--oddity-note-size);
-    margin-bottom: 3px;
-    word-break: break-word;
+    color: #999;
     font-family: 'Inter', system-ui, sans-serif;
-    color: #FFFFFF;
+    word-break: break-word;
+    line-height: 1.45;
+    margin-bottom: 4px;
+  }
+
+  .arg-card .note-reply-meta {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .arg-card .note-reply-action-btn {
+    all: unset;
+    cursor: pointer;
+    color: #888;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+
+  .arg-card .note-reply-action-btn:hover {
+    opacity: 1;
+  }
+
+  .arg-card .note-reply-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.1);
   }
 
   .arg-card .note-reply-bar {
@@ -5405,7 +6696,7 @@ const ARGUMENTS_BOX_CSS = `
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: #748DBF;
+    background: #1E2229;
     color: #fff;
     font-size: 13px;
     display: flex;
@@ -5616,6 +6907,7 @@ const ARGUMENTS_BOX_CSS = `
     outline: 2px solid #3b82f6;
     outline-offset: -2px;
   }
+
 
   .args-pdf-summary-card--compact {
     padding-top: 10px;
@@ -5976,7 +7268,7 @@ const ARGUMENTS_BOX_CSS = `
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    border-color: #E7E7E7;
+    border-color: #E5E5E5;
   }
 
   :host([data-theme="light"]) .args-container.expanded::after {
@@ -6056,9 +7348,20 @@ const ARGUMENTS_BOX_CSS = `
     color: #293038;
   }
 
-  :host([data-theme="light"]) .arg-card .note-reply-bubble {
-    color: #293038;
-    background: rgba(0, 0, 0, 0.06);
+  :host([data-theme="light"]) .arg-card .note-reply-text {
+    color: #555;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-reply-action-btn {
+    color: #555;
+  }
+
+  :host([data-theme="light"]) .arg-card .note-reply-divider {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  :host([data-theme="light"]) .arg-card .note-reply-send {
+    background: #1E2229;
   }
 
   :host([data-theme="light"]) .arg-card .note-icon-btn,
@@ -6333,7 +7636,7 @@ const ARGUMENTS_BOX_CSS = `
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 8px;
+    border-radius: 50%;
     cursor: pointer;
     color: #858E97;
     background: rgba(255, 255, 255, 0.9);
@@ -6402,7 +7705,7 @@ const ARGUMENTS_BOX_CSS = `
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 8px;
+    border-radius: 50%;
     cursor: pointer;
     color: #858E97;
     background: rgba(255, 255, 255, 0.9);
@@ -7646,5 +8949,768 @@ const ARGUMENTS_BOX_CSS = `
     color: #444;
     border-color: #ddd;
     box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  }
+
+  /* ── Google Docs panel styles ── */
+
+  /* Panel face in GDocs mode: white background, flex column */
+  .args-container.expanded .args-panel-face {
+    background: #FFFFFF;
+  }
+
+  /* Header: back arrow + title */
+  .args-gdocs-back {
+    cursor: pointer;
+    font-size: 16px;
+    color: #1E2229;
+    margin-right: 8px;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+  .args-gdocs-back:hover {
+    opacity: 1;
+  }
+  .args-gdocs-title-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1E2229;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+
+  /* Override args-main-title to flex when in GDocs */
+  .args-panel-header .args-main-title:has(.args-gdocs-back) {
+    display: flex;
+    align-items: center;
+  }
+
+  /* Persona subtitle */
+  .args-gdocs-persona {
+    padding: 0 16px 10px;
+    margin-top: -4px;
+  }
+  .args-gdocs-persona-text {
+    font-family: 'Fragment Mono', 'Courier New', monospace;
+    font-size: 11px;
+    color: #888;
+    font-weight: 400;
+  }
+
+  /* GDocs tab bar */
+  .args-tab-bar--gdocs {
+    border-bottom: 1px solid #E8E8E8;
+    padding: 0 16px;
+    gap: 0;
+  }
+
+  .args-gdocs-tab {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: #B0B0B0;
+    padding: 0 16px 10px 0;
+    margin-right: 8px;
+    position: relative;
+    transition: color 0.15s;
+  }
+  .args-gdocs-tab:first-child {
+    padding-left: 0;
+  }
+  .args-gdocs-tab.active {
+    color: #1E2229;
+    font-weight: 600;
+  }
+  .args-gdocs-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 16px;
+    height: 2px;
+    background: #1E2229;
+    border-radius: 1px;
+  }
+
+  /* GDocs list: flow layout, not absolute */
+  .args-panel-face:has(.args-gdocs-chat-section) .args-list {
+    position: static;
+    height: auto;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  /* Memo edit mode pill */
+  .args-gdocs-memo-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: #1E2229;
+    color: #FFFFFF;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 3px 8px 3px 10px;
+    border-radius: 999px;
+    width: fit-content;
+    margin-bottom: 6px;
+  }
+  .args-gdocs-memo-pill-x {
+    all: unset;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0.7;
+    padding: 0 1px;
+  }
+  .args-gdocs-memo-pill-x:hover {
+    opacity: 1;
+  }
+
+  /* GDocs arg cards */
+  .gdocs-arg-card {
+    padding: 16px 16px 12px;
+    cursor: pointer;
+    background: #FFFFFF;
+    transition: background 0.1s;
+  }
+  .gdocs-arg-card:hover {
+    background: #FAFAFA;
+  }
+  .gdocs-arg-card--selectable {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: default;
+  }
+  .gdocs-arg-card--selectable .args-gdocs-checkbox {
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .gdocs-arg-card-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .gdocs-arg-title {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #1E2229;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+  }
+  .gdocs-arg-timestamp {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #ABABAB;
+    margin-bottom: 7px;
+  }
+  .gdocs-arg-body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #333;
+    line-height: 1.55;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .gdocs-arg-divider {
+    height: 1px;
+    background: #F0F0F0;
+    margin: 0 16px;
+  }
+
+  /* GDocs card expanded state */
+  .gdocs-arg-card--expanded {
+    position: relative;
+    z-index: 10;
+    margin: 4px -12px;
+    padding: 16px 28px 14px;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.13);
+    background: #FFFFFF;
+  }
+  .gdocs-arg-card--expanded .gdocs-arg-body {
+    -webkit-line-clamp: unset;
+    overflow: visible;
+    display: block;
+  }
+  .gdocs-arg-expanded-footer {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+  }
+  .gdocs-arg-card--expanded .gdocs-arg-expanded-footer {
+    display: flex;
+  }
+  .gdocs-arg-goto {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    color: #888;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .gdocs-arg-goto:hover {
+    color: #444;
+  }
+  .gdocs-arg-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .gdocs-arg-icon-btn {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: #999;
+    transition: color 0.12s, background 0.12s;
+  }
+  .gdocs-arg-icon-btn:hover {
+    color: #333;
+    background: #F2F2F2;
+  }
+  .gdocs-arg-icon-btn--delete:hover {
+    color: #D93025;
+    background: #FEF0EF;
+  }
+  .gdocs-arg-edit-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #333;
+    line-height: 1.55;
+    border: 1px solid #D0D0D0;
+    border-radius: 6px;
+    padding: 7px 9px;
+    resize: vertical;
+    outline: none;
+    margin-top: 4px;
+  }
+  .gdocs-arg-edit-textarea:focus {
+    border-color: #888;
+  }
+  .gdocs-arg-edit-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .gdocs-arg-edit-save {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    color: #FFF;
+    background: #1E2229;
+    padding: 4px 10px;
+    border-radius: 5px;
+  }
+  .gdocs-arg-edit-save:hover {
+    background: #333;
+  }
+  .gdocs-arg-edit-cancel {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #888;
+    padding: 4px 8px;
+  }
+  .gdocs-arg-edit-cancel:hover {
+    color: #333;
+  }
+
+  /* GDocs resource panel */
+  .args-gdocs-resource-panel {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+  .args-gdocs-outline-panel {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+  .args-gdocs-outline-text {
+    flex: 1;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #374151;
+    white-space: pre-wrap;
+  }
+  .args-gdocs-outline-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .args-gdocs-outline-btn {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    transition: background 0.12s;
+  }
+  .args-gdocs-outline-btn-continue {
+    background: #111;
+    color: #fff;
+  }
+  .args-gdocs-outline-btn-continue:hover { background: #333; }
+  .args-gdocs-outline-btn-secondary {
+    background: #f0f2f5;
+    color: #6b7280;
+  }
+  .args-gdocs-outline-btn-secondary:hover { background: #e5e7eb; }
+  .args-gdocs-outline-other {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .args-gdocs-outline-feedback {
+    width: 100%;
+    border: 1px solid #e8e8e2;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    color: #1a1a1a;
+    outline: none;
+    resize: none;
+    background: #fff;
+  }
+  .args-gdocs-outline-feedback:focus { border-color: #9aa0a6; }
+  .args-gdocs-outline-feedback-row {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+  .args-gdocs-resource-list {
+    flex: 1;
+  }
+  .args-gdocs-select-all-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+  }
+  .args-gdocs-select-all-label {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #1E2229;
+  }
+  .args-gdocs-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    background: #E5E5E5;
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .args-gdocs-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: 1.8px solid #8C9096;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg);
+  }
+  .args-gdocs-checkbox:indeterminate::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 6px;
+    width: 8px;
+    height: 1.8px;
+    background: #8C9096;
+  }
+  .args-gdocs-resource-item {
+    padding: 10px 16px 10px;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .args-gdocs-resource-text-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .args-gdocs-resource-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E2229;
+    line-height: 1.3;
+  }
+  .args-gdocs-resource-meta {
+    font-size: 12px;
+    color: #9AA0A6;
+  }
+  .args-gdocs-resource-preview {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.45;
+    margin-top: 3px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .args-gdocs-resource-menu-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 16px;
+    color: #ABABAB;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 4px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    transition: color 0.12s, background 0.12s;
+  }
+  .args-gdocs-resource-menu-btn:hover {
+    color: #555;
+    background: #F0F0F0;
+  }
+  .args-gdocs-resource-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: #FFFFFF;
+    border: 1px solid #E8E8E8;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    z-index: 100;
+    min-width: 110px;
+    overflow: hidden;
+  }
+  .args-gdocs-resource-dropdown-item {
+    all: unset;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    padding: 9px 14px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    box-sizing: border-box;
+    transition: background 0.1s;
+  }
+  .args-gdocs-resource-dropdown-item:hover {
+    background: #F5F5F5;
+  }
+  .args-gdocs-resource-dropdown-item--delete {
+    color: #D93025;
+  }
+  .args-gdocs-resource-divider {
+    height: 1px;
+    background: #F0F0F0;
+    margin: 0 16px;
+  }
+  .args-gdocs-new-resource {
+    padding: 14px 16px 12px;
+    border-top: 1px solid #F0F0F0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .args-gdocs-new-resource-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1E2229;
+  }
+  .args-gdocs-resource-name-input {
+    all: unset;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E2229;
+    border-bottom: 1px solid #E0E0E0;
+    padding-bottom: 5px;
+    transition: border-color 0.15s;
+  }
+  .args-gdocs-resource-name-input:focus {
+    border-bottom-color: #1E2229;
+  }
+  .args-gdocs-resource-name-input::placeholder {
+    font-weight: 400;
+    color: #ABABAB;
+  }
+  .args-gdocs-radio-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #1E2229;
+  }
+  .args-gdocs-radio-row input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid #C4C4C4;
+    background: #fff;
+    cursor: pointer;
+    margin: 0;
+    flex-shrink: 0;
+    position: relative;
+    transition: border-color 0.15s;
+  }
+  .args-gdocs-radio-row input[type="radio"]:checked {
+    border-color: #22c55e;
+    border-width: 4px;
+    background: #fff;
+  }
+  .args-gdocs-radio-row label {
+    cursor: pointer;
+    color: #1E2229;
+    font-size: 13px;
+    margin-right: 8px;
+  }
+  .args-gdocs-resource-textarea {
+    all: unset;
+    display: block;
+    width: 100%;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #1E2229;
+    line-height: 1.5;
+    resize: none;
+    height: 60px;
+    box-sizing: border-box;
+    overflow-y: auto;
+  }
+  .args-gdocs-resource-textarea::placeholder {
+    color: #ABABAB;
+  }
+  .args-gdocs-resource-save-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .args-gdocs-resource-save-btn {
+    all: unset;
+    cursor: pointer;
+    background: #1E2229;
+    color: #FFFFFF;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 16px;
+    border-radius: 9999px;
+    transition: opacity 0.15s;
+  }
+  .args-gdocs-resource-save-btn:hover {
+    opacity: 0.8;
+  }
+
+  /* GDocs chat section */
+  .args-gdocs-chat-section {
+    flex-shrink: 0;
+    padding: 8px 8px 10px;
+    background: #FFFFFF;
+  }
+  .args-gdocs-chat-box {
+    background: #FFFFFF;
+    border: 1px solid #E8E8E8;
+    border-radius: 5px;
+    padding: 12px 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    position: relative;
+  }
+  @keyframes args-gdocs-spin {
+    to { transform: rotate(360deg); }
+  }
+  .args-gdocs-spinner {
+    display: none;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 1.5px solid #E0E0E0;
+    border-top-color: #ABABAB;
+    animation: args-gdocs-spin 0.75s linear infinite;
+    pointer-events: none;
+  }
+  .args-gdocs-spinner.visible {
+    display: block;
+  }
+  .args-gdocs-chat-textarea {
+    all: unset;
+    display: block;
+    width: 100%;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #1E2229;
+    line-height: 1.5;
+    resize: none;
+    min-height: 80px;
+    box-sizing: border-box;
+    flex: 1;
+  }
+  .args-gdocs-chat-textarea::placeholder {
+    color: #ABABAB;
+  }
+  .args-gdocs-chat-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .args-gdocs-mode-pills {
+    flex-shrink: 0;
+  }
+  .args-gdocs-pill-btn {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: #8C9096;
+    background: #EDEDED;
+    padding: 7px 16px;
+    border-radius: 10px;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+  }
+  .args-gdocs-pill-btn:hover {
+    background: #E4E4E4;
+  }
+  .args-gdocs-pill-divider {
+    display: none;
+  }
+  .args-gdocs-dropdown-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .args-gdocs-dropdown-btn {
+    all: unset;
+    cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    color: #666;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: transparent;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .args-gdocs-dropdown-btn:hover {
+    background: rgba(0,0,0,0.06);
+    color: #1E2229;
+  }
+  .args-gdocs-dropdown-menu {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    background: #FFFFFF;
+    border: 1px solid #E8E8E8;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    overflow: hidden;
+    z-index: 10;
+    min-width: 100px;
+  }
+  .args-gdocs-dropdown-option {
+    all: unset;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12.5px;
+    color: #555;
+    transition: background 0.1s;
+    box-sizing: border-box;
+  }
+  .args-gdocs-dropdown-option:hover {
+    background: #F5F5F5;
+    color: #1E2229;
+  }
+  .args-gdocs-dropdown-option.active {
+    font-weight: 600;
+    color: #1E2229;
+  }
+  .args-gdocs-fast-btn {
+    all: unset;
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    color: #C4C4C4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  .args-gdocs-fast-btn:hover {
+    color: #1E2229;
+  }
+  .args-gdocs-fast-btn.active {
+    color: #F59E0B;
+  }
+  .args-gdocs-send-btn {
+    all: unset;
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #1E2229;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+  .args-gdocs-send-btn:hover {
+    opacity: 0.8;
+  }
+
+  /* Keep panel header readable (white bg in GDocs) */
+  .args-panel-face:has(.args-gdocs-chat-section) .args-panel-header {
+    border-bottom: none;
+  }
+  .args-panel-face:has(.args-gdocs-chat-section) .args-main-title,
+  .args-panel-face:has(.args-gdocs-chat-section) .args-header-icon-btn {
+    color: #1E2229;
   }
 `;

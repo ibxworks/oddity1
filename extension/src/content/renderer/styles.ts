@@ -48,8 +48,30 @@ const fallbackVisual: AnnotationVisual = {
   color: "#888",
 };
 
-export function getVisual(type: AnnotationType, theme: ThemeMode = 'dark', labelOverride?: string, pdfPage?: boolean): AnnotationVisual {
-  const opts = pdfPage ? { bgOpacity: "40", underlineWidth: "2.5px" } : undefined;
+export function getVisual(
+  type: AnnotationType,
+  theme: ThemeMode = 'dark',
+  labelOverride?: string,
+  pdfPage?: boolean,
+  gdocs?: boolean,
+): AnnotationVisual {
+  let opts: Parameters<typeof makeVisual>[2];
+  if (pdfPage) {
+    opts = { bgOpacity: "40", underlineWidth: "2.5px" };
+  } else if (gdocs) {
+    // GDocs: more vivid — native highlights provide the bg, underline is the main visual cue.
+    opts = {
+      bgOpacity: type === "user_written" ? "40" : "26",
+      underlineWidth: "2px",
+    };
+  } else {
+    // Regular pages: lighter, less intrusive — colors come through from anchor spans.
+    opts = {
+      bgOpacity: type === "user_written" ? "1A" : "0D",
+      underlineWidth: "1px",
+      underlineColor: getAnnotationColor(type, theme) + "99", // 60% opacity
+    };
+  }
   const visual = makeVisual(type, theme, opts) ?? fallbackVisual;
   if (labelOverride) visual.label = labelOverride;
   return visual;

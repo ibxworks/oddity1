@@ -417,4 +417,21 @@ export type ExtensionMessage =
         pageTitle?: string;
       };
     }
+  | { action: "fetchUrl"; payload: { url: string } }
+  | { action: "injectNextNewTab"; payload: Record<string, never> }
+  | { action: "gdocsFindAndHighlight"; payload: { docId: string; anchorText: string; color?: { red: number; green: number; blue: number } } }
+  | { action: "gdocsRemoveHighlights"; payload: { docId: string; anchorTexts: string[] } }
+  | { action: "gdocsApplyPendingEdit"; payload: { docId: string; findText: string; replaceText: string } }
+  | { action: "gdocsAcceptEdit"; payload: { docId: string; findText: string; replaceText: string } }
+  | { action: "gdocsRevertEdit"; payload: { docId: string; findText: string; replaceText: string } }
+  | { action: "gdocsApplyInsert"; payload: { docId: string; afterText: string; insertText: string } }
+  | { action: "gdocsAcceptInsert"; payload: { docId: string; afterText: string; insertText: string } }
+  | { action: "gdocsRevertInsert"; payload: { docId: string; afterText: string; insertText: string } }
+  | { action: "gdocsChat"; payload: { messages: Array<{ role: "user" | "assistant"; content: string }>; mode: "chat" | "tree" | "essay" | "edit" | "fast" | "outline"; requestId?: number } }
+  | { action: "gdocsMcqQuestions"; payload: { prompt: string; docContext: string } }
+  | { action: "gdocsRoute"; payload: { prompt: string; docContext: string; essayContent: string } }
+  | { action: "gdocsGetDocText"; payload: { docId: string } }
+  | { action: "gdocsSessionLoad"; payload: { docId: string } }
+  | { action: "gdocsSessionSave"; payload: { docId: string; chatHistory: Array<{ role: "user" | "assistant"; content: string }>; essayVersions: string[]; editSuggestions: Array<Array<{ find: string; replace: string }>> } }
+  | { action: "gdocsAnnotateText"; payload: { text: string; url: string; contentHash: string; wordCount: number } }
   | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };

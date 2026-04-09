@@ -53,6 +53,13 @@ router.delete('/', async (req, res) => {
       .eq('user_id', userId);
     if (pdfSummaryErr) console.error('[account DELETE] pdf_page_summaries:', pdfSummaryErr.message);
 
+    // 4b. Delete gdocs_sessions (FK: user_id → auth.users)
+    const { error: gdocsErr } = await serviceClient
+      .from('gdocs_sessions')
+      .delete()
+      .eq('user_id', userId);
+    if (gdocsErr) console.error('[account DELETE] gdocs_sessions:', gdocsErr.message);
+
     // 5. Delete profiles (FK: id → auth.users)
     const { error: profErr } = await serviceClient
       .from('profiles')

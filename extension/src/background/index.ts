@@ -22,6 +22,11 @@ import {
   deleteAccount,
   RateLimitError,
   requestAnnotationsStreaming,
+  requestGDocsChatStreaming,
+  fetchAllGDocsMcqQuestions,
+  requestGDocsRoute,
+  fetchGDocsSession,
+  saveGDocsSession,
   requestSketchStreaming,
   getPdfPageSummaries as apiGetPdfPageSummaries,
   generatePdfPageSummary as apiGeneratePdfPageSummary,
@@ -131,6 +136,143 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     .executeScript({ target: { tabId }, files: [file] })
     .catch(() => {}); // Silently fail if not allowed (e.g., file:// without permission)
 });
+
+// ─── Google Docs API Helpers ───
+
+async function getGoogleToken(): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: true }, (t) => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve(t!);
+    });
+  });
+}
+
+async function fetchGDocsDocument(docId: string, token: string): Promise<any> {
+  const res = await fetch(
+    `https://docs.googleapis.com/v1/documents/${docId}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`docs.get HTTP ${res.status}`);
+  return res.json() as Promise<any>;
+}
+
+async function gdocsBatchUpdate(docId: string, token: string, requests: object[]): Promise<void> {
+  const res = await fetch(
+    `https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    },
+  );
+  if (!res.ok) throw new Error(`batchUpdate HTTP ${res.status}`);
+}
+
+// Normalize typographic characters that Google Docs substitutes automatically.
+// All replacements are strictly 1-to-1 (same character length) so that idx
+// values found in the normalized string map directly back to chars[].
+// Ported from Claude Code's FileEditTool/utils.ts findActualString logic.
+function normalizeDocText(text: string): string {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")   // curly single quotes → straight
+    .replace(/[\u201C\u201D]/g, '"')   // curly double quotes → straight
+    .replace(/\u2014/g, '-')           // em-dash → hyphen (1:1)
+    .replace(/\u2013/g, '-')           // en-dash → hyphen (1:1)
+    .replace(/\u00A0/g, ' ')           // non-breaking space → regular space
+    .replace(/\uFEFF/g, ' ')           // zero-width no-break space → space
+    .replace(/\u200B/g, ' ');          // zero-width space → space
+}
+
+type FindResult = {
+  start: number;
+  end: number;
+  count: number; // how many times the search string appears in the doc
+};
+
+function findTextRange(
+  doc: any,
+  searchText: string,
+): FindResult | null {
+  const chars: { index: number; char: string }[] = [];
+
+  function extractContent(elements: any[]): void {
+    for (const el of elements ?? []) {
+      if (el.paragraph) {
+        for (const pe of el.paragraph.elements ?? []) {
+          if (pe.textRun) {
+            const content: string = pe.textRun.content;
+            for (let i = 0; i < content.length; i++) {
+              chars.push({ index: pe.startIndex + i, char: content[i]! });
+            }
+          }
+        }
+      } else if (el.table) {
+        for (const row of el.table.tableRows ?? []) {
+          for (const cell of row.tableCells ?? []) {
+            extractContent(cell.content);
+          }
+        }
+      }
+    }
+  }
+
+  extractContent(doc.body?.content ?? []);
+  const fullText = chars.map((c) => c.char).join("");
+
+  // Stage 1: exact match
+  let idx = fullText.indexOf(searchText);
+
+  // Stage 2: full typographic normalization (quotes, dashes, special spaces)
+  const normFull = normalizeDocText(fullText);
+  const normSearch = normalizeDocText(searchText);
+  if (idx === -1) {
+    idx = normFull.indexOf(normSearch);
+  }
+
+  // Stage 3: whitespace-collapse matching (handles DOM \n vs API \n divergence,
+  // double spaces, etc. — builds a position map back to chars[])
+  if (idx === -1) {
+    // Build a collapsed version and a map: collapsedIdx → charsIdx
+    const collapsedFull: string[] = [];
+    const collapseMap: number[] = []; // collapsedFull[i] came from chars[collapseMap[i]]
+    let prevSpace = false;
+    for (let i = 0; i < normFull.length; i++) {
+      const ch = normFull[i]!;
+      const isWS = /\s/.test(ch);
+      if (isWS && prevSpace) continue; // collapse
+      collapsedFull.push(isWS ? ' ' : ch);
+      collapseMap.push(i);
+      prevSpace = isWS;
+    }
+    const collapsedSearch = normSearch.replace(/\s+/g, ' ').trim();
+    const cfStr = collapsedFull.join('');
+    const cfIdx = cfStr.indexOf(collapsedSearch);
+    if (cfIdx !== -1) {
+      // Map back: collapseMap[cfIdx] is the index in normFull (= fullText, same length)
+      idx = collapseMap[cfIdx]!;
+      // Recalculate end using collapse map
+      const cfEndIdx = cfIdx + collapsedSearch.length - 1;
+      const endOrigIdx = collapseMap[cfEndIdx]!;
+      const count = (cfStr.split(collapsedSearch).length - 1);
+      return {
+        start: chars[idx]!.index,
+        end: chars[endOrigIdx]!.index + 1,
+        count,
+      };
+    }
+    return null;
+  }
+
+  // Count total occurrences using normalized text for uniqueness validation
+  const count = normFull.split(normSearch).length - 1;
+
+  return {
+    start: chars[idx]!.index,
+    end: chars[idx + normSearch.length - 1]!.index + 1,
+    count,
+  };
+}
 
 // ─── Message Router ───
 
@@ -1088,6 +1230,233 @@ chrome.runtime.onMessage.addListener(
           }
         }
 
+        case "fetchUrl": {
+          // Fetch a URL from the background service worker (bypasses page CSP).
+          // Used for Google Docs export URL which is blocked in content script context.
+          const { url: fetchTarget } = message.payload;
+          try {
+            const res = await fetch(fetchTarget, { credentials: "include" });
+            if (!res.ok) return { error: `HTTP ${res.status}` };
+            const text = await res.text();
+            return { text };
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsFindAndHighlight": {
+          const { docId, anchorText, color } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            const range = findTextRange(doc, anchorText);
+            if (!range) return { error: "text not found in document" };
+            const rgbColor = color ?? { red: 0.780, green: 0.933, blue: 0.788 };
+            await gdocsBatchUpdate(docId, token, [{
+              updateTextStyle: {
+                range: { startIndex: range.start, endIndex: range.end },
+                textStyle: { backgroundColor: { color: { rgbColor } } },
+                fields: "backgroundColor",
+              },
+            }]);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsRemoveHighlights": {
+          const { docId, anchorTexts } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            const requests: object[] = [];
+            for (const text of anchorTexts) {
+              const range = findTextRange(doc, text);
+              if (!range) continue;
+              requests.push({
+                updateTextStyle: {
+                  range: { startIndex: range.start, endIndex: range.end },
+                  textStyle: { backgroundColor: {} },
+                  fields: 'backgroundColor',
+                },
+              });
+            }
+            if (requests.length === 0) return {};
+            await gdocsBatchUpdate(docId, token, requests);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsApplyPendingEdit": {
+          const { docId, findText, replaceText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            const range = findTextRange(doc, findText);
+            if (!range) return { error: "find text not found in document" };
+
+            const ORANGE = { red: 0.988, green: 0.729, blue: 0.561 };
+            const BLUE   = { red: 0.678, green: 0.847, blue: 0.961 };
+
+            const requests: object[] = [];
+            if (replaceText) {
+              requests.push({ insertText: { location: { index: range.end }, text: replaceText } });
+            }
+            // Highlight original text orange (mark for deletion)
+            requests.push({
+              updateTextStyle: {
+                range: { startIndex: range.start, endIndex: range.end },
+                textStyle: { backgroundColor: { color: { rgbColor: ORANGE } } },
+                fields: 'backgroundColor',
+              },
+            });
+            if (replaceText) {
+              // Highlight inserted text blue (mark as insertion) — inserted after range.end
+              requests.push({
+                updateTextStyle: {
+                  range: { startIndex: range.end, endIndex: range.end + replaceText.length },
+                  textStyle: { backgroundColor: { color: { rgbColor: BLUE } } },
+                  fields: 'backgroundColor',
+                },
+              });
+            }
+            await gdocsBatchUpdate(docId, token, requests);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsAcceptEdit": {
+          // Keep the replacement: delete orange find-text, clear blue highlight on replace-text
+          const { docId, findText, replaceText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            if (!replaceText) {
+              // Pure deletion — just delete the orange text
+              const range = findTextRange(doc, findText);
+              if (!range) return { error: "find text not found" };
+              await gdocsBatchUpdate(docId, token, [{
+                deleteContentRange: { range: { startIndex: range.start, endIndex: range.end } },
+              }]);
+              return {};
+            }
+            const combined = findText + replaceText;
+            const range = findTextRange(doc, combined);
+            if (!range) return { error: "combined text not found" };
+            const splitIdx = range.start + findText.length;
+            await gdocsBatchUpdate(docId, token, [
+              // Delete the orange find-text
+              { deleteContentRange: { range: { startIndex: range.start, endIndex: splitIdx } } },
+              // After deletion, replaceText is now at [range.start … range.start + replaceText.length]
+              { updateTextStyle: {
+                  range: { startIndex: range.start, endIndex: range.start + replaceText.length },
+                  textStyle: { backgroundColor: {} },
+                  fields: 'backgroundColor',
+              }},
+            ]);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsRevertEdit": {
+          // Revert: delete blue replace-text, clear orange highlight on find-text
+          const { docId, findText, replaceText } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            if (!replaceText) {
+              // Pure deletion that was reverted — just clear orange highlight
+              const range = findTextRange(doc, findText);
+              if (!range) return { error: "find text not found" };
+              await gdocsBatchUpdate(docId, token, [{
+                updateTextStyle: {
+                  range: { startIndex: range.start, endIndex: range.end },
+                  textStyle: { backgroundColor: {} },
+                  fields: 'backgroundColor',
+                },
+              }]);
+              return {};
+            }
+            const combined = findText + replaceText;
+            const range = findTextRange(doc, combined);
+            if (!range) return { error: "combined text not found" };
+            const splitIdx = range.start + findText.length;
+            await gdocsBatchUpdate(docId, token, [
+              // Delete the blue replace-text
+              { deleteContentRange: { range: { startIndex: splitIdx, endIndex: range.end } } },
+              // Clear orange highlight on find-text (still at original position)
+              { updateTextStyle: {
+                  range: { startIndex: range.start, endIndex: splitIdx },
+                  textStyle: { backgroundColor: {} },
+                  fields: 'backgroundColor',
+              }},
+            ]);
+            return {};
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "injectNextNewTab": {
+          // Listen for the next new tab and inject the content script into it.
+          // Used for PDF→HTML conversion: content script opens a blob tab,
+          // and we need to inject the content script since blob: URLs don't
+          // get automatic content script injection.
+          const onCreated = (tab: chrome.tabs.Tab) => {
+            chrome.tabs.onCreated.removeListener(onCreated);
+            if (!tab.id) return;
+            const tabId = tab.id;
+
+            // Wait for the tab to finish loading before injecting
+            const onUpdated = (
+              updatedId: number,
+              info: chrome.tabs.TabChangeInfo,
+            ) => {
+              if (updatedId !== tabId || info.status !== "complete") return;
+              chrome.tabs.onUpdated.removeListener(onUpdated);
+
+              const manifest = chrome.runtime.getManifest();
+              // Use the isolated-world content script (the pipeline loader), not [0]
+              // which is the MAIN world dom-guard that has no argbox logic.
+              const scripts = manifest.content_scripts ?? [];
+              const cs =
+                scripts.find((s) => (s as { world?: string }).world !== "MAIN") ??
+                scripts[1] ??
+                scripts[0];
+              const file = cs?.js?.[0];
+              if (!file) return;
+
+              chrome.scripting
+                .executeScript({
+                  target: { tabId },
+                  files: [file],
+                })
+                .catch((err) => {
+                  console.warn(
+                    "[Oddity 1] Failed to inject into blob tab:",
+                    err,
+                  );
+                });
+            };
+            chrome.tabs.onUpdated.addListener(onUpdated);
+          };
+          chrome.tabs.onCreated.addListener(onCreated);
+
+          // Auto-cleanup if no tab is created within 10s
+          setTimeout(
+            () => chrome.tabs.onCreated.removeListener(onCreated),
+            10000,
+          );
+          return { success: true };
+        }
+
         case "getPdfPageSummaries": {
           const { url, documentHash } = message.payload;
           return apiGetPdfPageSummaries(url, documentHash);
@@ -1116,6 +1485,118 @@ chrome.runtime.onMessage.addListener(
           const { event, properties: eventProps } = message.payload;
           track(event, eventProps);
           return { success: true };
+        }
+
+        case "gdocsAnnotateText": {
+          const { text, url, contentHash, wordCount } = message.payload;
+
+          const session = await getSession();
+          if (!session) return { error: "Sign in required" };
+
+          const stored = await chrome.storage.local.get("preferences");
+          const prefs = (stored["preferences"] ?? {}) as { depth_personality?: string };
+          const personality = (prefs.depth_personality ?? "terry") as "terry" | "jerry" | "sally";
+
+          const result = await requestAnnotationsStreaming(
+            { url, content_hash: contentHash, text, mode: "depth", personality, word_count: wordCount },
+            () => {},
+          );
+          return { annotations: result.annotations };
+        }
+
+        case "gdocsChat": {
+          const tabId = sender.tab?.id;
+          if (!tabId) return { error: "No tab ID" };
+
+          const { messages, mode } = message.payload;
+          const requestId = (message.payload as { requestId?: number }).requestId;
+
+          (async () => {
+            try {
+              await requestGDocsChatStreaming(
+                messages,
+                mode,
+                (text) => {
+                  chrome.tabs.sendMessage(tabId, {
+                    action: "gdocsChatChunk",
+                    payload: { text, requestId },
+                  }).catch(() => {});
+                },
+              );
+              chrome.tabs.sendMessage(tabId, {
+                action: "gdocsChatDone",
+                payload: { requestId },
+              }).catch(() => {});
+            } catch (err) {
+              const error = err instanceof Error ? err.message : "Unknown error";
+              chrome.tabs.sendMessage(tabId, {
+                action: "gdocsChatError",
+                payload: { error, requestId },
+              }).catch(() => {});
+            }
+          })();
+
+          return { ok: true };
+        }
+
+        case "gdocsMcqQuestions": {
+          const { prompt, docContext } = message.payload;
+          const result = await fetchAllGDocsMcqQuestions(prompt, docContext);
+          return result;
+        }
+
+        case "gdocsRoute": {
+          const { prompt, docContext, essayContent } = message.payload;
+          const result = await requestGDocsRoute(prompt, docContext, essayContent);
+          return result;
+        }
+
+        case "gdocsGetDocText": {
+          const { docId } = message.payload;
+          try {
+            const token = await getGoogleToken();
+            const doc = await fetchGDocsDocument(docId, token);
+            // Extract plain text from the document using the same path as findTextRange
+            const parts: string[] = [];
+            function extractText(elements: any[]): void {
+              for (const el of elements ?? []) {
+                if (el.paragraph) {
+                  for (const pe of el.paragraph.elements ?? []) {
+                    if (pe.textRun?.content) parts.push(pe.textRun.content);
+                  }
+                } else if (el.table) {
+                  for (const row of el.table.tableRows ?? []) {
+                    for (const cell of row.tableCells ?? []) {
+                      extractText(cell.content);
+                    }
+                  }
+                }
+              }
+            }
+            extractText(doc.body?.content ?? []);
+            return { text: parts.join('').slice(0, 12000) };
+          } catch (err) {
+            return { error: String(err) };
+          }
+        }
+
+        case "gdocsSessionLoad": {
+          const { docId } = message.payload;
+          try {
+            const session = await fetchGDocsSession(docId);
+            return { session };
+          } catch (err) {
+            console.error("[gdocsSessionLoad] Error:", err);
+            return { session: null };
+          }
+        }
+
+        case "gdocsSessionSave": {
+          const { docId, chatHistory, essayVersions, editSuggestions } = message.payload;
+          // Fire-and-forget — don't await, return immediately
+          saveGDocsSession(docId, chatHistory, essayVersions, editSuggestions)
+            .catch((err) => console.error("[gdocsSessionSave] Error:", err));
+          return { ok: true };
         }
 
         default:
