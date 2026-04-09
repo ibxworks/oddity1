@@ -67,6 +67,7 @@ import {
   pasteIntoChatbot,
   setPublicFigurePersonas,
 } from "./renderer/arguments-box.js";
+import { setDepthPersonaName } from "./renderer/margin-notes.js";
 import { initOptimizeButton, destroyOptimizeButton } from "./renderer/optimize-button.js";
 import {
 
@@ -1037,6 +1038,7 @@ async function init(): Promise<void> {
     // Re-sync argbox display if current personality was a pf: slug set before personas loaded
     if (currentPersonality.startsWith("pf:")) {
       updateDashboardPersonality(currentPersonality);
+      setDepthPersonaName(pfDisplayNames.get(currentPersonality) ?? null);
     }
   }).catch(() => {});
 
@@ -2324,6 +2326,7 @@ onMessage((message: ExtensionMessage) => {
         // Personality only affects depth annotations — preserve user-written notes and their feedback
         currentPersonality = newPersonality;
         updateDashboardPersonality(newPersonality);
+        setDepthPersonaName(newPersonality.startsWith("pf:") ? (pfDisplayNames.get(newPersonality) ?? null) : null);
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();

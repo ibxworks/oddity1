@@ -65,6 +65,11 @@ type InlinePopover = {
 
 let hostEl: HTMLDivElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
+let currentDepthPersonaName: string | null = null;
+
+export function setDepthPersonaName(name: string | null): void {
+  currentDepthPersonaName = name;
+}
 let regionEl: Element | null = null;
 let notes: MarginNote[] = [];
 let noteIndex = 0;
@@ -1585,6 +1590,18 @@ function createNoteElement(
     labelEl.appendChild(userBadge);
   }
 
+  // Public figure persona attribution for depth AI annotations only
+  if (
+    annotation.mode === "depth" &&
+    annotation.type !== "user_written" &&
+    currentDepthPersonaName
+  ) {
+    const personaTag = document.createElement("span");
+    personaTag.className = "note-persona-tag";
+    personaTag.textContent = currentDepthPersonaName;
+    labelEl.appendChild(personaTag);
+  }
+
   // Reaction badge (collapsed state indicator) — deduplicate: pick only the latest thumb
   const thumbFeedback = feedback.filter(
     (f) => f.feedback_type === "thumbs_up" || f.feedback_type === "thumbs_down",
@@ -2626,6 +2643,19 @@ const MARGIN_NOTES_CSS = `
     margin-bottom: 2px;
   }
 
+  .note-persona-tag {
+    font-size: 9px;
+    background: rgba(255,255,255,0.1);
+    color: rgba(255, 255, 255, 0.6);
+    padding: 1px 5px;
+    border-radius: 8px;
+    margin-left: 4px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
   .note-text {
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -3146,6 +3176,11 @@ const MARGIN_NOTES_CSS = `
   }
 
   :host([data-theme="light"]) .note-user-badge {
+    color: rgba(41, 48, 56, 0.6);
+  }
+
+  :host([data-theme="light"]) .note-persona-tag {
+    background: rgba(0,0,0,0.06);
     color: rgba(41, 48, 56, 0.6);
   }
 
