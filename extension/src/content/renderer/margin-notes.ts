@@ -37,6 +37,8 @@ export type MarginNoteAttributionState = {
   userDisplayName: string | null;
 };
 
+const OVERVIEW_HEADER_AUTHOR = "Overview";
+
 type MarginNote = {
   id: string;
   annotation: Annotation;
@@ -155,7 +157,7 @@ export function resolveMarginNoteHeaderAuthor(
     return attribution.userDisplayName;
   }
   if (annotation.mode !== "depth") {
-    return null;
+    return OVERVIEW_HEADER_AUTHOR;
   }
   if (!attribution.selectedPersonality) {
     return null;

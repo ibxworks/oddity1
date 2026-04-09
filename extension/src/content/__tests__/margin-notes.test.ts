@@ -44,7 +44,7 @@ describe("resolveMarginNoteHeaderAuthor", () => {
     expect(resolveMarginNoteHeaderAuthor(makeAnnotation(), attribution)).toBe("Terry");
   });
 
-  it("hides author text for overview annotations and unresolved PF names", () => {
+  it("shows Overview for overview annotations and hides unresolved PF names", () => {
     const unresolvedPf: MarginNoteAttributionState = {
       selectedPersonality: "pf:steve_jobs",
       selectedPersonalityDisplayName: null,
@@ -60,7 +60,7 @@ describe("resolveMarginNoteHeaderAuthor", () => {
           selectedPersonalityDisplayName: "Steve Jobs",
         },
       ),
-    ).toBeNull();
+    ).toBe("Overview");
   });
 
   it("uses the user display name for manual annotations", () => {
@@ -120,7 +120,7 @@ describe("margin note header rendering", () => {
     expect(note.querySelector(".note-user-badge")).toBeNull();
   });
 
-  it("keeps overview headers copy-only and hides author text", () => {
+  it("shows Overview in overview note headers", () => {
     setMarginNotesPersonality("pf:richard_feynman", "Richard Feynman");
 
     const note = createNoteElementForTest(
@@ -135,9 +135,9 @@ describe("margin note header rendering", () => {
     const author = note.querySelector(".note-persona") as HTMLSpanElement | null;
     const copyBtn = note.querySelector(".note-copy-btn");
 
-    expect(header?.classList.contains("note-header--copy-only")).toBe(true);
-    expect(author?.hidden).toBe(true);
-    expect(author?.textContent).toBe("");
+    expect(header?.classList.contains("note-header--copy-only")).toBe(false);
+    expect(author?.hidden).toBe(false);
+    expect(author?.textContent).toBe("Overview");
     expect(copyBtn).not.toBeNull();
   });
 
