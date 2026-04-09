@@ -67,7 +67,6 @@ import {
   pasteIntoChatbot,
   setPublicFigurePersonas,
 } from "./renderer/arguments-box.js";
-import { setDepthPersonaName } from "./renderer/margin-notes.js";
 import { initOptimizeButton, destroyOptimizeButton } from "./renderer/optimize-button.js";
 import {
 
@@ -414,6 +413,13 @@ function formatUpgradeUsage(multiplier?: number): string {
   }
 
   return "more monthly usage";
+}
+
+function syncMarginNotesPersonality(): void {
+  const resolvedDisplayName = currentPersonality.startsWith("pf:")
+    ? (pfDisplayNames.get(currentPersonality) ?? null)
+    : null;
+  setMarginNotesPersonality(currentPersonality, resolvedDisplayName);
 }
 
 function buildUsageToastContent(
@@ -1051,8 +1057,8 @@ async function init(): Promise<void> {
       storedPersonality === "gary"
         ? "sally"
         : (storedPersonality as DepthPersonality);
-    setMarginNotesPersonality(currentPersonality);
   }
+  syncMarginNotesPersonality();
   // currentMode defaults to "overview" (see declaration above), visibleTypes to overview types
   setMarginNoteMode(currentMode);
 
@@ -1086,10 +1092,10 @@ async function init(): Promise<void> {
     pfDisplayNames.clear();
     for (const p of personas) pfDisplayNames.set(`pf:${p.slug}`, p.displayName);
     setPublicFigurePersonas(personas);
+    syncMarginNotesPersonality();
     // Re-sync argbox display if current personality was a pf: slug set before personas loaded
     if (currentPersonality.startsWith("pf:")) {
       updateDashboardPersonality(currentPersonality);
-      setDepthPersonaName(pfDisplayNames.get(currentPersonality) ?? null);
     }
   }).catch(() => {});
 
@@ -2503,7 +2509,10 @@ function switchMode(newMode: ViewMode, newPersonality?: DepthPersonality): void 
   // Update state
   currentMode = newMode;
   setMarginNoteMode(newMode);
-  if (newPersonality) { currentPersonality = newPersonality; setMarginNotesPersonality(newPersonality); }
+  if (newPersonality) {
+    currentPersonality = newPersonality;
+    syncMarginNotesPersonality();
+  }
   if (isGoogleDocs()) setGDocsDebugUnderline(newMode === 'depth');
 
   // Update visible types for new mode
@@ -2919,9 +2928,8 @@ onMessage((message: ExtensionMessage) => {
       } else if (personalityChanged) {
         // Personality only affects depth annotations — preserve user-written notes and their feedback
         currentPersonality = newPersonality;
-        setMarginNotesPersonality(newPersonality);
+        syncMarginNotesPersonality();
         updateDashboardPersonality(newPersonality);
-        setDepthPersonaName(newPersonality.startsWith("pf:") ? (pfDisplayNames.get(newPersonality) ?? null) : null);
         clearOverlay();
         clearAllAnchors();
         clearMarginNotes();
