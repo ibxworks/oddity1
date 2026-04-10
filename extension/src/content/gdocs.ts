@@ -975,7 +975,7 @@ async function handleResponseActions(response: string): Promise<void> {
 
   if (pendingEditMode) {
     pendingEditMode = false;
-    const editMatch = response.match(/<<<EDIT>>>([\s\S]+?)<<<END_EDIT>>>/);
+    const editMatch = response.match(/<<<EDIT>>>([\s\S]+?)(?:<<<END_EDIT>>>|$)/);
     if (editMatch?.[1]) {
       const ops = parseEditOps(editMatch[1].trim());
       if (ops.length > 0) {

@@ -11,3 +11,4 @@ dist/
 .worktrees/
 claude_source_code/
 key.pem
+extension/CLAUDE.md

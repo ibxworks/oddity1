@@ -1876,8 +1876,14 @@ export function findAnnotationRects(
 
   const matchStart = findMatchOffset(fullText, annotation.anchor);
   if (matchStart === -1) {
-    // Word node text didn't match (e.g. spaces stripped) — fall back to paragraph positioning
-    return findAnnotationRectsByParagraph(region, annotation);
+    // Word node text didn't match (e.g. spaces stripped) — try paragraph, then canvas geometry
+    const paraResult = findAnnotationRectsByParagraph(region, annotation);
+    if (paraResult.rects.length > 0) return paraResult;
+    const canvases = region.element.querySelectorAll<HTMLCanvasElement>('canvas');
+    if (canvases.length > 0) {
+      return findAnnotationRectsCanvasMode(canvases[0]!, region.element as HTMLElement, annotation);
+    }
+    return paraResult;
   }
   const matchEnd = matchStart + annotation.anchor.exact.length;
 
@@ -1903,9 +1909,16 @@ export function findAnnotationRects(
     }
   }
 
-  // If word node rects are all zero (canvas hides text layer), fall back to paragraph rects
+  // If word node rects are all zero (canvas hides text layer), fall back to paragraph rects,
+  // then canvas-mode geometry as a last resort (enqueues cursor correction for precise position).
   if (rawRects.length === 0) {
-    return findAnnotationRectsByParagraph(region, annotation);
+    const paraResult = findAnnotationRectsByParagraph(region, annotation);
+    if (paraResult.rects.length > 0) return paraResult;
+    const canvases = region.element.querySelectorAll<HTMLCanvasElement>('canvas');
+    if (canvases.length > 0) {
+      return findAnnotationRectsCanvasMode(canvases[0]!, region.element as HTMLElement, annotation);
+    }
+    return paraResult;
   }
 
   return {
