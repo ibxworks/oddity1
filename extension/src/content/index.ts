@@ -1701,6 +1701,9 @@ async function startPipeline(): Promise<void> {
         // doesn't send a request for partial streaming text.
         chatTrackedElements.add(element);
       },
+      onUntrack: (element) => {
+        chatTrackedElements.delete(element);
+      },
       onResponse: (regionId, element) => {
         if (!enabled) return;
 
