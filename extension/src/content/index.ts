@@ -127,11 +127,13 @@ import {
   setGDocsDebugUnderline,
   setupGDocsEditTracking,
   initGDocsRectCache,
+  canUseNativeGDocsHighlights,
   getGDocsAnchorRects,
   deleteGDocsRect,
   clearAllGDocsRects,
   saveGDocsAnnotationsToStorage,
   fetchGoogleDocsText,
+  handleGDocsNativeHighlightError,
   clearGDocsCorrectionQueue,
   shiftGDocsAnchorRectsBelow,
   shiftGDocsAnchorRectsOnLine,
@@ -1168,6 +1170,21 @@ function updateGdocsAnchorPosition(id: string, scrollEl: HTMLElement): void {
   el.style.left = `${rect.left - scrollEl.scrollLeft}px`;
 }
 
+function maybeRemoveGDocsHighlights(docId: string, anchorTexts: string[]): void {
+  if (!docId || anchorTexts.length === 0 || !canUseNativeGDocsHighlights()) return;
+
+  void sendMessage<{ error?: string }>({
+    action: 'gdocsRemoveHighlights',
+    payload: { docId, anchorTexts },
+  })
+    .then((result) => {
+      if (result?.error) {
+        handleGDocsNativeHighlightError(result.error);
+      }
+    })
+    .catch(() => {});
+}
+
 // ─── Google Docs Pipeline ───
 
 async function startGoogleDocsPipeline(): Promise<void> {
@@ -1404,8 +1421,7 @@ async function startGoogleDocsPipeline(): Promise<void> {
 
     // Remove GDocs native highlights from the document (fire-and-forget).
     if (docId && anchorTexts.length > 0) {
-      sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts } })
-        .catch(() => {});
+      maybeRemoveGDocsHighlights(docId, anchorTexts);
     }
 
     // Re-run annotation pipeline.
@@ -1436,7 +1452,7 @@ async function startGoogleDocsPipeline(): Promise<void> {
     // Remove GDocs native highlights from the document.
     const docId = getGoogleDocsId();
     if (docId && anchorTexts.length > 0) {
-      sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts } }).catch(() => {});
+      maybeRemoveGDocsHighlights(docId, anchorTexts);
       clearAllGDocsRects(docId);
     }
 
@@ -1482,8 +1498,7 @@ async function startGoogleDocsPipeline(): Promise<void> {
       }
 
       if (invalidAnchorTexts.length > 0) {
-        sendMessage({ action: 'gdocsRemoveHighlights', payload: { docId, anchorTexts: invalidAnchorTexts } })
-          .catch(() => {});
+        maybeRemoveGDocsHighlights(docId, invalidAnchorTexts);
       }
 
       // Clear position cache so surviving annotations re-run the highlight pipeline fresh.
@@ -2228,10 +2243,7 @@ function handleAnnotationDeleted(annotationId: string): void {
     // other annotations from all stores (and from storage), which is why
     // other overlays disappear and don't come back after a page refresh.
     if (deletedAnchorText) {
-      sendMessage({
-        action: 'gdocsRemoveHighlights',
-        payload: { docId, anchorTexts: [deletedAnchorText] },
-      }).catch(() => {});
+      maybeRemoveGDocsHighlights(docId, [deletedAnchorText]);
     }
   }
 

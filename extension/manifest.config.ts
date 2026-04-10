@@ -1,5 +1,13 @@
 import { defineManifest } from "@crxjs/vite-plugin";
 
+const googleOauthClientId = process.env.ODDITY_GOOGLE_OAUTH_CLIENT_ID?.trim();
+
+if (!googleOauthClientId) {
+  throw new Error(
+    "Missing ODDITY_GOOGLE_OAUTH_CLIENT_ID. Set a valid Chrome Extension OAuth client ID before building the extension.",
+  );
+}
+
 export default defineManifest({
   manifest_version: 3,
   name: "Oddity1",
@@ -24,7 +32,7 @@ export default defineManifest({
   ],
   host_permissions: ["<all_urls>"],
   oauth2: {
-    client_id: "1068892621108-ma96bv3d62p65qh8iihh5jreok1vs83i.apps.googleusercontent.com",
+    client_id: googleOauthClientId,
     scopes: ["https://www.googleapis.com/auth/documents"],
   },
   background: {

@@ -60,6 +60,7 @@ Create `backend/.env`:
 SUPABASE_URL=https://gmmektzvvrtttszdgiai.supabase.co
 SUPABASE_ANON_KEY=<your anon key>
 SUPABASE_SERVICE_ROLE_KEY=<your service role key>
+ODDITY_GOOGLE_OAUTH_CLIENT_ID=<your Chrome extension OAuth client id>
 GEMINI_API_KEY=AIza...
 PORT=3001
 ```
@@ -116,6 +117,7 @@ npm run build # one-time production build
 ```
 
 The built extension lands in `extension/dist/`.
+The extension build reads `ODDITY_GOOGLE_OAUTH_CLIENT_ID` from `backend/.env`, repo-level env files, or extension-level env files.
 
 ---
 

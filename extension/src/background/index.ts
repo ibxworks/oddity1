@@ -4,6 +4,10 @@ import {
   isBlockedDomain,
   MAX_TEXT_LENGTH,
 } from "@oddity/shared";
+import {
+  GDOCS_AUTH_REQUIRED_ERROR_PREFIX,
+  normalizeGDocsAuthError,
+} from "../shared/gdocs-auth.js";
 import { sendToTab } from "../shared/messaging.js";
 import {
   getAdapters,
@@ -139,13 +143,36 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // ─── Google Docs API Helpers ───
 
-async function getGoogleToken(): Promise<string> {
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function getGoogleToken(interactive: boolean): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: true }, (t) => {
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-      else resolve(t!);
+    chrome.identity.getAuthToken({ interactive }, (token) => {
+      if (chrome.runtime.lastError) {
+        reject(normalizeGDocsAuthError(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!token) {
+        reject(
+          new Error(
+            `${GDOCS_AUTH_REQUIRED_ERROR_PREFIX}No OAuth token returned from chrome.identity.getAuthToken`,
+          ),
+        );
+        return;
+      }
+      resolve(token);
     });
   });
+}
+
+async function getSilentGoogleToken(): Promise<string> {
+  return getGoogleToken(false);
+}
+
+async function getInteractiveGoogleToken(): Promise<string> {
+  return getGoogleToken(true);
 }
 
 async function fetchGDocsDocument(docId: string, token: string): Promise<any> {
@@ -153,6 +180,11 @@ async function fetchGDocsDocument(docId: string, token: string): Promise<any> {
     `https://docs.googleapis.com/v1/documents/${docId}`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
+  if (res.status === 401) {
+    throw new Error(
+      `${GDOCS_AUTH_REQUIRED_ERROR_PREFIX}Docs API rejected the Google token (HTTP 401)`,
+    );
+  }
   if (!res.ok) throw new Error(`docs.get HTTP ${res.status}`);
   return res.json() as Promise<any>;
 }
@@ -166,6 +198,11 @@ async function gdocsBatchUpdate(docId: string, token: string, requests: object[]
       body: JSON.stringify({ requests }),
     },
   );
+  if (res.status === 401) {
+    throw new Error(
+      `${GDOCS_AUTH_REQUIRED_ERROR_PREFIX}Docs API rejected the Google token (HTTP 401)`,
+    );
+  }
   if (!res.ok) throw new Error(`batchUpdate HTTP ${res.status}`);
 }
 
@@ -1247,7 +1284,7 @@ chrome.runtime.onMessage.addListener(
         case "gdocsFindAndHighlight": {
           const { docId, anchorText, color } = message.payload;
           try {
-            const token = await getGoogleToken();
+            const token = await getSilentGoogleToken();
             const doc = await fetchGDocsDocument(docId, token);
             const range = findTextRange(doc, anchorText);
             if (!range) return { error: "text not found in document" };
@@ -1261,14 +1298,14 @@ chrome.runtime.onMessage.addListener(
             }]);
             return {};
           } catch (err) {
-            return { error: String(err) };
+            return { error: getErrorMessage(err) };
           }
         }
 
         case "gdocsRemoveHighlights": {
           const { docId, anchorTexts } = message.payload;
           try {
-            const token = await getGoogleToken();
+            const token = await getSilentGoogleToken();
             const doc = await fetchGDocsDocument(docId, token);
             const requests: object[] = [];
             for (const text of anchorTexts) {
@@ -1286,14 +1323,14 @@ chrome.runtime.onMessage.addListener(
             await gdocsBatchUpdate(docId, token, requests);
             return {};
           } catch (err) {
-            return { error: String(err) };
+            return { error: getErrorMessage(err) };
           }
         }
 
         case "gdocsApplyPendingEdit": {
           const { docId, findText, replaceText } = message.payload;
           try {
-            const token = await getGoogleToken();
+            const token = await getInteractiveGoogleToken();
             const doc = await fetchGDocsDocument(docId, token);
             const range = findTextRange(doc, findText);
             if (!range) return { error: "find text not found in document" };
@@ -1326,7 +1363,7 @@ chrome.runtime.onMessage.addListener(
             await gdocsBatchUpdate(docId, token, requests);
             return {};
           } catch (err) {
-            return { error: String(err) };
+            return { error: getErrorMessage(err) };
           }
         }
 
@@ -1334,7 +1371,7 @@ chrome.runtime.onMessage.addListener(
           // Keep the replacement: delete orange find-text, clear blue highlight on replace-text
           const { docId, findText, replaceText } = message.payload;
           try {
-            const token = await getGoogleToken();
+            const token = await getInteractiveGoogleToken();
             const doc = await fetchGDocsDocument(docId, token);
             if (!replaceText) {
               // Pure deletion — just delete the orange text
@@ -1361,7 +1398,7 @@ chrome.runtime.onMessage.addListener(
             ]);
             return {};
           } catch (err) {
-            return { error: String(err) };
+            return { error: getErrorMessage(err) };
           }
         }
 
@@ -1369,7 +1406,7 @@ chrome.runtime.onMessage.addListener(
           // Revert: delete blue replace-text, clear orange highlight on find-text
           const { docId, findText, replaceText } = message.payload;
           try {
-            const token = await getGoogleToken();
+            const token = await getInteractiveGoogleToken();
             const doc = await fetchGDocsDocument(docId, token);
             if (!replaceText) {
               // Pure deletion that was reverted — just clear orange highlight
@@ -1400,7 +1437,7 @@ chrome.runtime.onMessage.addListener(
             ]);
             return {};
           } catch (err) {
-            return { error: String(err) };
+            return { error: getErrorMessage(err) };
           }
         }
 
@@ -1554,7 +1591,7 @@ chrome.runtime.onMessage.addListener(
         case "gdocsGetDocText": {
           const { docId } = message.payload;
           try {
-            const token = await getGoogleToken();
+            const token = await getSilentGoogleToken();
             const doc = await fetchGDocsDocument(docId, token);
             // Extract plain text from the document using the same path as findTextRange
             const parts: string[] = [];
@@ -1576,7 +1613,7 @@ chrome.runtime.onMessage.addListener(
             extractText(doc.body?.content ?? []);
             return { text: parts.join('').slice(0, 12000) };
           } catch (err) {
-            return { error: String(err) };
+            return { error: getErrorMessage(err) };
           }
         }
 

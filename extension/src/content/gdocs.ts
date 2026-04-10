@@ -1,6 +1,12 @@
 // Oddity GDocs — essay writing assistant for Google Docs
 // Flow: user enters topic → MCQ questions → essay generation → edit mode on essay tab
 import { registerGDocsCommentAnnotations } from "./gdocs-comments.js";
+import { fetchGoogleDocsText } from "./google-docs.js";
+import {
+  getGDocsEditInlineErrorMessage,
+  isGDocsEditAuthError,
+  resolveGDocsDocumentText,
+} from "./gdocs-helpers.js";
 
 interface GDocsMessage {
   role: 'user' | 'assistant';
@@ -270,23 +276,45 @@ function getPlaceholder(): string {
   return 'What do you want to write about?';
 }
 
-// ─── Doc text via Docs API ────────────────────────────────────────────────────
-// Always fetch from the Google Docs REST API — not the canvas-rendered DOM —
-// so the AI sees the exact same text that findTextRange will search.
-async function getApiDocText(): Promise<string> {
+// ─── Doc text via Docs API / export fallback ──────────────────────────────────
+async function getApiDocTextResult(): Promise<{ text?: string; error?: string }> {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(
       { action: 'gdocsGetDocText', payload: { docId: activeDocId } },
       (result: { text?: string; error?: string }) => {
         if (chrome.runtime.lastError || result?.error) {
-          console.warn('[Oddity GDocs] gdocsGetDocText failed, returning empty:', chrome.runtime.lastError ?? result?.error);
-          resolve('');
+          resolve({
+            text: '',
+            error: chrome.runtime.lastError?.message ?? result?.error,
+          });
           return;
         }
-        resolve(result?.text?.trim() ?? '');
+        resolve({ text: result?.text?.trim() ?? '' });
       }
     );
   });
+}
+
+async function getCurrentDocText(): Promise<string> {
+  const resolved = await resolveGDocsDocumentText({
+    docId: activeDocId,
+    readApiText: getApiDocTextResult,
+    readExportText: fetchGoogleDocsText,
+    fallbackTexts: [docContext, activeSession?.essayContent],
+  });
+
+  if (resolved.text) {
+    docContext = resolved.text;
+    docHasContent = true;
+    if (activeSession) {
+      activeSession.essayContent = resolved.text;
+    }
+    return resolved.text;
+  }
+
+  const preserved = docContext.trim() || activeSession?.essayContent?.trim() || '';
+  docHasContent = preserved.length > 0;
+  return preserved;
 }
 
 // ─── Doc insertion ────────────────────────────────────────────────────────────
@@ -672,6 +700,7 @@ async function applyPendingEditsViaApi(ops: EditOp[]): Promise<EditOp[]> {
   document.dispatchEvent(new CustomEvent('oddity:gdocs:edit-start'));
   const applied: EditOp[] = [];
   const failed: EditOp[] = [];
+  let authError: string | null = null;
 
   // Track replace-text from previous ops to detect cascading conflicts.
   // Ported from Claude Code's FileEditTool getPatchForEdits: if op N's find
@@ -712,14 +741,20 @@ async function applyPendingEditsViaApi(ops: EditOp[]): Promise<EditOp[]> {
     if (result.error) {
       console.warn('[Oddity GDocs] Apply edit error:', result.error);
       failed.push(op);
+      if (isGDocsEditAuthError(result.error)) {
+        authError = result.error;
+        break;
+      }
     } else {
       applied.push(op);
       if (op.type === 'replace') appliedReplaceTexts.push(op.replace);
     }
   }
 
-  if (failed.length > 0 && applied.length === 0) {
-    showInlineError("Couldn't locate the text to edit — the document may have changed. Try again.");
+  if (authError) {
+    showInlineError(getGDocsEditInlineErrorMessage(authError));
+  } else if (failed.length > 0 && applied.length === 0) {
+    showInlineError(getGDocsEditInlineErrorMessage());
   } else if (failed.length > 0) {
     showInlineError(`${failed.length} of ${ops.length} edits couldn't be located in the document.`);
   }
@@ -793,6 +828,35 @@ function showEditReviewPanel(ops: EditOp[]): void {
     return callDocApi('gdocsRevertEdit', { docId: activeDocId, findText: op.find, replaceText: op.type === 'replace' ? op.replace : '' });
   }
 
+  const rows: Array<{
+    row: HTMLDivElement;
+    keepBtn: HTMLButtonElement;
+    revertBtn: HTMLButtonElement;
+  }> = [];
+
+  async function decideOp(idx: number, direction: 'keep' | 'revert'): Promise<boolean> {
+    if (!pending.has(idx)) return true;
+    const rowEntry = rows[idx];
+    const op = ops[idx];
+    if (!rowEntry || !op) return false;
+
+    rowEntry.keepBtn.disabled = true;
+    rowEntry.revertBtn.disabled = true;
+
+    const result = direction === 'keep' ? await acceptOp(op) : await revertOp(op);
+    if (result.error) {
+      rowEntry.keepBtn.disabled = false;
+      rowEntry.revertBtn.disabled = false;
+      showInlineError(getGDocsEditInlineErrorMessage(result.error));
+      return false;
+    }
+
+    rowEntry.row.classList.add(direction === 'keep' ? 'decided-keep' : 'decided-revert');
+    pending.delete(idx);
+    tryDismiss();
+    return true;
+  }
+
   for (let i = 0; i < ops.length; i++) {
     const op = ops[i]!;
     const idx = i;
@@ -816,29 +880,18 @@ function showEditReviewPanel(ops: EditOp[]): void {
     keepBtn.textContent = 'Keep';
 
     keepBtn.addEventListener('click', () => {
-      keepBtn.disabled = true;
-      revertBtn.disabled = true;
-      row.classList.add('decided-keep');
-      pending.delete(idx);
-      void acceptOp(op).then(() => {
-        tryDismiss();
-      });
+      void decideOp(idx, 'keep');
     });
 
     revertBtn.addEventListener('click', () => {
-      keepBtn.disabled = true;
-      revertBtn.disabled = true;
-      row.classList.add('decided-revert');
-      pending.delete(idx);
-      void revertOp(op).then(() => {
-        tryDismiss();
-      });
+      void decideOp(idx, 'revert');
     });
 
     btns.appendChild(revertBtn);
     btns.appendChild(keepBtn);
     row.appendChild(btns);
     changeList.appendChild(row);
+    rows.push({ row, keepBtn, revertBtn });
   }
 
   panel.appendChild(changeList);
@@ -846,23 +899,35 @@ function showEditReviewPanel(ops: EditOp[]): void {
   reviewPanelEl = panel;
 
   keepAllBtn.addEventListener('click', () => {
-    dismissReviewPanel();
+    keepAllBtn.disabled = true;
+    revertAllBtn.disabled = true;
     setInputEnabled(false);
     startLoadingAnimation();
     void (async () => {
-      for (const op of ops) await acceptOp(op);
+      for (const idx of Array.from(pending)) {
+        const ok = await decideOp(idx, 'keep');
+        if (!ok) break;
+      }
       stopLoadingAnimation();
+      keepAllBtn.disabled = false;
+      revertAllBtn.disabled = false;
       setInputEnabled(true);
     })();
   });
 
   revertAllBtn.addEventListener('click', () => {
-    dismissReviewPanel();
+    keepAllBtn.disabled = true;
+    revertAllBtn.disabled = true;
     setInputEnabled(false);
     startLoadingAnimation();
     void (async () => {
-      for (const op of ops) await revertOp(op);
+      for (const idx of Array.from(pending)) {
+        const ok = await decideOp(idx, 'revert');
+        if (!ok) break;
+      }
       stopLoadingAnimation();
+      keepAllBtn.disabled = false;
+      revertAllBtn.disabled = false;
       setInputEnabled(true);
     })();
   });
@@ -1022,8 +1087,7 @@ function showInlineError(message: string): void {
 
 // ─── MCQ flow ─────────────────────────────────────────────────────────────────
 async function fetchAllMcqQuestions(topic: string): Promise<McqQuestion[] | null> {
-  const freshDocText = await getApiDocText();
-  if (freshDocText) { docContext = freshDocText; docHasContent = true; }
+  await getCurrentDocText();
   return new Promise((resolve) => {
     const hasExistingContent = docContext.trim().length > 0;
     const sections: string[] = [];
@@ -1383,7 +1447,7 @@ function generateEssay(): void {
 
 // ─── Mode Router ─────────────────────────────────────────────────────────────
 async function routeRequest(text: string): Promise<'fast' | 'plan'> {
-  const docText = await getApiDocText();
+  const docText = await getCurrentDocText();
   const essayContent = activeSession?.essayContent?.trim() ?? '';
 
   return new Promise((resolve) => {
@@ -1398,7 +1462,7 @@ async function routeRequest(text: string): Promise<'fast' | 'plan'> {
 }
 
 // ─── Fast Mode ────────────────────────────────────────────────────────────────
-function executeFastMode(text: string): void {
+async function executeFastMode(text: string): Promise<void> {
   streaming = true;
   pendingEditMode = true;
   setInputEnabled(false);
@@ -1407,27 +1471,18 @@ function executeFastMode(text: string): void {
   chatHistory.push({ role: 'user', content: text });
   if (activeSession) { activeSession.chatHistory = [...chatHistory]; void saveSession(activeSession); }
 
-  // Fetch the document text from the Docs API (same source as findTextRange) so
-  // the AI's anchors exactly match what the edit applicator will search.
-  chrome.runtime.sendMessage(
-    { action: 'gdocsGetDocText', payload: { docId: activeDocId } },
-    (result: { text?: string; error?: string }) => {
-      const apiText = result?.text?.trim() ?? '';
-      const essayContent = apiText || activeSession?.essayContent?.trim() || docContext.trim();
-      if (activeSession) { activeSession.essayContent = essayContent; }
+  const essayContent = await getCurrentDocText();
 
-      // Fast mode: each request is stateless — always send current doc + current
-      // request only. Previous assistant turns contain old FIND: anchors that no
-      // longer exist after edits are applied, which causes "anchor not found" errors.
-      const messages: GDocsMessage[] = [];
-      if (essayContent) {
-        messages.push({ role: 'user', content: `Here is the document:\n\n${essayContent}\n\nNow let's begin.` });
-        messages.push({ role: 'assistant', content: 'Got it. What edits would you like?' });
-      }
-      messages.push({ role: 'user', content: text });
-      sendGDocsChat(messages, 'fast');
-    }
-  );
+  // Fast mode: each request is stateless — always send current doc + current
+  // request only. Previous assistant turns contain old FIND: anchors that no
+  // longer exist after edits are applied, which causes "anchor not found" errors.
+  const messages: GDocsMessage[] = [];
+  if (essayContent) {
+    messages.push({ role: 'user', content: `Here is the document:\n\n${essayContent}\n\nNow let's begin.` });
+    messages.push({ role: 'assistant', content: 'Got it. What edits would you like?' });
+  }
+  messages.push({ role: 'user', content: text });
+  sendGDocsChat(messages, 'fast');
 }
 
 // ─── Plan Mode ────────────────────────────────────────────────────────────────
@@ -1455,8 +1510,7 @@ async function generateOutline(context?: OutlineContext): Promise<void> {
   setInputEnabled(false);
   startLoadingAnimation();
 
-  const docText = await getApiDocText();
-  const essayContent = docText || activeSession?.essayContent?.trim() || '';
+  const essayContent = await getCurrentDocText();
 
   const qaText = mcqPreviousQA.length > 0
     ? '\n\nWriter preferences:\n' + mcqPreviousQA.map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`).join('\n\n')
@@ -1493,8 +1547,7 @@ async function executePlanEdits(outline: string): Promise<void> {
   setInputEnabled(false);
   startLoadingAnimation();
 
-  const docText = await getApiDocText();
-  const essayContent = docText || activeSession?.essayContent?.trim() || '';
+  const essayContent = await getCurrentDocText();
   if (activeSession) { activeSession.essayContent = essayContent; }
 
   const isNewEssay = isNewEssayRequest(pendingPlanTopic, essayContent);
@@ -1544,7 +1597,7 @@ async function handleSubmit(text: string): Promise<void> {
   }
 
   if (resolvedMode === 'fast') {
-    executeFastMode(text);
+    void executeFastMode(text);
   } else {
     startPlanModeFlow(text);
   }
@@ -1644,13 +1697,14 @@ async function activate(essayContext?: { prompt: string; answers: Record<string,
     if (existingSession) await chrome.storage.local.set({ [sessionKey(docId)]: existingSession });
   }
 
-  docContext = await getApiDocText();
-  docHasContent = docContext.trim().length > 0;
+  if (existingSession) {
+    activeSession = existingSession;
+  }
+  await getCurrentDocText();
   createInputBar();
 
   if (existingSession) {
     chatHistory.push(...existingSession.chatHistory);
-    activeSession = existingSession;
     essayTabId = existingSession.essayTabId ?? '';
     // Re-register annotations for reply observer
     void fetchAnnotationsForDoc().then(async (annotations) => {
@@ -1723,7 +1777,7 @@ document.addEventListener('oddity:gdocs:planmode', (e: Event) => {
   mcqMemos = memos ?? [];
 
   if (fastMode) {
-    executeFastMode(effectiveTopic);
+    void executeFastMode(effectiveTopic);
   } else {
     startPlanModeFlow(effectiveTopic);
   }
@@ -1760,7 +1814,7 @@ document.addEventListener('oddity:gdocs:chat', (e: Event) => {
   mcqMemos = memos ?? [];
 
   if (fastMode) {
-    executeFastMode(text);
+    void executeFastMode(text);
   } else {
     startPlanModeFlow(text);
   }
@@ -1769,7 +1823,7 @@ document.addEventListener('oddity:gdocs:chat', (e: Event) => {
 // ─── Outline approval events (from argument box) ──────────────────────────────
 document.addEventListener('oddity:gdocs:outline:continue', () => {
   if (!currentOutlineText) return;
-  executePlanEdits(currentOutlineText);
+  void executePlanEdits(currentOutlineText);
 });
 
 document.addEventListener('oddity:gdocs:outline:reject', () => {
