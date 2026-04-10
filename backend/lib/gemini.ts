@@ -1,15 +1,19 @@
-import type { Annotation, AnnotationMode, DepthPersonality } from "@oddity/shared";
-import { getPersona } from "./persona-registry.js";
 import {
   GoogleGenerativeAI,
   GoogleGenerativeAIError,
   GoogleGenerativeAIFetchError,
 } from "@google/generative-ai";
+import type {
+  Annotation,
+  AnnotationMode,
+  DepthPersonality,
+} from "@oddity/shared";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { validateAnnotations } from "./schema-validator.js";
-import { validatePdfPageSummary } from "./pdf-page-summary-validator.js";
 import promptsConfig from "../config/prompts.json" with { type: "json" };
+import { validatePdfPageSummary } from "./pdf-page-summary-validator.js";
+import { getPersona } from "./persona-registry.js";
+import { validateAnnotations } from "./schema-validator.js";
 
 const apiKeys = [
   process.env.GEMINI_API_KEY,
@@ -28,7 +32,10 @@ const genAIClients: ClientEntry[] = apiKeys.map((key, index) => ({
 }));
 
 const modelName = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview";
-const GEMINI_TIMEOUT_MS = getPositiveNumber(process.env.GEMINI_TIMEOUT_MS, 45000);
+const GEMINI_TIMEOUT_MS = getPositiveNumber(
+  process.env.GEMINI_TIMEOUT_MS,
+  45000,
+);
 const GEMINI_ATTEMPTS_PER_KEY = getPositiveNumber(
   process.env.GEMINI_ATTEMPTS_PER_KEY,
   2,
@@ -92,14 +99,20 @@ type StreamResult = {
 };
 
 // promptsConfig imported statically above (bundler-safe for Vercel)
-const overviewPromptTemplate: string = promptsConfig.overview_prompt_template ?? "";
+const overviewPromptTemplate: string =
+  promptsConfig.overview_prompt_template ?? "";
 const depthPrompts: Record<string, string> = promptsConfig.depth_prompts ?? {};
 const overviewPersonalities: Record<string, string> =
-  (promptsConfig as Record<string, unknown>).overview_personalities as Record<string, string> ?? {};
+  ((promptsConfig as Record<string, unknown>).overview_personalities as Record<
+    string,
+    string
+  >) ?? {};
 const sketchPrompt: string = promptsConfig.sketch_prompt ?? "";
 const pdfPageSummaryPrompt: string =
-  (promptsConfig as Record<string, unknown>).pdf_page_summary_prompt as string ?? "";
-const promptPrompt: string = (promptsConfig as Record<string, unknown>).prompt_prompt as string ?? "";
+  ((promptsConfig as Record<string, unknown>)
+    .pdf_page_summary_prompt as string) ?? "";
+const promptPrompt: string =
+  ((promptsConfig as Record<string, unknown>).prompt_prompt as string) ?? "";
 
 export class GeminiOperationError extends Error {
   readonly kind: GeminiFailureKind;
@@ -133,7 +146,10 @@ export class GeminiOperationError extends Error {
   }
 }
 
-function getPositiveNumber(value: string | undefined, fallback: number): number {
+function getPositiveNumber(
+  value: string | undefined,
+  fallback: number,
+): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
@@ -188,7 +204,10 @@ function buildSystemPrompt(
       overviewPersonalities[personality ?? "jerry"] ??
       overviewPersonalities.jerry ??
       "";
-    return overviewPromptTemplate.replace(/\{\{PERSONALITY\}\}/g, personalityText);
+    return overviewPromptTemplate.replace(
+      /\{\{PERSONALITY\}\}/g,
+      personalityText,
+    );
   }
 
   // Public figure persona: Terry's base prompt + persona thinking overlay
@@ -196,7 +215,9 @@ function buildSystemPrompt(
     const slug = personality.slice(3);
     const persona = getPersona(slug);
     if (!persona) {
-      console.warn(`[gemini] Unknown persona slug: ${slug}, falling back to terry`);
+      console.warn(
+        `[gemini] Unknown persona slug: ${slug}, falling back to terry`,
+      );
       return depthPrompts["terry"] ?? depthPrompts["jerry"] ?? "";
     }
     const base = depthPrompts["terry"] ?? depthPrompts["jerry"] ?? "";
@@ -241,7 +262,11 @@ function mapOverviewOutput(raw: unknown[]): unknown[] {
 function mapDepthOutput(raw: unknown[]): unknown[] {
   return raw.map((item: any) => {
     if (!item || typeof item !== "object") return item;
-    if (item.mode && item.anchor?.type === "TextQuoteSelector" && item.content) {
+    if (
+      item.mode &&
+      item.anchor?.type === "TextQuoteSelector" &&
+      item.content
+    ) {
       return item;
     }
 
@@ -331,7 +356,9 @@ function classifyGeminiError(
   }
 
   const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
 
   if (message.includes("failed to parse stream")) {
     incrementCounter("stream_parse_failures");
@@ -399,18 +426,17 @@ async function waitBeforeRetry(
   attemptNumber: number,
   signal?: AbortSignal,
 ): Promise<void> {
-  const baseDelay = GEMINI_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
+  const baseDelay =
+    GEMINI_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
   const cappedDelay = Math.min(baseDelay, GEMINI_RETRY_MAX_DELAY_MS);
-  const jitterMs = process.env.NODE_ENV === "test" ? 0 : Math.floor(Math.random() * 100);
+  const jitterMs =
+    process.env.NODE_ENV === "test" ? 0 : Math.floor(Math.random() * 100);
   await delay(cappedDelay + jitterMs, undefined, { signal });
 }
 
 async function runWithRetryPlan<T>(
   operation: string,
-  runner: (
-    entry: ClientEntry,
-    attemptNumber: number,
-  ) => Promise<T>,
+  runner: (entry: ClientEntry, attemptNumber: number) => Promise<T>,
   options: GeminiRequestOptions = {},
 ): Promise<T> {
   const attempts = buildClientAttemptPlan();
@@ -431,14 +457,19 @@ async function runWithRetryPlan<T>(
       );
       lastError = operationError;
 
-      logGeminiEvent("warn", `${operation}.attempt_failed`, options.logContext, {
-        key_index: entry.keyIndex,
-        attempt_number: attemptNumber,
-        error_kind: operationError.kind,
-        retryable: operationError.retryable,
-        status: operationError.status,
-        error: serializeError(error),
-      });
+      logGeminiEvent(
+        "warn",
+        `${operation}.attempt_failed`,
+        options.logContext,
+        {
+          key_index: entry.keyIndex,
+          attempt_number: attemptNumber,
+          error_kind: operationError.kind,
+          retryable: operationError.retryable,
+          status: operationError.status,
+          error: serializeError(error),
+        },
+      );
 
       if (!operationError.retryable || options.signal?.aborted) {
         throw operationError;
@@ -646,9 +677,17 @@ async function consumeSketchStreamAttempt(
   options: SketchStreamOptions,
 ): Promise<string> {
   const systemPrompt = mode === "prompt" ? promptPrompt : sketchPrompt;
-  const userMessage = mode === "prompt"
-    ? `Source Text:\n${inputText}\n\nPrompt Purpose:\n${purpose}\n\nUser's Notes and Reactions:\n${userReactions}`
-    : `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${userReactions}`;
+  const normalizedUserReactions = userReactions.trim();
+  const noUserReactionsGuard =
+    "No user notes or reactions were provided. Do not infer, invent, or attribute any opinions, reactions, annotations, agreements, disagreements, priorities, or conclusions to the user beyond the stated purpose. Ground the result only in the source text and the stated purpose.";
+  const userMessage =
+    mode === "prompt"
+      ? normalizedUserReactions
+        ? `Source Text:\n${inputText}\n\nPrompt Purpose:\n${purpose}\n\nUser's Notes and Reactions:\n${normalizedUserReactions}`
+        : `Source Text:\n${inputText}\n\nPrompt Purpose:\n${purpose}\n\n${noUserReactionsGuard}`
+      : normalizedUserReactions
+        ? `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${normalizedUserReactions}`
+        : `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\n${noUserReactionsGuard}\nOnly include positions that are directly supported by the stated purpose; if the purpose is broad, keep the output conservative.`;
   const model = entry.client.getGenerativeModel({
     model: modelName,
     systemInstruction: systemPrompt,
@@ -776,15 +815,20 @@ export async function generateAnnotationsStream(
 
       emittedAnnotations = emittedAnnotations || false;
 
-      logGeminiEvent("warn", "generate_annotations_stream.attempt_failed", options.logContext, {
-        key_index: entry.keyIndex,
-        attempt_number: attemptNumber,
-        error_kind: operationError.kind,
-        retryable: operationError.retryable,
-        status: operationError.status,
-        emitted_annotations: emittedAnnotations,
-        error: serializeError(error),
-      });
+      logGeminiEvent(
+        "warn",
+        "generate_annotations_stream.attempt_failed",
+        options.logContext,
+        {
+          key_index: entry.keyIndex,
+          attempt_number: attemptNumber,
+          error_kind: operationError.kind,
+          retryable: operationError.retryable,
+          status: operationError.status,
+          emitted_annotations: emittedAnnotations,
+          error: serializeError(error),
+        },
+      );
 
       if (!operationError.retryable || options.signal?.aborted) {
         throw operationError;
@@ -809,24 +853,44 @@ export async function generateAnnotationsStream(
   }
 
   incrementCounter("buffered_fallbacks");
-  logGeminiEvent("warn", "generate_annotations_stream.buffered_fallback", options.logContext, {
-    fallback_from_error_kind: lastError?.kind,
-  });
+  logGeminiEvent(
+    "warn",
+    "generate_annotations_stream.buffered_fallback",
+    options.logContext,
+    {
+      fallback_from_error_kind: lastError?.kind,
+    },
+  );
 
   try {
-    const annotations = await generateAnnotations(text, mode, personality, options);
-    logGeminiEvent("log", "generate_annotations_stream.buffered_fallback_succeeded", options.logContext, {
-      fallback_from_error_kind: lastError?.kind,
-    });
+    const annotations = await generateAnnotations(
+      text,
+      mode,
+      personality,
+      options,
+    );
+    logGeminiEvent(
+      "log",
+      "generate_annotations_stream.buffered_fallback_succeeded",
+      options.logContext,
+      {
+        fallback_from_error_kind: lastError?.kind,
+      },
+    );
     return {
       annotations,
       usedBufferedFallback: true,
     };
   } catch (fallbackError) {
-    logGeminiEvent("error", "generate_annotations_stream.buffered_fallback_failed", options.logContext, {
-      fallback_from_error_kind: lastError?.kind,
-      error: serializeError(fallbackError),
-    });
+    logGeminiEvent(
+      "error",
+      "generate_annotations_stream.buffered_fallback_failed",
+      options.logContext,
+      {
+        fallback_from_error_kind: lastError?.kind,
+        error: serializeError(fallbackError),
+      },
+    );
     throw fallbackError;
   }
 }
@@ -870,15 +934,20 @@ export async function generateSketchStream(
       );
       lastError = operationError;
 
-      logGeminiEvent("warn", "generate_sketch_stream.attempt_failed", options.logContext, {
-        key_index: entry.keyIndex,
-        attempt_number: attemptNumber,
-        error_kind: operationError.kind,
-        retryable: operationError.retryable,
-        status: operationError.status,
-        emitted_chunks: emittedText,
-        error: serializeError(error),
-      });
+      logGeminiEvent(
+        "warn",
+        "generate_sketch_stream.attempt_failed",
+        options.logContext,
+        {
+          key_index: entry.keyIndex,
+          attempt_number: attemptNumber,
+          error_kind: operationError.kind,
+          retryable: operationError.retryable,
+          status: operationError.status,
+          emitted_chunks: emittedText,
+          error: serializeError(error),
+        },
+      );
 
       if (!operationError.retryable || options.signal?.aborted || emittedText) {
         throw operationError;
@@ -985,7 +1054,13 @@ export function getGeminiReliabilityCounters(): Record<string, number> {
 
 // ─── GDocs Chat Streaming ─────────────────────────────────────────────────────
 
-export type GDocsChatMode = "chat" | "tree" | "essay" | "edit" | "fast" | "outline";
+export type GDocsChatMode =
+  | "chat"
+  | "tree"
+  | "essay"
+  | "edit"
+  | "fast"
+  | "outline";
 
 type GDocsChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -1033,7 +1108,9 @@ async function consumeGDocsChatStreamAttempt(
 ): Promise<string> {
   const systemPrompt = gdocsPromptMap[mode];
   if (!systemPrompt) {
-    throw new Error(`[gdocs] Unknown mode "${mode}" — no system prompt defined`);
+    throw new Error(
+      `[gdocs] Unknown mode "${mode}" — no system prompt defined`,
+    );
   }
   const effectiveModel = gdocsModelMap[mode] ?? modelName;
   const maxOutputTokens = gdocsMaxTokensMap[mode] ?? 2048;
@@ -1060,7 +1137,9 @@ async function consumeGDocsChatStreamAttempt(
   let responseError: unknown = null;
   const responseSettled = streamResult.response
     .then(() => undefined)
-    .catch((error) => { responseError = error; });
+    .catch((error) => {
+      responseError = error;
+    });
 
   let fullText = "";
   try {
@@ -1118,7 +1197,8 @@ export async function generateGDocsChatStream(
 
       incrementCounter("retries");
       const nextEntry = attempts[index + 1]!;
-      if (nextEntry.keyIndex !== entry.keyIndex) incrementCounter("key_rotations");
+      if (nextEntry.keyIndex !== entry.keyIndex)
+        incrementCounter("key_rotations");
 
       await waitBeforeRetry(attemptNumber, options.signal);
     }
@@ -1134,17 +1214,18 @@ export async function generateGDocsChatStream(
 // - options: 2-4 choices, each with a label (1-5 words) + description (trade-off explanation)
 // - The UI always adds an "Other" freeform option automatically — do NOT include it here
 export type McqOption = {
-  label: string;       // 1-5 words, displayed as the selectable choice
+  label: string; // 1-5 words, displayed as the selectable choice
   description: string; // short explanation of trade-offs or implications
 };
 
 export type McqQuestion = {
-  question: string;    // full question text, ends with "?"
-  header: string;      // ≤12 char chip label (e.g. "Tone", "Audience")
+  question: string; // full question text, ends with "?"
+  header: string; // ≤12 char chip label (e.g. "Tone", "Audience")
   options: McqOption[]; // 2-4 options, best default FIRST marked "(Recommended)"
 };
 
-const mcqPromptTemplate: string = (_gdocsPrompts.gdocs_mcq_prompt as string) ?? "";
+const mcqPromptTemplate: string =
+  (_gdocsPrompts.gdocs_mcq_prompt as string) ?? "";
 
 function parseMcqOption(raw: unknown): McqOption | null {
   if (typeof raw === "string") {
@@ -1155,7 +1236,8 @@ function parseMcqOption(raw: unknown): McqOption | null {
   if (typeof obj?.label !== "string") return null;
   return {
     label: obj.label.slice(0, 60),
-    description: typeof obj.description === "string" ? obj.description.slice(0, 120) : "",
+    description:
+      typeof obj.description === "string" ? obj.description.slice(0, 120) : "",
   };
 }
 
@@ -1184,19 +1266,23 @@ export async function generateAllMcqQuestions(
     });
 
     const text = result.response.text().trim();
-    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const cleaned = text
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "")
+      .trim();
     const parsed = JSON.parse(cleaned) as unknown;
     const arr = Array.isArray(parsed)
       ? parsed
       : Array.isArray((parsed as Record<string, unknown>).questions)
-        ? (parsed as Record<string, unknown>).questions as unknown[]
+        ? ((parsed as Record<string, unknown>).questions as unknown[])
         : null;
 
     if (arr) {
       const questions: McqQuestion[] = arr
-        .filter((item): item is Record<string, unknown> =>
-          typeof (item as Record<string, unknown>).question === "string" &&
-          Array.isArray((item as Record<string, unknown>).options)
+        .filter(
+          (item): item is Record<string, unknown> =>
+            typeof (item as Record<string, unknown>).question === "string" &&
+            Array.isArray((item as Record<string, unknown>).options),
         )
         .map((item) => {
           const opts = (item.options as unknown[])
@@ -1205,19 +1291,25 @@ export async function generateAllMcqQuestions(
             .slice(0, 4); // Claude Code caps at 4 options
           return {
             question: item.question as string,
-            header: typeof item.header === "string" ? item.header.slice(0, 12) : "",
+            header:
+              typeof item.header === "string" ? item.header.slice(0, 12) : "",
             options: opts,
           };
         })
         // Uniqueness guard (from Claude Code): drop duplicate question texts
-        .filter((q, i, arr) => arr.findIndex(x => x.question === q.question) === i)
-        .filter(q => q.options.length >= 2) // must have at least 2 options
+        .filter(
+          (q, i, arr) => arr.findIndex((x) => x.question === q.question) === i,
+        )
+        .filter((q) => q.options.length >= 2) // must have at least 2 options
         .slice(0, 5);
 
       if (questions.length > 0) return questions;
     }
   } catch (err) {
-    console.error("[generateAllMcqQuestions] Error:", err instanceof Error ? err.message : err);
+    console.error(
+      "[generateAllMcqQuestions] Error:",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   // Fallback: 5 generic questions with descriptions
@@ -1226,45 +1318,90 @@ export async function generateAllMcqQuestions(
       question: `What is the main goal of your writing about "${prompt.slice(0, 40)}"?`,
       header: "Goal",
       options: [
-        { label: "Inform readers (Recommended)", description: "Present facts and analysis objectively" },
-        { label: "Argue a position", description: "Persuade the reader toward a specific view" },
-        { label: "Explore perspectives", description: "Weigh multiple sides without a fixed conclusion" },
+        {
+          label: "Inform readers (Recommended)",
+          description: "Present facts and analysis objectively",
+        },
+        {
+          label: "Argue a position",
+          description: "Persuade the reader toward a specific view",
+        },
+        {
+          label: "Explore perspectives",
+          description: "Weigh multiple sides without a fixed conclusion",
+        },
       ],
     },
     {
       question: "Who is your primary audience?",
       header: "Audience",
       options: [
-        { label: "General readers (Recommended)", description: "No assumed background knowledge" },
-        { label: "Domain experts", description: "Can use technical language and skip basics" },
-        { label: "Students / beginners", description: "Needs definitions and step-by-step explanations" },
+        {
+          label: "General readers (Recommended)",
+          description: "No assumed background knowledge",
+        },
+        {
+          label: "Domain experts",
+          description: "Can use technical language and skip basics",
+        },
+        {
+          label: "Students / beginners",
+          description: "Needs definitions and step-by-step explanations",
+        },
       ],
     },
     {
       question: "What tone are you aiming for?",
       header: "Tone",
       options: [
-        { label: "Formal & academic (Recommended)", description: "Structured, cited, suitable for essays" },
-        { label: "Conversational", description: "Approachable, uses first person, flows naturally" },
-        { label: "Persuasive & direct", description: "Assertive, action-oriented, emotionally engaging" },
+        {
+          label: "Formal & academic (Recommended)",
+          description: "Structured, cited, suitable for essays",
+        },
+        {
+          label: "Conversational",
+          description: "Approachable, uses first person, flows naturally",
+        },
+        {
+          label: "Persuasive & direct",
+          description: "Assertive, action-oriented, emotionally engaging",
+        },
       ],
     },
     {
       question: "How comprehensive should the coverage be?",
       header: "Depth",
       options: [
-        { label: "High-level overview", description: "Broad strokes, key takeaways only" },
-        { label: "Moderate depth (Recommended)", description: "Core arguments with supporting evidence" },
-        { label: "Comprehensive", description: "Exhaustive — every angle, every counterargument" },
+        {
+          label: "High-level overview",
+          description: "Broad strokes, key takeaways only",
+        },
+        {
+          label: "Moderate depth (Recommended)",
+          description: "Core arguments with supporting evidence",
+        },
+        {
+          label: "Comprehensive",
+          description: "Exhaustive — every angle, every counterargument",
+        },
       ],
     },
     {
       question: "What should readers take away?",
       header: "Takeaway",
       options: [
-        { label: "Clear understanding (Recommended)", description: "Readers leave knowing more than before" },
-        { label: "Changed opinion", description: "Readers adopt or seriously reconsider your position" },
-        { label: "Actionable next steps", description: "Readers know exactly what to do next" },
+        {
+          label: "Clear understanding (Recommended)",
+          description: "Readers leave knowing more than before",
+        },
+        {
+          label: "Changed opinion",
+          description: "Readers adopt or seriously reconsider your position",
+        },
+        {
+          label: "Actionable next steps",
+          description: "Readers know exactly what to do next",
+        },
       ],
     },
   ];
@@ -1280,15 +1417,25 @@ export type GDocsRouteResult = {
   reasoning: string;
 };
 
-const routerSystemPrompt: string = (_gdocsPrompts.gdocs_router_prompt as string) ?? "";
-const routerDeepSystemPrompt: string = (_gdocsPrompts.gdocs_router_deep_prompt as string) ?? "";
-const routerModelName = "gemini-2.0-flash";
+const routerSystemPrompt: string =
+  (_gdocsPrompts.gdocs_router_prompt as string) ?? "";
+const routerDeepSystemPrompt: string =
+  (_gdocsPrompts.gdocs_router_deep_prompt as string) ?? "";
+const routerModelName = "gemini-3.1-flash-lite-preview";
 
 function parseRouteResult(text: string): GDocsRouteResult {
-  const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  const parsed = JSON.parse(cleaned) as { mode?: string; confidence?: string; reasoning?: string };
+  const cleaned = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+  const parsed = JSON.parse(cleaned) as {
+    mode?: string;
+    confidence?: string;
+    reasoning?: string;
+  };
   const mode: GDocsRouteMode = parsed.mode === "PLAN" ? "PLAN" : "FAST";
-  const confidence: "high" | "low" = parsed.confidence === "low" ? "low" : "high";
+  const confidence: "high" | "low" =
+    parsed.confidence === "low" ? "low" : "high";
   return { mode, confidence, reasoning: parsed.reasoning ?? "" };
 }
 
@@ -1331,13 +1478,20 @@ export async function generateGDocsRoute(
         return parseRouteResult(stage2Result.response.text().trim());
       } catch {
         // Stage 2 failed — fall back to FAST (safe default)
-        return { mode: "FAST", confidence: "low", reasoning: "stage2-fallback" };
+        return {
+          mode: "FAST",
+          confidence: "low",
+          reasoning: "stage2-fallback",
+        };
       }
     }
 
     return stage1;
   } catch (err) {
-    console.error("[generateGDocsRoute] Error:", err instanceof Error ? err.message : err);
+    console.error(
+      "[generateGDocsRoute] Error:",
+      err instanceof Error ? err.message : err,
+    );
     return { mode: "FAST", confidence: "low", reasoning: "fallback" };
   }
 }

@@ -6,6 +6,8 @@ export interface ChatObserverConfig {
   onResponse: (regionId: string, element: Element) => void;
   /** Called when a new element is first discovered (before completion). */
   onTrack?: (element: Element) => void;
+  /** Called when an in-progress element is no longer being tracked. */
+  onUntrack?: (element: Element) => void;
 }
 
 export interface ChatObserver {
@@ -45,10 +47,11 @@ interface ResponseState {
   blockIndex: number;
   responseIndex: number;
   completionTimer: ReturnType<typeof setTimeout> | null;
+  finalized: boolean;
 }
 
 export function createChatObserver(config: ChatObserverConfig): ChatObserver {
-  const { responseSelector, stabilitySignal, onResponse, onTrack } = config;
+  const { responseSelector, stabilitySignal, onResponse, onTrack, onUntrack } = config;
   const processedElements = new WeakSet<Element>();
   const responseStates = new Map<Element, ResponseState>();
   let responseCounter = 0;
@@ -76,20 +79,19 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   function trackResponse(element: Element): void {
     const responseIndex = responseCounter++;
 
-    // Notify caller that this element is being tracked (before completion).
-    // Body-level detection uses this to skip in-progress streaming elements.
-    onTrack?.(element);
-
     // Already-complete response (no streaming indicators, has content).
     // Fire the whole element as a single region — better annotation quality
     // with full context, and no need for progressive splitting.
-    if (isAlreadyComplete(element)) {
+    if (isComplete(element)) {
       processedElements.add(element);
       onResponse(`chat-${responseIndex}`, element);
       return;
     }
 
-    // Streaming in progress — use progressive paragraph detection
+    // Streaming in progress — track it so body-level detection stays off until
+    // the response finishes and the full text is available.
+    onTrack?.(element);
+
     const state: ResponseState = {
       element,
       observer: null!, // assigned below
@@ -97,6 +99,7 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
       blockIndex: 0,
       responseIndex,
       completionTimer: null,
+      finalized: false,
     };
 
     // Initial block scan
@@ -105,6 +108,10 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
     // Watch for streaming mutations
     state.observer = new MutationObserver(() => {
       scanBlocks(state);
+      if (isComplete(state.element)) {
+        finalizeResponse(state);
+        return;
+      }
       resetCompletionTimer(state);
     });
 
@@ -154,6 +161,7 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   // fire all remaining unfired blocks (the last paragraph + any short ones skipped).
 
   function resetCompletionTimer(state: ResponseState): void {
+    if (state.finalized) return;
     if (state.completionTimer) clearTimeout(state.completionTimer);
     state.completionTimer = setTimeout(() => {
       finalizeResponse(state);
@@ -161,6 +169,19 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
   }
 
   function finalizeResponse(state: ResponseState): void {
+    if (state.finalized) return;
+    state.finalized = true;
+
+    if (state.completionTimer) {
+      clearTimeout(state.completionTimer);
+      state.completionTimer = null;
+    }
+
+    state.observer.disconnect();
+    processedElements.add(state.element);
+    responseStates.delete(state.element);
+    onUntrack?.(state.element);
+
     // Fire the whole response element as a single region.
     // Full context lets the LLM produce diverse annotation types
     // (counterarguments, insights, caveats, recall) — not just core claims.
@@ -168,20 +189,11 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
     if (text.length > 0) {
       onResponse(`chat-${state.responseIndex}`, state.element);
     }
-
-    // Clean up
-    state.observer.disconnect();
-    processedElements.add(state.element);
-    responseStates.delete(state.element);
   }
 
   // ─── Helpers ───
 
-  function isAlreadyComplete(element: Element): boolean {
-    // Pre-existing elements (on page before observer started) are historical.
-    // Fire as single chunks — no need for progressive splitting.
-    if (initialElements?.has(element)) return true;
-
+  function isComplete(element: Element): boolean {
     const text = element.textContent ?? '';
     if (text.trim().length < 20) return false;
 
@@ -196,10 +208,11 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
       return isSignalMet(element, stabilitySignal);
     }
 
+    // Historical responses present at startup can fire immediately if they
+    // already look complete even without a site-specific signal.
+    if (initialElements?.has(element)) return true;
+
     // New element without stability signal — assume streaming.
-    // The completion timer (300ms) safely handles truly-static content
-    // with only a minor delay. The cost of wrongly assuming "complete"
-    // is far worse: partial text sent, rest of response never annotated.
     return false;
   }
 
@@ -256,6 +269,7 @@ export function createChatObserver(config: ChatObserverConfig): ChatObserver {
       for (const [, state] of responseStates) {
         if (state.completionTimer) clearTimeout(state.completionTimer);
         state.observer.disconnect();
+        onUntrack?.(state.element);
       }
       responseStates.clear();
     },

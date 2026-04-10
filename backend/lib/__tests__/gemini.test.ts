@@ -271,3 +271,104 @@ describe("generateAnnotationsStream", () => {
     expect(result.annotations[0]!.anchor.exact).toBe("beta gamma");
   });
 });
+
+describe("generateSketchStream", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    behaviors.clear();
+    process.env.NODE_ENV = "test";
+    process.env.GEMINI_API_KEY = "key1";
+    delete process.env.GEMINI_API_KEY_BACKUP1;
+    delete process.env.GEMINI_API_KEY_BACKUP2;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("includes provided user reactions in prompt mode", async () => {
+    const key1 = setBehavior("key1", {
+      streamFactories: [
+        async () => ({
+          stream: createStream(["done"]),
+          response: Promise.resolve({}),
+        }),
+      ],
+    });
+
+    const { generateSketchStream } = await import("../gemini.js");
+    await generateSketchStream(
+      "source text",
+      "write a rebuttal",
+      "User-written note\nNote: push harder on section 2",
+      "prompt",
+    );
+
+    const request = key1.streamSpy.mock.calls[0]?.[0] as
+      | { contents?: Array<{ parts?: Array<{ text?: string }> }> }
+      | undefined;
+    const userMessage = request?.contents?.[0]?.parts?.[0]?.text ?? "";
+
+    expect(userMessage).toContain("User's Notes and Reactions:");
+    expect(userMessage).toContain("push harder on section 2");
+    expect(userMessage).not.toContain("Do not infer, invent, or attribute any opinions");
+  });
+
+  it("adds a strict non-invention guard when prompt mode has no user reactions", async () => {
+    const key1 = setBehavior("key1", {
+      streamFactories: [
+        async () => ({
+          stream: createStream(["done"]),
+          response: Promise.resolve({}),
+        }),
+      ],
+    });
+
+    const { generateSketchStream } = await import("../gemini.js");
+    await generateSketchStream(
+      "source text",
+      "draft a message to my team",
+      "",
+      "prompt",
+    );
+
+    const request = key1.streamSpy.mock.calls[0]?.[0] as
+      | { contents?: Array<{ parts?: Array<{ text?: string }> }> }
+      | undefined;
+    const userMessage = request?.contents?.[0]?.parts?.[0]?.text ?? "";
+
+    expect(userMessage).toContain("No user notes or reactions were provided.");
+    expect(userMessage).toContain("Do not infer, invent, or attribute any opinions");
+    expect(userMessage).toContain("Ground the result only in the source text and the stated purpose.");
+    expect(userMessage).not.toContain("User's Notes and Reactions:");
+  });
+
+  it("uses conservative framing when sketch mode has no user reactions", async () => {
+    const key1 = setBehavior("key1", {
+      streamFactories: [
+        async () => ({
+          stream: createStream(["done"]),
+          response: Promise.resolve({}),
+        }),
+      ],
+    });
+
+    const { generateSketchStream } = await import("../gemini.js");
+    await generateSketchStream(
+      "source text",
+      "understand the argument better",
+      "   ",
+      "sketch",
+    );
+
+    const request = key1.streamSpy.mock.calls[0]?.[0] as
+      | { contents?: Array<{ parts?: Array<{ text?: string }> }> }
+      | undefined;
+    const userMessage = request?.contents?.[0]?.parts?.[0]?.text ?? "";
+
+    expect(userMessage).toContain("Purpose of Reading:");
+    expect(userMessage).toContain("No user notes or reactions were provided.");
+    expect(userMessage).toContain("Only include positions that are directly supported by the stated purpose");
+    expect(userMessage).not.toContain("User's Reactions:");
+  });
+});

@@ -4,6 +4,7 @@ import { prepareWithSegments, layout, layoutWithLines } from '@chenglou/pretext'
 import type { DetectedRegion } from './detector.js';
 import type { ExtractedContent } from './extractor.js';
 import type { AbsoluteRect } from './renderer/overlay.js';
+import { isGDocsAuthConfigErrorMessage } from '../shared/gdocs-auth.js';
 import { sendMessage } from '../shared/messaging.js';
 
 // ─── Detection ───
@@ -190,9 +191,37 @@ export async function extractGoogleDocsText(region: DetectedRegion): Promise<Ext
 /** Cached full document text from the export URL, used for canvas-mode positioning. */
 let _cachedDocText: string | null = null;
 let _debugUnderlineEnabled = false;
+let _nativeHighlightsEnabled = true;
+let _nativeHighlightDisableLogged = false;
 
 export function setGDocsDebugUnderline(enabled: boolean): void {
   _debugUnderlineEnabled = enabled;
+}
+
+export function canUseNativeGDocsHighlights(): boolean {
+  return _nativeHighlightsEnabled;
+}
+
+export function handleGDocsNativeHighlightError(error?: string | null): boolean {
+  if (!isGDocsAuthConfigErrorMessage(error)) return false;
+  _nativeHighlightsEnabled = false;
+  if (!_nativeHighlightDisableLogged) {
+    _nativeHighlightDisableLogged = true;
+    console.warn('[Oddity 1] Google Docs native highlight sync disabled for this page because the OAuth client is misconfigured.');
+  }
+  return true;
+}
+
+export function setCachedGDocsTextForTest(text: string | null): void {
+  _cachedDocText = text;
+}
+
+export function resetGDocsNativeHighlightStateForTest(): void {
+  _nativeHighlightsEnabled = true;
+  _nativeHighlightDisableLogged = false;
+  _cachedDocText = null;
+  _correctionQueue = [];
+  _correctionRunning = false;
 }
 
 // ─── Cursor-based Position Correction ───
@@ -769,6 +798,8 @@ function snapshotVisibleCanvases(): Map<HTMLCanvasElement, ImageData> {
 async function runCursorCorrection(job: CorrectionJob): Promise<void> {
   const { id, exact, scrollContainer, left, annotationType } = job;
 
+  if (!canUseNativeGDocsHighlights()) return;
+
   const docId = getGoogleDocsId();
   if (!docId) { console.warn('[Oddity1] runCursorCorrection: no docId'); return; }
 
@@ -788,6 +819,7 @@ async function runCursorCorrection(job: CorrectionJob): Promise<void> {
   });
 
   if (result?.error) {
+    if (handleGDocsNativeHighlightError(result.error)) return;
     console.warn(`[Oddity1] gdocsFindAndHighlight failed: ${result.error}`);
     return;
   }
@@ -1069,14 +1101,15 @@ function findAnnotationRectsCanvasMode(
   }
 
   const approxWidth = Math.min(measureCtx.measureText(exact).width, textWidthPx - xOffsetInLine);
+  const approxRect = { left, top, width: approxWidth, height: lineHeight };
 
   // Track annotation type for color-based candidate filtering in scheduleParaCheck.
   _anchorTypes.set(annotation.id, annotation.type);
-  // Queue cursor-based positioning — don't render until the real Y is known.
-  enqueueCursorCorrection({ id: annotation.id, exact, scrollContainer, left, width: approxWidth, height: lineHeight, annotationType: annotation.type });
+  if (canUseNativeGDocsHighlights()) {
+    enqueueCursorCorrection({ id: annotation.id, exact, scrollContainer, left, width: approxWidth, height: lineHeight, annotationType: annotation.type });
+  }
 
-  // Return empty so the caller defers rendering until cursor correction fires.
-  return { rects: [], anchorNode: null };
+  return { rects: [approxRect], anchorNode: null };
 }
 
 /**

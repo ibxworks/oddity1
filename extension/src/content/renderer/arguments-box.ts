@@ -5837,6 +5837,8 @@ function syncModeTogglePosition(): void {
     if (modeToggleWrapperEl.parentElement !== containerEl) {
       containerEl.appendChild(modeToggleWrapperEl);
     }
+    modeToggleWrapperEl.classList.add("is-expanded");
+    modeToggleWrapperEl.classList.remove("is-collapsed");
     modeToggleEl.classList.add("with-close");
     modeToggleWrapperEl.style.position = "absolute";
     modeToggleWrapperEl.style.top = "-40px";
@@ -5848,11 +5850,13 @@ function syncModeTogglePosition(): void {
     if (modeToggleWrapperEl.parentElement !== outerWrapperEl) {
       outerWrapperEl.insertBefore(modeToggleWrapperEl, containerEl);
     }
+    modeToggleWrapperEl.classList.add("is-collapsed");
+    modeToggleWrapperEl.classList.remove("is-expanded");
     modeToggleEl.classList.remove("with-close");
     modeToggleWrapperEl.style.position = "absolute";
     modeToggleWrapperEl.style.top = "";
     modeToggleWrapperEl.style.left = "";
-    modeToggleWrapperEl.style.transform = "";
+    modeToggleWrapperEl.style.transform = "translateX(0) translateY(0)";
     modeToggleWrapperEl.style.transformOrigin = "";
     const toggleH =
       modeToggleWrapperEl.offsetHeight > 0
@@ -6014,16 +6018,23 @@ const ARGUMENTS_BOX_CSS = `
     transition: opacity 0.18s ease;
   }
 
-  .args-container.expanded:hover .args-mode-toggle-wrapper,
-  .args-mode-toggle-wrapper:hover {
+  .args-container.expanded:hover .args-mode-toggle-wrapper.is-expanded,
+  .args-mode-toggle-wrapper.is-expanded:hover {
     opacity: 1;
     pointer-events: auto;
     transform: translateX(-50%) translateY(0);
   }
 
-  .args-mode-toggle-wrapper {
+  .args-mode-toggle-wrapper.is-expanded {
     transform: translateX(-50%) translateY(10px);
     transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .args-mode-toggle-wrapper.is-collapsed {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0) translateY(0);
+    transition: opacity 0.18s ease;
   }
 
   .args-outer-wrapper:has(.args-container.dashboard) .args-mode-toggle-wrapper {

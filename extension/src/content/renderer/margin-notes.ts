@@ -31,6 +31,14 @@ export type ChunkRange = {
   fullRange: Range | null;
 };
 
+export type MarginNoteAttributionState = {
+  selectedPersonality: string | null;
+  selectedPersonalityDisplayName: string | null;
+  userDisplayName: string | null;
+};
+
+const OVERVIEW_HEADER_AUTHOR = "Overview";
+
 type MarginNote = {
   id: string;
   annotation: Annotation;
@@ -65,11 +73,6 @@ type InlinePopover = {
 
 let hostEl: HTMLDivElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
-let currentDepthPersonaName: string | null = null;
-
-export function setDepthPersonaName(name: string | null): void {
-  currentDepthPersonaName = name;
-}
 let regionEl: Element | null = null;
 let notes: MarginNote[] = [];
 let noteIndex = 0;
@@ -84,8 +87,11 @@ let themeHandler: ((mode: "light" | "dark") => void) | null = null;
 let docClickHandler: ((e: MouseEvent) => void) | null = null;
 let justUnpinned = false;
 let justPinnedFromCard = false;
-let userName: string | null = null;
-let personalityName: string = "Richard Feynman";
+let marginNoteAttributionState: MarginNoteAttributionState = {
+  selectedPersonality: null,
+  selectedPersonalityDisplayName: null,
+  userDisplayName: null,
+};
 
 const PERSONALITY_DISPLAY: Record<string, string> = {
   terry: "Terry",
@@ -133,6 +139,77 @@ const SIZE_MAP: Record<AnnotationFontSize, string> = {
   default: "13px",
   large: "15px",
 };
+
+function resolveSelectedPersonalityDisplayName(
+  personality: string | null,
+  resolvedDisplayName: string | null = null,
+): string | null {
+  if (!personality) return null;
+  if (personality.startsWith("pf:")) return resolvedDisplayName;
+  return PERSONALITY_DISPLAY[personality] ?? null;
+}
+
+export function resolveMarginNoteHeaderAuthor(
+  annotation: Pick<Annotation, "mode" | "type">,
+  attribution: MarginNoteAttributionState,
+): string | null {
+  if (annotation.type === "user_written") {
+    return attribution.userDisplayName;
+  }
+  if (annotation.mode !== "depth") {
+    return OVERVIEW_HEADER_AUTHOR;
+  }
+  if (!attribution.selectedPersonality) {
+    return null;
+  }
+  return attribution.selectedPersonalityDisplayName;
+}
+
+function getCurrentMarginNoteHeaderAuthor(annotation: Pick<Annotation, "mode" | "type">): string | null {
+  return resolveMarginNoteHeaderAuthor(annotation, marginNoteAttributionState);
+}
+
+function getNoteHeaderParts(noteEl: ParentNode): { headerEl: HTMLDivElement; authorEl: HTMLSpanElement } | null {
+  const headerEl =
+    noteEl instanceof HTMLDivElement && noteEl.classList.contains("note-header")
+      ? noteEl
+      : noteEl.querySelector(".note-header");
+  const authorEl = headerEl?.querySelector(".note-persona");
+  if (!(headerEl instanceof HTMLDivElement) || !(authorEl instanceof HTMLSpanElement)) {
+    return null;
+  }
+  return { headerEl, authorEl };
+}
+
+function syncNoteHeaderAttribution(
+  noteEl: ParentNode,
+  annotation: Pick<Annotation, "mode" | "type">,
+): void {
+  const parts = getNoteHeaderParts(noteEl);
+  if (!parts) return;
+
+  const authorText = getCurrentMarginNoteHeaderAuthor(annotation);
+  parts.authorEl.textContent = authorText ?? "";
+  parts.authorEl.hidden = !authorText;
+  parts.headerEl.classList.toggle("note-header--copy-only", !authorText);
+}
+
+function refreshRenderedNoteHeaders(): void {
+  for (const note of notes) {
+    syncNoteHeaderAttribution(note.element, note.annotation);
+  }
+  for (const [, popover] of inlinePopovers) {
+    syncNoteHeaderAttribution(popover.element, popover.annotation);
+  }
+}
+
+export function setMarginNotesUserName(name: string | null): void {
+  marginNoteAttributionState = {
+    ...marginNoteAttributionState,
+    userDisplayName: name,
+  };
+  refreshRenderedNoteHeaders();
+}
 
 // ─── Public API ───
 
@@ -247,18 +324,27 @@ export function initMarginNotes(region: Element): void {
     }
   }) as EventListener);
 
-  // Fetch user profile for name badge on manual annotations
+  // Fetch user profile so manual-note headers can show the user's display name.
   sendMessage({ action: "getProfile" } as any)
     .then((p: any) => {
-      userName = p?.display_name ?? null;
-      const pref = p?.preferences?.depth_personality as string | undefined;
-      personalityName = pref ? (PERSONALITY_DISPLAY[pref] ?? "Richard Feynman") : "Richard Feynman";
+      setMarginNotesUserName(p?.display_name ?? null);
     })
     .catch(() => {});
 }
 
-export function setMarginNotesPersonality(personality: string): void {
-  personalityName = PERSONALITY_DISPLAY[personality] ?? "Richard Feynman";
+export function setMarginNotesPersonality(
+  personality: string | null,
+  resolvedDisplayName: string | null = null,
+): void {
+  marginNoteAttributionState = {
+    ...marginNoteAttributionState,
+    selectedPersonality: personality,
+    selectedPersonalityDisplayName: resolveSelectedPersonalityDisplayName(
+      personality,
+      resolvedDisplayName,
+    ),
+  };
+  refreshRenderedNoteHeaders();
 }
 
 export function setMarginNoteMode(mode: ViewMode): void {
@@ -1613,26 +1699,6 @@ function createNoteElement(
   labelEl.className = "note-label";
   labelEl.textContent = label;
 
-  // User name badge for manual annotations
-  if (isManual && userName) {
-    const userBadge = document.createElement("span");
-    userBadge.className = "note-user-badge";
-    userBadge.textContent = userName;
-    labelEl.appendChild(userBadge);
-  }
-
-  // Public figure persona attribution for depth AI annotations only
-  if (
-    annotation.mode === "depth" &&
-    annotation.type !== "user_written" &&
-    currentDepthPersonaName
-  ) {
-    const personaTag = document.createElement("span");
-    personaTag.className = "note-persona-tag";
-    personaTag.textContent = currentDepthPersonaName;
-    labelEl.appendChild(personaTag);
-  }
-
   // Reaction badge (collapsed state indicator) — deduplicate: pick only the latest thumb
   const thumbFeedback = feedback.filter(
     (f) => f.feedback_type === "thumbs_up" || f.feedback_type === "thumbs_down",
@@ -1871,8 +1937,6 @@ function createNoteElement(
   noteHeader.className = "note-header";
   const personaEl = document.createElement("span");
   personaEl.className = "note-persona";
-  const personaText = isManual ? (userName ?? personalityName) : personalityName;
-  personaEl.textContent = personaText;
   noteHeader.appendChild(personaEl);
   const copyBtn = document.createElement("button");
   copyBtn.className = "note-copy-btn";
@@ -1890,6 +1954,7 @@ function createNoteElement(
     navigator.clipboard.writeText(text).catch(() => {});
   });
   noteHeader.appendChild(copyBtn);
+  syncNoteHeaderAttribution(noteHeader, annotation);
   el.appendChild(noteHeader);
 
   el.appendChild(labelEl);
@@ -2013,6 +2078,21 @@ function createNoteElement(
   });
 
   return el;
+}
+
+export function createNoteElementForTest(
+  annotation: Annotation,
+  side: "left" | "right" = "left",
+  feedback: AnnotationFeedback[] = [],
+): HTMLDivElement {
+  return createNoteElement(annotation, side, feedback);
+}
+
+export function syncNoteHeaderAttributionForTest(
+  noteEl: ParentNode,
+  annotation: Pick<Annotation, "mode" | "type">,
+): void {
+  syncNoteHeaderAttribution(noteEl, annotation);
 }
 
 // ─── Interaction Helpers ───
@@ -2630,6 +2710,10 @@ const MARGIN_NOTES_CSS = `
     margin-bottom: 8px;
   }
 
+  .note-header--copy-only {
+    justify-content: flex-end;
+  }
+
   .note-persona {
     font-family: 'Fragment Mono', 'Courier New', monospace;
     font-size: 12px;
@@ -2678,19 +2762,6 @@ const MARGIN_NOTES_CSS = `
     color: var(--skill-color, rgba(255,255,255,0.5));
     opacity: 0.7;
     margin-bottom: 2px;
-  }
-
-  .note-persona-tag {
-    font-size: 9px;
-    background: rgba(255,255,255,0.1);
-    color: rgba(255, 255, 255, 0.6);
-    padding: 1px 5px;
-    border-radius: 8px;
-    margin-left: 4px;
-    font-family: 'Inter', system-ui, sans-serif;
-    font-weight: 500;
-    text-transform: none;
-    letter-spacing: normal;
   }
 
   .note-text {
@@ -3223,19 +3294,6 @@ const MARGIN_NOTES_CSS = `
     margin-left: 4px;
   }
 
-  .note-user-badge {
-    font-size: 9px;
-    background: rgba(255,255,255,0.1);
-    color: rgba(255, 255, 255, 0.6);
-    padding: 1px 5px;
-    border-radius: 8px;
-    margin-left: 4px;
-    font-family: 'Inter', system-ui, sans-serif;
-    font-weight: 500;
-    text-transform: none;
-    letter-spacing: normal;
-  }
-
   /* ── Light mode shadow variants ── */
   :host([data-theme="light"]) .oddity-note {
     box-shadow: -4px 2px 10px rgba(0,0,0,0.10), -1px 1px 3px rgba(0,0,0,0.06);
@@ -3301,15 +3359,6 @@ const MARGIN_NOTES_CSS = `
     color: rgba(41, 48, 56, 0.7);
     background: rgba(0,0,0,0.06);
     border-color: rgba(0,0,0,0.12);
-  }
-
-  :host([data-theme="light"]) .note-user-badge {
-    color: rgba(41, 48, 56, 0.6);
-  }
-
-  :host([data-theme="light"]) .note-persona-tag {
-    background: rgba(0,0,0,0.06);
-    color: rgba(41, 48, 56, 0.6);
   }
 
   :host([data-theme="light"].has-dimmed) .oddity-note.expanded {
@@ -3399,10 +3448,6 @@ const MARGIN_NOTES_CSS = `
     color: rgba(255,255,255,0.6);
     background: rgba(255,255,255,0.08);
     border-color: rgba(255,255,255,0.12);
-  }
-
-  :host([data-theme="dark"]) .note-user-badge {
-    color: rgba(255,255,255,0.6);
   }
 
   :host([data-theme="dark"]) .oddity-note.expanded {
