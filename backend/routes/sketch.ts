@@ -8,8 +8,8 @@ import { createRequestAbortSignal } from "../lib/request-abort.js";
 
 const SketchRequestSchema = z.object({
   input_text: z.string().min(1).max(MAX_TEXT_LENGTH),
-  purpose: z.string().min(1),
-  user_reactions: z.string().min(1),
+  purpose: z.string().trim().min(1),
+  user_reactions: z.string().optional().transform((value) => value?.trim() ?? ""),
   mode: z.enum(["sketch", "prompt"]).default("sketch"),
 });
 

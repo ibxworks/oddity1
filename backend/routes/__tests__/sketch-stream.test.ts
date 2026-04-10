@@ -87,8 +87,58 @@ describe("sketch stream route", () => {
     vi.clearAllMocks();
   });
 
+  it("accepts empty user reactions and still streams a result", async () => {
+    mockGenerateSketchStream.mockImplementation(async (_input, _purpose, _reactions, _mode, options) => {
+      options.onChunk?.("prompt body");
+    });
+
+    const { default: sketchRouter } = await import("../sketch.js");
+    const payload = await invokeRouter(sketchRouter, {
+      input_text: "hello world",
+      purpose: "turn this into a prompt",
+      user_reactions: "",
+      mode: "prompt",
+    });
+
+    expect(mockGenerateSketchStream).toHaveBeenCalledWith(
+      "hello world",
+      "turn this into a prompt",
+      "",
+      "prompt",
+      expect.objectContaining({
+        onChunk: expect.any(Function),
+      }),
+    );
+    expect(payload).toContain('"text":"prompt body"');
+    expect(payload).toContain('"done":true');
+  });
+
+  it("defaults omitted user reactions to an empty string", async () => {
+    mockGenerateSketchStream.mockImplementation(async (_input, _purpose, _reactions, _mode, options) => {
+      options.onChunk?.("outline");
+    });
+
+    const { default: sketchRouter } = await import("../sketch.js");
+    const payload = await invokeRouter(sketchRouter, {
+      input_text: "hello world",
+      purpose: "make a sketch",
+    });
+
+    expect(mockGenerateSketchStream).toHaveBeenCalledWith(
+      "hello world",
+      "make a sketch",
+      "",
+      "sketch",
+      expect.objectContaining({
+        onChunk: expect.any(Function),
+      }),
+    );
+    expect(payload).toContain('"text":"outline"');
+    expect(payload).toContain('"done":true');
+  });
+
   it("returns a graceful SSE error if the stream fails after partial output", async () => {
-    mockGenerateSketchStream.mockImplementation(async (_input, _purpose, _reactions, options) => {
+    mockGenerateSketchStream.mockImplementation(async (_input, _purpose, _reactions, _mode, options) => {
       options.onChunk?.("hello");
       throw new Error("stream parse failed");
     });

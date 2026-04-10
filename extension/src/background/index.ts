@@ -813,13 +813,14 @@ chrome.runtime.onMessage.addListener(
           const { inputText, purpose, userReactions, mode } = message.payload;
           const tabId = sender.tab?.id;
           if (!tabId) return { error: "No tab" };
+          const normalizedUserReactions = userReactions.trim();
 
           try {
             await requestSketchStreaming(
               {
                 input_text: inputText,
                 purpose,
-                user_reactions: userReactions,
+                user_reactions: normalizedUserReactions,
                 mode: mode ?? "sketch",
               },
               (text) => {

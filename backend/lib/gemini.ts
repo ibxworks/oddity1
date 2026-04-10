@@ -677,10 +677,17 @@ async function consumeSketchStreamAttempt(
   options: SketchStreamOptions,
 ): Promise<string> {
   const systemPrompt = mode === "prompt" ? promptPrompt : sketchPrompt;
+  const normalizedUserReactions = userReactions.trim();
+  const noUserReactionsGuard =
+    "No user notes or reactions were provided. Do not infer, invent, or attribute any opinions, reactions, annotations, agreements, disagreements, priorities, or conclusions to the user beyond the stated purpose. Ground the result only in the source text and the stated purpose.";
   const userMessage =
     mode === "prompt"
-      ? `Source Text:\n${inputText}\n\nPrompt Purpose:\n${purpose}\n\nUser's Notes and Reactions:\n${userReactions}`
-      : `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${userReactions}`;
+      ? normalizedUserReactions
+        ? `Source Text:\n${inputText}\n\nPrompt Purpose:\n${purpose}\n\nUser's Notes and Reactions:\n${normalizedUserReactions}`
+        : `Source Text:\n${inputText}\n\nPrompt Purpose:\n${purpose}\n\n${noUserReactionsGuard}`
+      : normalizedUserReactions
+        ? `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${normalizedUserReactions}`
+        : `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\n${noUserReactionsGuard}\nOnly include positions that are directly supported by the stated purpose; if the purpose is broad, keep the output conservative.`;
   const model = entry.client.getGenerativeModel({
     model: modelName,
     systemInstruction: systemPrompt,
