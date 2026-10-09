@@ -9,6 +9,9 @@ import {
   ANNOTATION_COLORS,
   ANNOTATION_LABELS,
   BACKEND_URL,
+  LLM_EFFORT_OPTIONS,
+  LLM_PROVIDERS,
+  LLM_PROVIDER_META,
 } from "../utils/annotationConstants";
 import "./AccountPage.css";
 
@@ -36,6 +39,14 @@ export default function AccountPage() {
   const [subscription, setSubscription] = useState(null);
   const [subscriptionError, setSubscriptionError] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [llmStatus, setLlmStatus] = useState(null);
+  const [llmForm, setLlmForm] = useState({
+    api_key: "",
+    model: "",
+    base_url: "",
+    reasoning_effort: "default",
+  });
+  const [llmSaving, setLlmSaving] = useState(false);
 
   const tier = profile?.tier || "free";
   const displayName =
@@ -100,6 +111,112 @@ export default function AccountPage() {
       })
       .catch(() => showToast("Subscription activated! Welcome to Standard."));
   }, []);
+
+  const activeLlmProvider = preferences.llm_provider ?? null;
+  const llmKeyStatus = activeLlmProvider
+    ? (llmStatus?.keys || []).find((k) => k.provider === activeLlmProvider)
+    : undefined;
+
+  // Fetch AI provider statuses
+  useEffect(() => {
+    if (!session?.access_token) return;
+    fetch(`${BACKEND_URL}/api/user/llm-keys`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setLlmStatus(data);
+      })
+      .catch(() => {});
+  }, [session?.access_token]);
+
+  // Prefill the key form when the selection or statuses change
+  useEffect(() => {
+    setLlmForm({
+      api_key: "",
+      model: llmKeyStatus?.model ?? "",
+      base_url: llmKeyStatus?.base_url ?? "",
+      reasoning_effort: llmKeyStatus?.reasoning_effort ?? "default",
+    });
+  }, [activeLlmProvider, llmStatus]);
+
+  async function handleLlmProvider(value) {
+    await updatePreferences({ llm_provider: value });
+  }
+
+  async function handleLlmSave() {
+    if (!activeLlmProvider || activeLlmProvider === "oddity-free") return;
+    setLlmSaving(true);
+    try {
+      const body = {
+        model: llmForm.model.trim(),
+        base_url: llmForm.base_url.trim(),
+        reasoning_effort: llmForm.reasoning_effort,
+      };
+      if (llmForm.api_key.trim()) body.api_key = llmForm.api_key.trim();
+      const res = await fetch(
+        `${BACKEND_URL}/api/user/llm-keys/${activeLlmProvider}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(body),
+        },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save key");
+      }
+      const updated = await res.json();
+      setLlmStatus((prev) =>
+        prev
+          ? {
+              ...prev,
+              keys: prev.keys.some((k) => k.provider === updated.provider)
+                ? prev.keys.map((k) =>
+                    k.provider === updated.provider ? updated : k,
+                  )
+                : [...prev.keys, updated],
+            }
+          : prev,
+      );
+      setLlmForm((prev) => ({ ...prev, api_key: "" }));
+      showToast("Provider key saved");
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setLlmSaving(false);
+    }
+  }
+
+  async function handleLlmDelete() {
+    if (!activeLlmProvider || activeLlmProvider === "oddity-free") return;
+    const label = LLM_PROVIDER_META[activeLlmProvider].label;
+    if (!window.confirm(`Remove your saved ${label} key?`)) return;
+    try {
+      const res = await fetch(
+        `${BACKEND_URL}/api/user/llm-keys/${activeLlmProvider}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to remove key");
+      }
+      const statusRes = await fetch(`${BACKEND_URL}/api/user/llm-keys`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (statusRes.ok) setLlmStatus(await statusRes.json());
+      await refetchProfile();
+      showToast("Provider key removed");
+    } catch (err) {
+      showToast(err.message);
+    }
+  }
 
   const depthPersonality = preferences.depth_personality || "terry";
   const visibleTypes = preferences.visible_types || [
@@ -396,6 +513,157 @@ export default function AccountPage() {
                   : "Delete Account"}
             </button>
           </div>
+        </div>
+
+        {/* AI Provider Card */}
+        <div className="card">
+          <div className="card-title">AI Provider</div>
+          <p className="field-hint" style={{ marginBottom: 12 }}>
+            Use Oddity&apos;s managed model, the free shared pool, or your own
+            provider keys. BYOK and Oddity Free requests don&apos;t count
+            toward monthly limits.
+          </p>
+
+          <div className="field">
+            <span className="field-label">Provider</span>
+            <div className="radio-group">
+              <button
+                key="oddity"
+                className={`radio-btn ${activeLlmProvider === null ? "active" : ""}`}
+                onClick={() => handleLlmProvider(null)}
+              >
+                Oddity
+              </button>
+              {LLM_PROVIDERS.map((p) => (
+                <button
+                  key={p}
+                  className={`radio-btn ${activeLlmProvider === p ? "active" : ""}`}
+                  onClick={() => handleLlmProvider(p)}
+                >
+                  {LLM_PROVIDER_META[p].short}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {activeLlmProvider === null && (
+            <p className="field-hint">
+              Oddity-managed model included with your plan. No setup needed.
+            </p>
+          )}
+
+          {activeLlmProvider === "oddity-free" && (
+            <p className="field-hint llm-note-warn">
+              {LLM_PROVIDER_META["oddity-free"].note}
+            </p>
+          )}
+
+          {activeLlmProvider !== null &&
+            activeLlmProvider !== "oddity-free" && (
+              <div className="llm-form">
+                <p className="field-hint">
+                  {LLM_PROVIDER_META[activeLlmProvider].note}{" "}
+                  {LLM_PROVIDER_META[activeLlmProvider].keyUrl && (
+                    <a
+                      href={LLM_PROVIDER_META[activeLlmProvider].keyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Get a key
+                    </a>
+                  )}
+                </p>
+                <div className="field">
+                  <span className="field-label">API key</span>
+                  <input
+                    type="password"
+                    value={llmForm.api_key}
+                    onChange={(e) =>
+                      setLlmForm((prev) => ({ ...prev, api_key: e.target.value }))
+                    }
+                    placeholder={
+                      llmKeyStatus?.configured
+                        ? `Saved (${llmKeyStatus.key_hint ?? "****"}) — enter a new key to replace`
+                        : "Paste API key"
+                    }
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="field">
+                  <span className="field-label">Model</span>
+                  <input
+                    type="text"
+                    value={llmForm.model}
+                    onChange={(e) =>
+                      setLlmForm((prev) => ({ ...prev, model: e.target.value }))
+                    }
+                    placeholder={
+                      LLM_PROVIDER_META[activeLlmProvider].modelPlaceholder ||
+                      "Default model"
+                    }
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="field">
+                  <span className="field-label">Reasoning effort</span>
+                  <select
+                    value={llmForm.reasoning_effort}
+                    onChange={(e) =>
+                      setLlmForm((prev) => ({
+                        ...prev,
+                        reasoning_effort: e.target.value,
+                      }))
+                    }
+                  >
+                    {LLM_EFFORT_OPTIONS.map((effort) => (
+                      <option key={effort} value={effort}>
+                        {effort.charAt(0).toUpperCase() + effort.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <span className="field-label">Base URL (optional)</span>
+                  <input
+                    type="text"
+                    value={llmForm.base_url}
+                    onChange={(e) =>
+                      setLlmForm((prev) => ({
+                        ...prev,
+                        base_url: e.target.value,
+                      }))
+                    }
+                    placeholder="Default endpoint"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                {!llmKeyStatus?.configured && (
+                  <p className="field-hint">
+                    Add your {LLM_PROVIDER_META[activeLlmProvider].label} API
+                    key to use this provider.
+                  </p>
+                )}
+                <div className="btn-row">
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={handleLlmSave}
+                    disabled={llmSaving}
+                  >
+                    {llmSaving ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-danger"
+                    onClick={handleLlmDelete}
+                    disabled={!llmKeyStatus?.configured}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )}
         </div>
 
         {/* Auto-Enabled Sites Card */}

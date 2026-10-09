@@ -3,7 +3,12 @@ import { MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { generatePdfPageSummary } from "../lib/openrouter.js";
+import { generatePdfPageSummary } from "../lib/llm.js";
+import {
+  resolveRequestLlm,
+  sendLlmConfigError,
+  type ResolvedLlm,
+} from "../lib/llm-config.js";
 import { createUserClient, serviceClient } from "../lib/supabase.js";
 
 const router = Router();
@@ -104,6 +109,14 @@ router.post("/generate", async (req, res) => {
     return;
   }
 
+  let llm: ResolvedLlm;
+  try {
+    llm = await resolveRequestLlm(req.user!.id);
+  } catch (err) {
+    if (sendLlmConfigError(res, err)) return;
+    throw err;
+  }
+
   const token = req.headers.authorization?.slice(7) ?? "";
   const userClient = createUserClient(token);
   const {
@@ -147,7 +160,7 @@ router.post("/generate", async (req, res) => {
     const upgradeMultiplier =
       userTier === "free" ? getUpgradeMultiplier() : undefined;
 
-    if (req.user?.id) {
+    if (req.user?.id && !llm.bypassLimits) {
       const { data: usageResult, error: usageErr } = await serviceClient.rpc(
         "check_and_record_usage",
         { p_user_id: req.user.id, p_url: usageKey, p_limit: limit },
@@ -175,6 +188,7 @@ router.post("/generate", async (req, res) => {
     }
 
     const summaryText = await generatePdfPageSummary(text, {
+      override: llm.override,
       logContext: {
         route: "pdf-page-summary",
         requestId: randomUUID(),

@@ -2,7 +2,12 @@ import { Router } from "express";
 import { z } from "zod";
 import { canUseFeature } from "@oddity/shared";
 import type { UserTier } from "@oddity/shared";
-import { generateGDocsChatStream, type GDocsChatMode } from "../lib/openrouter.js";
+import { generateGDocsChatStream, type GDocsChatMode } from "../lib/llm.js";
+import {
+  resolveRequestLlm,
+  sendLlmConfigError,
+  type ResolvedLlm,
+} from "../lib/llm-config.js";
 import { createRequestAbortSignal } from "../lib/request-abort.js";
 
 const MessageSchema = z.object({
@@ -32,6 +37,14 @@ router.post("/", async (req, res) => {
 
   const { messages, mode } = parsed.data;
 
+  let llm: ResolvedLlm;
+  try {
+    llm = await resolveRequestLlm(req.user!.id);
+  } catch (err) {
+    if (sendLlmConfigError(res, err)) return;
+    throw err;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -42,6 +55,7 @@ router.post("/", async (req, res) => {
   try {
     await generateGDocsChatStream(messages, mode as GDocsChatMode, {
       signal,
+      override: llm.override,
       onChunk: (chunk) => {
         if (signal.aborted || res.writableEnded) return;
         res.write(`data: ${JSON.stringify({ text: chunk, done: false })}\n\n`);

@@ -285,6 +285,37 @@
   flex-wrap: wrap;
 }
 
+.llm-form input,
+.llm-form select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--r);
+  font-size: 13px;
+  outline: none;
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+.llm-form input:focus,
+.llm-form select:focus {
+  border-color: var(--border-hover);
+}
+
+.llm-form input::placeholder {
+  color: var(--text-muted);
+}
+
+.llm-note-warn {
+  color: #92600f;
+}
+
+.field-hint a {
+  color: var(--text-primary);
+}
+
 @media (max-width: 768px) {
   .account-body { padding: 16px 16px 40px; }
   .checkbox-grid { grid-template-columns: repeat(2, 1fr); }

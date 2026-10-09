@@ -2,11 +2,15 @@ import type {
   AnnotationFont,
   AnnotationFontSize,
   DepthPersonality,
+  LlmKeyStatus,
+  LlmProvider,
+  LlmStatusResponse,
   PublicFigurePersona,
+  SaveLlmKeyBody,
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
-import { isBlockedDomain } from "@oddity/shared";
+import { isBlockedDomain, LLM_PROVIDER_META } from "@oddity/shared";
 import { sendMessage } from "../shared/messaging.js";
 
 // ─── DOM refs ───
@@ -82,6 +86,32 @@ const feedbackSendBtn = document.getElementById("feedback-send-btn")!;
 const feedbackStatusEl = document.getElementById("feedback-status")!;
 const feedbackLink = document.getElementById("feedback-link")!;
 
+// AI Provider refs
+const llmProviderSelect = document.getElementById(
+  "llm-provider-select",
+) as HTMLSelectElement;
+const llmProviderNote = document.getElementById("llm-provider-note")!;
+const llmKeyForm = document.getElementById("llm-key-form")!;
+const llmKeyInput = document.getElementById(
+  "llm-key-input",
+) as HTMLInputElement;
+const llmModelInput = document.getElementById(
+  "llm-model-input",
+) as HTMLInputElement;
+const llmEffortSelect = document.getElementById(
+  "llm-effort-select",
+) as HTMLSelectElement;
+const llmBaseUrlInput = document.getElementById(
+  "llm-baseurl-input",
+) as HTMLInputElement;
+const llmSaveBtn = document.getElementById(
+  "llm-save-btn",
+) as HTMLButtonElement;
+const llmDeleteBtn = document.getElementById(
+  "llm-delete-btn",
+) as HTMLButtonElement;
+const llmStatusEl = document.getElementById("llm-status")!;
+
 // Export dialog refs
 const exportDialog = document.getElementById("export-dialog")!;
 const exportTitle = document.getElementById("export-title") as HTMLInputElement;
@@ -105,7 +135,10 @@ let currentPrefs: Required<UserPreferences> = {
   enabled_sites: [],
   annotation_font: "fraunces",
   annotation_font_size: "default",
+  llm_provider: null,
 };
+
+let llmStatus: LlmStatusResponse | null = null;
 
 let currentUser: {
   id: string;
@@ -155,6 +188,7 @@ async function init(): Promise<void> {
       enabled_sites: prefs.enabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "fraunces",
       annotation_font_size: prefs.annotation_font_size ?? "default",
+      llm_provider: prefs.llm_provider ?? null,
     };
   } else {
     // First launch — persist defaults so subsequent sessions always read from storage
@@ -263,7 +297,187 @@ function showAuthenticatedUI(user: {
 
   // Load public figure personas for all users (selection gated on tier)
   loadPublicFigurePersonas().catch(() => {});
+
+  // Load AI provider status
+  void loadLlmStatus();
 }
+
+// ─── AI Provider ───
+
+function llmKeyStatusFor(provider: LlmProvider): LlmKeyStatus | undefined {
+  return llmStatus?.keys?.find((key) => key.provider === provider);
+}
+
+/** Background resolves `{ error }` instead of rejecting — surface it as a throw. */
+function throwIfLlmError(
+  result: { error?: string } | null | undefined,
+  fallback: string,
+): asserts result {
+  if (!result || typeof result.error === "string") {
+    throw new Error(
+      result && typeof result.error === "string" ? result.error : fallback,
+    );
+  }
+}
+
+function setLlmStatus(message: string, kind: "" | "ok" | "err"): void {
+  llmStatusEl.textContent = message;
+  llmStatusEl.className = kind === "" ? "llm-status" : `llm-status ${kind}`;
+}
+
+async function loadLlmStatus(): Promise<void> {
+  try {
+    const result = await sendMessage<LlmStatusResponse & { error?: string }>({
+      action: "getLlmStatus",
+      payload: {},
+    });
+    throwIfLlmError(result, "Couldn't load AI provider status.");
+    if (!Array.isArray(result.keys)) throw new Error("Bad LLM status shape.");
+    llmStatus = result;
+    currentPrefs.llm_provider = llmStatus.active_provider;
+    await savePrefs();
+  } catch {
+    llmStatus = null;
+  }
+  renderLlmSection();
+}
+
+function renderLlmSection(): void {
+  const active =
+    llmStatus?.active_provider ?? currentPrefs.llm_provider ?? null;
+  llmProviderSelect.value = active ?? "";
+
+  const selected = (llmProviderSelect.value || null) as LlmProvider | null;
+  const status = selected ? llmKeyStatusFor(selected) : undefined;
+
+  if (selected === null) {
+    llmProviderNote.className = "llm-note";
+    llmProviderNote.textContent =
+      "Oddity-managed model included with your plan. No setup needed.";
+    llmProviderNote.style.display = "";
+    llmKeyForm.style.display = "none";
+    return;
+  }
+
+  const meta = LLM_PROVIDER_META[selected];
+  if (selected === "oddity-free") {
+    llmProviderNote.className = "llm-note warn";
+    llmProviderNote.textContent = meta.note;
+    llmProviderNote.style.display = "";
+    llmKeyForm.style.display = "none";
+    return;
+  }
+
+  llmProviderNote.className = "llm-note";
+  llmProviderNote.innerHTML = "";
+  llmProviderNote.append(document.createTextNode(`${meta.note} `));
+  if (meta.keyUrl) {
+    const link = document.createElement("a");
+    link.href = meta.keyUrl;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Get a key";
+    llmProviderNote.append(link);
+    llmProviderNote.append(document.createTextNode("."));
+  }
+  llmProviderNote.style.display = "";
+
+  llmKeyForm.style.display = "";
+  llmKeyInput.value = "";
+  llmKeyInput.placeholder = status?.configured
+    ? `Saved (${status.key_hint ?? "****"}) — enter a new key to replace`
+    : "Paste API key";
+  llmModelInput.value = status?.model ?? "";
+  llmModelInput.placeholder = meta.modelPlaceholder || "Default model";
+  llmEffortSelect.value = status?.reasoning_effort ?? "default";
+  llmBaseUrlInput.value = status?.base_url ?? "";
+  llmDeleteBtn.disabled = !status?.configured;
+  if (status && !status.configured) {
+    setLlmStatus(`Add your ${meta.label} API key to use this provider.`, "");
+  } else {
+    setLlmStatus("", "");
+  }
+}
+
+llmProviderSelect.addEventListener("change", async () => {
+  const provider = (llmProviderSelect.value || null) as LlmProvider | null;
+  setLlmStatus("Saving…", "");
+  try {
+    const result = await sendMessage<{ success: boolean; error?: string }>({
+      action: "setLlmProvider",
+      payload: { provider },
+    });
+    throwIfLlmError(result, "Couldn't save provider.");
+    currentPrefs.llm_provider = provider;
+    await savePrefs();
+    if (llmStatus) llmStatus.active_provider = provider;
+  } catch {
+    setLlmStatus("Couldn't save provider.", "err");
+  }
+  renderLlmSection();
+});
+
+llmSaveBtn.addEventListener("click", async () => {
+  const provider = (llmProviderSelect.value || null) as LlmProvider | null;
+  if (!provider || provider === "oddity-free") return;
+  const body: SaveLlmKeyBody = {
+    model: llmModelInput.value.trim(),
+    base_url: llmBaseUrlInput.value.trim(),
+    reasoning_effort: llmEffortSelect.value as SaveLlmKeyBody["reasoning_effort"],
+  };
+  const apiKey = llmKeyInput.value.trim();
+  if (apiKey) body.api_key = apiKey;
+
+  llmSaveBtn.disabled = true;
+  setLlmStatus("Saving…", "");
+  try {
+    const updated = await sendMessage<LlmKeyStatus & { error?: string }>({
+      action: "saveLlmKey",
+      payload: { provider, body },
+    });
+    throwIfLlmError(updated, "Couldn't save key.");
+    if (llmStatus) {
+      const index = llmStatus.keys.findIndex((key) => key.provider === provider);
+      if (index >= 0) llmStatus.keys[index] = updated;
+      else llmStatus.keys.push(updated);
+    }
+    renderLlmSection();
+    setLlmStatus("Saved.", "ok");
+  } catch (err) {
+    setLlmStatus(
+      err instanceof Error ? err.message : "Couldn't save key.",
+      "err",
+    );
+  } finally {
+    llmSaveBtn.disabled = false;
+  }
+});
+
+llmDeleteBtn.addEventListener("click", async () => {
+  const provider = (llmProviderSelect.value || null) as LlmProvider | null;
+  if (!provider || provider === "oddity-free") return;
+  if (!window.confirm(`Remove your saved ${LLM_PROVIDER_META[provider].label} key?`)) {
+    return;
+  }
+  llmDeleteBtn.disabled = true;
+  setLlmStatus("Removing…", "");
+  try {
+    const result = await sendMessage<{ deleted: boolean; error?: string }>({
+      action: "deleteLlmKey",
+      payload: { provider },
+    });
+    throwIfLlmError(result, "Couldn't remove key.");
+    await loadLlmStatus();
+    setLlmStatus("Removed.", "ok");
+  } catch (err) {
+    setLlmStatus(
+      err instanceof Error ? err.message : "Couldn't remove key.",
+      "err",
+    );
+  } finally {
+    renderLlmSection();
+  }
+});
 
 function showUnauthenticatedUI(): void {
   authForm.style.display = "";

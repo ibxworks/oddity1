@@ -2,10 +2,13 @@ import type {
   Annotation,
   AnnotationMode,
   DepthPersonality,
+  LlmProvider,
+  LlmReasoningEffort,
 } from "@oddity/shared";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import promptsConfig from "../config/prompts.json" with { type: "json" };
+import type { LlmCallOverride, LlmTransport } from "./llm-config.js";
 import { validatePdfPageSummary } from "./pdf-page-summary-validator.js";
 import { getPersona } from "./persona-registry.js";
 import { validateAnnotations } from "./schema-validator.js";
@@ -70,6 +73,8 @@ export type LlmLogContext = {
 type LlmRequestOptions = {
   signal?: AbortSignal;
   logContext?: LlmLogContext;
+  /** BYOK / Oddity Free override. Absent means the tier default path. */
+  override?: LlmCallOverride | null;
 };
 
 type AnnotationStreamOptions = LlmRequestOptions & {
@@ -174,19 +179,21 @@ function serializeError(error: unknown): Record<string, unknown> {
   return { message: String(error) };
 }
 
-function logOpenRouterEvent(
+function logLlmEvent(
   level: "log" | "warn" | "error",
   event: string,
   context: LlmLogContext | undefined,
   details: Record<string, unknown> = {},
+  options?: LlmRequestOptions,
 ): void {
   console[level](
-    `[openrouter] ${event}`,
+    `[llm] ${event}`,
     JSON.stringify({
       route: context?.route,
       request_id: context?.requestId,
       content_hash_prefix: context?.contentHash?.slice(0, 12),
-      model: modelName,
+      provider: options?.override?.provider ?? "oddity",
+      model: options?.override?.model ?? modelName,
       ...details,
     }),
   );
@@ -219,7 +226,7 @@ function buildSystemPrompt(
     const persona = getPersona(slug);
     if (!persona) {
       console.warn(
-        `[openrouter] Unknown persona slug: ${slug}, falling back to terry`,
+        `[llm] Unknown persona slug: ${slug}, falling back to terry`,
       );
       return depthPrompts["terry"] ?? depthPrompts["jerry"] ?? "";
     }
@@ -315,48 +322,99 @@ type ChatCompletionRequest = {
   model: string;
   messages: ChatMessage[];
   temperature: number;
-  max_tokens: number;
+  max_tokens?: number;
+  max_completion_tokens?: number;
   stream?: boolean;
   reasoning?: { effort: string };
+  reasoning_effort?: string;
 };
+
+function isOpenAiReasoningModel(model: string): boolean {
+  return /^(o\d|gpt-5)/.test(model);
+}
 
 function buildChatBody(
   model: string,
   messages: ChatMessage[],
-  options: { temperature: number; maxTokens: number; reasoning?: boolean },
+  options: {
+    temperature: number;
+    maxTokens: number;
+    reasoning?: boolean;
+    provider?: LlmProvider | null;
+    effort?: LlmReasoningEffort;
+  },
 ): ChatCompletionRequest {
+  const provider = options.provider ?? null;
   const body: ChatCompletionRequest = {
     model,
     messages,
     temperature: options.temperature,
     max_tokens: options.maxTokens,
   };
-  // Reasoning is omitted for tiny structured outputs (e.g. the mode router):
-  // thinking tokens share the max_tokens budget and would starve the answer.
-  if (options.reasoning !== false && OPENROUTER_REASONING_EFFORT !== "") {
-    body.reasoning = { effort: OPENROUTER_REASONING_EFFORT };
+
+  // OpenAI reasoning models only accept temperature 1 and max_completion_tokens.
+  if (provider === "openai" && isOpenAiReasoningModel(model)) {
+    body.temperature = 1;
+    body.max_completion_tokens = options.maxTokens;
+    delete body.max_tokens;
   }
+
+  // Reasoning is omitted for tiny structured outputs (e.g. the mode router):
+  // thinking tokens share the output budget and would starve the answer.
+  if (options.reasoning === false) {
+    return body;
+  }
+
+  // Tier default path: server-wide effort setting (unchanged behavior).
+  if (provider === null) {
+    if (OPENROUTER_REASONING_EFFORT !== "") {
+      body.reasoning = { effort: OPENROUTER_REASONING_EFFORT };
+    }
+    return body;
+  }
+
+  // BYOK path: only explicit user choices attach provider-specific params.
+  // "default"/"none" omit them so unsupported combos cannot 400.
+  const effort = options.effort ?? "default";
+  if (effort !== "low" && effort !== "medium" && effort !== "high") {
+    return body;
+  }
+  if (provider === "openrouter" || provider === "oddity-free") {
+    body.reasoning = { effort };
+  } else if (provider === "openai" && isOpenAiReasoningModel(model)) {
+    body.reasoning_effort = effort;
+  }
+  // gemini/muse via chat-completions: effort support unknown, omit fail-safe.
   return body;
 }
 
-class OpenRouterHttpError extends Error {
+class LlmHttpError extends Error {
   readonly status: number;
 
   constructor(status: number, message: string) {
     super(message);
-    this.name = "OpenRouterHttpError";
+    this.name = "LlmHttpError";
     this.status = status;
   }
 }
 
-function buildKeyAttemptPlan(): KeyEntry[] {
-  ensureKeysConfigured();
-  return apiKeyEntries.flatMap((entry) =>
+function buildKeyAttemptPlan(overrideKeys?: string[]): KeyEntry[] {
+  const entries = overrideKeys
+    ? overrideKeys.map((apiKey, index) => ({ apiKey, keyIndex: index + 1 }))
+    : apiKeyEntries;
+  if (entries.length === 0) {
+    throw new Error(
+      overrideKeys
+        ? "No API keys for the selected provider"
+        : "No OpenRouter API keys configured",
+    );
+  }
+  return entries.flatMap((entry) =>
     Array.from({ length: OPENROUTER_ATTEMPTS_PER_KEY }, () => entry),
   );
 }
 
-function classifyOpenRouterError(
+function classifyLlmError(
   error: unknown,
   signal?: AbortSignal,
 ): LlmErrorInfo {
@@ -367,7 +425,7 @@ function classifyOpenRouterError(
     };
   }
 
-  if (error instanceof OpenRouterHttpError) {
+  if (error instanceof LlmHttpError) {
     const status = error.status;
 
     if (status === 429) {
@@ -443,7 +501,7 @@ function toLlmOperationError(
   attemptNumber: number,
   signal?: AbortSignal,
 ): LlmOperationError {
-  const info = classifyOpenRouterError(error, signal);
+  const info = classifyLlmError(error, signal);
   const message = error instanceof Error ? error.message : String(error);
   return new LlmOperationError(message, {
     ...info,
@@ -489,12 +547,17 @@ function extractTextContent(content: unknown): string {
   return "";
 }
 
+function joinUrl(baseUrl: string, path: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}${path}`;
+}
+
 async function postChatCompletion(
   entry: KeyEntry,
+  baseUrl: string,
   body: ChatCompletionRequest,
   signal?: AbortSignal,
 ): Promise<string> {
-  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+  const response = await fetch(joinUrl(baseUrl, "/chat/completions"), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${entry.apiKey}`,
@@ -507,26 +570,27 @@ async function postChatCompletion(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    throw new OpenRouterHttpError(
+    throw new LlmHttpError(
       response.status,
-      `OpenRouter request failed with status ${response.status}${errorText ? `: ${errorText.slice(0, 500)}` : ""}`,
+      `LLM request failed with status ${response.status}${errorText ? `: ${errorText.slice(0, 500)}` : ""}`,
     );
   }
 
   const parsed = (await response.json()) as ChatCompletionResponse;
   if (parsed.error) {
-    throw new Error(`OpenRouter error: ${parsed.error.message ?? "unknown"}`);
+    throw new Error(`LLM error: ${parsed.error.message ?? "unknown"}`);
   }
   return extractTextContent(parsed.choices?.[0]?.message?.content);
 }
 
 async function streamChatCompletion(
   entry: KeyEntry,
+  baseUrl: string,
   body: ChatCompletionRequest,
   onDelta: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+  const response = await fetch(joinUrl(baseUrl, "/chat/completions"), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${entry.apiKey}`,
@@ -539,14 +603,14 @@ async function streamChatCompletion(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    throw new OpenRouterHttpError(
+    throw new LlmHttpError(
       response.status,
-      `OpenRouter request failed with status ${response.status}${errorText ? `: ${errorText.slice(0, 500)}` : ""}`,
+      `LLM request failed with status ${response.status}${errorText ? `: ${errorText.slice(0, 500)}` : ""}`,
     );
   }
 
   if (!response.body) {
-    throw new Error("OpenRouter stream response had no body");
+    throw new Error("LLM stream response had no body");
   }
 
   const reader = response.body.getReader();
@@ -589,6 +653,322 @@ async function streamChatCompletion(
   }
 }
 
+// ─── Anthropic Messages transport (BYOK Anthropic keys) ─────────────────────
+
+type AnthropicRequest = {
+  model: string;
+  max_tokens: number;
+  system?: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  temperature: number;
+  thinking?: { type: "enabled"; budget_tokens: number };
+  stream?: boolean;
+};
+
+type AnthropicResponse = {
+  content?: Array<{ type?: string; text?: string }>;
+  error?: { type?: string; message?: string };
+};
+
+type AnthropicStreamEvent = {
+  type: string;
+  delta?: { type?: string; text?: string };
+  error?: { type?: string; message?: string };
+};
+
+const ANTHROPIC_THINKING_BUDGET: Record<string, number> = {
+  low: 1024,
+  medium: 4096,
+  high: 8192,
+};
+
+function buildAnthropicBody(
+  model: string,
+  messages: ChatMessage[],
+  options: { temperature: number; maxTokens: number; effort: LlmReasoningEffort },
+): AnthropicRequest {
+  const systemParts: string[] = [];
+  const convo: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const message of messages) {
+    if (message.role === "system") {
+      systemParts.push(message.content);
+    } else {
+      convo.push({ role: message.role, content: message.content });
+    }
+  }
+
+  const body: AnthropicRequest = {
+    model,
+    max_tokens: options.maxTokens,
+    messages: convo,
+    temperature: options.temperature,
+  };
+  if (systemParts.length > 0) {
+    body.system = systemParts.join("\n\n");
+  }
+
+  // Thinking budget must fit inside max_tokens; skip it when it cannot.
+  // Thinking also forces temperature 1 — other values are rejected.
+  const wanted = ANTHROPIC_THINKING_BUDGET[options.effort];
+  if (wanted !== undefined) {
+    const budget = Math.min(wanted, options.maxTokens - 1024);
+    if (budget >= 1024) {
+      body.thinking = { type: "enabled", budget_tokens: budget };
+      body.temperature = 1;
+    }
+  }
+  return body;
+}
+
+function extractAnthropicText(parsed: AnthropicResponse): string {
+  if (parsed.error) {
+    throw new Error(`LLM error: ${parsed.error.message ?? "unknown"}`);
+  }
+  return (parsed.content ?? [])
+    .filter((block) => block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text as string)
+    .join("");
+}
+
+async function postAnthropicMessages(
+  entry: KeyEntry,
+  baseUrl: string,
+  body: AnthropicRequest,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await fetch(joinUrl(baseUrl, "/v1/messages"), {
+    method: "POST",
+    headers: {
+      "x-api-key": entry.apiKey,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal: buildRequestSignal(signal),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new LlmHttpError(
+      response.status,
+      `LLM request failed with status ${response.status}${errorText ? `: ${errorText.slice(0, 500)}` : ""}`,
+    );
+  }
+
+  return extractAnthropicText((await response.json()) as AnthropicResponse);
+}
+
+async function streamAnthropicMessages(
+  entry: KeyEntry,
+  baseUrl: string,
+  body: AnthropicRequest,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(joinUrl(baseUrl, "/v1/messages"), {
+    method: "POST",
+    headers: {
+      "x-api-key": entry.apiKey,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ...body, stream: true }),
+    signal: buildRequestSignal(signal),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new LlmHttpError(
+      response.status,
+      `LLM request failed with status ${response.status}${errorText ? `: ${errorText.slice(0, 500)}` : ""}`,
+    );
+  }
+
+  if (!response.body) {
+    throw new Error("LLM stream response had no body");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let eventName = "";
+
+  const handleEventData = (data: string): void => {
+    if (data === "[DONE]") return;
+    let event: AnthropicStreamEvent;
+    try {
+      event = JSON.parse(data) as AnthropicStreamEvent;
+    } catch {
+      throw new Error("Failed to parse stream");
+    }
+    if (event.type === "error") {
+      const kind = event.error?.type ?? "";
+      // Map onto HTTP-ish statuses so the retry classifier applies.
+      const status = kind.includes("overloaded")
+        ? 529
+        : kind.includes("rate_limit")
+          ? 429
+          : 400;
+      throw new LlmHttpError(
+        status,
+        `LLM stream error: ${event.error?.message ?? kind}`,
+      );
+    }
+    if (
+      eventName === "content_block_delta" &&
+      event.type === "content_block_delta" &&
+      event.delta?.type === "text_delta" &&
+      event.delta.text
+    ) {
+      onDelta(event.delta.text);
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf("\n");
+      while (boundary !== -1) {
+        const line = buffer.slice(0, boundary).trim();
+        buffer = buffer.slice(boundary + 1);
+        if (line === "" || line.startsWith(":")) {
+          boundary = buffer.indexOf("\n");
+          continue;
+        }
+        if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          handleEventData(line.slice(5).trim());
+        }
+        boundary = buffer.indexOf("\n");
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function firstEntryFor(options: LlmRequestOptions): KeyEntry {
+  const overrideKeys = options.override?.apiKeys;
+  if (overrideKeys) {
+    if (overrideKeys.length === 0) {
+      throw new Error("No API keys for the selected provider");
+    }
+    return { apiKey: overrideKeys[0]!, keyIndex: 1 };
+  }
+  ensureKeysConfigured();
+  return apiKeyEntries[0]!;
+}
+
+type CallContext = {
+  provider: LlmProvider | null;
+  transport: LlmTransport;
+  baseUrl: string;
+  model: string;
+  effort: LlmReasoningEffort;
+};
+
+function resolveCallContext(
+  options: LlmRequestOptions,
+  tierModel: string,
+): CallContext {
+  const override = options.override ?? null;
+  if (!override) {
+    return {
+      provider: null,
+      transport: "openai-chat",
+      baseUrl: OPENROUTER_BASE_URL,
+      model: tierModel,
+      effort: "default",
+    };
+  }
+  return {
+    provider: override.provider,
+    transport: override.transport,
+    baseUrl: override.baseUrl,
+    model: override.model,
+    effort: override.effort,
+  };
+}
+
+type TextGenOptions = {
+  temperature: number;
+  maxTokens: number;
+  reasoning?: boolean;
+};
+
+async function postTextCompletion(
+  entry: KeyEntry,
+  ctx: CallContext,
+  messages: ChatMessage[],
+  options: TextGenOptions,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (ctx.transport === "anthropic-messages") {
+    return postAnthropicMessages(
+      entry,
+      ctx.baseUrl,
+      buildAnthropicBody(ctx.model, messages, {
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        effort: options.reasoning === false ? "default" : ctx.effort,
+      }),
+      signal,
+    );
+  }
+  return postChatCompletion(
+    entry,
+    ctx.baseUrl,
+    buildChatBody(ctx.model, messages, {
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      reasoning: options.reasoning,
+      provider: ctx.provider,
+      effort: ctx.effort,
+    }),
+    signal,
+  );
+}
+
+async function streamTextCompletion(
+  entry: KeyEntry,
+  ctx: CallContext,
+  messages: ChatMessage[],
+  options: TextGenOptions,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (ctx.transport === "anthropic-messages") {
+    return streamAnthropicMessages(
+      entry,
+      ctx.baseUrl,
+      buildAnthropicBody(ctx.model, messages, {
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        effort: options.reasoning === false ? "default" : ctx.effort,
+      }),
+      onDelta,
+      signal,
+    );
+  }
+  return streamChatCompletion(
+    entry,
+    ctx.baseUrl,
+    buildChatBody(ctx.model, messages, {
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      reasoning: options.reasoning,
+      provider: ctx.provider,
+      effort: ctx.effort,
+    }),
+    onDelta,
+    signal,
+  );
+}
+
 async function waitBeforeRetry(
   attemptNumber: number,
   signal?: AbortSignal,
@@ -606,7 +986,7 @@ async function runWithRetryPlan<T>(
   runner: (entry: KeyEntry, attemptNumber: number) => Promise<T>,
   options: LlmRequestOptions = {},
 ): Promise<T> {
-  const attempts = buildKeyAttemptPlan();
+  const attempts = buildKeyAttemptPlan(options.override?.apiKeys);
   let lastError: LlmOperationError | null = null;
 
   for (let index = 0; index < attempts.length; index += 1) {
@@ -624,7 +1004,7 @@ async function runWithRetryPlan<T>(
       );
       lastError = operationError;
 
-      logOpenRouterEvent(
+      logLlmEvent(
         "warn",
         `${operation}.attempt_failed`,
         options.logContext,
@@ -636,6 +1016,7 @@ async function runWithRetryPlan<T>(
           status: operationError.status,
           error: serializeError(error),
         },
+        options,
       );
 
       if (!operationError.retryable || options.signal?.aborted) {
@@ -656,29 +1037,28 @@ async function runWithRetryPlan<T>(
     }
   }
 
-  throw lastError ?? new Error(`OpenRouter ${operation} failed without attempts`);
+  throw lastError ?? new Error(`LLM ${operation} failed without attempts`);
 }
 
-async function callOpenRouterWithKey(
+async function callChatWithKey(
   entry: KeyEntry,
   text: string,
   mode: AnnotationMode,
-  personality?: DepthPersonality,
-  correctionNote?: string,
-  signal?: AbortSignal,
+  personality: DepthPersonality | undefined,
+  correctionNote: string | undefined,
+  signal: AbortSignal | undefined,
+  ctx: CallContext,
 ): Promise<unknown> {
   const systemPrompt = buildSystemPrompt(mode, personality);
   const userContent = correctionNote ? `${text}\n\n${correctionNote}` : text;
-  const content = await postChatCompletion(
+  const content = await postTextCompletion(
     entry,
-    buildChatBody(
-      modelName,
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      { temperature: 0.3, maxTokens: 4096 },
-    ),
+    ctx,
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+    { temperature: 0.3, maxTokens: 4096 },
     signal,
   );
   if (!content) return [];
@@ -691,45 +1071,46 @@ async function callOpenRouterWithKey(
   }
 }
 
-async function callOpenRouter(
+async function callChat(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
   correctionNote?: string,
   options: LlmRequestOptions = {},
 ): Promise<unknown> {
+  const ctx = resolveCallContext(options, modelName);
   return runWithRetryPlan(
     "generate_content",
     (entry) =>
-      callOpenRouterWithKey(
+      callChatWithKey(
         entry,
         text,
         mode,
         personality,
         correctionNote,
         options.signal,
+        ctx,
       ),
     options,
   );
 }
 
-async function callOpenRouterPdfPageSummaryWithKey(
+async function callChatPdfPageSummaryWithKey(
   entry: KeyEntry,
   text: string,
-  correctionNote?: string,
-  signal?: AbortSignal,
+  correctionNote: string | undefined,
+  signal: AbortSignal | undefined,
+  ctx: CallContext,
 ): Promise<unknown> {
   const userContent = correctionNote ? `${text}\n\n${correctionNote}` : text;
-  const content = await postChatCompletion(
+  const content = await postTextCompletion(
     entry,
-    buildChatBody(
-      modelName,
-      [
-        { role: "system", content: pdfPageSummaryPrompt },
-        { role: "user", content: userContent },
-      ],
-      { temperature: 0.3, maxTokens: 4096 },
-    ),
+    ctx,
+    [
+      { role: "system", content: pdfPageSummaryPrompt },
+      { role: "user", content: userContent },
+    ],
+    { temperature: 0.3, maxTokens: 4096 },
     signal,
   );
   if (!content) return {};
@@ -741,19 +1122,21 @@ async function callOpenRouterPdfPageSummaryWithKey(
   }
 }
 
-async function callOpenRouterPdfPageSummary(
+async function callChatPdfPageSummary(
   text: string,
   correctionNote?: string,
   options: LlmRequestOptions = {},
 ): Promise<unknown> {
+  const ctx = resolveCallContext(options, modelName);
   return runWithRetryPlan(
     "generate_pdf_page_summary",
     (entry) =>
-      callOpenRouterPdfPageSummaryWithKey(
+      callChatPdfPageSummaryWithKey(
         entry,
         text,
         correctionNote,
         options.signal,
+        ctx,
       ),
     options,
   );
@@ -767,19 +1150,18 @@ async function consumeAnnotationStreamAttempt(
   options: AnnotationStreamOptions,
 ): Promise<Annotation[]> {
   const systemPrompt = buildSystemPrompt(mode, personality);
+  const ctx = resolveCallContext(options, modelName);
   const allAnnotations: Annotation[] = [];
   let buffer = "";
 
-  await streamChatCompletion(
+  await streamTextCompletion(
     entry,
-    buildChatBody(
-      modelName,
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: text },
-      ],
-      { temperature: 0.3, maxTokens: 4096 },
-    ),
+    ctx,
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: text },
+    ],
+    { temperature: 0.3, maxTokens: 4096 },
     (delta) => {
       buffer += delta;
 
@@ -828,17 +1210,16 @@ async function consumeSketchStreamAttempt(
         ? `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${normalizedUserReactions}`
         : `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\n${noUserReactionsGuard}\nOnly include positions that are directly supported by the stated purpose; if the purpose is broad, keep the output conservative.`;
   let fullText = "";
+  const ctx = resolveCallContext(options, modelName);
 
-  await streamChatCompletion(
+  await streamTextCompletion(
     entry,
-    buildChatBody(
-      modelName,
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      { temperature: 0.3, maxTokens: 2048 },
-    ),
+    ctx,
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    { temperature: 0.3, maxTokens: 2048 },
     (delta) => {
       fullText += delta;
       options.onChunk?.(delta);
@@ -855,7 +1236,7 @@ export async function generateAnnotations(
   personality?: DepthPersonality,
   options: LlmRequestOptions = {},
 ): Promise<Annotation[]> {
-  const firstAttempt = await callOpenRouter(
+  const firstAttempt = await callChat(
     text,
     mode,
     personality,
@@ -870,7 +1251,7 @@ export async function generateAnnotations(
   if (errors.length === 0) return assignUniqueIds(valid);
 
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callOpenRouter(
+  const retryAttempt = await callChat(
     text,
     mode,
     personality,
@@ -893,7 +1274,7 @@ export async function generateAnnotationsStream(
   personality?: DepthPersonality,
   options: AnnotationStreamOptions = {},
 ): Promise<StreamResult> {
-  const attempts = buildKeyAttemptPlan();
+  const attempts = buildKeyAttemptPlan(options.override?.apiKeys);
   let lastError: LlmOperationError | null = null;
   let emittedAnnotations = false;
 
@@ -930,7 +1311,7 @@ export async function generateAnnotationsStream(
 
       emittedAnnotations = emittedAnnotations || false;
 
-      logOpenRouterEvent(
+      logLlmEvent(
         "warn",
         "generate_annotations_stream.attempt_failed",
         options.logContext,
@@ -943,6 +1324,7 @@ export async function generateAnnotationsStream(
           emitted_annotations: emittedAnnotations,
           error: serializeError(error),
         },
+        options,
       );
 
       if (!operationError.retryable || options.signal?.aborted) {
@@ -968,13 +1350,14 @@ export async function generateAnnotationsStream(
   }
 
   incrementCounter("buffered_fallbacks");
-  logOpenRouterEvent(
+  logLlmEvent(
     "warn",
     "generate_annotations_stream.buffered_fallback",
     options.logContext,
     {
       fallback_from_error_kind: lastError?.kind,
     },
+    options,
   );
 
   try {
@@ -984,20 +1367,21 @@ export async function generateAnnotationsStream(
       personality,
       options,
     );
-    logOpenRouterEvent(
+    logLlmEvent(
       "log",
       "generate_annotations_stream.buffered_fallback_succeeded",
       options.logContext,
       {
         fallback_from_error_kind: lastError?.kind,
       },
+      options,
     );
     return {
       annotations,
       usedBufferedFallback: true,
     };
   } catch (fallbackError) {
-    logOpenRouterEvent(
+    logLlmEvent(
       "error",
       "generate_annotations_stream.buffered_fallback_failed",
       options.logContext,
@@ -1005,6 +1389,7 @@ export async function generateAnnotationsStream(
         fallback_from_error_kind: lastError?.kind,
         error: serializeError(fallbackError),
       },
+      options,
     );
     throw fallbackError;
   }
@@ -1017,7 +1402,7 @@ export async function generateSketchStream(
   mode: "sketch" | "prompt" = "sketch",
   options: SketchStreamOptions = {},
 ): Promise<string> {
-  const attempts = buildKeyAttemptPlan();
+  const attempts = buildKeyAttemptPlan(options.override?.apiKeys);
   let lastError: LlmOperationError | null = null;
   let emittedText = false;
 
@@ -1049,7 +1434,7 @@ export async function generateSketchStream(
       );
       lastError = operationError;
 
-      logOpenRouterEvent(
+      logLlmEvent(
         "warn",
         "generate_sketch_stream.attempt_failed",
         options.logContext,
@@ -1062,6 +1447,7 @@ export async function generateSketchStream(
           emitted_chunks: emittedText,
           error: serializeError(error),
         },
+        options,
       );
 
       if (!operationError.retryable || options.signal?.aborted || emittedText) {
@@ -1089,7 +1475,7 @@ export async function generatePdfPageSummary(
   text: string,
   options: LlmRequestOptions = {},
 ): Promise<string> {
-  const firstAttempt = await callOpenRouterPdfPageSummary(text, undefined, options);
+  const firstAttempt = await callChatPdfPageSummary(text, undefined, options);
   const firstResult = validatePdfPageSummary(firstAttempt);
 
   if (firstResult.errors.length === 0 && firstResult.valid) {
@@ -1099,7 +1485,7 @@ export async function generatePdfPageSummary(
   const correctionPrompt =
     `Your previous response had validation errors:\n${firstResult.errors.join("\n")}\n\n` +
     'Please fix these issues and return only valid JSON in the shape {"summary":"..."} with 1-2 concise sentences.';
-  const retryAttempt = await callOpenRouterPdfPageSummary(
+  const retryAttempt = await callChatPdfPageSummary(
     text,
     correctionPrompt,
     options,
@@ -1228,20 +1614,22 @@ async function consumeGDocsChatStreamAttempt(
       `[gdocs] Unknown mode "${mode}" — no system prompt defined`,
     );
   }
-  const effectiveModel = gdocsModelMap[mode] ?? modelName;
   const maxOutputTokens = gdocsMaxTokensMap[mode] ?? 2048;
+  const ctx = resolveCallContext(options, gdocsModelMap[mode] ?? modelName);
   const chatMessages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     ...messages.map((m): ChatMessage => ({ role: m.role, content: m.content })),
   ];
 
   let fullText = "";
-  await streamChatCompletion(
+  await streamTextCompletion(
     entry,
-    buildChatBody(effectiveModel, chatMessages, {
+    ctx,
+    chatMessages,
+    {
       temperature: 0.7,
       maxTokens: maxOutputTokens,
-    }),
+    },
     (delta) => {
       fullText += delta;
       options.onChunk?.(delta);
@@ -1256,7 +1644,7 @@ export async function generateGDocsChatStream(
   mode: GDocsChatMode,
   options: GDocsChatStreamOptions = {},
 ): Promise<string> {
-  const attempts = buildKeyAttemptPlan();
+  const attempts = buildKeyAttemptPlan(options.override?.apiKeys);
   let lastError: LlmOperationError | null = null;
   let emittedText = false;
 
@@ -1336,6 +1724,7 @@ function parseMcqOption(raw: unknown): McqOption | null {
 export async function generateAllMcqQuestions(
   prompt: string,
   docContext: string,
+  options: LlmRequestOptions = {},
 ): Promise<McqQuestion[]> {
   const docContextText = docContext.trim()
     ? `Existing document content:\n${docContext.trim()}\n\n`
@@ -1346,16 +1735,15 @@ export async function generateAllMcqQuestions(
     .replace("{prompt}", prompt);
 
   try {
-    ensureKeysConfigured();
-    const entry = apiKeyEntries[0]!;
+    const entry = firstEntryFor(options);
+    const ctx = resolveCallContext(options, modelName);
     const text = (
-      await postChatCompletion(
+      await postTextCompletion(
         entry,
-        buildChatBody(
-          modelName,
-          [{ role: "user", content: filledPrompt }],
-          { temperature: 0.8, maxTokens: 1536 },
-        ),
+        ctx,
+        [{ role: "user", content: filledPrompt }],
+        { temperature: 0.8, maxTokens: 1536 },
+        options.signal,
       )
     ).trim();
     const cleaned = text
@@ -1535,26 +1923,27 @@ export async function generateGDocsRoute(
   prompt: string,
   docContext: string,
   essayContent?: string,
+  options: LlmRequestOptions = {},
 ): Promise<GDocsRouteResult> {
   const docText = (essayContent?.trim() || docContext?.trim()) ?? "";
   const userMessage = `User request: ${prompt}${docText ? `\n\nDocument:\n${docText.slice(0, 4000)}` : ""}`;
 
   try {
-    ensureKeysConfigured();
-    const entry = apiKeyEntries[0]!;
+    const entry = firstEntryFor(options);
+    const ctx = resolveCallContext(options, routerModelName);
+    const messages: ChatMessage[] = [
+      { role: "system", content: routerSystemPrompt },
+      { role: "user", content: userMessage },
+    ];
 
     // Stage 1: quick classification (no reasoning: the 150-token budget
     // would be consumed by thinking tokens before the answer is emitted)
-    const stage1Text = await postChatCompletion(
+    const stage1Text = await postTextCompletion(
       entry,
-      buildChatBody(
-        routerModelName,
-        [
-          { role: "system", content: routerSystemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        { temperature: 0.1, maxTokens: 150, reasoning: false },
-      ),
+      ctx,
+      messages,
+      { temperature: 0.1, maxTokens: 150, reasoning: false },
+      options.signal,
     );
 
     const stage1 = parseRouteResult(stage1Text.trim());
@@ -1562,16 +1951,15 @@ export async function generateGDocsRoute(
     // Stage 2: deeper reasoning for uncertain cases
     if (stage1.confidence === "low") {
       try {
-        const stage2Text = await postChatCompletion(
+        const stage2Text = await postTextCompletion(
           entry,
-          buildChatBody(
-            routerModelName,
-            [
-              { role: "system", content: routerDeepSystemPrompt },
-              { role: "user", content: userMessage },
-            ],
-            { temperature: 0.3, maxTokens: 256, reasoning: false },
-          ),
+          ctx,
+          [
+            { role: "system", content: routerDeepSystemPrompt },
+            { role: "user", content: userMessage },
+          ],
+          { temperature: 0.3, maxTokens: 256, reasoning: false },
+          options.signal,
         );
         return parseRouteResult(stage2Text.trim());
       } catch {

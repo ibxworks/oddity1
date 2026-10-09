@@ -272,6 +272,86 @@
         border-color: #d4d4ca;
       }
 
+      /* ── Text inputs ── */
+      .style-input {
+        flex: 1;
+        min-width: 0;
+        padding: 7px 12px;
+        border: 0.5px solid #e8e8e2;
+        border-radius: 100px;
+        background: #fff;
+        font-size: 13px;
+        color: #3a3a36;
+        outline: none;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+        transition: border-color 0.15s;
+      }
+      .style-input:focus {
+        border-color: #d4d4ca;
+      }
+      .style-input::placeholder {
+        color: #b8b8ae;
+      }
+
+      /* ── AI Provider ── */
+      .llm-note {
+        font-size: 11px;
+        line-height: 1.45;
+        color: #8a8a80;
+        padding: 0 2px;
+      }
+      .llm-note.warn {
+        color: #92600f;
+      }
+      .llm-note a {
+        color: #3a3a36;
+      }
+      .llm-actions {
+        display: flex;
+        gap: 8px;
+        padding-top: 2px;
+      }
+      .llm-btn {
+        flex: 1;
+        padding: 7px 0;
+        border-radius: 100px;
+        font-size: 12px;
+        cursor: pointer;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+        transition: all 0.15s;
+      }
+      .llm-btn-primary {
+        background: #111;
+        color: #fff;
+        border: 0.5px solid #111;
+      }
+      .llm-btn-primary:hover {
+        background: #2a2a2a;
+      }
+      .llm-btn-ghost {
+        background: #fff;
+        color: #6b6b63;
+        border: 0.5px solid #e8e8e2;
+      }
+      .llm-btn-ghost:hover {
+        background: #fafaf7;
+      }
+      .llm-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .llm-status {
+        font-size: 11px;
+        min-height: 15px;
+        padding: 0 2px;
+      }
+      .llm-status.ok {
+        color: #2f7d4f;
+      }
+      .llm-status.err {
+        color: #b3261e;
+      }
+
       /* ── Export button ── */
       .export-section {
         padding: 14px 20px 18px;
@@ -1003,6 +1083,91 @@
               <option value="default">Medium</option>
               <option value="large">Large</option>
             </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Provider -->
+      <div class="section">
+        <div class="section-title">AI Provider</div>
+        <div class="style-controls">
+          <div class="style-row">
+            <span class="style-label">Provider</span>
+            <select class="style-select" id="llm-provider-select">
+              <option value="">Oddity (default)</option>
+              <option value="oddity-free">Oddity Free</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Gemini</option>
+              <option value="muse">Meta Muse</option>
+            </select>
+          </div>
+          <div
+            class="llm-note"
+            id="llm-provider-note"
+            style="display: none"
+          ></div>
+          <div id="llm-key-form" style="display: none">
+            <div class="style-controls">
+              <div class="style-row">
+                <span class="style-label">API key</span>
+                <input
+                  class="style-input"
+                  id="llm-key-input"
+                  type="password"
+                  placeholder="Paste API key"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                />
+              </div>
+              <div class="style-row">
+                <span class="style-label">Model</span>
+                <input
+                  class="style-input"
+                  id="llm-model-input"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                />
+              </div>
+              <div class="style-row">
+                <span class="style-label">Effort</span>
+                <select class="style-select" id="llm-effort-select">
+                  <option value="default">Default</option>
+                  <option value="none">None</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div class="style-row">
+                <span class="style-label">Base URL</span>
+                <input
+                  class="style-input"
+                  id="llm-baseurl-input"
+                  type="text"
+                  placeholder="Default endpoint"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                />
+              </div>
+              <div class="llm-actions">
+                <button
+                  class="llm-btn llm-btn-primary"
+                  id="llm-save-btn"
+                >
+                  Save
+                </button>
+                <button class="llm-btn llm-btn-ghost" id="llm-delete-btn">
+                  Remove
+                </button>
+              </div>
+              <div class="llm-status" id="llm-status"></div>
+            </div>
           </div>
         </div>
       </div>

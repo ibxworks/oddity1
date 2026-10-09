@@ -4,8 +4,17 @@ import type { Router } from "express";
 
 const mockGenerateSketchStream = vi.fn();
 
-vi.mock("../../lib/openrouter.js", () => ({
+vi.mock("../../lib/llm.js", () => ({
   generateSketchStream: mockGenerateSketchStream,
+}));
+
+vi.mock("../../lib/llm-config.js", () => ({
+  resolveRequestLlm: vi.fn(async () => ({
+    override: null,
+    bypassLimits: false,
+    cacheTag: null,
+  })),
+  sendLlmConfigError: vi.fn(() => false),
 }));
 
 class MockRequest extends EventEmitter {

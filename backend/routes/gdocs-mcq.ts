@@ -2,7 +2,12 @@ import { Router } from "express";
 import { z } from "zod";
 import { canUseFeature } from "@oddity/shared";
 import type { UserTier } from "@oddity/shared";
-import { generateAllMcqQuestions } from "../lib/openrouter.js";
+import { generateAllMcqQuestions } from "../lib/llm.js";
+import {
+  resolveRequestLlm,
+  sendLlmConfigError,
+  type ResolvedLlm,
+} from "../lib/llm-config.js";
 
 const router = Router();
 
@@ -26,8 +31,18 @@ router.post("/", async (req, res) => {
 
   const { prompt, docContext } = parsed.data;
 
+  let llm: ResolvedLlm;
   try {
-    const questions = await generateAllMcqQuestions(prompt, docContext);
+    llm = await resolveRequestLlm(req.user!.id);
+  } catch (err) {
+    if (sendLlmConfigError(res, err)) return;
+    throw err;
+  }
+
+  try {
+    const questions = await generateAllMcqQuestions(prompt, docContext, {
+      override: llm.override,
+    });
     res.json(questions);
   } catch (err) {
     console.error("[gdocs-mcq] Error generating questions:", err instanceof Error ? err.message : err);

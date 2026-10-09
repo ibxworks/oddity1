@@ -3,7 +3,12 @@ import type { UserTier } from "@oddity/shared";
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { generateSketchStream } from "../lib/openrouter.js";
+import { generateSketchStream } from "../lib/llm.js";
+import {
+  resolveRequestLlm,
+  sendLlmConfigError,
+  type ResolvedLlm,
+} from "../lib/llm-config.js";
 import { createRequestAbortSignal } from "../lib/request-abort.js";
 
 const SketchRequestSchema = z.object({
@@ -34,6 +39,14 @@ router.post("/", async (req, res) => {
 
   const { input_text, purpose, user_reactions, mode } = parsed.data;
 
+  let llm: ResolvedLlm;
+  try {
+    llm = await resolveRequestLlm(req.user!.id);
+  } catch (err) {
+    if (sendLlmConfigError(res, err)) return;
+    throw err;
+  }
+
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -46,6 +59,7 @@ router.post("/", async (req, res) => {
   try {
     await generateSketchStream(input_text, purpose, user_reactions, mode, {
       signal,
+      override: llm.override,
       logContext: {
         route: "sketch",
         requestId,

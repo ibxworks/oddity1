@@ -4,8 +4,12 @@ import type {
   AnnotationFont,
   AnnotationFontSize,
   AnnotationType,
+  LlmKeyStatus,
+  LlmProvider,
+  LlmStatusResponse,
+  SaveLlmKeyBody,
 } from "@oddity/shared";
-import { getAnnotationColor } from "@oddity/shared";
+import { getAnnotationColor, LLM_PROVIDER_META } from "@oddity/shared";
 
 import {
   getChatbotBuildPromptLabel,
@@ -285,6 +289,18 @@ let dashPublicFigureSelect: HTMLSelectElement | null = null;
 let dashPublicFigureRow: HTMLDivElement | null = null;
 let dashFontSelect: HTMLSelectElement | null = null;
 let dashFontSizeSelect: HTMLSelectElement | null = null;
+let dashLlmSelect: HTMLSelectElement | null = null;
+let dashLlmNote: HTMLDivElement | null = null;
+let dashLlmForm: HTMLDivElement | null = null;
+let dashLlmKeyInput: HTMLInputElement | null = null;
+let dashLlmModelInput: HTMLInputElement | null = null;
+let dashLlmEffortSelect: HTMLSelectElement | null = null;
+let dashLlmBaseUrlInput: HTMLInputElement | null = null;
+let dashLlmSaveBtn: HTMLButtonElement | null = null;
+let dashLlmDeleteBtn: HTMLButtonElement | null = null;
+let dashLlmStatus: HTMLDivElement | null = null;
+let dashLlmState: LlmStatusResponse | null = null;
+let dashLlmStoredProvider: LlmProvider | null = null;
 let dashPersonaSelect: HTMLElement | null = null;
 let dashPersonaAvatarImgEl: HTMLImageElement | null = null;
 let bubbleLogoImgEl: HTMLImageElement | null = null;
@@ -2723,6 +2739,332 @@ function showAuthView(mode: "signin" | "signup"): void {
   }
 }
 
+function dashLlmMakeRow(label: string, control: HTMLElement): HTMLDivElement {
+  const row = document.createElement("div");
+  row.className = "args-dash-row";
+  const span = document.createElement("span");
+  span.className = "args-dash-label";
+  span.textContent = label;
+  row.appendChild(span);
+  row.appendChild(control);
+  return row;
+}
+
+function dashLlmMakeInput(
+  type: string,
+  placeholder: string,
+): HTMLInputElement {
+  const input = document.createElement("input");
+  input.className = "args-dash-input";
+  input.type = type;
+  input.placeholder = placeholder;
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  return input;
+}
+
+function buildDashLlmSection(): HTMLDivElement {
+  const llmSection = document.createElement("div");
+  llmSection.className = "args-dash-section";
+  const llmTitle = document.createElement("div");
+  llmTitle.className = "args-dash-section-title";
+  llmTitle.textContent = "AI Provider";
+  llmSection.appendChild(llmTitle);
+
+  dashLlmSelect = document.createElement("select");
+  dashLlmSelect.className = "args-dash-select";
+  for (const [value, text] of [
+    ["", "Oddity (default)"],
+    ["oddity-free", "Oddity Free"],
+    ["openrouter", "OpenRouter"],
+    ["openai", "OpenAI"],
+    ["anthropic", "Anthropic"],
+    ["gemini", "Gemini"],
+    ["muse", "Meta Muse"],
+  ] as [string, string][]) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = text;
+    dashLlmSelect.appendChild(opt);
+  }
+  dashLlmSelect.addEventListener("change", () => {
+    void onDashLlmProviderChange();
+  });
+  llmSection.appendChild(dashLlmMakeRow("Provider", dashLlmSelect));
+
+  dashLlmNote = document.createElement("div");
+  dashLlmNote.className = "args-dash-llm-note";
+  dashLlmNote.style.display = "none";
+  llmSection.appendChild(dashLlmNote);
+
+  dashLlmForm = document.createElement("div");
+  dashLlmForm.style.display = "none";
+
+  dashLlmKeyInput = dashLlmMakeInput("password", "Paste API key");
+  dashLlmForm.appendChild(dashLlmMakeRow("API key", dashLlmKeyInput));
+
+  dashLlmModelInput = dashLlmMakeInput("text", "Default model");
+  dashLlmForm.appendChild(dashLlmMakeRow("Model", dashLlmModelInput));
+
+  dashLlmEffortSelect = document.createElement("select");
+  dashLlmEffortSelect.className = "args-dash-select";
+  for (const [value, text] of [
+    ["default", "Default"],
+    ["none", "None"],
+    ["low", "Low"],
+    ["medium", "Medium"],
+    ["high", "High"],
+  ] as [string, string][]) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = text;
+    dashLlmEffortSelect.appendChild(opt);
+  }
+  dashLlmForm.appendChild(dashLlmMakeRow("Effort", dashLlmEffortSelect));
+
+  dashLlmBaseUrlInput = dashLlmMakeInput("text", "Default endpoint");
+  dashLlmForm.appendChild(dashLlmMakeRow("Base URL", dashLlmBaseUrlInput));
+
+  const actions = document.createElement("div");
+  actions.className = "args-dash-llm-actions";
+  dashLlmSaveBtn = document.createElement("button");
+  dashLlmSaveBtn.className = "args-dash-llm-btn args-dash-llm-btn-primary";
+  dashLlmSaveBtn.textContent = "Save";
+  dashLlmSaveBtn.addEventListener("click", () => {
+    void onDashLlmSave();
+  });
+  dashLlmDeleteBtn = document.createElement("button");
+  dashLlmDeleteBtn.className = "args-dash-llm-btn args-dash-llm-btn-ghost";
+  dashLlmDeleteBtn.textContent = "Remove";
+  dashLlmDeleteBtn.addEventListener("click", () => {
+    void onDashLlmDelete();
+  });
+  actions.appendChild(dashLlmSaveBtn);
+  actions.appendChild(dashLlmDeleteBtn);
+  dashLlmForm.appendChild(actions);
+
+  dashLlmStatus = document.createElement("div");
+  dashLlmStatus.className = "args-dash-llm-status";
+  dashLlmForm.appendChild(dashLlmStatus);
+
+  llmSection.appendChild(dashLlmForm);
+  return llmSection;
+}
+
+function dashLlmStatusFor(provider: LlmProvider): LlmKeyStatus | undefined {
+  return dashLlmState?.keys?.find((key) => key.provider === provider);
+}
+
+/** Background resolves `{ error }` instead of rejecting — surface it as a throw. */
+function throwIfDashLlmError(
+  result: { error?: string } | null | undefined,
+  fallback: string,
+): asserts result {
+  if (!result || typeof result.error === "string") {
+    throw new Error(
+      result && typeof result.error === "string" ? result.error : fallback,
+    );
+  }
+}
+
+function setDashLlmStatus(message: string, kind: "" | "ok" | "err"): void {
+  if (!dashLlmStatus) return;
+  dashLlmStatus.textContent = message;
+  dashLlmStatus.className =
+    kind === "" ? "args-dash-llm-status" : `args-dash-llm-status ${kind}`;
+}
+
+async function loadDashLlmStatus(): Promise<void> {
+  try {
+    const stored = await chrome.storage.local.get("preferences");
+    const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+    const saved = prefs["llm_provider"];
+    dashLlmStoredProvider =
+      typeof saved === "string" ? (saved as LlmProvider) : null;
+  } catch {
+    // Keep the previous stored provider on read failure.
+  }
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "getLlmStatus",
+      payload: {},
+    })) as (LlmStatusResponse & { error?: string }) | null | undefined;
+    throwIfDashLlmError(result, "Couldn't load AI provider status.");
+    if (!result || !Array.isArray(result.keys)) {
+      throw new Error("Bad LLM status shape.");
+    }
+    dashLlmState = result;
+  } catch {
+    dashLlmState = null;
+  }
+  renderDashLlmSection();
+}
+
+function renderDashLlmSection(): void {
+  if (!dashLlmSelect || !dashLlmNote || !dashLlmForm) return;
+  const active =
+    dashLlmState?.active_provider ?? dashLlmStoredProvider ?? null;
+  dashLlmSelect.value = active ?? "";
+
+  const selected = (dashLlmSelect.value || null) as LlmProvider | null;
+  const status = selected ? dashLlmStatusFor(selected) : undefined;
+
+  if (selected === null) {
+    dashLlmNote.className = "args-dash-llm-note";
+    dashLlmNote.textContent =
+      "Oddity-managed model included with your plan. No setup needed.";
+    dashLlmNote.style.display = "";
+    dashLlmForm.style.display = "none";
+    return;
+  }
+
+  const meta = LLM_PROVIDER_META[selected];
+  if (selected === "oddity-free") {
+    dashLlmNote.className = "args-dash-llm-note warn";
+    dashLlmNote.textContent = meta.note;
+    dashLlmNote.style.display = "";
+    dashLlmForm.style.display = "none";
+    return;
+  }
+
+  dashLlmNote.className = "args-dash-llm-note";
+  dashLlmNote.innerHTML = "";
+  dashLlmNote.append(document.createTextNode(`${meta.note} `));
+  if (meta.keyUrl) {
+    const link = document.createElement("a");
+    link.href = meta.keyUrl;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Get a key";
+    dashLlmNote.append(link);
+    dashLlmNote.append(document.createTextNode("."));
+  }
+  dashLlmNote.style.display = "";
+
+  dashLlmForm.style.display = "flex";
+  dashLlmForm.style.flexDirection = "column";
+  dashLlmForm.style.gap = "8px";
+  dashLlmForm.style.marginTop = "8px";
+  if (dashLlmKeyInput) {
+    dashLlmKeyInput.value = "";
+    dashLlmKeyInput.placeholder = status?.configured
+      ? `Saved (${status.key_hint ?? "****"})`
+      : "Paste API key";
+  }
+  if (dashLlmModelInput) {
+    dashLlmModelInput.value = status?.model ?? "";
+    dashLlmModelInput.placeholder = meta.modelPlaceholder || "Default model";
+  }
+  if (dashLlmEffortSelect) {
+    dashLlmEffortSelect.value = status?.reasoning_effort ?? "default";
+  }
+  if (dashLlmBaseUrlInput) {
+    dashLlmBaseUrlInput.value = status?.base_url ?? "";
+  }
+  if (dashLlmDeleteBtn) {
+    dashLlmDeleteBtn.disabled = !status?.configured;
+  }
+  if (status && !status.configured) {
+    setDashLlmStatus(`Add your ${meta.label} API key to use this provider.`, "");
+  } else {
+    setDashLlmStatus("", "");
+  }
+}
+
+async function onDashLlmProviderChange(): Promise<void> {
+  const provider = ((dashLlmSelect?.value || null) as LlmProvider | null) ?? null;
+  setDashLlmStatus("Saving…", "");
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "setLlmProvider",
+      payload: { provider },
+    })) as { success: boolean; error?: string } | null | undefined;
+    throwIfDashLlmError(result, "Couldn't save provider.");
+    const stored = await chrome.storage.local.get("preferences");
+    const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+    await chrome.storage.local.set({
+      preferences: { ...prefs, llm_provider: provider },
+    });
+    dashLlmStoredProvider = provider;
+    if (dashLlmState) {
+      dashLlmState.active_provider = provider;
+    } else {
+      dashLlmState = { active_provider: provider, keys: [] };
+    }
+  } catch {
+    setDashLlmStatus("Couldn't save provider.", "err");
+  }
+  renderDashLlmSection();
+}
+
+async function onDashLlmSave(): Promise<void> {
+  const provider = (dashLlmSelect?.value || null) as LlmProvider | null;
+  if (!provider || provider === "oddity-free" || !dashLlmSaveBtn) return;
+  const body: SaveLlmKeyBody = {
+    model: dashLlmModelInput?.value.trim() ?? "",
+    base_url: dashLlmBaseUrlInput?.value.trim() ?? "",
+    reasoning_effort: (dashLlmEffortSelect?.value ?? "default") as SaveLlmKeyBody["reasoning_effort"],
+  };
+  const apiKey = dashLlmKeyInput?.value.trim() ?? "";
+  if (apiKey) body.api_key = apiKey;
+
+  dashLlmSaveBtn.disabled = true;
+  setDashLlmStatus("Saving…", "");
+  try {
+    const updated = (await chrome.runtime.sendMessage({
+      action: "saveLlmKey",
+      payload: { provider, body },
+    })) as (LlmKeyStatus & { error?: string }) | null | undefined;
+    throwIfDashLlmError(updated, "Couldn't save key.");
+    if (dashLlmState && updated) {
+      const index = dashLlmState.keys.findIndex(
+        (key) => key.provider === provider,
+      );
+      if (index >= 0) dashLlmState.keys[index] = updated;
+      else dashLlmState.keys.push(updated);
+    }
+    renderDashLlmSection();
+    setDashLlmStatus("Saved.", "ok");
+  } catch (err) {
+    setDashLlmStatus(
+      err instanceof Error ? err.message : "Couldn't save key.",
+      "err",
+    );
+  } finally {
+    if (dashLlmSaveBtn) dashLlmSaveBtn.disabled = false;
+  }
+}
+
+async function onDashLlmDelete(): Promise<void> {
+  const provider = (dashLlmSelect?.value || null) as LlmProvider | null;
+  if (!provider || provider === "oddity-free" || !dashLlmDeleteBtn) return;
+  if (
+    !window.confirm(
+      `Remove your saved ${LLM_PROVIDER_META[provider].label} key?`,
+    )
+  ) {
+    return;
+  }
+  dashLlmDeleteBtn.disabled = true;
+  setDashLlmStatus("Removing…", "");
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "deleteLlmKey",
+      payload: { provider },
+    })) as { deleted: boolean; error?: string } | null | undefined;
+    throwIfDashLlmError(result, "Couldn't remove key.");
+    await loadDashLlmStatus();
+    setDashLlmStatus("Removed.", "ok");
+  } catch (err) {
+    setDashLlmStatus(
+      err instanceof Error ? err.message : "Couldn't remove key.",
+      "err",
+    );
+  } finally {
+    renderDashLlmSection();
+  }
+}
+
 function buildDashboardFace(): HTMLDivElement {
   const face = document.createElement("div");
   face.className = "args-dash-face";
@@ -3011,6 +3353,9 @@ function buildDashboardFace(): HTMLDivElement {
   sizeRow.appendChild(dashFontSizeSelect);
   section.appendChild(sizeRow);
   face.appendChild(section);
+
+  // ── AI Provider ──
+  face.appendChild(buildDashLlmSection());
 
   // ── Export PDF ──
   const exportSection = document.createElement("div");
@@ -3715,6 +4060,7 @@ async function loadDashboardData(): Promise<void> {
       if (dashSignOutPopoverPlanEl)
         dashSignOutPopoverPlanEl.textContent =
           dashUserTier === "standard" ? "Standard Plan" : "Free Plan";
+      void loadDashLlmStatus();
     } else {
       if (dashProfileNameEl) dashProfileNameEl.textContent = "Not signed in";
       if (dashProfileAvatarEl) dashProfileAvatarEl.textContent = "?";
@@ -7997,6 +8343,75 @@ const ARGUMENTS_BOX_CSS = `
     cursor: pointer;
     outline: none;
   }
+
+  .args-dash-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 0.5px solid #e5e7eb;
+    border-radius: 20px;
+    background: #fff;
+    font-size: 12px;
+    color: #374151;
+    outline: none;
+    box-sizing: border-box;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-input::placeholder { color: #b6bcc7; }
+
+  .args-dash-llm-note {
+    font-size: 11px;
+    line-height: 1.45;
+    color: #9ca3af;
+    padding: 0 2px;
+  }
+
+  .args-dash-llm-note.warn { color: #92600f; }
+
+  .args-dash-llm-note a { color: #374151; }
+
+  .args-dash-llm-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .args-dash-llm-btn {
+    all: unset;
+    flex: 1;
+    height: 28px;
+    border-radius: 20px;
+    font-size: 11px;
+    text-align: center;
+    cursor: pointer;
+    box-sizing: border-box;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-llm-btn-primary {
+    background: #1a1a1a;
+    color: #fff;
+  }
+
+  .args-dash-llm-btn-ghost {
+    background: #fff;
+    color: #6b7280;
+    border: 0.5px solid #e5e7eb;
+  }
+
+  .args-dash-llm-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .args-dash-llm-status {
+    font-size: 11px;
+    min-height: 14px;
+    padding: 0 2px;
+  }
+
+  .args-dash-llm-status.ok { color: #2f7d4f; }
+  .args-dash-llm-status.err { color: #b3261e; }
 
   .args-dash-export-section {
     padding: 10px 16px 14px;

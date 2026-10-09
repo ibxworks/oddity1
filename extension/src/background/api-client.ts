@@ -6,6 +6,10 @@ import {
   type AnnotationFeedback,
   type AnnotationUsage,
   type FeedbackType,
+  type LlmKeyStatus,
+  type LlmProvider,
+  type LlmStatusResponse,
+  type SaveLlmKeyBody,
   type PdfPageSummaryGenerateRequest,
   type PdfPageSummaryGenerateResponse,
   type PdfPageSummaryListResponse,
@@ -556,6 +560,45 @@ export async function sendUserFeedback(message: string, role?: string): Promise<
   });
   if (!res.ok) throw new Error(`sendUserFeedback failed: ${res.status}`);
   return res.json() as Promise<{ success: boolean }>;
+}
+
+/** Fetch LLM provider statuses for the current user. */
+export async function getLlmStatus(): Promise<LlmStatusResponse> {
+  const res = await authFetch('/api/user/llm-keys');
+  if (!res.ok) {
+    throw new Error(`getLlmStatus failed: ${res.status}`);
+  }
+  return (await res.json()) as LlmStatusResponse;
+}
+
+/** Save a provider key and/or settings. Returns the updated status. */
+export async function saveLlmKey(
+  provider: LlmProvider,
+  body: SaveLlmKeyBody,
+): Promise<LlmKeyStatus> {
+  const res = await authFetch(`/api/user/llm-keys/${provider}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? `saveLlmKey failed: ${res.status}`);
+  }
+  return (await res.json()) as LlmKeyStatus;
+}
+
+/** Delete a saved provider key. */
+export async function deleteLlmKey(
+  provider: LlmProvider,
+): Promise<{ deleted: boolean }> {
+  const res = await authFetch(`/api/user/llm-keys/${provider}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? `deleteLlmKey failed: ${res.status}`);
+  }
+  return (await res.json()) as { deleted: boolean };
 }
 
 export async function updatePreferences(

@@ -37,6 +37,10 @@ import {
   getPublicFigurePersonas,
   saveAnnotation,
   UsageLimitError,
+  getLlmStatus,
+  saveLlmKey,
+  deleteLlmKey,
+  updatePreferences,
 } from "./api-client.js";
 import {
   ensureProfile,
@@ -923,6 +927,28 @@ chrome.runtime.onMessage.addListener(
         case "getUserTier": {
           const tier = await getUserTier();
           return { tier };
+        }
+
+        case "getLlmStatus": {
+          return await getLlmStatus();
+        }
+
+        case "setLlmProvider": {
+          await updatePreferences({
+            llm_provider: message.payload.provider,
+          });
+          return { success: true };
+        }
+
+        case "saveLlmKey": {
+          return await saveLlmKey(
+            message.payload.provider,
+            message.payload.body,
+          );
+        }
+
+        case "deleteLlmKey": {
+          return await deleteLlmKey(message.payload.provider);
         }
 
         case "saveFeedback": {

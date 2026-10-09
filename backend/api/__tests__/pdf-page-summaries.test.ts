@@ -6,8 +6,17 @@ const mockGeneratePdfPageSummary = vi.fn();
 const mockRpc = vi.fn();
 const mockCreateUserClient = vi.fn();
 
-vi.mock("../../lib/openrouter.js", () => ({
+vi.mock("../../lib/llm.js", () => ({
   generatePdfPageSummary: mockGeneratePdfPageSummary,
+}));
+
+vi.mock("../../lib/llm-config.js", () => ({
+  resolveRequestLlm: vi.fn(async () => ({
+    override: null,
+    bypassLimits: false,
+    cacheTag: null,
+  })),
+  sendLlmConfigError: vi.fn(() => false),
 }));
 
 vi.mock("../../lib/supabase.js", () => ({

@@ -2,7 +2,12 @@ import { Router } from "express";
 import { z } from "zod";
 import { canUseFeature } from "@oddity/shared";
 import type { UserTier } from "@oddity/shared";
-import { generateGDocsRoute, type GDocsRouteResult } from "../lib/openrouter.js";
+import { generateGDocsRoute, type GDocsRouteResult } from "../lib/llm.js";
+import {
+  resolveRequestLlm,
+  sendLlmConfigError,
+  type ResolvedLlm,
+} from "../lib/llm-config.js";
 
 const router = Router();
 
@@ -27,8 +32,18 @@ router.post("/", async (req, res) => {
 
   const { prompt, docContext, essayContent } = parsed.data;
 
+  let llm: ResolvedLlm;
   try {
-    const result: GDocsRouteResult = await generateGDocsRoute(prompt, docContext, essayContent);
+    llm = await resolveRequestLlm(req.user!.id);
+  } catch (err) {
+    if (sendLlmConfigError(res, err)) return;
+    throw err;
+  }
+
+  try {
+    const result: GDocsRouteResult = await generateGDocsRoute(prompt, docContext, essayContent, {
+      override: llm.override,
+    });
     res.json(result);
   } catch (err) {
     console.error("[gdocs-route] Error:", err instanceof Error ? err.message : err);
