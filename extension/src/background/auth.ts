@@ -7,11 +7,20 @@ import {
 } from "@supabase/supabase-js";
 import { DEFAULT_ENABLED_SITES } from "@oddity/shared";
 
-// ─── Supabase Configuration ───
-// Replace with real values before production
-const SUPABASE_URL = "https://gmmektzvvrtttszdgiai.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtbWVrdHp2dnJ0dHRzemRnaWFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MzQyNzYsImV4cCI6MjA4NzMxMDI3Nn0.aFzJcKC4dHgSz7TuQFR-4ZjnVMNQZAycWYkXg1UHKKY";
+// --- Supabase Configuration ---
+// Set via extension/.env (see extension/.env.example). Never hardcode keys.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as
+  | string
+  | undefined;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error(
+    "[Oddity 1] Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY. " +
+      "Copy extension/.env.example to extension/.env and fill in your Supabase project credentials, then rebuild.",
+  );
+}
+
 const EXTENSION_REDIRECT_URL = `https://${chrome.runtime.id}.chromiumapp.org/`;
 const RESET_PASSWORD_REDIRECT_URL = "https://app.oddity1.com/reset-password";
 

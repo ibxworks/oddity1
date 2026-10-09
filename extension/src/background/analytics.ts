@@ -3,8 +3,12 @@
 // All events are sent via HTTP POST to PostHog's /capture endpoint.
 // Failures are silently swallowed — analytics must never affect functionality.
 
-const POSTHOG_API_KEY = "phc_DDN89EWI23aAjRR5XkFM15SSiMCIBXWbxVWLbNvNvPv";
-const POSTHOG_HOST = "https://us.i.posthog.com";
+// Set via extension/.env (see extension/.env.example). Analytics is disabled
+// when no key is configured — it must never affect functionality.
+const POSTHOG_API_KEY = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
+const POSTHOG_HOST =
+  (import.meta.env.VITE_POSTHOG_HOST as string | undefined) ??
+  "https://us.i.posthog.com";
 
 let distinctId: string | null = null;
 let userProperties: Record<string, unknown> = {};
@@ -14,7 +18,7 @@ function captureEvent(
   properties: Record<string, unknown> = {},
 ): void {
   try {
-    if (!distinctId) return;
+    if (!distinctId || !POSTHOG_API_KEY) return;
 
     const payload = {
       api_key: POSTHOG_API_KEY,

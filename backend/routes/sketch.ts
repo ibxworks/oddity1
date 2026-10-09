@@ -3,7 +3,7 @@ import type { UserTier } from "@oddity/shared";
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { generateSketchStream } from "../lib/gemini.js";
+import { generateSketchStream } from "../lib/openrouter.js";
 import { createRequestAbortSignal } from "../lib/request-abort.js";
 
 const SketchRequestSchema = z.object({

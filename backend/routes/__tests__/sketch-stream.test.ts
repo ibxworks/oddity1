@@ -4,7 +4,7 @@ import type { Router } from "express";
 
 const mockGenerateSketchStream = vi.fn();
 
-vi.mock("../../lib/gemini.js", () => ({
+vi.mock("../../lib/openrouter.js", () => ({
   generateSketchStream: mockGenerateSketchStream,
 }));
 

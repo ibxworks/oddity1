@@ -3,7 +3,7 @@ import { MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { generatePdfPageSummary } from "../lib/gemini.js";
+import { generatePdfPageSummary } from "../lib/openrouter.js";
 import { createUserClient, serviceClient } from "../lib/supabase.js";
 
 const router = Router();

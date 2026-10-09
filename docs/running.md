@@ -5,8 +5,8 @@
 - Node.js 20+
 - npm 10+
 - Chrome (for loading the extension)
-- A Supabase project (already provisioned: `gmmektzvvrtttszdgiai`)
-- A Gemini API key
+- A Supabase project (create one at supabase.com)
+- An OpenRouter API key (create one at openrouter.ai/keys)
 
 ---
 
@@ -27,34 +27,30 @@ This installs all workspaces (`packages/shared`, `extension`, `backend`) in one 
 Create `backend/.env`:
 
 ```env
-SUPABASE_URL=https://gmmektzvvrtttszdgiai.supabase.co
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=<your anon key>
 SUPABASE_SERVICE_ROLE_KEY=<your service role key>
-GEMINI_API_KEY=AIza...
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_MODEL=meta/muse-spark-1.3-contributor
 PORT=3001
 ```
+
+See `backend/.env.example` for the full list of variables.
 
 ---
 
 ## 3. Configure the extension
 
-The extension connects to the backend and Supabase. Update the constants in:
+The extension connects to the backend and Supabase. Copy `extension/.env.example` to `extension/.env` and fill it in:
 
-**`extension/src/background/auth.ts`** — hardcoded Supabase credentials:
-
-```ts
-const SUPABASE_URL = "https://gmmektzvvrtttszdgiai.supabase.co";
-const SUPABASE_ANON_KEY = "<your anon key>";
+```env
+VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+VITE_SUPABASE_ANON_KEY=<your anon key>
+ODDITY_BACKEND_URL=http://localhost:3001
+ODDITY_GOOGLE_OAUTH_CLIENT_ID=<your Chrome extension OAuth client id>
 ```
 
-**`packages/shared/src/constants.ts`** — backend URL used by the extension:
-
-```ts
-export const BACKEND_URL =
-  process.env.ODDITY_BACKEND_URL ?? "http://localhost:3001";
-```
-
-For local dev, the default `http://localhost:3001` works without changes.
+These are read at build time — rebuild the extension after changing them. Never hardcode keys in source files.
 
 ---
 
@@ -104,7 +100,7 @@ After changes, click the refresh icon on the extension card (or it auto-reloads 
 
 The extension uses Supabase Auth with Google OAuth. To enable it:
 
-1. Go to [Supabase Dashboard → Authentication → Providers](https://supabase.com/dashboard/project/gmmektzvvrtttszdgiai/auth/providers)
+1. Go to [Supabase Dashboard → Authentication → Providers](https://supabase.com/dashboard/project/YOUR_PROJECT_REF/auth/providers)
 2. Enable **Google**
 3. Paste your **Google OAuth Client ID** and **Client Secret**
 4. Add the Supabase callback URL to your Google Cloud Console (Credentials → OAuth 2.0 Client → Authorized redirect URIs)
@@ -121,7 +117,7 @@ The Supabase callback URL is shown in the Supabase provider settings dialog.
 { "light": { "system_prompt": "<<PLACEHOLDER>>" }, ... }
 ```
 
-Replace the `<<PLACEHOLDER>>` values with actual system prompts before the annotation feature works. The backend won't crash without them — it'll just pass the placeholder to Gemini and get garbage back.
+Replace the `<<PLACEHOLDER>>` values with actual system prompts before the annotation feature works. The backend won't crash without them — it'll just pass the placeholder to the LLM and get garbage back.
 
 ---
 
