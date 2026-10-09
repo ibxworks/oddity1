@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { canUseFeature } from "@oddity/shared";
 import type { UserTier } from "@oddity/shared";
-import { generateGDocsChatStream, type GDocsChatMode } from "../lib/gemini.js";
+import { generateGDocsChatStream, type GDocsChatMode } from "../lib/openrouter.js";
 import { createRequestAbortSignal } from "../lib/request-abort.js";
 
 const MessageSchema = z.object({

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { canUseFeature } from "@oddity/shared";
 import type { UserTier } from "@oddity/shared";
-import { generateGDocsRoute, type GDocsRouteResult } from "../lib/gemini.js";
+import { generateGDocsRoute, type GDocsRouteResult } from "../lib/openrouter.js";
 
 const router = Router();
 

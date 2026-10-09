@@ -14,9 +14,10 @@ import {
   fixSingleAnnotation,
 } from "../lib/annotation-filter.js";
 import {
+  activeModelName,
   generateAnnotations,
   generateAnnotationsStream,
-} from "../lib/gemini.js";
+} from "../lib/openrouter.js";
 import { createInflightDedup } from "../lib/inflight-dedup.js";
 import { isValidPersonaSlug } from "../lib/persona-registry.js";
 import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
@@ -196,7 +197,7 @@ router.post("/", async (req, res) => {
       .single();
 
     if (dbCached) {
-      const currentModel = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
+      const currentModel = activeModelName;
       const currentPromptVersion = prompts.version;
 
       if (
@@ -252,7 +253,7 @@ router.post("/", async (req, res) => {
           url,
           intensity: cacheIntensity,
           annotations: aiAnnotations,
-          model_version: process.env.GEMINI_MODEL ?? "gemini-3-flash-preview",
+          model_version: activeModelName,
           prompt_version: prompts.version,
           expires_at: expiresAt.toISOString(),
         },
@@ -326,7 +327,7 @@ async function handleStreamingAnnotation(
       .gt("expires_at", new Date().toISOString())
       .single();
 
-    const currentModel = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
+    const currentModel = activeModelName;
     const currentPromptVersion = prompts.version;
 
     if (

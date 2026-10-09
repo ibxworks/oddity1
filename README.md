@@ -18,7 +18,7 @@ oddity1/
 │
 ├── backend/                # Express API, deployable to Vercel
 │   ├── api/                # Route handlers (annotate, annotations, adapters, user/preferences)
-│   ├── lib/                # Auth middleware, rate limiter, schema validator, Gemini client
+│   ├── lib/                # Auth middleware, rate limiter, schema validator, OpenRouter LLM client
 │   └── config/prompts.json # System prompts per intensity (currently placeholders!)
 │
 └── docs/
@@ -31,9 +31,9 @@ oddity1/
 | Secret                        | Where used                                          | Where to get it                             |
 | ----------------------------- | --------------------------------------------------- | ------------------------------------------- |
 | `SUPABASE_URL`                | `backend/.env`                                      | Supabase Dashboard → Project Settings → API |
-| `SUPABASE_ANON_KEY`           | `backend/.env` + `extension/src/background/auth.ts` | Same                                        |
+| `SUPABASE_ANON_KEY`           | `backend/.env` + `extension/.env`                   | Same                                        |
 | `SUPABASE_SERVICE_ROLE_KEY`   | `backend/.env` only — never in extension            | Same                                        |
-| `GEMINI_API_KEY`              | `backend/.env`                                      | aistudio.google.com                         |
+| `OPENROUTER_API_KEY`          | `backend/.env`                                      | openrouter.ai/keys                          |
 | Google OAuth Client ID/Secret | Supabase Dashboard → Auth → Providers               | Google Cloud Console                        |
 
 ---
@@ -57,35 +57,31 @@ This installs all workspaces (`packages/shared`, `extension`, `backend`) in one 
 Create `backend/.env`:
 
 ```env
-SUPABASE_URL=https://gmmektzvvrtttszdgiai.supabase.co
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=<your anon key>
 SUPABASE_SERVICE_ROLE_KEY=<your service role key>
 ODDITY_GOOGLE_OAUTH_CLIENT_ID=<your Chrome extension OAuth client id>
-GEMINI_API_KEY=AIza...
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_MODEL=meta/muse-spark-1.3-contributor
 PORT=3001
 ```
+
+See `backend/.env.example` for the full list of variables.
 
 ---
 
 ### 3. Configure the extension
 
-The extension connects to the backend and Supabase. Update the constants in:
+The extension connects to the backend and Supabase. Copy `extension/.env.example` to `extension/.env` and fill it in:
 
-**`extension/src/background/auth.ts`** — hardcoded Supabase credentials:
-
-```ts
-const SUPABASE_URL = "https://gmmektzvvrtttszdgiai.supabase.co";
-const SUPABASE_ANON_KEY = "<your anon key>";
+```env
+VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+VITE_SUPABASE_ANON_KEY=<your anon key>
+ODDITY_BACKEND_URL=http://localhost:3001
+ODDITY_GOOGLE_OAUTH_CLIENT_ID=<your Chrome extension OAuth client id>
 ```
 
-**`packages/shared/src/constants.ts`** — backend URL used by the extension:
-
-```ts
-export const BACKEND_URL =
-  process.env.ODDITY_BACKEND_URL ?? "http://localhost:3001";
-```
-
-For local dev, the default `http://localhost:3001` works without changes.
+These are read at build time — rebuild the extension after changing them. Never hardcode keys in source files.
 
 ---
 
@@ -149,7 +145,7 @@ After changes, click the refresh icon on the extension card (or it auto-reloads 
 
 The extension uses Supabase Auth with Google OAuth. To enable it:
 
-1. Go to [Supabase Dashboard → Authentication → Providers](https://supabase.com/dashboard/project/gmmektzvvrtttszdgiai/auth/providers)
+1. Go to [Supabase Dashboard → Authentication → Providers](https://supabase.com/dashboard/project/YOUR_PROJECT_REF/auth/providers)
 2. Enable **Google**
 3. Paste your **Google OAuth Client ID** and **Client Secret**
 4. Add the Supabase callback URL to your Google Cloud Console (Credentials → OAuth 2.0 Client → Authorized redirect URIs)
@@ -166,7 +162,7 @@ The Supabase callback URL is shown in the Supabase provider settings dialog.
 { "light": { "system_prompt": "<<PLACEHOLDER>>" }, ... }
 ```
 
-Replace the `<<PLACEHOLDER>>` values with actual system prompts before the annotation feature works. The backend won't crash without them — it'll just pass the placeholder to Gemini and get garbage back.
+Replace the `<<PLACEHOLDER>>` values with actual system prompts before the annotation feature works. The backend won't crash without them — it'll just pass the placeholder to the LLM and get garbage back.
 
 ---
 

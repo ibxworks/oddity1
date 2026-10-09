@@ -177,7 +177,7 @@ let currentRequestId = 0;
 
 // Two-stage timeouts:
 //   FIRST_CHUNK_TIMEOUT_MS — how long to wait for the very first token (reasoning
-//     models like gemini-2.5-pro can think for 30-45s before streaming starts).
+//     models can think for 30-45s before streaming starts).
 //   HEARTBEAT_TIMEOUT_MS   — max silence between tokens once streaming has begun
 //     (stream is considered frozen if no new token for this long).
 const FIRST_CHUNK_TIMEOUT_MS = 90_000;
@@ -975,7 +975,7 @@ async function handleResponseActions(response: string): Promise<void> {
 
   if (pendingEditMode) {
     pendingEditMode = false;
-    const editMatch = response.match(/<<<EDIT>>>([\s\S]+?)<<<END_EDIT>>>/);
+    const editMatch = response.match(/<<<EDIT>>>([\s\S]+?)(?:<<<END_EDIT>>>|$)/);
     if (editMatch?.[1]) {
       const ops = parseEditOps(editMatch[1].trim());
       if (ops.length > 0) {

@@ -6,7 +6,7 @@ const mockGeneratePdfPageSummary = vi.fn();
 const mockRpc = vi.fn();
 const mockCreateUserClient = vi.fn();
 
-vi.mock("../../lib/gemini.js", () => ({
+vi.mock("../../lib/openrouter.js", () => ({
   generatePdfPageSummary: mockGeneratePdfPageSummary,
 }));
 

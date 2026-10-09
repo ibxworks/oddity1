@@ -1,6 +1,6 @@
 # Oddity 1 Database Schema
 
-Supabase project: `gmmektzvvrtttszdgiai`
+Supabase project: your own project (see `SUPABASE_URL` in `backend/.env`)
 Region: us-east-1
 
 ---
