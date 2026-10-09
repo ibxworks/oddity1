@@ -8,7 +8,7 @@ const mockRpc = vi.fn();
 const mockUpsert = vi.fn();
 const mockSingle = vi.fn();
 
-vi.mock("../../lib/gemini.js", () => ({
+vi.mock("../../lib/openrouter.js", () => ({
   generateAnnotations: vi.fn(),
   generateAnnotationsStream: mockGenerateAnnotationsStream,
 }));

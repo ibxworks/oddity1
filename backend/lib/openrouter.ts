@@ -1,8 +1,3 @@
-import {
-  GoogleGenerativeAI,
-  GoogleGenerativeAIError,
-  GoogleGenerativeAIFetchError,
-} from "@google/generative-ai";
 import type {
   Annotation,
   AnnotationMode,
@@ -16,36 +11,44 @@ import { getPersona } from "./persona-registry.js";
 import { validateAnnotations } from "./schema-validator.js";
 
 const apiKeys = [
-  process.env.GEMINI_API_KEY,
-  process.env.GEMINI_API_KEY_BACKUP1,
-  process.env.GEMINI_API_KEY_BACKUP2,
+  process.env.OPENROUTER_API_KEY,
+  process.env.OPENROUTER_API_KEY_BACKUP1,
+  process.env.OPENROUTER_API_KEY_BACKUP2,
 ].filter((key): key is string => !!key);
 
-type ClientEntry = {
-  client: GoogleGenerativeAI;
+type KeyEntry = {
+  apiKey: string;
   keyIndex: number;
 };
 
-const genAIClients: ClientEntry[] = apiKeys.map((key, index) => ({
-  client: new GoogleGenerativeAI(key),
+const apiKeyEntries: KeyEntry[] = apiKeys.map((key, index) => ({
+  apiKey: key,
   keyIndex: index + 1,
 }));
 
-const modelName = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview";
-const GEMINI_TIMEOUT_MS = getPositiveNumber(
-  process.env.GEMINI_TIMEOUT_MS,
+const modelName = process.env.OPENROUTER_MODEL ?? "meta/muse-spark-1.3-contributor";
+export const activeModelName = modelName;
+
+const OPENROUTER_BASE_URL =
+  process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
+// Reasoning effort for thinking models (OpenAI-style: max/xhigh/high/medium/
+// low/minimal/none). Empty string disables the reasoning parameter.
+const OPENROUTER_REASONING_EFFORT =
+  process.env.OPENROUTER_REASONING_EFFORT ?? "medium";
+const OPENROUTER_TIMEOUT_MS = getPositiveNumber(
+  process.env.OPENROUTER_TIMEOUT_MS,
   45000,
 );
-const GEMINI_ATTEMPTS_PER_KEY = getPositiveNumber(
-  process.env.GEMINI_ATTEMPTS_PER_KEY,
+const OPENROUTER_ATTEMPTS_PER_KEY = getPositiveNumber(
+  process.env.OPENROUTER_ATTEMPTS_PER_KEY,
   2,
 );
-const GEMINI_RETRY_BASE_DELAY_MS = getPositiveNumber(
-  process.env.GEMINI_RETRY_BASE_DELAY_MS,
+const OPENROUTER_RETRY_BASE_DELAY_MS = getPositiveNumber(
+  process.env.OPENROUTER_RETRY_BASE_DELAY_MS,
   250,
 );
-const GEMINI_RETRY_MAX_DELAY_MS = getPositiveNumber(
-  process.env.GEMINI_RETRY_MAX_DELAY_MS,
+const OPENROUTER_RETRY_MAX_DELAY_MS = getPositiveNumber(
+  process.env.OPENROUTER_RETRY_MAX_DELAY_MS,
   2000,
 );
 
@@ -58,26 +61,26 @@ const reliabilityCounters = {
 
 type CounterName = keyof typeof reliabilityCounters;
 
-export type GeminiLogContext = {
+export type LlmLogContext = {
   route: "annotate" | "annotate/stream" | "sketch" | "pdf-page-summary";
   requestId?: string;
   contentHash?: string;
 };
 
-type GeminiRequestOptions = {
+type LlmRequestOptions = {
   signal?: AbortSignal;
-  logContext?: GeminiLogContext;
+  logContext?: LlmLogContext;
 };
 
-type AnnotationStreamOptions = GeminiRequestOptions & {
+type AnnotationStreamOptions = LlmRequestOptions & {
   onAnnotation?: (annotation: Annotation) => void;
 };
 
-type SketchStreamOptions = GeminiRequestOptions & {
+type SketchStreamOptions = LlmRequestOptions & {
   onChunk?: (text: string) => void;
 };
 
-type GeminiFailureKind =
+type LlmFailureKind =
   | "stream_parse"
   | "network"
   | "rate_limit"
@@ -87,8 +90,8 @@ type GeminiFailureKind =
   | "permanent"
   | "unknown";
 
-type GeminiErrorInfo = {
-  kind: GeminiFailureKind;
+type LlmErrorInfo = {
+  kind: LlmFailureKind;
   retryable: boolean;
   status?: number;
 };
@@ -114,8 +117,8 @@ const pdfPageSummaryPrompt: string =
 const promptPrompt: string =
   ((promptsConfig as Record<string, unknown>).prompt_prompt as string) ?? "";
 
-export class GeminiOperationError extends Error {
-  readonly kind: GeminiFailureKind;
+export class LlmOperationError extends Error {
+  readonly kind: LlmFailureKind;
   readonly retryable: boolean;
   readonly status?: number;
   readonly keyIndex: number;
@@ -130,14 +133,14 @@ export class GeminiOperationError extends Error {
       keyIndex,
       attemptNumber,
       cause,
-    }: GeminiErrorInfo & {
+    }: LlmErrorInfo & {
       keyIndex: number;
       attemptNumber: number;
       cause?: unknown;
     },
   ) {
     super(message, { cause });
-    this.name = "GeminiOperationError";
+    this.name = "LlmOperationError";
     this.kind = kind;
     this.retryable = retryable;
     this.status = status;
@@ -171,14 +174,14 @@ function serializeError(error: unknown): Record<string, unknown> {
   return { message: String(error) };
 }
 
-function logGeminiEvent(
+function logOpenRouterEvent(
   level: "log" | "warn" | "error",
   event: string,
-  context: GeminiLogContext | undefined,
+  context: LlmLogContext | undefined,
   details: Record<string, unknown> = {},
 ): void {
   console[level](
-    `[gemini] ${event}`,
+    `[openrouter] ${event}`,
     JSON.stringify({
       route: context?.route,
       request_id: context?.requestId,
@@ -189,9 +192,9 @@ function logGeminiEvent(
   );
 }
 
-function ensureClientsConfigured(): void {
-  if (genAIClients.length === 0) {
-    throw new Error("No Gemini API keys configured");
+function ensureKeysConfigured(): void {
+  if (apiKeyEntries.length === 0) {
+    throw new Error("No OpenRouter API keys configured");
   }
 }
 
@@ -216,7 +219,7 @@ function buildSystemPrompt(
     const persona = getPersona(slug);
     if (!persona) {
       console.warn(
-        `[gemini] Unknown persona slug: ${slug}, falling back to terry`,
+        `[openrouter] Unknown persona slug: ${slug}, falling back to terry`,
       );
       return depthPrompts["terry"] ?? depthPrompts["jerry"] ?? "";
     }
@@ -303,25 +306,60 @@ function assignUniqueIds(annotations: Annotation[]): Annotation[] {
   return annotations;
 }
 
-function getGenerationConfig() {
-  return {
-    responseMimeType: "application/json" as const,
-    maxOutputTokens: 4096,
-    temperature: 0.3,
+type ChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+type ChatCompletionRequest = {
+  model: string;
+  messages: ChatMessage[];
+  temperature: number;
+  max_tokens: number;
+  stream?: boolean;
+  reasoning?: { effort: string };
+};
+
+function buildChatBody(
+  model: string,
+  messages: ChatMessage[],
+  options: { temperature: number; maxTokens: number; reasoning?: boolean },
+): ChatCompletionRequest {
+  const body: ChatCompletionRequest = {
+    model,
+    messages,
+    temperature: options.temperature,
+    max_tokens: options.maxTokens,
   };
+  // Reasoning is omitted for tiny structured outputs (e.g. the mode router):
+  // thinking tokens share the max_tokens budget and would starve the answer.
+  if (options.reasoning !== false && OPENROUTER_REASONING_EFFORT !== "") {
+    body.reasoning = { effort: OPENROUTER_REASONING_EFFORT };
+  }
+  return body;
 }
 
-function buildClientAttemptPlan(): ClientEntry[] {
-  ensureClientsConfigured();
-  return genAIClients.flatMap((entry) =>
-    Array.from({ length: GEMINI_ATTEMPTS_PER_KEY }, () => entry),
+class OpenRouterHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "OpenRouterHttpError";
+    this.status = status;
+  }
+}
+
+function buildKeyAttemptPlan(): KeyEntry[] {
+  ensureKeysConfigured();
+  return apiKeyEntries.flatMap((entry) =>
+    Array.from({ length: OPENROUTER_ATTEMPTS_PER_KEY }, () => entry),
   );
 }
 
-function classifyGeminiError(
+function classifyOpenRouterError(
   error: unknown,
   signal?: AbortSignal,
-): GeminiErrorInfo {
+): LlmErrorInfo {
   if (signal?.aborted) {
     return {
       kind: "abort",
@@ -329,8 +367,8 @@ function classifyGeminiError(
     };
   }
 
-  if (error instanceof GoogleGenerativeAIFetchError) {
-    const status = error.status ?? 0;
+  if (error instanceof OpenRouterHttpError) {
+    const status = error.status;
 
     if (status === 429) {
       return {
@@ -355,6 +393,13 @@ function classifyGeminiError(
     };
   }
 
+  if (error instanceof Error && error.name === "AbortError") {
+    return {
+      kind: "timeout",
+      retryable: true,
+    };
+  }
+
   const message =
     error instanceof Error
       ? error.message.toLowerCase()
@@ -368,28 +413,21 @@ function classifyGeminiError(
     };
   }
 
-  if (message.includes("fetch failed") || message.includes("network")) {
+  if (
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    error instanceof TypeError
+  ) {
     return {
       kind: "network",
       retryable: true,
     };
   }
 
-  if (
-    message.includes("timed out") ||
-    message.includes("timeout") ||
-    message.includes("aborterror")
-  ) {
+  if (message.includes("timed out") || message.includes("timeout")) {
     return {
       kind: "timeout",
       retryable: true,
-    };
-  }
-
-  if (error instanceof GoogleGenerativeAIError) {
-    return {
-      kind: "unknown",
-      retryable: false,
     };
   }
 
@@ -399,15 +437,15 @@ function classifyGeminiError(
   };
 }
 
-function toGeminiOperationError(
+function toLlmOperationError(
   error: unknown,
   keyIndex: number,
   attemptNumber: number,
   signal?: AbortSignal,
-): GeminiOperationError {
-  const info = classifyGeminiError(error, signal);
+): LlmOperationError {
+  const info = classifyOpenRouterError(error, signal);
   const message = error instanceof Error ? error.message : String(error);
-  return new GeminiOperationError(message, {
+  return new LlmOperationError(message, {
     ...info,
     keyIndex,
     attemptNumber,
@@ -415,11 +453,140 @@ function toGeminiOperationError(
   });
 }
 
-function getRequestOptions(signal?: AbortSignal) {
-  return {
-    signal,
-    timeout: GEMINI_TIMEOUT_MS,
-  };
+function buildRequestSignal(signal?: AbortSignal): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(OPENROUTER_TIMEOUT_MS);
+  if (!signal) return timeoutSignal;
+  if (signal.aborted) return signal;
+  return AbortSignal.any([signal, timeoutSignal]);
+}
+
+type ChatCompletionResponse = {
+  choices?: Array<{
+    message?: { content?: unknown };
+    finish_reason?: string;
+  }>;
+  error?: { message?: string; code?: number };
+};
+
+type ChatChunk = {
+  choices?: Array<{
+    delta?: { content?: unknown };
+    finish_reason?: string | null;
+  }>;
+};
+
+function extractTextContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) =>
+        typeof part === "object" && part !== null && "text" in part
+          ? String((part as { text: unknown }).text)
+          : "",
+      )
+      .join("");
+  }
+  return "";
+}
+
+async function postChatCompletion(
+  entry: KeyEntry,
+  body: ChatCompletionRequest,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${entry.apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "Oddity1",
+    },
+    body: JSON.stringify(body),
+    signal: buildRequestSignal(signal),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new OpenRouterHttpError(
+      response.status,
+      `OpenRouter request failed with status ${response.status}${errorText ? `: ${errorText.slice(0, 500)}` : ""}`,
+    );
+  }
+
+  const parsed = (await response.json()) as ChatCompletionResponse;
+  if (parsed.error) {
+    throw new Error(`OpenRouter error: ${parsed.error.message ?? "unknown"}`);
+  }
+  return extractTextContent(parsed.choices?.[0]?.message?.content);
+}
+
+async function streamChatCompletion(
+  entry: KeyEntry,
+  body: ChatCompletionRequest,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${entry.apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "Oddity1",
+    },
+    body: JSON.stringify({ ...body, stream: true }),
+    signal: buildRequestSignal(signal),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new OpenRouterHttpError(
+      response.status,
+      `OpenRouter request failed with status ${response.status}${errorText ? `: ${errorText.slice(0, 500)}` : ""}`,
+    );
+  }
+
+  if (!response.body) {
+    throw new Error("OpenRouter stream response had no body");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf("\n");
+      while (boundary !== -1) {
+        const line = buffer.slice(0, boundary).trim();
+        buffer = buffer.slice(boundary + 1);
+        if (line === "" || line.startsWith(":")) {
+          boundary = buffer.indexOf("\n");
+          continue;
+        }
+        if (!line.startsWith("data:")) {
+          boundary = buffer.indexOf("\n");
+          continue;
+        }
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") return;
+        let chunk: ChatChunk;
+        try {
+          chunk = JSON.parse(data) as ChatChunk;
+        } catch {
+          throw new Error("Failed to parse stream");
+        }
+        const delta = extractTextContent(chunk.choices?.[0]?.delta?.content);
+        if (delta) onDelta(delta);
+        boundary = buffer.indexOf("\n");
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 async function waitBeforeRetry(
@@ -427,8 +594,8 @@ async function waitBeforeRetry(
   signal?: AbortSignal,
 ): Promise<void> {
   const baseDelay =
-    GEMINI_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
-  const cappedDelay = Math.min(baseDelay, GEMINI_RETRY_MAX_DELAY_MS);
+    OPENROUTER_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
+  const cappedDelay = Math.min(baseDelay, OPENROUTER_RETRY_MAX_DELAY_MS);
   const jitterMs =
     process.env.NODE_ENV === "test" ? 0 : Math.floor(Math.random() * 100);
   await delay(cappedDelay + jitterMs, undefined, { signal });
@@ -436,11 +603,11 @@ async function waitBeforeRetry(
 
 async function runWithRetryPlan<T>(
   operation: string,
-  runner: (entry: ClientEntry, attemptNumber: number) => Promise<T>,
-  options: GeminiRequestOptions = {},
+  runner: (entry: KeyEntry, attemptNumber: number) => Promise<T>,
+  options: LlmRequestOptions = {},
 ): Promise<T> {
-  const attempts = buildClientAttemptPlan();
-  let lastError: GeminiOperationError | null = null;
+  const attempts = buildKeyAttemptPlan();
+  let lastError: LlmOperationError | null = null;
 
   for (let index = 0; index < attempts.length; index += 1) {
     const entry = attempts[index]!;
@@ -449,7 +616,7 @@ async function runWithRetryPlan<T>(
     try {
       return await runner(entry, attemptNumber);
     } catch (error) {
-      const operationError = toGeminiOperationError(
+      const operationError = toLlmOperationError(
         error,
         entry.keyIndex,
         attemptNumber,
@@ -457,7 +624,7 @@ async function runWithRetryPlan<T>(
       );
       lastError = operationError;
 
-      logGeminiEvent(
+      logOpenRouterEvent(
         "warn",
         `${operation}.attempt_failed`,
         options.logContext,
@@ -489,11 +656,11 @@ async function runWithRetryPlan<T>(
     }
   }
 
-  throw lastError ?? new Error(`Gemini ${operation} failed without attempts`);
+  throw lastError ?? new Error(`OpenRouter ${operation} failed without attempts`);
 }
 
-async function callGeminiWithClient(
-  entry: ClientEntry,
+async function callOpenRouterWithKey(
+  entry: KeyEntry,
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
@@ -501,23 +668,19 @@ async function callGeminiWithClient(
   signal?: AbortSignal,
 ): Promise<unknown> {
   const systemPrompt = buildSystemPrompt(mode, personality);
-  const generationConfig = getGenerationConfig();
-
-  const model = entry.client.getGenerativeModel({
-    model: modelName,
-    systemInstruction: systemPrompt,
-    generationConfig,
-  });
-
   const userContent = correctionNote ? `${text}\n\n${correctionNote}` : text;
-  const result = await model.generateContent(
-    {
-      contents: [{ role: "user", parts: [{ text: userContent }] }],
-    },
-    getRequestOptions(signal),
+  const content = await postChatCompletion(
+    entry,
+    buildChatBody(
+      modelName,
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+      { temperature: 0.3, maxTokens: 4096 },
+    ),
+    signal,
   );
-
-  const content = result.response.text();
   if (!content) return [];
 
   try {
@@ -528,17 +691,17 @@ async function callGeminiWithClient(
   }
 }
 
-async function callGemini(
+async function callOpenRouter(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
   correctionNote?: string,
-  options: GeminiRequestOptions = {},
+  options: LlmRequestOptions = {},
 ): Promise<unknown> {
   return runWithRetryPlan(
     "generate_content",
     (entry) =>
-      callGeminiWithClient(
+      callOpenRouterWithKey(
         entry,
         text,
         mode,
@@ -550,27 +713,25 @@ async function callGemini(
   );
 }
 
-async function callGeminiPdfPageSummaryWithClient(
-  entry: ClientEntry,
+async function callOpenRouterPdfPageSummaryWithKey(
+  entry: KeyEntry,
   text: string,
   correctionNote?: string,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const model = entry.client.getGenerativeModel({
-    model: modelName,
-    systemInstruction: pdfPageSummaryPrompt,
-    generationConfig: getGenerationConfig(),
-  });
-
   const userContent = correctionNote ? `${text}\n\n${correctionNote}` : text;
-  const result = await model.generateContent(
-    {
-      contents: [{ role: "user", parts: [{ text: userContent }] }],
-    },
-    getRequestOptions(signal),
+  const content = await postChatCompletion(
+    entry,
+    buildChatBody(
+      modelName,
+      [
+        { role: "system", content: pdfPageSummaryPrompt },
+        { role: "user", content: userContent },
+      ],
+      { temperature: 0.3, maxTokens: 4096 },
+    ),
+    signal,
   );
-
-  const content = result.response.text();
   if (!content) return {};
 
   try {
@@ -580,15 +741,15 @@ async function callGeminiPdfPageSummaryWithClient(
   }
 }
 
-async function callGeminiPdfPageSummary(
+async function callOpenRouterPdfPageSummary(
   text: string,
   correctionNote?: string,
-  options: GeminiRequestOptions = {},
+  options: LlmRequestOptions = {},
 ): Promise<unknown> {
   return runWithRetryPlan(
     "generate_pdf_page_summary",
     (entry) =>
-      callGeminiPdfPageSummaryWithClient(
+      callOpenRouterPdfPageSummaryWithKey(
         entry,
         text,
         correctionNote,
@@ -599,42 +760,27 @@ async function callGeminiPdfPageSummary(
 }
 
 async function consumeAnnotationStreamAttempt(
-  entry: ClientEntry,
+  entry: KeyEntry,
   text: string,
   mode: AnnotationMode,
   personality: DepthPersonality | undefined,
   options: AnnotationStreamOptions,
 ): Promise<Annotation[]> {
   const systemPrompt = buildSystemPrompt(mode, personality);
-  const generationConfig = getGenerationConfig();
-
-  const model = entry.client.getGenerativeModel({
-    model: modelName,
-    systemInstruction: systemPrompt,
-    generationConfig,
-  });
-
-  const streamResult = await model.generateContentStream(
-    {
-      contents: [{ role: "user", parts: [{ text }] }],
-    },
-    getRequestOptions(options.signal),
-  );
-
-  let responseError: unknown = null;
-  const responseSettled = streamResult.response
-    .then(() => undefined)
-    .catch((error) => {
-      responseError = error;
-    });
-
   const allAnnotations: Annotation[] = [];
   let buffer = "";
 
-  try {
-    for await (const chunk of streamResult.stream) {
-      const delta = chunk.text();
-      if (!delta) continue;
+  await streamChatCompletion(
+    entry,
+    buildChatBody(
+      modelName,
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
+      { temperature: 0.3, maxTokens: 4096 },
+    ),
+    (delta) => {
       buffer += delta;
 
       const extracted = extractCompleteObjects(buffer);
@@ -654,22 +800,15 @@ async function consumeAnnotationStreamAttempt(
       }
 
       buffer = extracted.remaining;
-    }
-  } catch (error) {
-    await responseSettled;
-    throw error;
-  }
-
-  await responseSettled;
-  if (responseError) {
-    throw responseError;
-  }
+    },
+    options.signal,
+  );
 
   return allAnnotations;
 }
 
 async function consumeSketchStreamAttempt(
-  entry: ClientEntry,
+  entry: KeyEntry,
   inputText: string,
   purpose: string,
   userReactions: string,
@@ -688,48 +827,24 @@ async function consumeSketchStreamAttempt(
       : normalizedUserReactions
         ? `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\nUser's Reactions:\n${normalizedUserReactions}`
         : `Input Text:\n${inputText}\n\nPurpose of Reading:\n${purpose}\n\n${noUserReactionsGuard}\nOnly include positions that are directly supported by the stated purpose; if the purpose is broad, keep the output conservative.`;
-  const model = entry.client.getGenerativeModel({
-    model: modelName,
-    systemInstruction: systemPrompt,
-    generationConfig: {
-      responseMimeType: "text/plain" as const,
-      maxOutputTokens: 2048,
-      temperature: 0.3,
-    },
-  });
-
-  const streamResult = await model.generateContentStream(
-    {
-      contents: [{ role: "user", parts: [{ text: userMessage }] }],
-    },
-    getRequestOptions(options.signal),
-  );
-
-  let responseError: unknown = null;
-  const responseSettled = streamResult.response
-    .then(() => undefined)
-    .catch((error) => {
-      responseError = error;
-    });
-
   let fullText = "";
 
-  try {
-    for await (const chunk of streamResult.stream) {
-      const delta = chunk.text();
-      if (!delta) continue;
+  await streamChatCompletion(
+    entry,
+    buildChatBody(
+      modelName,
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      { temperature: 0.3, maxTokens: 2048 },
+    ),
+    (delta) => {
       fullText += delta;
       options.onChunk?.(delta);
-    }
-  } catch (error) {
-    await responseSettled;
-    throw error;
-  }
-
-  await responseSettled;
-  if (responseError) {
-    throw responseError;
-  }
+    },
+    options.signal,
+  );
 
   return fullText;
 }
@@ -738,9 +853,9 @@ export async function generateAnnotations(
   text: string,
   mode: AnnotationMode,
   personality?: DepthPersonality,
-  options: GeminiRequestOptions = {},
+  options: LlmRequestOptions = {},
 ): Promise<Annotation[]> {
-  const firstAttempt = await callGemini(
+  const firstAttempt = await callOpenRouter(
     text,
     mode,
     personality,
@@ -755,7 +870,7 @@ export async function generateAnnotations(
   if (errors.length === 0) return assignUniqueIds(valid);
 
   const correctionPrompt = `Your previous response had validation errors:\n${errors.join("\n")}\n\nPlease fix these issues and return a valid JSON array of annotations.`;
-  const retryAttempt = await callGemini(
+  const retryAttempt = await callOpenRouter(
     text,
     mode,
     personality,
@@ -778,8 +893,8 @@ export async function generateAnnotationsStream(
   personality?: DepthPersonality,
   options: AnnotationStreamOptions = {},
 ): Promise<StreamResult> {
-  const attempts = buildClientAttemptPlan();
-  let lastError: GeminiOperationError | null = null;
+  const attempts = buildKeyAttemptPlan();
+  let lastError: LlmOperationError | null = null;
   let emittedAnnotations = false;
 
   for (let index = 0; index < attempts.length; index += 1) {
@@ -805,7 +920,7 @@ export async function generateAnnotationsStream(
         usedBufferedFallback: false,
       };
     } catch (error) {
-      const operationError = toGeminiOperationError(
+      const operationError = toLlmOperationError(
         error,
         entry.keyIndex,
         attemptNumber,
@@ -815,7 +930,7 @@ export async function generateAnnotationsStream(
 
       emittedAnnotations = emittedAnnotations || false;
 
-      logGeminiEvent(
+      logOpenRouterEvent(
         "warn",
         "generate_annotations_stream.attempt_failed",
         options.logContext,
@@ -853,7 +968,7 @@ export async function generateAnnotationsStream(
   }
 
   incrementCounter("buffered_fallbacks");
-  logGeminiEvent(
+  logOpenRouterEvent(
     "warn",
     "generate_annotations_stream.buffered_fallback",
     options.logContext,
@@ -869,7 +984,7 @@ export async function generateAnnotationsStream(
       personality,
       options,
     );
-    logGeminiEvent(
+    logOpenRouterEvent(
       "log",
       "generate_annotations_stream.buffered_fallback_succeeded",
       options.logContext,
@@ -882,7 +997,7 @@ export async function generateAnnotationsStream(
       usedBufferedFallback: true,
     };
   } catch (fallbackError) {
-    logGeminiEvent(
+    logOpenRouterEvent(
       "error",
       "generate_annotations_stream.buffered_fallback_failed",
       options.logContext,
@@ -902,8 +1017,8 @@ export async function generateSketchStream(
   mode: "sketch" | "prompt" = "sketch",
   options: SketchStreamOptions = {},
 ): Promise<string> {
-  const attempts = buildClientAttemptPlan();
-  let lastError: GeminiOperationError | null = null;
+  const attempts = buildKeyAttemptPlan();
+  let lastError: LlmOperationError | null = null;
   let emittedText = false;
 
   for (let index = 0; index < attempts.length; index += 1) {
@@ -926,7 +1041,7 @@ export async function generateSketchStream(
         },
       );
     } catch (error) {
-      const operationError = toGeminiOperationError(
+      const operationError = toLlmOperationError(
         error,
         entry.keyIndex,
         attemptNumber,
@@ -934,7 +1049,7 @@ export async function generateSketchStream(
       );
       lastError = operationError;
 
-      logGeminiEvent(
+      logOpenRouterEvent(
         "warn",
         "generate_sketch_stream.attempt_failed",
         options.logContext,
@@ -972,9 +1087,9 @@ export async function generateSketchStream(
 
 export async function generatePdfPageSummary(
   text: string,
-  options: GeminiRequestOptions = {},
+  options: LlmRequestOptions = {},
 ): Promise<string> {
-  const firstAttempt = await callGeminiPdfPageSummary(text, undefined, options);
+  const firstAttempt = await callOpenRouterPdfPageSummary(text, undefined, options);
   const firstResult = validatePdfPageSummary(firstAttempt);
 
   if (firstResult.errors.length === 0 && firstResult.valid) {
@@ -984,7 +1099,7 @@ export async function generatePdfPageSummary(
   const correctionPrompt =
     `Your previous response had validation errors:\n${firstResult.errors.join("\n")}\n\n` +
     'Please fix these issues and return only valid JSON in the shape {"summary":"..."} with 1-2 concise sentences.';
-  const retryAttempt = await callGeminiPdfPageSummary(
+  const retryAttempt = await callOpenRouterPdfPageSummary(
     text,
     correctionPrompt,
     options,
@@ -1048,7 +1163,7 @@ function extractCompleteObjects(buffer: string): {
   };
 }
 
-export function getGeminiReliabilityCounters(): Record<string, number> {
+export function getLlmReliabilityCounters(): Record<string, number> {
   return { ...reliabilityCounters };
 }
 
@@ -1064,7 +1179,7 @@ export type GDocsChatMode =
 
 type GDocsChatMessage = { role: "user" | "assistant"; content: string };
 
-type GDocsChatStreamOptions = GeminiRequestOptions & {
+type GDocsChatStreamOptions = LlmRequestOptions & {
   onChunk?: (text: string) => void;
 };
 
@@ -1078,8 +1193,9 @@ const gdocsPromptMap: Record<GDocsChatMode, string> = {
   outline: (_gdocsPrompts.gdocs_plan_outline_prompt as string) ?? "",
 };
 
-// Reasoning model for long-form generation and complex structural edits
-const reasoningModelName = "gemini-2.5-pro";
+// Reasoning model for long-form generation and complex structural edits.
+// Defaults to the main model; override with OPENROUTER_REASONING_MODEL.
+const reasoningModelName = process.env.OPENROUTER_REASONING_MODEL ?? modelName;
 // Minimal model override per mode — undefined means use the default modelName
 const gdocsModelMap: Partial<Record<GDocsChatMode, string>> = {
   essay: reasoningModelName,
@@ -1093,7 +1209,7 @@ const gdocsMaxTokensMap: Partial<Record<GDocsChatMode, number>> = {
   essay: 8192,
 };
 
-// All valid chat modes — any unknown mode string gets rejected before reaching Gemini
+// All valid chat modes — any unknown mode string gets rejected before reaching the LLM
 const VALID_GDOCS_MODES = new Set<string>(Object.keys(gdocsPromptMap));
 
 export function isValidGDocsChatMode(mode: string): mode is GDocsChatMode {
@@ -1101,7 +1217,7 @@ export function isValidGDocsChatMode(mode: string): mode is GDocsChatMode {
 }
 
 async function consumeGDocsChatStreamAttempt(
-  entry: ClientEntry,
+  entry: KeyEntry,
   messages: GDocsChatMessage[],
   mode: GDocsChatMode,
   options: GDocsChatStreamOptions,
@@ -1114,48 +1230,24 @@ async function consumeGDocsChatStreamAttempt(
   }
   const effectiveModel = gdocsModelMap[mode] ?? modelName;
   const maxOutputTokens = gdocsMaxTokensMap[mode] ?? 2048;
-  const model = entry.client.getGenerativeModel({
-    model: effectiveModel,
-    systemInstruction: systemPrompt,
-    generationConfig: {
-      responseMimeType: "text/plain" as const,
-      maxOutputTokens,
-      temperature: 0.7,
-    },
-  });
-
-  const contents = messages.map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
-  }));
-
-  const streamResult = await model.generateContentStream(
-    { contents },
-    getRequestOptions(options.signal),
-  );
-
-  let responseError: unknown = null;
-  const responseSettled = streamResult.response
-    .then(() => undefined)
-    .catch((error) => {
-      responseError = error;
-    });
+  const chatMessages: ChatMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...messages.map((m): ChatMessage => ({ role: m.role, content: m.content })),
+  ];
 
   let fullText = "";
-  try {
-    for await (const chunk of streamResult.stream) {
-      const delta = chunk.text();
-      if (!delta) continue;
+  await streamChatCompletion(
+    entry,
+    buildChatBody(effectiveModel, chatMessages, {
+      temperature: 0.7,
+      maxTokens: maxOutputTokens,
+    }),
+    (delta) => {
       fullText += delta;
       options.onChunk?.(delta);
-    }
-  } catch (error) {
-    await responseSettled;
-    throw error;
-  }
-
-  await responseSettled;
-  if (responseError) throw responseError;
+    },
+    options.signal,
+  );
   return fullText;
 }
 
@@ -1164,8 +1256,8 @@ export async function generateGDocsChatStream(
   mode: GDocsChatMode,
   options: GDocsChatStreamOptions = {},
 ): Promise<string> {
-  const attempts = buildClientAttemptPlan();
-  let lastError: GeminiOperationError | null = null;
+  const attempts = buildKeyAttemptPlan();
+  let lastError: LlmOperationError | null = null;
   let emittedText = false;
 
   for (let index = 0; index < attempts.length; index += 1) {
@@ -1181,7 +1273,7 @@ export async function generateGDocsChatStream(
         },
       });
     } catch (error) {
-      const operationError = toGeminiOperationError(
+      const operationError = toLlmOperationError(
         error,
         entry.keyIndex,
         attemptNumber,
@@ -1254,18 +1346,18 @@ export async function generateAllMcqQuestions(
     .replace("{prompt}", prompt);
 
   try {
-    ensureClientsConfigured();
-    const entry = genAIClients[0]!;
-    const model = entry.client.getGenerativeModel({
-      model: modelName,
-      generationConfig: { maxOutputTokens: 1536, temperature: 0.8 },
-    });
-
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: filledPrompt }] }],
-    });
-
-    const text = result.response.text().trim();
+    ensureKeysConfigured();
+    const entry = apiKeyEntries[0]!;
+    const text = (
+      await postChatCompletion(
+        entry,
+        buildChatBody(
+          modelName,
+          [{ role: "user", content: filledPrompt }],
+          { temperature: 0.8, maxTokens: 1536 },
+        ),
+      )
+    ).trim();
     const cleaned = text
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/, "")
@@ -1421,7 +1513,7 @@ const routerSystemPrompt: string =
   (_gdocsPrompts.gdocs_router_prompt as string) ?? "";
 const routerDeepSystemPrompt: string =
   (_gdocsPrompts.gdocs_router_deep_prompt as string) ?? "";
-const routerModelName = "gemini-3.1-flash-lite-preview";
+const routerModelName = process.env.OPENROUTER_ROUTER_MODEL ?? modelName;
 
 function parseRouteResult(text: string): GDocsRouteResult {
   const cleaned = text
@@ -1448,34 +1540,40 @@ export async function generateGDocsRoute(
   const userMessage = `User request: ${prompt}${docText ? `\n\nDocument:\n${docText.slice(0, 4000)}` : ""}`;
 
   try {
-    ensureClientsConfigured();
-    const entry = genAIClients[0]!;
+    ensureKeysConfigured();
+    const entry = apiKeyEntries[0]!;
 
-    // Stage 1: quick classification
-    const stage1Model = entry.client.getGenerativeModel({
-      model: routerModelName,
-      systemInstruction: routerSystemPrompt,
-      generationConfig: { maxOutputTokens: 150, temperature: 0.1 },
-    });
+    // Stage 1: quick classification (no reasoning: the 150-token budget
+    // would be consumed by thinking tokens before the answer is emitted)
+    const stage1Text = await postChatCompletion(
+      entry,
+      buildChatBody(
+        routerModelName,
+        [
+          { role: "system", content: routerSystemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        { temperature: 0.1, maxTokens: 150, reasoning: false },
+      ),
+    );
 
-    const stage1Result = await stage1Model.generateContent({
-      contents: [{ role: "user", parts: [{ text: userMessage }] }],
-    });
-
-    const stage1 = parseRouteResult(stage1Result.response.text().trim());
+    const stage1 = parseRouteResult(stage1Text.trim());
 
     // Stage 2: deeper reasoning for uncertain cases
     if (stage1.confidence === "low") {
       try {
-        const stage2Model = entry.client.getGenerativeModel({
-          model: routerModelName,
-          systemInstruction: routerDeepSystemPrompt,
-          generationConfig: { maxOutputTokens: 256, temperature: 0.3 },
-        });
-        const stage2Result = await stage2Model.generateContent({
-          contents: [{ role: "user", parts: [{ text: userMessage }] }],
-        });
-        return parseRouteResult(stage2Result.response.text().trim());
+        const stage2Text = await postChatCompletion(
+          entry,
+          buildChatBody(
+            routerModelName,
+            [
+              { role: "system", content: routerDeepSystemPrompt },
+              { role: "user", content: userMessage },
+            ],
+            { temperature: 0.3, maxTokens: 256, reasoning: false },
+          ),
+        );
+        return parseRouteResult(stage2Text.trim());
       } catch {
         // Stage 2 failed — fall back to FAST (safe default)
         return {
