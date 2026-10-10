@@ -116,6 +116,17 @@ describe("not-enabled overlay dismiss button", () => {
     ).not.toBe("none");
   });
 
+  it("removes the floating dismiss button on remote sign-out", async () => {
+    mod.showNotEnabledOverlayForTest();
+    expect(closeButtons().length).toBe(1);
+
+    mod.handleRemoteSignOut();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(shadow().querySelector(".args-not-enabled-overlay")).toBeNull();
+    expect(closeButtons().length).toBe(0);
+  });
+
   it("never stacks duplicate floating dismiss buttons on re-show", () => {
     // Simulate stale buttons leaked before the fix.
     const container = shadow().querySelector(".args-container")!;

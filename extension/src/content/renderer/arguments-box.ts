@@ -2230,6 +2230,7 @@ export function handleRemoteSignOut(): void {
   if (notEnabledPanelEl) {
     notEnabledPanelEl.remove();
     notEnabledPanelEl = null;
+    removeNotEnabledCloseBtn();
     dimmed = false;
     containerEl?.classList.remove("oddity-not-enabled");
   }
