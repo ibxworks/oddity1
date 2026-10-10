@@ -80,13 +80,17 @@ function extractArticleHtmlFallback(): string | null {
 
 const JUNK_SELECTORS = [
   'script', 'style', 'svg', 'button', 'input', 'select', 'textarea',
-  'nav', 'header', 'footer', 'aside', 'form', 'iframe', 'video', 'audio',
+  'nav', 'aside', 'form', 'iframe', 'video', 'audio',
   'canvas', 'dialog', 'noscript', 'figure > figcaption > a',
   '[role="button"]', '[role="navigation"]', '[role="toolbar"]',
   '[role="menu"]', '[role="menubar"]', '[role="complementary"]',
   '[role="banner"]', '[role="contentinfo"]', '[role="search"]',
   '[aria-hidden="true"]', '[hidden]',
 ];
+
+// header/footer often hold article content (bylines, dates), so they are
+// only removed when provably outside the article — see sanitizeExportHtml.
+const ARTICLE_WRAPPER = 'article, main, [role="main"], [role="article"]';
 
 // Short "back to listing" links (e.g. "← Posts", "Back to blog") that live
 // inside the article container on many blogs and survive tag-based filtering.
@@ -101,8 +105,19 @@ export function sanitizeExportHtml(html: string): string {
     for (const el of body.querySelectorAll(sel)) el.remove();
   }
 
-  // Remove back-links and empty anchors left behind
+  // Remove header/footer only when provably outside article content. When
+  // the fragment has no article wrapper (typical for region HTML, which is
+  // already article content), keep them: they usually hold the byline/date.
+  if (body.querySelector(ARTICLE_WRAPPER)) {
+    for (const el of body.querySelectorAll('header, footer')) {
+      if (!el.closest(ARTICLE_WRAPPER)) el.remove();
+    }
+  }
+
+  // Remove back-links and empty anchors left behind (but keep image links,
+  // whose textContent is empty even though they carry content)
   for (const a of body.querySelectorAll('a')) {
+    if (a.querySelector('img')) continue;
     const text = (a.textContent ?? '').trim().replace(/\s+/g, ' ');
     if (!text || (text.length <= 40 && BACK_LINK_RE.test(text))) {
       a.remove();
@@ -158,8 +173,13 @@ export function dedupeTitleHeading(host: Element, title: string): void {
   if (!heading) return;
   const headingText = normalizeTitle(heading.textContent ?? '');
   if (!headingText) return;
-  const candidates = [normalizeTitle(title), normalizeTitle(stripSiteSuffix(title))];
-  if (candidates.some((c) => c && (c === headingText || c.startsWith(headingText) || headingText.startsWith(c)))) {
+  // Exact match only (after site-suffix stripping on either side) — prefix
+  // matching deletes distinct headings that merely start with the title.
+  const titleCandidates = new Set(
+    [title, stripSiteSuffix(title)].map(normalizeTitle).filter(Boolean),
+  );
+  const headingCandidates = [headingText, normalizeTitle(stripSiteSuffix(headingText))];
+  if (headingCandidates.some((h) => titleCandidates.has(h))) {
     heading.remove();
   }
 }
@@ -328,14 +348,14 @@ function buildNoteItem(note: ExportNote): string {
 
   let extra = '';
   if (ann.content.why_it_matters) {
-    extra += `<p class="note-extra"><span class="note-extra-label">Why it matters — </span>${renderNoteHtml(ann.content.why_it_matters).replace(/^<p>|<\/p>$/g, '')}</p>`;
+    extra += `<div class="note-extra"><span class="note-extra-label">Why it matters — </span>${renderNoteHtml(ann.content.why_it_matters).replace(/^<p>|<\/p>$/g, '')}</div>`;
   }
   if (ann.content.question) {
-    extra += `<p class="note-extra"><span class="note-extra-label">Question — </span>${renderNoteHtml(ann.content.question).replace(/^<p>|<\/p>$/g, '')}</p>`;
+    extra += `<div class="note-extra"><span class="note-extra-label">Question — </span>${renderNoteHtml(ann.content.question).replace(/^<p>|<\/p>$/g, '')}</div>`;
   }
   const suggestions = ann.content.suggestions ?? [];
   if (suggestions.length > 0) {
-    extra += `<p class="note-extra"><span class="note-extra-label">Suggestions — </span>${suggestions.map((s) => escapeHtml(s)).join('; ')}</p>`;
+    extra += `<div class="note-extra"><span class="note-extra-label">Suggestions — </span>${suggestions.map((s) => escapeHtml(s)).join('; ')}</div>`;
   }
 
   const num = note.number;
@@ -522,6 +542,8 @@ body{
 .note-body ul{margin:.4em 0;padding-left:20px}
 .note-body li{margin-bottom:.2em}
 .note-extra{margin:.5em 0 0;font-size:.93em}
+.note-extra p{margin:.3em 0}
+.note-extra ul{margin:.3em 0;padding-left:20px}
 .note-extra-label{color:var(--muted)}
 
 /* ── Footer ── */

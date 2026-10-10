@@ -30,15 +30,39 @@ const DOC_OPTS = {
 };
 
 describe("sanitizeExportHtml", () => {
-  it("strips nav/header/footer/aside landmarks", () => {
+  it("strips nav/aside landmarks and page chrome", () => {
     const html = sanitizeExportHtml(
-      `<nav>menu</nav><header>banner</header><aside>side</aside>` +
-        `<footer>foot</footer><article><p>Keep me</p></article>`,
+      `<nav>menu</nav><aside>side</aside><article><p>Keep me</p></article>`,
     );
     expect(html).toContain("Keep me");
     expect(html).not.toContain("menu");
-    expect(html).not.toContain("banner");
-    expect(html).not.toContain("foot");
+    expect(html).not.toContain("side");
+  });
+
+  it("removes header/footer outside the article but keeps article bylines", () => {
+    const html = sanitizeExportHtml(
+      `<header>Site banner</header><article><header>By Jane · Aug 2026</header><p>Body</p></article><footer>Site footer</footer>`,
+    );
+    expect(html).toContain("By Jane");
+    expect(html).not.toContain("Site banner");
+    expect(html).not.toContain("Site footer");
+  });
+
+  it("keeps header/footer when the fragment is already article content", () => {
+    const html = sanitizeExportHtml(
+      `<header>By Jane · Aug 2026</header><p>Body</p>`,
+    );
+    expect(html).toContain("By Jane");
+    expect(html).toContain("Body");
+  });
+
+  it("preserves image-only links", () => {
+    const html = sanitizeExportHtml(
+      `<p><a href="/full"><img src="https://x.test/i.png" alt="chart"></a><a href="/empty"></a></p>`,
+    );
+    expect(html).toContain('href="/full"');
+    expect(html).toContain("<img");
+    expect(html).not.toContain('href="/empty"');
   });
 
   it("removes back-links like '← Posts' but keeps content links", () => {
@@ -79,6 +103,13 @@ describe("dedupeTitleHeading", () => {
   it("keeps a heading that differs from the title", () => {
     const host = document.createElement("div");
     host.innerHTML = `<h1>Something Else</h1><p>Body</p>`;
+    dedupeTitleHeading(host, "Test Article");
+    expect(host.querySelector("h1")).not.toBeNull();
+  });
+
+  it("keeps a distinct heading that merely starts with the title", () => {
+    const host = document.createElement("div");
+    host.innerHTML = `<h1>Test Article: A Deeper Look</h1><p>Body</p>`;
     dedupeTitleHeading(host, "Test Article");
     expect(host.querySelector("h1")).not.toBeNull();
   });
@@ -220,6 +251,24 @@ describe("buildExportDocument", () => {
     expect(html).not.toContain("sidenote");
     expect(html).toContain("@bottom-center");
     expect(html).toContain("counter(page)");
+  });
+
+  it("wraps multiline note extras in divs, never nested paragraphs", () => {
+    const host = document.createElement("div");
+    host.innerHTML = `<p>First target phrase here.</p>`;
+    const notes = annotateDocument(host, [
+      makeAnnotation({
+        content: {
+          note: "Note.",
+          why_it_matters: "First line\nSecond line",
+          question: "Q?",
+        },
+      }),
+    ]);
+    const html = buildExportDocument({ ...DOC_OPTS, bodyHtml: host.innerHTML, notes });
+    expect(html).not.toContain("<p><p>");
+    expect(html).not.toContain("<p><ul>");
+    expect(html).toContain('<div class="note-extra">');
   });
 
   it("escapes title and subtitle", () => {
