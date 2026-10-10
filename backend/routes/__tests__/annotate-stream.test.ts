@@ -1,16 +1,24 @@
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Router } from "express";
+import prompts from "../../config/prompts.json" with { type: "json" };
 
 const mockGenerateAnnotationsStream = vi.fn();
 const mockMergeAnnotationsAndFeedback = vi.fn();
 const mockRpc = vi.fn();
 const mockUpsert = vi.fn();
 const mockSingle = vi.fn();
+const mockResolveRequestLlm = vi.fn();
 
-vi.mock("../../lib/openrouter.js", () => ({
+vi.mock("../../lib/llm.js", () => ({
+  activeModelName: "test-model",
   generateAnnotations: vi.fn(),
   generateAnnotationsStream: mockGenerateAnnotationsStream,
+}));
+
+vi.mock("../../lib/llm-config.js", () => ({
+  resolveRequestLlm: mockResolveRequestLlm,
+  sendLlmConfigError: vi.fn(() => false),
 }));
 
 vi.mock("../../lib/merge-annotations.js", () => ({
@@ -118,6 +126,11 @@ async function invokeRouter(router: Router, body: unknown): Promise<string> {
 describe("annotate stream route", () => {
   beforeEach(() => {
     vi.resetModules();
+    mockResolveRequestLlm.mockResolvedValue({
+      override: null,
+      bypassLimits: false,
+      cacheTag: null,
+    });
     mockRpc.mockResolvedValue({
       data: { allowed: true, count: 1, already_counted: false },
       error: null,
@@ -171,5 +184,109 @@ describe("annotate stream route", () => {
     expect(payload).toContain('"done":true');
     expect(payload).toContain('"annotations":[{"id":"ann_1"');
     expect(payload).toContain('"id":"ann_2"');
+    // Tier default stamps the shared row with its cache tag.
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content_hash: "hash_123",
+        model_version: "test-model",
+      }),
+      { onConflict: "content_hash,intensity" },
+    );
+  });
+
+  it("skips usage limits and threads the override for BYOK requests", async () => {
+    const override = {
+      provider: "oddity-free",
+      transport: "openai-chat",
+      baseUrl: "https://openrouter.ai/api/v1",
+      apiKeys: ["server-key"],
+      model: "some-model:free",
+      effort: "default",
+    };
+    mockResolveRequestLlm.mockResolvedValue({
+      override,
+      bypassLimits: true,
+      cacheTag: "oddity-free:some-model:free",
+    });
+
+    const seen: unknown[] = [];
+    mockGenerateAnnotationsStream.mockImplementation(
+      async (_text, _mode, _personality, options) => {
+        seen.push(options.override);
+        return { annotations: [], usedBufferedFallback: false };
+      },
+    );
+
+    const { default: annotateRouter } = await import("../annotate.js");
+    const payload = await invokeRouter(annotateRouter, {
+      url: "https://example.com/article",
+      content_hash: "hash_123",
+      text: "alpha beta gamma delta epsilon zeta eta theta",
+      mode: "overview",
+      word_count: 8,
+    });
+
+    expect(payload).toContain('"done":true');
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(seen).toEqual([override]);
+    // Overrides never touch the shared row: no read-through, no write.
+    expect(mockSingle).not.toHaveBeenCalled();
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  it("serves the cached row when the model tag matches", async () => {
+    mockSingle.mockResolvedValueOnce({
+      data: {
+        annotations: [{ id: "cached_1" }],
+        model_version: "test-model",
+        prompt_version: prompts.version,
+      },
+    });
+
+    const { default: annotateRouter } = await import("../annotate.js");
+    const payload = await invokeRouter(annotateRouter, {
+      url: "https://example.com/article",
+      content_hash: "hash_123",
+      text: "alpha beta gamma delta epsilon zeta eta theta",
+      mode: "overview",
+      word_count: 8,
+    });
+
+    expect(payload).toContain('"annotation":{"id":"cached_1"');
+    expect(payload).toContain('"cached":true');
+    expect(mockGenerateAnnotationsStream).not.toHaveBeenCalled();
+  });
+
+  it("regenerates when the cached row carries a different model tag", async () => {
+    mockSingle.mockResolvedValueOnce({
+      data: {
+        annotations: [{ id: "stale_1" }],
+        model_version: "someone-elses-tag",
+        prompt_version: prompts.version,
+      },
+    });
+    mockGenerateAnnotationsStream.mockImplementation(
+      async (_text, _mode, _personality, _options) => ({
+        annotations: [],
+        usedBufferedFallback: false,
+      }),
+    );
+
+    const { default: annotateRouter } = await import("../annotate.js");
+    const payload = await invokeRouter(annotateRouter, {
+      url: "https://example.com/article",
+      content_hash: "hash_123",
+      text: "alpha beta gamma delta epsilon zeta eta theta",
+      mode: "overview",
+      word_count: 8,
+    });
+
+    expect(payload).toContain('"done":true');
+    expect(payload).not.toContain("stale_1");
+    expect(mockGenerateAnnotationsStream).toHaveBeenCalledTimes(1);
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ model_version: "test-model" }),
+      { onConflict: "content_hash,intensity" },
+    );
   });
 });

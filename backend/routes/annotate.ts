@@ -17,8 +17,13 @@ import {
   activeModelName,
   generateAnnotations,
   generateAnnotationsStream,
-} from "../lib/openrouter.js";
+} from "../lib/llm.js";
 import { createInflightDedup } from "../lib/inflight-dedup.js";
+import {
+  resolveRequestLlm,
+  sendLlmConfigError,
+  type ResolvedLlm,
+} from "../lib/llm-config.js";
 import { isValidPersonaSlug } from "../lib/persona-registry.js";
 import { mergeAnnotationsAndFeedback } from "../lib/merge-annotations.js";
 import { createRequestAbortSignal } from "../lib/request-abort.js";
@@ -63,10 +68,11 @@ function buildUsage(
 function cacheKey(
   contentHash: string,
   mode: string,
-  personality?: string,
+  personality: string | undefined,
+  modelTag: string,
 ): string {
   const intensityPart = mode === "overview" ? "terry" : (personality ?? "none");
-  return `${contentHash}:${mode}:${intensityPart}`;
+  return `${contentHash}:${mode}:${intensityPart}:${modelTag}`;
 }
 
 const AnnotateRequestSchema = z.object({
@@ -137,8 +143,22 @@ router.post("/", async (req, res) => {
       return;
     }
 
-    // ── Usage limit check ──
-    if (req.user?.id) {
+    // ── Resolve LLM provider (tier default, Oddity Free, or BYOK) ──
+    let llm: ResolvedLlm;
+    try {
+      llm = await resolveRequestLlm(req.user!.id);
+    } catch (err) {
+      if (sendLlmConfigError(res, err)) return;
+      throw err;
+    }
+    const modelTag = llm.cacheTag ?? activeModelName;
+    // The shared row is keyed by content+intensity only: override results
+    // must not overwrite it (or read through it), or alternating providers
+    // would thrash the cache and serve stale cross-provider results.
+    const useSharedCache = llm.override === null;
+
+    // ── Usage limit check (skipped for BYOK / Oddity Free) ──
+    if (req.user?.id && !llm.bypassLimits) {
       const limits = getMonthlyPlanLimits();
       const limit = userTier !== "free" ? limits.standard : limits.free;
 
@@ -178,26 +198,29 @@ router.post("/", async (req, res) => {
         usage,
         userTier,
         upgradeMultiplier,
+        llm,
       );
     }
 
     const { url, content_hash, text, mode, personality } = parsed.data;
-    const key = cacheKey(content_hash, mode, personality);
+    const key = cacheKey(content_hash, mode, personality, modelTag);
     const authToken = req.headers.authorization?.slice(7) ?? "";
 
     // ── Layer 1: DB cache (Supabase) ──
     // Overview is persona-independent; depth varies by personality
     const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
-    const { data: dbCached } = await serviceClient
-      .from("annotation_cache")
-      .select("annotations, model_version, prompt_version")
-      .eq("content_hash", content_hash)
-      .eq("intensity", cacheIntensity)
-      .gt("expires_at", new Date().toISOString())
-      .single();
+    const { data: dbCached } = useSharedCache
+      ? await serviceClient
+          .from("annotation_cache")
+          .select("annotations, model_version, prompt_version")
+          .eq("content_hash", content_hash)
+          .eq("intensity", cacheIntensity)
+          .gt("expires_at", new Date().toISOString())
+          .single()
+      : { data: null };
 
     if (dbCached) {
-      const currentModel = activeModelName;
+      const currentModel = modelTag;
       const currentPromptVersion = prompts.version;
 
       if (
@@ -237,30 +260,34 @@ router.post("/", async (req, res) => {
         text,
         mode as AnnotationMode,
         personality as DepthPersonality | undefined,
+        { override: llm.override },
       );
       return filterAndFixAnnotations(rawAnnotations, text);
     });
 
-    // Write-through: populate DB cache
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + CACHE_TTL_DAYS);
+    // Write-through: populate DB cache (tier default only — overrides never
+    // touch the shared row).
+    if (useSharedCache) {
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + CACHE_TTL_DAYS);
 
-    const { error: cacheWriteError } = await serviceClient
-      .from("annotation_cache")
-      .upsert(
-        {
-          content_hash,
-          url,
-          intensity: cacheIntensity,
-          annotations: aiAnnotations,
-          model_version: activeModelName,
-          prompt_version: prompts.version,
-          expires_at: expiresAt.toISOString(),
-        },
-        { onConflict: "content_hash,intensity" },
-      );
-    if (cacheWriteError) {
-      console.error("[annotate] Cache write failed:", cacheWriteError.message);
+      const { error: cacheWriteError } = await serviceClient
+        .from("annotation_cache")
+        .upsert(
+          {
+            content_hash,
+            url,
+            intensity: cacheIntensity,
+            annotations: aiAnnotations,
+            model_version: modelTag,
+            prompt_version: prompts.version,
+            expires_at: expiresAt.toISOString(),
+          },
+          { onConflict: "content_hash,intensity" },
+        );
+      if (cacheWriteError) {
+        console.error("[annotate] Cache write failed:", cacheWriteError.message);
+      }
     }
 
     const merged = await mergeAnnotationsAndFeedback(
@@ -303,6 +330,7 @@ async function handleStreamingAnnotation(
   usage: AnnotationUsage | undefined,
   userTier: UserTier,
   upgradeMultiplier: number | undefined,
+  llm: ResolvedLlm,
 ): Promise<void> {
   const { url, content_hash, text, mode, personality } = data;
   const authToken = req.headers.authorization?.slice(7) ?? "";
@@ -315,19 +343,25 @@ async function handleStreamingAnnotation(
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
+  // The shared row is keyed by content+intensity only: override results
+  // must not overwrite it (or read through it).
+  const useSharedCache = llm.override === null;
+
   try {
     // Check DB cache first
     // Overview is persona-independent; depth varies by personality
     const cacheIntensity = mode === "overview" ? "overview:terry" : `${mode}:${personality ?? "terry"}`;
-    const { data: dbCached } = await serviceClient
-      .from("annotation_cache")
-      .select("annotations, model_version, prompt_version")
-      .eq("content_hash", content_hash)
-      .eq("intensity", cacheIntensity)
-      .gt("expires_at", new Date().toISOString())
-      .single();
+    const { data: dbCached } = useSharedCache
+      ? await serviceClient
+          .from("annotation_cache")
+          .select("annotations, model_version, prompt_version")
+          .eq("content_hash", content_hash)
+          .eq("intensity", cacheIntensity)
+          .gt("expires_at", new Date().toISOString())
+          .single()
+      : { data: null };
 
-    const currentModel = activeModelName;
+    const currentModel = llm.cacheTag ?? activeModelName;
     const currentPromptVersion = prompts.version;
 
     if (
@@ -374,6 +408,7 @@ async function handleStreamingAnnotation(
       personality as DepthPersonality | undefined,
       {
         signal,
+        override: llm.override,
         logContext: {
           route: "annotate/stream",
           requestId,
@@ -388,29 +423,32 @@ async function handleStreamingAnnotation(
     );
     const allAnnotations = filterAndFixAnnotations(streamResult.annotations, text);
 
-    // Cache the complete result
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + CACHE_TTL_DAYS);
+    // Cache the complete result (tier default only — overrides never touch
+    // the shared row).
+    if (useSharedCache) {
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + CACHE_TTL_DAYS);
 
-    const { error: cacheWriteError } = await serviceClient
-      .from("annotation_cache")
-      .upsert(
-        {
-          content_hash,
-          url,
-          intensity: cacheIntensity,
-          annotations: allAnnotations,
-          model_version: currentModel,
-          prompt_version: currentPromptVersion,
-          expires_at: expiresAt.toISOString(),
-        },
-        { onConflict: "content_hash,intensity" },
-      );
-    if (cacheWriteError) {
-      console.error(
-        "[annotate/stream] Cache write failed:",
-        cacheWriteError.message,
-      );
+      const { error: cacheWriteError } = await serviceClient
+        .from("annotation_cache")
+        .upsert(
+          {
+            content_hash,
+            url,
+            intensity: cacheIntensity,
+            annotations: allAnnotations,
+            model_version: currentModel,
+            prompt_version: currentPromptVersion,
+            expires_at: expiresAt.toISOString(),
+          },
+          { onConflict: "content_hash,intensity" },
+        );
+      if (cacheWriteError) {
+        console.error(
+          "[annotate/stream] Cache write failed:",
+          cacheWriteError.message,
+        );
+      }
     }
 
     const merged = await mergeAnnotationsAndFeedback(

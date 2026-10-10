@@ -10,6 +10,7 @@ const FREE_FEATURES = [
   "Create and save your own annotations",
   "Export annotated webpages to PDF",
   "Limited monthly annotations",
+  "Bring your own AI key (no limits on your key)",
 ];
 
 const STANDARD_FEATURES = [
@@ -319,6 +320,14 @@ export default function PlansPage({ session }) {
                     : "Get Started"}
               </button>
             </div>
+          </div>
+
+          <div style={{ textAlign: "center", marginTop: 28 }}>
+            <p className="price-desc">
+              Prefer your own model? Bring any OpenRouter, OpenAI, Anthropic,
+              Gemini, or Meta Muse key — or use the free shared pool. Set it
+              up in Settings → AI Provider.
+            </p>
           </div>
         </div>
       </section>

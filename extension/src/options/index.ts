@@ -49,6 +49,7 @@ let currentPrefs: Required<UserPreferences> = {
   enabled_sites: [],
   annotation_font: "fraunces",
   annotation_font_size: "default",
+  llm_provider: null,
 };
 
 // ─── Init ───
@@ -72,6 +73,7 @@ async function init(): Promise<void> {
       enabled_sites: prefs.enabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "fraunces",
       annotation_font_size: prefs.annotation_font_size ?? "default",
+      llm_provider: prefs.llm_provider ?? null,
     };
   }
 

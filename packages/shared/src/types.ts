@@ -178,6 +178,40 @@ export type SiteAdapter = {
   updated_at: string;
 };
 
+// ─── LLM Providers (BYOK) ───
+
+export type LlmProvider =
+  | "oddity-free"
+  | "openrouter"
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "muse";
+
+export type LlmReasoningEffort = "default" | "none" | "low" | "medium" | "high";
+
+export type LlmKeyStatus = {
+  provider: LlmProvider;
+  configured: boolean;
+  key_hint: string | null;
+  model: string | null;
+  base_url: string | null;
+  reasoning_effort: LlmReasoningEffort | null;
+  updated_at: string | null;
+};
+
+export type LlmStatusResponse = {
+  active_provider: LlmProvider | null;
+  keys: LlmKeyStatus[];
+};
+
+export type SaveLlmKeyBody = {
+  api_key?: string;
+  model?: string;
+  base_url?: string;
+  reasoning_effort?: LlmReasoningEffort;
+};
+
 // ─── User ───
 
 export type UserTier = "free" | "standard";
@@ -214,6 +248,7 @@ export type UserPreferences = {
   enabled_sites?: string[];
   annotation_font?: AnnotationFont;
   annotation_font_size?: AnnotationFontSize;
+  llm_provider?: LlmProvider | null;
 };
 
 // ─── API Request/Response ───
@@ -434,4 +469,9 @@ export type ExtensionMessage =
   | { action: "gdocsSessionLoad"; payload: { docId: string } }
   | { action: "gdocsSessionSave"; payload: { docId: string; chatHistory: Array<{ role: "user" | "assistant"; content: string }>; essayVersions: string[]; editSuggestions: Array<Array<{ find: string; replace: string }>> } }
   | { action: "gdocsAnnotateText"; payload: { text: string; url: string; contentHash: string; wordCount: number } }
-  | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } };
+  | { action: "trackEvent"; payload: { event: string; properties?: Record<string, unknown> } }
+  | { action: "getLlmStatus"; payload: Record<string, never> }
+  | { action: "llmStatusResponse"; payload: LlmStatusResponse }
+  | { action: "setLlmProvider"; payload: { provider: LlmProvider | null } }
+  | { action: "saveLlmKey"; payload: { provider: LlmProvider; body: SaveLlmKeyBody } }
+  | { action: "deleteLlmKey"; payload: { provider: LlmProvider } };

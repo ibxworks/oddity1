@@ -3,7 +3,13 @@ import { MAX_TEXT_LENGTH, canUseFeature } from "@oddity/shared";
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { generatePdfPageSummary } from "../lib/openrouter.js";
+import { generatePdfPageSummary } from "../lib/llm.js";
+import {
+  resolveCacheTagForRead,
+  resolveRequestLlm,
+  sendLlmConfigError,
+  type ResolvedLlm,
+} from "../lib/llm-config.js";
 import { createUserClient, serviceClient } from "../lib/supabase.js";
 
 const router = Router();
@@ -65,13 +71,22 @@ router.get("/", async (req, res) => {
   const userClient = createUserClient(token);
 
   try {
+    let modelTag: string;
+    try {
+      modelTag = await resolveCacheTagForRead(req.user!.id);
+    } catch (err) {
+      if (sendLlmConfigError(res, err)) return;
+      throw err;
+    }
+
     const { data, error } = await userClient
       .from("pdf_page_summaries")
       .select(
         "id, url, document_hash, page_no, page_text_hash, summary, page_title, created_at, updated_at",
       )
       .eq("url", parsed.data.url)
-      .eq("document_hash", parsed.data.document_hash);
+      .eq("document_hash", parsed.data.document_hash)
+      .eq("model_version", modelTag);
 
     if (error) {
       res.status(400).json({ error: error.message });
@@ -116,6 +131,17 @@ router.post("/generate", async (req, res) => {
   } = parsed.data;
 
   try {
+    let llm: ResolvedLlm;
+    try {
+      llm = await resolveRequestLlm(req.user!.id);
+    } catch (err) {
+      if (sendLlmConfigError(res, err)) return;
+      throw err;
+    }
+
+    // "" is the tier default and matches pre-existing rows; overrides match
+    // only their own configuration's variant.
+    const modelTag = llm.cacheTag ?? "";
     const { data: existing, error: existingError } = await userClient
       .from("pdf_page_summaries")
       .select(
@@ -124,6 +150,7 @@ router.post("/generate", async (req, res) => {
       .eq("url", url)
       .eq("document_hash", document_hash)
       .eq("page_no", page_no)
+      .eq("model_version", modelTag)
       .maybeSingle();
 
     if (existingError) {
@@ -147,7 +174,7 @@ router.post("/generate", async (req, res) => {
     const upgradeMultiplier =
       userTier === "free" ? getUpgradeMultiplier() : undefined;
 
-    if (req.user?.id) {
+    if (req.user?.id && !llm.bypassLimits) {
       const { data: usageResult, error: usageErr } = await serviceClient.rpc(
         "check_and_record_usage",
         { p_user_id: req.user.id, p_url: usageKey, p_limit: limit },
@@ -175,6 +202,7 @@ router.post("/generate", async (req, res) => {
     }
 
     const summaryText = await generatePdfPageSummary(text, {
+      override: llm.override,
       logContext: {
         route: "pdf-page-summary",
         requestId: randomUUID(),
@@ -198,6 +226,7 @@ router.post("/generate", async (req, res) => {
         page_text_hash,
         summary: summaryText,
         page_title: page_title ?? null,
+        model_version: modelTag,
       })
       .select(
         "id, url, document_hash, page_no, page_text_hash, summary, page_title, created_at, updated_at",

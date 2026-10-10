@@ -100,3 +100,93 @@ export const PERSONALITIES = {
 
 export const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL || "https://oddity1-backend.vercel.app";
+
+// ─── LLM Providers (BYOK) — mirrors packages/shared ───
+
+export const LLM_PROVIDERS = [
+  "oddity-free",
+  "openrouter",
+  "openai",
+  "anthropic",
+  "gemini",
+  "muse",
+];
+
+export const LLM_EFFORT_OPTIONS = [
+  "default",
+  "none",
+  "low",
+  "medium",
+  "high",
+];
+
+export const LLM_PROVIDER_META = {
+  "oddity-free": {
+    label: "Oddity Free",
+    short: "Free",
+    needsKey: false,
+    keyUrl: null,
+    modelPlaceholder: "",
+    note: "Free and unlimited, served from shared capacity. May be slow or unstable at peak times.",
+    effortSupported: true,
+  },
+  openrouter: {
+    label: "OpenRouter",
+    short: "OpenRouter",
+    needsKey: true,
+    keyUrl: "https://openrouter.ai/keys",
+    modelPlaceholder: "meta/muse-spark-1.3-contributor",
+    note: "Any OpenRouter model ID, including :free models.",
+    effortSupported: true,
+  },
+  openai: {
+    label: "OpenAI",
+    short: "OpenAI",
+    needsKey: true,
+    keyUrl: "https://platform.openai.com/api-keys",
+    modelPlaceholder: "gpt-5-mini",
+    note: "Native model ID, e.g. gpt-5-mini or gpt-5.",
+    effortSupported: true,
+  },
+  anthropic: {
+    label: "Anthropic",
+    short: "Anthropic",
+    needsKey: true,
+    keyUrl: "https://console.anthropic.com/",
+    modelPlaceholder: "claude-sonnet-4-5",
+    note: "Native model ID, e.g. claude-sonnet-4-5.",
+    effortSupported: true,
+  },
+  gemini: {
+    label: "Gemini",
+    short: "Gemini",
+    needsKey: true,
+    keyUrl: "https://aistudio.google.com/",
+    modelPlaceholder: "gemini-2.5-flash",
+    note: "Native model ID, e.g. gemini-2.5-flash.",
+    effortSupported: false,
+  },
+  muse: {
+    label: "Meta Muse",
+    short: "Muse",
+    needsKey: true,
+    keyUrl: "https://dev.meta.ai/",
+    modelPlaceholder: "muse-spark-1.3",
+    note: "Meta Model API key (MODEL_API_KEY).",
+    effortSupported: false,
+  },
+};
+
+// Whether an OpenAI model accepts the reasoning-effort parameter.
+// Mirrors isOpenAiReasoningModel in packages/shared.
+export function isOpenAiReasoningModel(model) {
+  return /^(o\d|gpt-5)/.test(model.trim());
+}
+
+// Whether the effort setting has any effect for a provider+model pair.
+// Mirrors modelSupportsEffort in packages/shared.
+export function modelSupportsEffort(provider, model) {
+  if (!LLM_PROVIDER_META[provider].effortSupported) return false;
+  if (provider === "openai") return isOpenAiReasoningModel(model);
+  return true;
+}
