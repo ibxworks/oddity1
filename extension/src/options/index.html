@@ -4,11 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Oddity — Settings</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="stylesheet" href="../shared/tokens.css" />
     <style>
       * {
         box-sizing: border-box;
@@ -17,43 +13,46 @@
       }
 
       body {
-        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-        background: #fafaf7;
-        color: #111;
+        font-family: var(--font-sans);
+        background: var(--warm-page);
+        color: var(--warm-fg);
         font-size: 15px;
-        line-height: 1.5;
+        line-height: var(--line-height-base);
+        letter-spacing: var(--tracking-base);
         padding: 40px 24px;
         max-width: 640px;
         margin: 0 auto;
       }
 
       h1 {
-        font-family: "Fraunces", Georgia, serif;
-        font-size: 28px;
-        font-weight: 600;
+        font-family: var(--font-sans);
+        font-size: var(--font-size-title);
+        line-height: var(--line-height-title);
+        font-weight: 700;
         margin-bottom: 8px;
         letter-spacing: -0.3px;
       }
       .subtitle {
-        color: #6b6b63;
+        color: var(--warm-muted-fg);
         font-size: 14px;
         margin-bottom: 32px;
       }
 
       /* ── Cards ── */
       .card {
-        background: #fff;
-        border: 1px solid #e8e8e2;
-        border-radius: 16px;
+        background: var(--warm-card);
+        border: var(--border-warm);
+        border-radius: var(--radius-card);
         padding: 28px;
         margin-bottom: 20px;
       }
       .card-title {
-        font-size: 16px;
-        font-weight: 600;
+        font-size: var(--font-size-section);
+        line-height: var(--line-height-section);
+        font-weight: 700;
         margin-bottom: 16px;
         padding-bottom: 12px;
-        border-bottom: 1px solid #f0efe9;
+        border-bottom: var(--border-warm);
       }
 
       /* ── Form elements ── */
@@ -67,12 +66,12 @@
         display: block;
         font-size: 13px;
         font-weight: 500;
-        color: #5a5a52;
+        color: var(--warm-muted-fg);
         margin-bottom: 6px;
       }
       .field-hint {
         font-size: 12px;
-        color: #8a8a80;
+        color: var(--warm-muted-fg);
         margin-top: 4px;
       }
 
@@ -85,21 +84,21 @@
         flex: 1;
         padding: 8px 0;
         text-align: center;
-        border: 1px solid #e8e8e2;
-        border-radius: 100px;
-        background: #fff;
+        border: var(--border-warm);
+        border-radius: var(--radius-control);
+        background: var(--warm-card);
         font-size: 13px;
         cursor: pointer;
-        color: #5a5a52;
+        color: var(--warm-muted-fg);
         transition: all 0.15s;
       }
       .radio-btn:hover {
-        border-color: #c8c8be;
+        border-color: var(--warm-ring);
       }
       .radio-btn.active {
-        background: #111;
-        color: #fff;
-        border-color: #111;
+        background: var(--warm-primary);
+        color: var(--warm-primary-fg);
+        border-color: var(--warm-primary);
       }
 
       /* ── Checkboxes ── */
@@ -113,15 +112,15 @@
         align-items: center;
         gap: 6px;
         padding: 6px 8px;
-        border-radius: 8px;
+        border-radius: var(--radius-control);
         cursor: pointer;
         font-size: 13px;
       }
       .checkbox-item:hover {
-        background: #fafaf7;
+        background: var(--warm-secondary);
       }
       .checkbox-item input {
-        accent-color: #f2c94c;
+        accent-color: var(--warm-primary);
       }
       .type-dot {
         width: 10px;
@@ -140,23 +139,23 @@
         align-items: center;
         justify-content: space-between;
         padding: 8px 12px;
-        border: 1px solid #f0efe9;
-        border-radius: 8px;
+        border: var(--border-warm);
+        border-radius: var(--radius-control);
         margin-bottom: 6px;
         font-size: 13px;
-        background: #fafaf7;
+        background: var(--warm-secondary);
       }
       .site-remove {
         background: none;
         border: none;
-        color: #ef4444;
+        color: var(--warm-destructive);
         cursor: pointer;
         font-size: 12px;
         padding: 2px 6px;
-        border-radius: 4px;
+        border-radius: var(--radius-sm);
       }
       .site-remove:hover {
-        background: #fef2f2;
+        background: var(--warm-alert-bg);
       }
       .site-input-row {
         display: flex;
@@ -165,17 +164,17 @@
       .site-input-row input {
         flex: 1;
         padding: 8px 12px;
-        border: 1px solid #e8e8e2;
-        border-radius: 12px;
+        border: var(--border-warm);
+        border-radius: var(--radius-control);
         font-size: 13px;
         outline: none;
-        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+        font-family: var(--font-sans);
       }
       .site-input-row input:focus {
-        border-color: #111;
+        border-color: var(--warm-ring);
       }
       .empty-state {
-        color: #8a8a80;
+        color: var(--warm-muted-fg);
         font-size: 13px;
         font-style: italic;
         padding: 8px 0;
@@ -187,37 +186,37 @@
         align-items: center;
         justify-content: center;
         padding: 8px 16px;
-        border: 1px solid #e8e8e2;
-        border-radius: 100px;
-        background: #fff;
+        border: var(--border-warm);
+        border-radius: var(--radius-control);
+        background: var(--warm-card);
         font-size: 13px;
         cursor: pointer;
-        color: #3a3a36;
+        color: var(--warm-fg);
         transition: all 0.15s;
-        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+        font-family: var(--font-sans);
       }
       .btn:hover {
-        background: #fafaf7;
-        border-color: #c8c8be;
+        background: var(--warm-secondary);
+        border-color: var(--warm-ring);
       }
       .btn-sm {
         padding: 6px 12px;
         font-size: 12px;
       }
       .btn-primary {
-        background: #111;
-        color: #fff;
-        border-color: #111;
+        background: var(--warm-primary);
+        color: var(--warm-primary-fg);
+        border-color: var(--warm-primary);
       }
       .btn-primary:hover {
-        background: #333;
+        opacity: 0.88;
       }
       .btn-danger {
-        color: #ef4444;
-        border-color: #fecaca;
+        color: var(--warm-destructive);
+        border-color: var(--warm-alert-border);
       }
       .btn-danger:hover {
-        background: #fef2f2;
+        background: var(--warm-alert-bg);
       }
 
       .btn-row {
@@ -239,7 +238,7 @@
       }
       .auth-tier {
         font-size: 12px;
-        color: #6b6b63;
+        color: var(--warm-muted-fg);
         margin-top: 2px;
       }
 
@@ -249,9 +248,9 @@
         bottom: 24px;
         right: 24px;
         padding: 10px 20px;
-        background: #111;
-        color: #fff;
-        border-radius: 12px;
+        background: var(--warm-primary);
+        color: var(--warm-primary-fg);
+        border-radius: var(--radius-card);
         font-size: 13px;
         opacity: 0;
         transform: translateY(10px);
@@ -261,6 +260,13 @@
       .toast.visible {
         opacity: 1;
         transform: translateY(0);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+        }
       }
     </style>
   </head>
@@ -320,8 +326,8 @@
               Sign out
             </button>
           </div>
-          <div id="delete-account-section" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #f0efe9;">
-            <span class="field-label" style="color: #ef4444;">Danger Zone</span>
+          <div id="delete-account-section" style="margin-top: 20px; padding-top: 16px; border-top: var(--border-warm);">
+            <span class="field-label" style="color: var(--warm-destructive);">Danger Zone</span>
             <p class="field-hint" style="margin-bottom: 10px;">
               Permanently delete your account and all data. This cannot be undone.
             </p>

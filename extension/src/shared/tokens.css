@@ -1,0 +1,148 @@
+/* Shared light-only design tokens.
+ * Vanilla CSS custom properties. No framework, no pre-processor.
+ * All borders are 1px. Light values only.
+ */
+
+:root {
+  /* ── Warm neutral: page and card surfaces ── */
+  --warm-page: #fafaf9;
+  --warm-fg: #1c1917;
+  --warm-card: #ffffff;
+  --warm-primary: #292524;
+  --warm-primary-fg: #fafaf9;
+  --warm-secondary: #f5f5f4;
+  --warm-muted: #f5f5f4;
+  --warm-muted-fg: #78716c;
+  --warm-accent: #f0f0ed;
+  --warm-accent-fg: #1c1917;
+  --warm-destructive: #ef4444;
+  --warm-alert-bg: #fef2f2;
+  --warm-alert-fg: #b91c1c;
+  --warm-alert-border: #fecaca;
+  --warm-border: #e7e5e4;
+  --warm-input: #e7e5e4;
+  --warm-ring: #1c1917;
+  --warm-float-chrome: #f0f0ed;
+  --warm-float-panel: #fafaf9;
+  --warm-float-border: #dedad7;
+
+  /* ── Cool neutral: content surfaces ── */
+  --cool-page: #fafafb;
+  --cool-canvas: #f1f2f3;
+  --cool-surface: #ffffff;
+  --cool-inset: #f7f8f9;
+  --cool-hover: #f4f5f6;
+  --cool-hover-2: #e7e9eb;
+  --cool-ink: #1f2124;
+  --cool-ink-2: #62656b;
+  --cool-ink-3: #9a9da3;
+  --cool-line: #ecedef;
+  --cool-line-strong: #e0e2e5;
+  --cool-line-soft: #f3f4f5;
+  --cool-field: #f2f2f3;
+  --cool-accent: #0285ff;
+  --cool-accent-ink: #0070dd;
+  --cool-accent-tint: #e9f3ff;
+  --cool-green: #199a4d;
+  --cool-green-tint: #e8f5ed;
+  --cool-orange: #ef720d;
+  --cool-orange-tint: #fdf1e5;
+  --cool-red: #e3474c;
+  --cool-red-tint: #fcecec;
+  --cool-tooltip-bg: #25272b;
+  --cool-tooltip-fg: #f6f7f8;
+
+  /* ── Opacity ── */
+  --scrim: rgba(28, 25, 23, 0.32);
+
+  /* ── Borders: 1px everywhere ── */
+  --border-width: 1px;
+  --border-warm: 1px solid var(--warm-border);
+  --border-alert: 1px solid var(--warm-alert-border);
+  --border-float: 1px solid var(--warm-float-border);
+  --border-cool: 1px solid var(--cool-line);
+  --border-cool-strong: 1px solid var(--cool-line-strong);
+  --border-cool-soft: 1px solid var(--cool-line-soft);
+
+  /* ── Radius: controls 8, cards 10, panels 20, sheets 24 ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-control: 8px;
+  --radius-lg: 8px;
+  --radius-card: 10px;
+  --radius-xl: 12px;
+  --radius-window: 14px;
+  --radius-panel: 20px;
+  --radius-sheet: 24px;
+  --radius-pill: 999px;
+  --radius-focus-ring: 4px;
+
+  /* ── Type: system stacks only ── */
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-size-base: 14px;
+  --font-size-title-large: 34px;
+  --font-size-title: 24px;
+  --font-size-section: 16px;
+  --font-size-body: 15px;
+  --font-size-label: 14px;
+  --font-size-caption: 12px;
+  --font-size-tooltip: 11.5px;
+  --line-height-base: 1.5;
+  --line-height-title-large: 40px;
+  --line-height-title: 30px;
+  --line-height-section: 22px;
+  --line-height-body: 22px;
+  --line-height-label: 18px;
+  --line-height-caption: 16px;
+  --tracking-base: -0.01em;
+
+  /* ── Spacing ── */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 40px;
+
+  /* ── Sizing ── */
+  --control-height-sm: 36px;
+  --control-height-md: 44px;
+  --control-height-lg: 52px;
+  --control-height-xl: 72px;
+  --icon-button: 28px;
+  --sidebar-width: 224px;
+  --rail-width: 52px;
+  --caret-width: 2px;
+  --dot-size: 8px;
+
+  /* ── Motion ── */
+  --ease-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-link: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-hover-show: 200ms;
+  --duration-hover-hide: 300ms;
+  --duration-underline: 280ms;
+  --duration-caret: 1s;
+  --duration-toast-prompt: 8s;
+  --duration-toast-notice: 3s;
+
+  /* ── Shadows (light): line-color ring plus smooth stack ── */
+  --shadow-hairline: 0 0 0 1px var(--cool-line);
+  --shadow-button: 0 0 0 1px var(--cool-line), 0 1px 2px rgba(31, 33, 36, 0.06);
+  --shadow-card: 0 0 0 1px var(--cool-line), 0 2px 8px rgba(31, 33, 36, 0.06);
+  --shadow-raised: 0 0 0 1px var(--cool-line), 0 8px 24px rgba(31, 33, 36, 0.1);
+  --shadow-overlay: 0 0 0 1px var(--cool-line-strong), 0 12px 32px rgba(31, 33, 36, 0.14);
+  --shadow-inset-field: inset 0 1px 2px rgba(31, 33, 36, 0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-hover-show: 0.01ms;
+    --duration-hover-hide: 0.01ms;
+    --duration-underline: 0.01ms;
+    --duration-caret: 0.01ms;
+  }
+}

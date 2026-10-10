@@ -1,3 +1,6 @@
+import { LIGHT_TOKENS } from "@oddity/shared";
+import { TOAST_CSS } from "./toast-theme.js";
+
 const TOAST_TAG = "oddity-notice-toast";
 
 let host: HTMLElement | null = null;
@@ -33,40 +36,7 @@ export function showNoticeToast(message: string, persistent = false): void {
     const shadow = host.attachShadow({ mode: "closed" });
 
     shadow.innerHTML = `
-      <style>
-        :host {
-          position: fixed;
-          top: 16px;
-          right: 16px;
-          z-index: 2147483647;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }
-        .toast {
-          display: flex;
-          align-items: center;
-          padding: 12px 16px;
-          background: #0f172a;
-          color: #e2e8f0;
-          border-radius: 10px;
-          border: 1px solid rgba(148, 163, 184, 0.25);
-          font-size: 13px;
-          line-height: 1.4;
-          box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);
-          max-width: 340px;
-          animation: slideIn 0.22s ease-out;
-        }
-        .toast.hiding {
-          animation: slideOut 0.18s ease-in forwards;
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(20px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes slideOut {
-          from { opacity: 1; transform: translateX(0); }
-          to   { opacity: 0; transform: translateX(20px); }
-        }
-      </style>
+      <style>${TOAST_CSS}</style>
       <div class="toast" role="status" aria-live="polite">
         <span class="message"></span>
       </div>
@@ -90,7 +60,7 @@ export function showNoticeToast(message: string, persistent = false): void {
   if (!persistent) {
     hideTimer = window.setTimeout(() => {
       dismissNoticeToast();
-    }, 3000);
+    }, LIGHT_TOKENS.motion.toastNoticeMs);
   }
 }
 

@@ -12,24 +12,24 @@ const OPTIMIZE_BUTTON_CSS = `
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #f4f4f4;
-  border: 1px solid #e5e5e5;
-  border-radius: 16px;
+  background: #FFFFFF;
+  border: 1px solid #E0E2E5;
+  border-radius: 999px;
   padding: 4px 10px;
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
   font-weight: 500;
-  color: #111;
+  color: #1F2124;
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-  transition: all 0.2s ease;
+  box-shadow: 0 0 0 1px #ECEDEF, 0 2px 8px rgba(31, 33, 36, 0.06);
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   transform: translateY(-100%);
   margin-top: -8px;
 }
 
 .oddity-optimize-btn:hover {
-  background: #ebebeb;
-  box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+  background: #F4F5F6;
+  box-shadow: 0 0 0 1px #E0E2E5, 0 3px 6px rgba(31, 33, 36, 0.08);
 }
 
 .oddity-optimize-btn:active {
@@ -37,8 +37,8 @@ const OPTIMIZE_BUTTON_CSS = `
 }
 
 .oddity-optimize-btn.loading {
-  background: #f9f9f9;
-  color: #666;
+  background: #F2F2F3;
+  color: #9A9DA3;
   pointer-events: none;
 }
 
@@ -63,11 +63,11 @@ const OPTIMIZE_BUTTON_CSS = `
   bottom: calc(100% + 14px);
   left: 50%;
   transform: translateX(-50%);
-  background: #111;
-  color: #fff;
-  padding: 6px 10px;
+  background: #25272B;
+  color: #F6F7F8;
+  padding: 5px 9px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 400;
   white-space: nowrap;
   pointer-events: none;
@@ -82,6 +82,13 @@ const OPTIMIZE_BUTTON_CSS = `
 
 [data-theme="dark"] .oddity-optimize-tooltip {
   background: #444;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oddity-optimize-btn,
+  .oddity-optimize-tooltip {
+    transition-duration: 0.01ms;
+  }
 }
 `;
 

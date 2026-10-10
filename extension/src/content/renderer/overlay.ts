@@ -6,6 +6,13 @@ const OVERLAY_ID = 'oddity-overlay';
 // Overlay highlights sit below annotation cards (2147483645) and page-dim (2147483644)
 const Z_INDEX = 2147483643;
 
+// Lite motion: one 0.2s filter transition; none when reduced motion is preferred.
+const REDUCED_MOTION =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FILTER_TRANSITION = REDUCED_MOTION ? 'none' : 'filter 0.2s';
+
 let overlayEl: HTMLDivElement | null = null;
 /** Inner wrapper whose transform is updated on scroll instead of recreating DOM. */
 let wrapperEl: HTMLDivElement | null = null;
@@ -298,11 +305,11 @@ export function emphasizeAnnotation(id: string): void {
     const type = span.getAttribute('data-oddity-type') ?? '';
 
     if (type === 'user_written') {
-      // Blue: swap color to #3987FF, no brightness/opacity change
+      // Blue: swap color to the accent ink, no brightness/opacity change
       if (!span.dataset.oddityOrigBg) span.dataset.oddityOrigBg = span.style.backgroundColor;
       if (!span.dataset.oddityOrigBorder) span.dataset.oddityOrigBorder = span.style.borderBottom;
-      span.style.backgroundColor = 'rgba(57, 135, 255, 0.2)';
-      span.style.borderBottom = '1.5px solid rgba(57, 135, 255, 0.9)';
+      span.style.backgroundColor = 'rgba(0, 112, 221, 0.2)';
+      span.style.borderBottom = '1.5px solid rgba(0, 112, 221, 0.9)';
       span.style.filter = '';
     } else {
       // All other colors: boost opacity + slight brightness
@@ -438,7 +445,7 @@ function drawCachedAnnotationInto(parent: Node, annotation: Annotation): void {
       width: ${rect.width}px;
       height: ${rect.height}px;
       pointer-events: ${pointerEvents};
-      transition: filter 0.15s;
+      transition: ${FILTER_TRANSITION};
       z-index: 1;
       box-sizing: border-box;
       ${bgCss}

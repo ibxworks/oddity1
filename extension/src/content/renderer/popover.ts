@@ -1,5 +1,5 @@
 import type { Annotation } from '@oddity/shared';
-import { POPOVER_SHOW_DELAY_MS, POPOVER_HIDE_DELAY_MS } from '@oddity/shared';
+import { ALL_OVERVIEW_TYPES, POPOVER_SHOW_DELAY_MS, POPOVER_HIDE_DELAY_MS } from '@oddity/shared';
 import { getVisual } from './styles.js';
 import { renderMiniMarkdown } from './mini-markdown.js';
 
@@ -58,7 +58,11 @@ function createPopover(annotation: Annotation, anchorEl: HTMLElement): void {
   destroy();
 
   currentAnchor = anchorEl;
-  const visual = getVisual(annotation.type, 'dark', annotation.label);
+  const visual = getVisual(annotation.type, 'light', annotation.label);
+  // Overview yellow is unreadable as small text on a light card; use the
+  // deeper readable yellow for the tag while the dot keeps the hue.
+  const isOverview = (ALL_OVERVIEW_TYPES as readonly string[]).includes(annotation.type);
+  const tagColor = isOverview ? '#DCAF16' : visual.color;
 
   // Host element
   hostEl = document.createElement('div');
@@ -82,7 +86,7 @@ function createPopover(annotation: Annotation, anchorEl: HTMLElement): void {
   // ── Tag ──
   const tag = document.createElement('div');
   tag.className = 'annotation-tag';
-  tag.style.color = visual.color;
+  tag.style.color = tagColor;
   tag.textContent = visual.label;
   container.appendChild(tag);
 
@@ -212,8 +216,6 @@ function destroy(): void {
 // ─── Popover CSS (injected into shadow DOM) ───
 
 const POPOVER_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@300;400;500&display=swap');
-
   *, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
@@ -224,13 +226,15 @@ const POPOVER_CSS = `
     position: relative;
     width: 240px;
     max-width: 90vw;
-    background: #161616;
-    border: 1px solid #262626;
+    background: #FFFFFF;
+    border: 1px solid #E0E2E5;
     border-left-width: 3px;
-    border-radius: 4px;
+    border-radius: 10px;
     padding: 12px 14px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 0 1px #E0E2E5, 0 12px 32px rgba(31, 33, 36, 0.14);
     overflow: visible;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    animation: popoverIn 0.2s cubic-bezier(0.23, 1, 0.32, 1);
   }
 
   .annotation-dot {
@@ -243,7 +247,6 @@ const POPOVER_CSS = `
   }
 
   .annotation-tag {
-    font-family: 'Inter', sans-serif;
     font-size: 9px;
     font-weight: 500;
     letter-spacing: 0.14em;
@@ -252,11 +255,9 @@ const POPOVER_CSS = `
   }
 
   .annotation-text {
-    font-family: 'EB Garamond', Georgia, serif;
     font-size: 15px;
-    font-style: italic;
     line-height: 1.5;
-    color: #e8e3d9;
+    color: #1F2124;
   }
 
   .annotation-text p {
@@ -269,7 +270,6 @@ const POPOVER_CSS = `
 
   .annotation-text strong {
     font-weight: 600;
-    color: #f0ece4;
   }
 
   .annotation-text ul {
@@ -297,27 +297,40 @@ const POPOVER_CSS = `
 
   .reaction-btn {
     all: unset;
-    font-family: 'Inter', sans-serif;
     font-size: 11px;
     background: transparent;
-    border: 1px solid #262626;
-    border-radius: 3px;
-    color: #6b6560;
-    padding: 3px 8px;
+    border: 1px solid #E0E2E5;
+    border-radius: 999px;
+    color: #62656B;
+    padding: 3px 10px;
     cursor: pointer;
-    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
     letter-spacing: 0.04em;
   }
 
   .reaction-btn:hover {
-    color: #e8e3d9;
-    border-color: #444;
-    background: rgba(255, 255, 255, 0.04);
+    color: #1F2124;
+    border-color: #9A9DA3;
+    background: #F4F5F6;
   }
 
   .reaction-btn.active {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: #555;
-    color: #e8e3d9;
+    background: #E9F3FF;
+    border-color: #0285FF;
+    color: #0070DD;
+  }
+
+  @keyframes popoverIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .oddity-popover {
+      animation-duration: 0.01ms;
+    }
+    .reaction-btn {
+      transition-duration: 0.01ms;
+    }
   }
 `;

@@ -4,6 +4,13 @@ import { getThemeMode } from './theme-detector.js';
 
 const ATTR = 'data-oddity-id';
 
+// Lite motion: one 0.2s filter transition; none when reduced motion is preferred.
+const REDUCED_MOTION =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FILTER_TRANSITION = REDUCED_MOTION ? 'none' : 'filter 0.2s';
+
 /** All injected anchor spans, keyed by annotation ID */
 const anchorMap = new Map<string, HTMLSpanElement[]>();
 
@@ -103,7 +110,7 @@ export function injectAnchors(annotation: Annotation, range: Range): HTMLSpanEle
     const bgCss = bgColor ? `background-color: ${bgColor};` : '';
     const borderCss = underlineStyle ? `border-bottom: ${underlineStyle};` : '';
     span.style.cssText =
-      `all: unset; display: inline; pointer-events: auto; position: relative; transition: filter 0.15s; box-decoration-break: clone; -webkit-box-decoration-break: clone; ${bgCss} ${borderCss}`;
+      `all: unset; display: inline; pointer-events: auto; position: relative; transition: ${FILTER_TRANSITION}; box-decoration-break: clone; -webkit-box-decoration-break: clone; ${bgCss} ${borderCss}`;
 
     target.parentNode!.insertBefore(span, target);
     span.appendChild(target);

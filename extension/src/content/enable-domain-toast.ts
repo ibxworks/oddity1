@@ -2,6 +2,7 @@
 // Shadow DOM toast asking the user to enable Oddity 1 for the current domain.
 // Idempotent — calling showEnableDomainToast() multiple times shows only one toast.
 
+import { TOAST_CSS } from "./toast-theme.js";
 import { sendMessage } from "../shared/messaging.js";
 
 let shown = false;
@@ -15,66 +16,7 @@ export function showEnableDomainToast(domain: string): void {
   const shadow = hostEl.attachShadow({ mode: "closed" });
 
   const style = document.createElement("style");
-  style.textContent = `
-    :host {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      z-index: 2147483647;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    .toast {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 16px;
-      background: #1e293b;
-      color: #f1f5f9;
-      border-radius: 8px;
-      font-size: 13px;
-      line-height: 1.4;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-      max-width: 360px;
-      animation: slideIn 0.25s ease-out;
-    }
-    .toast.hiding {
-      animation: slideOut 0.2s ease-in forwards;
-    }
-    .msg { flex: 1; }
-    .msg strong { font-weight: 600; }
-    .enable-btn {
-      background: #22c55e;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      padding: 6px 14px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: background 0.15s;
-    }
-    .enable-btn:hover { background: #16a34a; }
-    .dismiss {
-      background: none;
-      border: none;
-      color: #94a3b8;
-      cursor: pointer;
-      font-size: 16px;
-      padding: 0 0 0 4px;
-      line-height: 1;
-      flex-shrink: 0;
-    }
-    .dismiss:hover { color: #f1f5f9; }
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateX(20px); }
-      to   { opacity: 1; transform: translateX(0); }
-    }
-    @keyframes slideOut {
-      from { opacity: 1; transform: translateX(0); }
-      to   { opacity: 0; transform: translateX(20px); }
-    }
-  `;
+  style.textContent = TOAST_CSS;
   shadow.appendChild(style);
 
   const toast = document.createElement("div");

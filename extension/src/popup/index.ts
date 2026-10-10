@@ -548,8 +548,8 @@ function showUpgradeToast(msg: string): void {
       "border-radius: 10px",
       "font-size: 12px",
       "line-height: 1.3",
-      "background: #fef3c7",
-      "color: #92400e",
+      "background: var(--cool-orange-tint)",
+      "color: var(--warm-fg)",
       "z-index: 9999",
       "text-align: center",
     ].join(";");

@@ -192,3 +192,109 @@ On SPA sites (Claude, ChatGPT), switching between conversations or navigating wi
 
 ### Files Modified
 - `extension/src/content/index.ts` — all changes above
+
+## Light-only vanilla port
+
+Source: prior harvest reports (component inventory, light tokens,
+shadow and build notes). See the design language doc in docs/ for
+hex, opacity, radius, motion, sizing, layout, inventory, and mapping.
+Scope: light theme only, vanilla files, micro-copy only. Skip the
+editor-document overlay.
+
+### Port rules (strict)
+
+- [ ] Target files use generic terms only: no reference repo name,
+  path, or URL in any new file
+- [ ] Light tokens only; no dark values
+- [ ] Vanilla markup, style, and script; no framework
+- [ ] System font stacks only; no remote font fetch
+- [ ] No remote code fetch; bundled re-inject only
+
+### Phase 1 — Tokens and shells
+
+- [ ] 1.1 Add target-relative tokens.css with Set A plus Set B light
+  hex, scrim 0.32, radius, motion, sizing
+- [ ] 1.2 Port popup shell: header plus toggle, auth block, main
+  content, personalities Terry/Jerry/Sally, public-figure row,
+  font and size selects, provider section, export action, profile
+  popover, export dialog
+- [ ] 1.3 Port popup logic: load prefs, apply to UI, auth-state UI,
+  provider status, provider change, key save
+- [ ] 1.4 Port markdown export helper plus download
+- [ ] 1.5 Port options shell: Account card, Auto-Enabled Sites,
+  Default Preferences, toast
+- [ ] 1.6 Port options logic: prefs, site list, auth status, toast
+
+### Phase 2 — In-page layer
+
+- [ ] 2.1 Port highlight layer: invisible anchors, fixed topmost
+  overlay with pointer-events none, per-type style map
+- [ ] 2.2 Port margin rail: fixed host, closed shadow, overview path
+  plus inline popover path
+- [ ] 2.3 Port bottom-right panel: fixed host, closed shadow
+- [ ] 2.4 Port hover card: 200ms show, 300ms hide, hover bridge,
+  closed shadow
+- [ ] 2.5 Port toasts (fixed top-right, topmost z): auth 8s,
+  enable-domain, notice 3s, usage, long-wait
+
+### Phase 3 — Chat mode and wiring
+
+- [ ] 3.1 Port chat helpers: display name, prompt label, placeholder,
+  helper, loading, error, empty-state, onboarding
+- [ ] 3.2 Port chat observer: scan, track, finalize, start, stop
+- [ ] 3.3 Port optimize button: closed shadow, "Optimize Prompt",
+  paste into input, done event, destroy
+- [ ] 3.4 Port prompt pipeline: chat mode flag, gated request,
+  paste into chat input
+- [ ] 3.5 Port manifest wiring: module worker, early guard plus idle
+  entry, popup and options pages, image icons only
+
+### Phase 4 — Verify
+
+- [ ] 4.1 Grep new files for reference names, absolute paths, and
+  remote URLs; zero hits
+- [ ] 4.2 Render popup plus options light-only; check hex, radius,
+  spacing against the design language doc
+- [ ] 4.3 Exercise overlay, rail, panel, hover card, all five toasts
+- [ ] 4.4 Exercise chat mode on a chatbot host: observer plus
+  optimize plus paste
+- [ ] 4.5 Reduced-motion pass: motion collapses, no stuck state
+
+### File mapping (new files, target-relative)
+
+- [ ] tokens.css, popup/index.html, popup/app.js, popup/export.js
+- [ ] options/index.html, options/app.js
+- [ ] content/highlight.js, content/margin-notes.js, content/panel.js
+- [ ] content/popover.js, content/toasts.js, content/chat.js
+- [ ] manifest config
+
+## Review — light UI unification (branch ui/minimal-elegant)
+
+Delivered in-place unification onto shared light tokens instead of
+the from-scratch port sketched above. Dark-theme rules and GDocs
+surfaces untouched by scope decision.
+
+Shipped:
+- docs/design-language.md — warm/cool hex sets, opacity, radius,
+  motion, type, sizing, shadows, layout, inventory, file mapping.
+- extension/src/shared/tokens.css + LIGHT_TOKENS TS mirror.
+- Popup + options on token vars, system stack, micro-copy only.
+- One TOAST_CSS theme shared by all five toasts.
+- Popover, overlay, anchors, optimize button, margin rail, and
+  bottom-right panel retuned: token colors (light rules), system
+  stacks, scale radii, 0.2s motion, reduced-motion guards.
+- Note fonts stay Fraunces/Kalam; remote fetch trimmed to those two.
+
+Verified (observed in this worktree):
+- tsc clean: extension, shared, backend.
+- Tests pass: 45 extension + 22 shared.
+- Build passes with dummy OAuth env; manifest valid; tokens CSS
+  bundled and linked from popup and options.
+- Playwright (extension loaded): popup bg #FAFAF9, system font,
+  8px controls; toast white/10px/#E0E2E5/green action; note card
+  10px radius, ink body, chip header; zero console errors on
+  popup, options, and a live page.
+- Aside second route: popup bg token confirmed; options renders
+  identically.
+- Anonymization scan: zero reference-name hits in docs, code,
+  styles, and markup.
