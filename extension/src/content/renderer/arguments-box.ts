@@ -2230,6 +2230,7 @@ export function handleRemoteSignOut(): void {
   if (notEnabledPanelEl) {
     notEnabledPanelEl.remove();
     notEnabledPanelEl = null;
+    removeNotEnabledCloseBtn();
     dimmed = false;
     containerEl?.classList.remove("oddity-not-enabled");
   }
@@ -2371,7 +2372,23 @@ export function destroyArgumentsBox(): void {
   liveItems = [];
 }
 
+/** Test-only: show the not-enabled overlay without going through the auth flow. */
+export function showNotEnabledOverlayForTest(): void {
+  showNotEnabledOverlay();
+}
+
+/** Test-only: access the closed shadow root for assertions. */
+export function getShadowRootForTest(): ShadowRoot | null {
+  return shadowRoot;
+}
+
 // ─── Internal ───
+
+function removeNotEnabledCloseBtn(): void {
+  containerEl
+    ?.querySelectorAll(".args-not-enabled-close")
+    .forEach((btn) => btn.remove());
+}
 
 function showNotEnabledOverlay(): void {
   if (notEnabledPanelEl) return; // already showing
@@ -2381,6 +2398,9 @@ function showNotEnabledOverlay(): void {
   containerEl?.classList.remove("dashboard");
   const contentClip = shadowRoot?.querySelector(".args-content-clip");
   if (!contentClip) return;
+  // Clear any stale dismiss button so repeated overlays never stack duplicates
+  // above the panel (where they would cover the mode toggle's own close button).
+  removeNotEnabledCloseBtn();
 
   notEnabledPanelEl = document.createElement("div");
   notEnabledPanelEl.className = "args-not-enabled-overlay";
@@ -2402,9 +2422,13 @@ function showNotEnabledOverlay(): void {
   const removeOverlay = () => {
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
+    removeNotEnabledCloseBtn();
     containerEl?.classList.remove("oddity-not-enabled");
     dimmed = false;
     toggleBarEl?.classList.add("visible");
+    // The overlay hid the mode toggle; re-evaluate so its own close button
+    // is available again (keeps the expanded panel collapsible).
+    updateModeToggleVisibility();
   };
 
   const enableExtension = () => {
@@ -2605,6 +2629,7 @@ function toggleDimmedPanel(): void {
     topBarEl?.classList.remove("hovered");
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
+    removeNotEnabledCloseBtn();
     pdfPanelEl?.remove();
     pdfPanelEl = null;
     return;
@@ -2634,7 +2659,7 @@ function toggle(): void {
     }
     notEnabledPanelEl?.remove();
     notEnabledPanelEl = null;
-    containerEl?.querySelector(".args-not-enabled-close")?.remove();
+    removeNotEnabledCloseBtn();
     containerEl?.classList.remove("oddity-not-enabled");
     dimmed = false;
     if (closeBtnHideTimer) clearTimeout(closeBtnHideTimer);
@@ -6661,19 +6686,19 @@ const ARGUMENTS_BOX_CSS = `
     height: 18px;
     cursor: nw-resize;
     z-index: 10;
-    border-radius: 16px 0 0 0;
+    border-radius: 0;
   }
 
   .args-resize-handle::after {
     content: '';
     position: absolute;
-    top: 4px;
-    left: 4px;
-    width: 8px;
-    height: 8px;
-    border-top: 2px solid rgba(255, 255, 255, 0.45);
-    border-left: 2px solid rgba(255, 255, 255, 0.45);
-    border-radius: 2px 0 0 0;
+    top: 0;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    border-top: 3px solid rgba(255, 255, 255, 0.5);
+    border-left: 3px solid rgba(255, 255, 255, 0.5);
+    border-radius: 0;
     pointer-events: none;
   }
 
@@ -6687,8 +6712,8 @@ const ARGUMENTS_BOX_CSS = `
   }
 
   :host([data-theme="light"]) .args-resize-handle::after {
-    border-top-color: rgba(0, 0, 0, 0.3);
-    border-left-color: rgba(0, 0, 0, 0.3);
+    border-top-color: rgba(0, 0, 0, 0.35);
+    border-left-color: rgba(0, 0, 0, 0.35);
   }
 
   /* ── Transparent hover buffer (20px around panel when expanded) ── */
