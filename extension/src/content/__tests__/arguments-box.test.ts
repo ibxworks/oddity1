@@ -143,16 +143,20 @@ describe("not-enabled overlay dismiss button", () => {
 });
 
 describe("resize handle", () => {
-  it("uses a thick corner mark concentric with the panel radius", () => {
+  it("uses a sharp 90° mark flush on the panel corner edge", () => {
     const css = shadow().querySelector("style")!.textContent!;
-    // 12px mark at 5px inset with an 11px corner radius: the arc center lands
-    // at (16,16), exactly concentric with the panel's 16px corner.
+    // The panel is rectangular: the mark sits at the corner (not inset) with
+    // no radius, overdrawing the border corner as the grab affordance.
+    const hitArea = css.match(/\.args-resize-handle \{[^}]*\}/)![0];
+    expect(hitArea).toContain("border-radius: 0");
     const rule = css.match(/\.args-resize-handle::after \{[^}]*\}/)![0];
+    expect(rule).toContain("top: 0");
+    expect(rule).toContain("left: 0");
     expect(rule).toContain("width: 12px");
     expect(rule).toContain("height: 12px");
     expect(rule).toContain("border-top: 3px solid");
     expect(rule).toContain("border-left: 3px solid");
-    expect(rule).toContain("border-radius: 11px 0 0 0");
+    expect(rule).toContain("border-radius: 0");
   });
 
   it("uses a neutral gray mark in both themes", () => {

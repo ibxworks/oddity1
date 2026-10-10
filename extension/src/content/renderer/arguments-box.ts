@@ -6686,19 +6686,19 @@ const ARGUMENTS_BOX_CSS = `
     height: 18px;
     cursor: nw-resize;
     z-index: 10;
-    border-radius: 16px 0 0 0;
+    border-radius: 0;
   }
 
   .args-resize-handle::after {
     content: '';
     position: absolute;
-    top: 5px;
-    left: 5px;
+    top: 0;
+    left: 0;
     width: 12px;
     height: 12px;
     border-top: 3px solid rgba(255, 255, 255, 0.5);
     border-left: 3px solid rgba(255, 255, 255, 0.5);
-    border-radius: 11px 0 0 0;
+    border-radius: 0;
     pointer-events: none;
   }
 
