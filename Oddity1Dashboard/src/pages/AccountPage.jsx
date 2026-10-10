@@ -200,7 +200,7 @@ export default function AccountPage() {
   // Clicking a provider row activates it. Providers that need a key the user
   // hasn't saved yet open the Connect modal instead.
   async function handleProviderRowClick(provider) {
-    if (provider === activeLlmProvider) return;
+    if (provider === rawLlmProvider) return;
     if (provider !== null && provider !== "oddity-free") {
       const status = llmKeyStatusFor(provider);
       if (llmStatusState !== "ready" || status?.configured !== true) {
