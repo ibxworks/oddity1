@@ -644,7 +644,15 @@ export default function AccountPage() {
                 <div className="field">
                   <span className="field-label">Reasoning effort</span>
                   <select
-                    disabled={llmStatusState !== "ready"}
+                    disabled={
+                      llmStatusState !== "ready" ||
+                      !LLM_PROVIDER_META[activeLlmProvider].effortSupported
+                    }
+                    title={
+                      LLM_PROVIDER_META[activeLlmProvider].effortSupported
+                        ? undefined
+                        : "Reasoning effort is not supported for this provider."
+                    }
                     value={llmForm.reasoning_effort}
                     onChange={(e) =>
                       setLlmForm((prev) => ({

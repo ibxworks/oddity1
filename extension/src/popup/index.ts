@@ -401,6 +401,10 @@ function renderLlmSection(): void {
   llmModelInput.value = status?.model ?? "";
   llmModelInput.placeholder = meta.modelPlaceholder || "Default model";
   llmEffortSelect.value = status?.reasoning_effort ?? "default";
+  llmEffortSelect.disabled = !meta.effortSupported;
+  llmEffortSelect.title = meta.effortSupported
+    ? ""
+    : "Reasoning effort is not supported for this provider.";
   llmBaseUrlInput.value = status?.base_url ?? "";
   llmDeleteBtn.disabled = !status?.configured;
   if (status && !status.configured) {

@@ -2994,6 +2994,10 @@ function renderDashLlmSection(): void {
   }
   if (dashLlmEffortSelect) {
     dashLlmEffortSelect.value = status?.reasoning_effort ?? "default";
+    dashLlmEffortSelect.disabled = !meta.effortSupported;
+    dashLlmEffortSelect.title = meta.effortSupported
+      ? ""
+      : "Reasoning effort is not supported for this provider.";
   }
   if (dashLlmBaseUrlInput) {
     dashLlmBaseUrlInput.value = status?.base_url ?? "";
