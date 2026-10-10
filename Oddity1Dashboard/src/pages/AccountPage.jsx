@@ -50,6 +50,8 @@ export default function AccountPage() {
   const [llmSaving, setLlmSaving] = useState(false);
   const [llmStatusState, setLlmStatusState] = useState("loading");
   const [llmStatusError, setLlmStatusError] = useState("");
+  // Provider id whose Connect/Manage modal is open (key providers only).
+  const [llmModalProvider, setLlmModalProvider] = useState(null);
 
   const tier = profile?.tier || "free";
   const displayName =
@@ -122,21 +124,29 @@ export default function AccountPage() {
     rawLlmProvider !== null && LLM_PROVIDER_META[rawLlmProvider]
       ? rawLlmProvider
       : null;
-  const llmKeyStatus = activeLlmProvider
-    ? (llmStatus?.keys || []).find((k) => k.provider === activeLlmProvider)
+  // The modal only opens for key providers, so no oddity-free guard is needed.
+  const llmModalMeta = llmModalProvider
+    ? LLM_PROVIDER_META[llmModalProvider]
+    : null;
+  const llmModalKeyStatus = llmModalProvider
+    ? (llmStatus?.keys || []).find((k) => k.provider === llmModalProvider)
     : undefined;
+  const llmModalMode =
+    llmModalKeyStatus?.configured === true ? "manage" : "connect";
   // The effort control follows the model being edited: for OpenAI only
   // o-series/gpt-5 models honor it. An empty field falls back to the
   // placeholder server-side, so the placeholder is the effective model.
-  const llmEffortModel =
-    activeLlmProvider !== null && activeLlmProvider !== "oddity-free"
-      ? llmForm.model.trim() ||
-        LLM_PROVIDER_META[activeLlmProvider].modelPlaceholder
-      : "";
+  const llmEffortModel = llmModalProvider
+    ? llmForm.model.trim() || llmModalMeta?.modelPlaceholder || ""
+    : "";
   const llmEffortSupported =
-    activeLlmProvider !== null &&
-    activeLlmProvider !== "oddity-free" &&
-    modelSupportsEffort(activeLlmProvider, llmEffortModel);
+    llmModalProvider !== null &&
+    llmModalMeta != null &&
+    modelSupportsEffort(llmModalProvider, llmEffortModel);
+
+  function llmKeyStatusFor(provider) {
+    return (llmStatus?.keys || []).find((k) => k.provider === provider);
+  }
 
   // Fetch AI provider statuses. Failures (e.g. BYOK unavailable server-side)
   // surface as an error state instead of a silently empty form.
@@ -166,23 +176,45 @@ export default function AccountPage() {
       });
   }, [session?.access_token]);
 
-  // Prefill the key form when the selection or statuses change
+  // Prefill the modal form when it opens or when statuses arrive
   useEffect(() => {
+    if (!llmModalProvider) return;
     setLlmForm({
       api_key: "",
-      model: llmKeyStatus?.model ?? "",
-      base_url: llmKeyStatus?.base_url ?? "",
-      reasoning_effort: llmKeyStatus?.reasoning_effort ?? "default",
+      model: llmModalKeyStatus?.model ?? "",
+      base_url: llmModalKeyStatus?.base_url ?? "",
+      reasoning_effort: llmModalKeyStatus?.reasoning_effort ?? "default",
     });
-  }, [activeLlmProvider, llmStatus]);
+  }, [llmModalProvider, llmStatus]);
 
-  async function handleLlmProvider(value) {
-    await updatePreferences({ llm_provider: value });
+  // Close the provider modal on Escape
+  useEffect(() => {
+    if (!llmModalProvider) return;
+    function onKeyDown(e) {
+      if (e.key === "Escape") setLlmModalProvider(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [llmModalProvider]);
+
+  // Clicking a provider row activates it. Providers that need a key the user
+  // hasn't saved yet open the Connect modal instead.
+  async function handleProviderRowClick(provider) {
+    if (provider === activeLlmProvider) return;
+    if (provider !== null && provider !== "oddity-free") {
+      const status = llmKeyStatusFor(provider);
+      if (llmStatusState !== "ready" || status?.configured !== true) {
+        setLlmModalProvider(provider);
+        return;
+      }
+    }
+    await updatePreferences({ llm_provider: provider });
   }
 
   async function handleLlmSave() {
-    if (!activeLlmProvider || activeLlmProvider === "oddity-free") return;
+    if (!llmModalProvider) return;
     if (llmStatusState !== "ready") return;
+    const wasConnect = llmModalKeyStatus?.configured !== true;
     setLlmSaving(true);
     try {
       const body = {
@@ -192,7 +224,7 @@ export default function AccountPage() {
       };
       if (llmForm.api_key.trim()) body.api_key = llmForm.api_key.trim();
       const res = await fetch(
-        `${BACKEND_URL}/api/user/llm-keys/${activeLlmProvider}`,
+        `${BACKEND_URL}/api/user/llm-keys/${llmModalProvider}`,
         {
           method: "PUT",
           headers: {
@@ -220,7 +252,12 @@ export default function AccountPage() {
           : prev,
       );
       setLlmForm((prev) => ({ ...prev, api_key: "" }));
-      showToast("Provider key saved");
+      // Connecting a new provider also activates it; editing settings keeps
+      // the current selection.
+      if (wasConnect) await updatePreferences({ llm_provider: llmModalProvider });
+      const label = LLM_PROVIDER_META[llmModalProvider].label;
+      setLlmModalProvider(null);
+      showToast(wasConnect ? `Connected to ${label}` : "Provider settings saved");
     } catch (err) {
       showToast(err.message);
     } finally {
@@ -229,13 +266,13 @@ export default function AccountPage() {
   }
 
   async function handleLlmDelete() {
-    if (!activeLlmProvider || activeLlmProvider === "oddity-free") return;
+    if (!llmModalProvider) return;
     if (llmStatusState !== "ready") return;
-    const label = LLM_PROVIDER_META[activeLlmProvider].label;
+    const label = LLM_PROVIDER_META[llmModalProvider].label;
     if (!window.confirm(`Remove your saved ${label} key?`)) return;
     try {
       const res = await fetch(
-        `${BACKEND_URL}/api/user/llm-keys/${activeLlmProvider}`,
+        `${BACKEND_URL}/api/user/llm-keys/${llmModalProvider}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${session.access_token}` },
@@ -250,6 +287,7 @@ export default function AccountPage() {
       });
       if (statusRes.ok) setLlmStatus(await statusRes.json());
       await refetchProfile();
+      setLlmModalProvider(null);
       showToast("Provider key removed");
     } catch (err) {
       showToast(err.message);
@@ -562,167 +600,266 @@ export default function AccountPage() {
             toward monthly limits.
           </p>
 
-          <div className="field">
-            <span className="field-label">Provider</span>
-            <div className="radio-group">
-              <button
-                key="oddity"
-                className={`radio-btn ${activeLlmProvider === null ? "active" : ""}`}
-                onClick={() => handleLlmProvider(null)}
-              >
-                Oddity
-              </button>
-              {LLM_PROVIDERS.map((p) => (
-                <button
-                  key={p}
-                  className={`radio-btn ${activeLlmProvider === p ? "active" : ""}`}
-                  onClick={() => handleLlmProvider(p)}
+          <div className="provider-list">
+            {[null, ...LLM_PROVIDERS].map((p) => {
+              const isActive = activeLlmProvider === p;
+              const meta = p === null ? null : LLM_PROVIDER_META[p];
+              const label = p === null ? "Oddity" : meta.label;
+              const status = p === null ? undefined : llmKeyStatusFor(p);
+              const configured = status?.configured === true;
+              const needsKey = p !== null && p !== "oddity-free";
+              let sub;
+              if (p === null) sub = "Managed · Included with your plan";
+              else if (p === "oddity-free") sub = "Free · Unlimited shared pool";
+              else if (llmStatusState === "loading") sub = "API · Loading…";
+              else if (configured)
+                sub = `API · Connected (${status.key_hint ?? "****"})`;
+              else sub = "API · Use your own key";
+              return (
+                <div
+                  key={p ?? "oddity"}
+                  className={`provider-row${isActive ? " is-active" : ""}`}
                 >
-                  {LLM_PROVIDER_META[p].short}
-                </button>
-              ))}
-            </div>
+                  <button
+                    type="button"
+                    className="provider-main"
+                    aria-pressed={isActive}
+                    onClick={() => handleProviderRowClick(p)}
+                  >
+                    <span className="provider-text">
+                      <span className="provider-name">{label}</span>
+                      <span className="provider-sub">{sub}</span>
+                    </span>
+                  </button>
+                  <span className="provider-side">
+                    {isActive && (
+                      <span className="provider-active">
+                        <span className="provider-dot" aria-hidden="true" />
+                        Active
+                      </span>
+                    )}
+                    {needsKey && (
+                      <button
+                        type="button"
+                        className="provider-link"
+                        onClick={() => setLlmModalProvider(p)}
+                      >
+                        {configured ? "Manage" : "Connect"}
+                      </button>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
-          {activeLlmProvider === null && (
-            <p className="field-hint">
-              Oddity-managed model included with your plan. No setup needed.
-            </p>
-          )}
-
           {activeLlmProvider === "oddity-free" && (
-            <p className="field-hint llm-note-warn">
+            <p className="field-hint llm-note-warn" style={{ marginTop: 12 }}>
               {LLM_PROVIDER_META["oddity-free"].note}
             </p>
           )}
+          {llmStatusState === "error" && (
+            <p className="field-hint llm-note-warn" style={{ marginTop: 12 }}>
+              Provider key management is unavailable: {llmStatusError}
+            </p>
+          )}
 
-          {activeLlmProvider !== null &&
-            activeLlmProvider !== "oddity-free" && (
-              <div className="llm-form">
-                <p className="field-hint">
-                  {LLM_PROVIDER_META[activeLlmProvider].note}{" "}
-                  {LLM_PROVIDER_META[activeLlmProvider].keyUrl && (
-                    <a
-                      href={LLM_PROVIDER_META[activeLlmProvider].keyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Get a key
-                    </a>
-                  )}
+          {llmModalProvider && llmModalMeta && (
+            <div
+              className="llm-modal-overlay"
+              onClick={() => setLlmModalProvider(null)}
+            >
+              <div
+                className="llm-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`${llmModalMeta.label} API key`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="llm-modal-close"
+                  aria-label="Close"
+                  onClick={() => setLlmModalProvider(null)}
+                >
+                  ×
+                </button>
+                <div className="llm-modal-title">
+                  {llmModalMode === "connect"
+                    ? `Connect with ${llmModalMeta.label}`
+                    : `Manage ${llmModalMeta.label}`}
+                </div>
+                <p className="llm-modal-sub">
+                  Visit{" "}
+                  <a
+                    href={llmModalMeta.keyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {llmModalMeta.platform || llmModalMeta.label}
+                  </a>{" "}
+                  to get your API key.
                 </p>
-                {llmStatusState === "loading" && (
-                  <p className="field-hint">Loading provider status…</p>
-                )}
-                {llmStatusState === "error" && (
-                  <p className="field-hint llm-note-warn">
-                    Provider key management is unavailable: {llmStatusError}
-                  </p>
-                )}
-                <div className="field">
-                  <span className="field-label">API key</span>
-                  <input
-                    type="password"
-                    disabled={llmStatusState !== "ready"}
-                    value={llmForm.api_key}
-                    onChange={(e) =>
-                      setLlmForm((prev) => ({ ...prev, api_key: e.target.value }))
-                    }
-                    placeholder={
-                      llmKeyStatus?.configured
-                        ? `Saved (${llmKeyStatus.key_hint ?? "****"}) — enter a new key to replace`
-                        : "Paste API key"
-                    }
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </div>
-                <div className="field">
-                  <span className="field-label">Model</span>
-                  <input
-                    type="text"
-                    disabled={llmStatusState !== "ready"}
-                    value={llmForm.model}
-                    onChange={(e) =>
-                      setLlmForm((prev) => ({ ...prev, model: e.target.value }))
-                    }
-                    placeholder={
-                      LLM_PROVIDER_META[activeLlmProvider].modelPlaceholder ||
-                      "Default model"
-                    }
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </div>
-                <div className="field">
-                  <span className="field-label">Reasoning effort</span>
-                  <select
-                    disabled={llmStatusState !== "ready" || !llmEffortSupported}
-                    title={
-                      llmEffortSupported
-                        ? undefined
-                        : activeLlmProvider === "openai"
-                          ? "Reasoning effort applies to OpenAI o-series and gpt-5 models only."
-                          : "Reasoning effort is not supported for this provider."
-                    }
-                    value={llmForm.reasoning_effort}
-                    onChange={(e) =>
-                      setLlmForm((prev) => ({
-                        ...prev,
-                        reasoning_effort: e.target.value,
-                      }))
-                    }
-                  >
-                    {LLM_EFFORT_OPTIONS.map((effort) => (
-                      <option key={effort} value={effort}>
-                        {effort.charAt(0).toUpperCase() + effort.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <span className="field-label">Base URL (optional)</span>
-                  <input
-                    type="text"
-                    disabled={llmStatusState !== "ready"}
-                    value={llmForm.base_url}
-                    onChange={(e) =>
-                      setLlmForm((prev) => ({
-                        ...prev,
-                        base_url: e.target.value,
-                      }))
-                    }
-                    placeholder="Default endpoint"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </div>
-                {!llmKeyStatus?.configured && (
-                  <p className="field-hint">
-                    Add your {LLM_PROVIDER_META[activeLlmProvider].label} API
-                    key to use this provider.
-                  </p>
-                )}
-                <div className="btn-row">
-                  <button
-                    className="btn btn-sm btn-primary"
-                    onClick={handleLlmSave}
-                    disabled={llmSaving || llmStatusState !== "ready"}
-                  >
-                    {llmSaving ? "Saving..." : "Save"}
-                  </button>
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={handleLlmDelete}
-                    disabled={
-                      !llmKeyStatus?.configured || llmStatusState !== "ready"
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleLlmSave();
+                  }}
+                >
+                  {llmStatusState === "loading" && (
+                    <p className="field-hint">Loading provider status…</p>
+                  )}
+                  {llmStatusState === "error" && (
+                    <p className="field-hint llm-note-warn">
+                      Provider key management is unavailable: {llmStatusError}
+                    </p>
+                  )}
+                  <div className="field">
+                    <label className="field-label" htmlFor="llm-modal-key">
+                      API key
+                    </label>
+                    <input
+                      id="llm-modal-key"
+                      type="password"
+                      autoFocus
+                      disabled={llmStatusState !== "ready"}
+                      value={llmForm.api_key}
+                      onChange={(e) =>
+                        setLlmForm((prev) => ({
+                          ...prev,
+                          api_key: e.target.value,
+                        }))
+                      }
+                      placeholder={
+                        llmModalKeyStatus?.configured
+                          ? `Saved (${llmModalKeyStatus.key_hint ?? "****"}) — enter a new key to replace`
+                          : "Paste API key"
+                      }
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <details className="llm-advanced">
+                    <summary>Advanced settings</summary>
+                    <div className="field">
+                      <label className="field-label" htmlFor="llm-modal-model">
+                        Model
+                      </label>
+                      <input
+                        id="llm-modal-model"
+                        type="text"
+                        disabled={llmStatusState !== "ready"}
+                        value={llmForm.model}
+                        onChange={(e) =>
+                          setLlmForm((prev) => ({
+                            ...prev,
+                            model: e.target.value,
+                          }))
+                        }
+                        placeholder={
+                          llmModalMeta.modelPlaceholder || "Default model"
+                        }
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <p className="field-hint">{llmModalMeta.note}</p>
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="llm-modal-effort">
+                        Reasoning effort
+                      </label>
+                      <select
+                        id="llm-modal-effort"
+                        disabled={
+                          llmStatusState !== "ready" || !llmEffortSupported
+                        }
+                        title={
+                          llmEffortSupported
+                            ? undefined
+                            : llmModalProvider === "openai"
+                              ? "Reasoning effort applies to OpenAI o-series and gpt-5 models only."
+                              : "Reasoning effort is not supported for this provider."
+                        }
+                        value={llmForm.reasoning_effort}
+                        onChange={(e) =>
+                          setLlmForm((prev) => ({
+                            ...prev,
+                            reasoning_effort: e.target.value,
+                          }))
+                        }
+                      >
+                        {LLM_EFFORT_OPTIONS.map((effort) => (
+                          <option key={effort} value={effort}>
+                            {effort.charAt(0).toUpperCase() + effort.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label
+                        className="field-label"
+                        htmlFor="llm-modal-baseurl"
+                      >
+                        Base URL (optional)
+                      </label>
+                      <input
+                        id="llm-modal-baseurl"
+                        type="text"
+                        disabled={llmStatusState !== "ready"}
+                        value={llmForm.base_url}
+                        onChange={(e) =>
+                          setLlmForm((prev) => ({
+                            ...prev,
+                            base_url: e.target.value,
+                          }))
+                        }
+                        placeholder="Default endpoint"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    </div>
+                  </details>
+                  {llmModalMode === "connect" && (
+                    <p className="field-hint">
+                      Connecting also makes {llmModalMeta.label} your active
+                      provider.
+                    </p>
+                  )}
+                  <div className="llm-modal-footer">
+                    {llmModalMode === "manage" && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        onClick={handleLlmDelete}
+                        disabled={llmStatusState !== "ready"}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    <span className="llm-modal-spacer" />
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => setLlmModalProvider(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn btn-sm btn-primary"
+                      disabled={llmSaving || llmStatusState !== "ready"}
+                    >
+                      {llmSaving
+                        ? "Saving..."
+                        : llmModalMode === "connect"
+                          ? "Connect"
+                          : "Save"}
+                    </button>
+                  </div>
+                </form>
               </div>
-            )}
+            </div>
+          )}
         </div>
 
         {/* Auto-Enabled Sites Card */}
