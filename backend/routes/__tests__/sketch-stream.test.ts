@@ -14,7 +14,7 @@ vi.mock("../../lib/llm-config.js", () => ({
     bypassLimits: false,
     cacheTag: null,
   })),
-  sendLlmConfigError: vi.fn(() => false),
+  sendLlmConfigError: vi.fn((_res: unknown, _err: unknown): boolean => false),
 }));
 
 class MockRequest extends EventEmitter {
@@ -46,9 +46,22 @@ class MockResponse extends EventEmitter {
     });
   }
 
+  statusCode = 200;
+
   setHeader(): void {}
 
   flushHeaders(): void {}
+
+  status(code: number): this {
+    this.statusCode = code;
+    return this;
+  }
+
+  json(payload: unknown): this {
+    this.write(JSON.stringify({ httpStatus: this.statusCode, body: payload }));
+    this.end();
+    return this;
+  }
 
   write(chunk: string): boolean {
     this.buffer += chunk;
@@ -160,6 +173,86 @@ describe("sketch stream route", () => {
     });
 
     expect(payload).toContain('"text":"hello"');
+    expect(payload).toContain('"error":"Internal server error"');
+  });
+
+  it("threads the BYOK override into the sketch generator", async () => {
+    const override = {
+      provider: "anthropic",
+      transport: "anthropic-messages",
+      baseUrl: "https://api.anthropic.com",
+      apiKeys: ["user-key"],
+      model: "claude-sonnet-4-5",
+      effort: "medium",
+    };
+    const llmConfig = await import("../../lib/llm-config.js");
+    vi.mocked(llmConfig.resolveRequestLlm).mockResolvedValueOnce({
+      override,
+      bypassLimits: true,
+      cacheTag: "anthropic:claude-sonnet-4-5:medium:abc123def456",
+    });
+    mockGenerateSketchStream.mockImplementation(
+      async (_input, _purpose, _reactions, _mode, options) => {
+        options.onChunk?.("byok sketch");
+      },
+    );
+
+    const { default: sketchRouter } = await import("../sketch.js");
+    const payload = await invokeRouter(sketchRouter, {
+      input_text: "hello world",
+      purpose: "make a sketch",
+    });
+
+    expect(mockGenerateSketchStream).toHaveBeenCalledWith(
+      "hello world",
+      "make a sketch",
+      "",
+      "sketch",
+      expect.objectContaining({ override }),
+    );
+    expect(payload).toContain('"text":"byok sketch"');
+  });
+
+  it("answers config errors via the shared sender instead of generating", async () => {
+    const llmConfig = await import("../../lib/llm-config.js");
+    const configError = new Error("Selected provider has no API key");
+    vi.mocked(llmConfig.resolveRequestLlm).mockRejectedValueOnce(configError);
+    vi.mocked(llmConfig.sendLlmConfigError).mockImplementationOnce(
+      (res, err) => {
+        (res as MockResponse).write(`config-error:${(err as Error).message}`);
+        (res as MockResponse).end();
+        return true;
+      },
+    );
+
+    const { default: sketchRouter } = await import("../sketch.js");
+    const payload = await invokeRouter(sketchRouter, {
+      input_text: "hello world",
+      purpose: "make a sketch",
+    });
+
+    expect(llmConfig.sendLlmConfigError).toHaveBeenCalledWith(
+      expect.anything(),
+      configError,
+    );
+    expect(mockGenerateSketchStream).not.toHaveBeenCalled();
+    expect(payload).toContain("config-error:Selected provider has no API key");
+  });
+
+  it("returns 500 instead of hanging on unexpected resolver failures", async () => {
+    const llmConfig = await import("../../lib/llm-config.js");
+    vi.mocked(llmConfig.resolveRequestLlm).mockRejectedValueOnce(
+      new Error("supabase down"),
+    );
+
+    const { default: sketchRouter } = await import("../sketch.js");
+    const payload = await invokeRouter(sketchRouter, {
+      input_text: "hello world",
+      purpose: "make a sketch",
+    });
+
+    expect(mockGenerateSketchStream).not.toHaveBeenCalled();
+    expect(payload).toContain('"httpStatus":500');
     expect(payload).toContain('"error":"Internal server error"');
   });
 });

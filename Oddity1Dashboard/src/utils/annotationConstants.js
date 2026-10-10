@@ -128,6 +128,7 @@ export const LLM_PROVIDER_META = {
     keyUrl: null,
     modelPlaceholder: "",
     note: "Free and unlimited, served from shared capacity. May be slow or unstable at peak times.",
+    effortSupported: true,
   },
   openrouter: {
     label: "OpenRouter",
@@ -136,6 +137,7 @@ export const LLM_PROVIDER_META = {
     keyUrl: "https://openrouter.ai/keys",
     modelPlaceholder: "meta/muse-spark-1.3-contributor",
     note: "Any OpenRouter model ID, including :free models.",
+    effortSupported: true,
   },
   openai: {
     label: "OpenAI",
@@ -144,14 +146,16 @@ export const LLM_PROVIDER_META = {
     keyUrl: "https://platform.openai.com/api-keys",
     modelPlaceholder: "gpt-5-mini",
     note: "Native model ID, e.g. gpt-5-mini or gpt-5.",
+    effortSupported: true,
   },
   anthropic: {
     label: "Anthropic",
     short: "Anthropic",
     needsKey: true,
     keyUrl: "https://console.anthropic.com/",
-    modelPlaceholder: "claude-sonnet-4.5",
-    note: "Native model ID, e.g. claude-sonnet-4.5.",
+    modelPlaceholder: "claude-sonnet-4-5",
+    note: "Native model ID, e.g. claude-sonnet-4-5.",
+    effortSupported: true,
   },
   gemini: {
     label: "Gemini",
@@ -160,6 +164,7 @@ export const LLM_PROVIDER_META = {
     keyUrl: "https://aistudio.google.com/",
     modelPlaceholder: "gemini-2.5-flash",
     note: "Native model ID, e.g. gemini-2.5-flash.",
+    effortSupported: false,
   },
   muse: {
     label: "Meta Muse",
@@ -168,5 +173,6 @@ export const LLM_PROVIDER_META = {
     keyUrl: "https://dev.meta.ai/",
     modelPlaceholder: "muse-spark-1.3",
     note: "Meta Model API key (MODEL_API_KEY).",
+    effortSupported: false,
   },
 };

@@ -51,6 +51,14 @@ export async function setUrlCache(
   evictOldEntries().catch(() => {});
 }
 
+export async function clearUrlCache(): Promise<void> {
+  const all = await chrome.storage.local.get(null);
+  const keysToRemove = Object.keys(all).filter((k) => k.startsWith(CACHE_PREFIX));
+  if (keysToRemove.length > 0) {
+    await chrome.storage.local.remove(keysToRemove);
+  }
+}
+
 async function evictOldEntries(): Promise<void> {
   const all = await chrome.storage.local.get(null);
   const urlKeys = Object.keys(all).filter((k) => k.startsWith(CACHE_PREFIX));

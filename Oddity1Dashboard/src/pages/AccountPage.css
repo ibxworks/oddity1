@@ -301,7 +301,7 @@
 
 .llm-form input:focus,
 .llm-form select:focus {
-  border-color: var(--border-hover);
+  border-color: var(--text-secondary);
 }
 
 .llm-form input::placeholder {

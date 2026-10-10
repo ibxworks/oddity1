@@ -51,6 +51,22 @@ describe("byok-crypto", () => {
     expect(() => decryptByokKey("v1.a.b.c")).toThrow();
   });
 
+  it("rejects payloads with unknown versions or shapes", () => {
+    expect(() => decryptByokKey("v2.a.b.c")).toThrow("Unrecognized key payload");
+    expect(() => decryptByokKey("only.three.parts")).toThrow(
+      "Unrecognized key payload",
+    );
+    expect(() => decryptByokKey("")).toThrow("Unrecognized key payload");
+  });
+
+  it("rejects truncated authentication tags", () => {
+    const parts = encryptByokKey("secret").split(".");
+    const shortTag = Buffer.alloc(4).toString("base64");
+    expect(() => decryptByokKey([...parts.slice(0, 3), shortTag].join("."))).toThrow(
+      "Failed to decrypt key",
+    );
+  });
+
   it("rejects malformed key material", () => {
     process.env.BYOK_ENCRYPTION_KEY = "too-short";
     expect(isByokCryptoConfigured()).toBe(false);

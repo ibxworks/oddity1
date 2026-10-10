@@ -58,8 +58,12 @@ import {
 } from "./auth.js";
 import { setupContextMenu } from "./context-menu.js";
 import { identify, reset, track, updateProperties } from "./analytics.js";
-import { getFromSessionCache, setInSessionCache } from "./sw-cache.js";
-import { getUrlCache, setUrlCache } from "./url-cache.js";
+import {
+  clearSessionCache,
+  getFromSessionCache,
+  setInSessionCache,
+} from "./sw-cache.js";
+import { clearUrlCache, getUrlCache, setUrlCache } from "./url-cache.js";
 
 // ─── Optimization: per-request abort controllers ───
 // Keyed by "tabId:regionId" so re-requesting the same region with new content
@@ -313,6 +317,18 @@ function findTextRange(
     end: chars[idx + normSearch.length - 1]!.index + 1,
     count,
   };
+}
+
+// Cached annotations carry no provider/model identity, so any provider or
+// model change must retire them — otherwise a revisit serves the previous
+// provider's results. Best-effort: the backend change already succeeded.
+async function invalidateAnnotationCaches(): Promise<void> {
+  try {
+    await clearSessionCache();
+    await clearUrlCache();
+  } catch (err) {
+    console.warn("[background] Failed to clear annotation caches:", err);
+  }
 }
 
 // ─── Message Router ───
@@ -937,18 +953,23 @@ chrome.runtime.onMessage.addListener(
           await updatePreferences({
             llm_provider: message.payload.provider,
           });
+          await invalidateAnnotationCaches();
           return { success: true };
         }
 
         case "saveLlmKey": {
-          return await saveLlmKey(
+          const saved = await saveLlmKey(
             message.payload.provider,
             message.payload.body,
           );
+          await invalidateAnnotationCaches();
+          return saved;
         }
 
         case "deleteLlmKey": {
-          return await deleteLlmKey(message.payload.provider);
+          const deleted = await deleteLlmKey(message.payload.provider);
+          await invalidateAnnotationCaches();
+          return deleted;
         }
 
         case "saveFeedback": {

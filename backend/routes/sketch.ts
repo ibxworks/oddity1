@@ -39,12 +39,26 @@ router.post("/", async (req, res) => {
 
   const { input_text, purpose, user_reactions, mode } = parsed.data;
 
+  const requestId = randomUUID();
+  // Installed before provider resolution so a client close during the lookup
+  // is observed instead of starting generation for a dead response.
+  const { signal, cleanup } = createRequestAbortSignal(req, res);
+
   let llm: ResolvedLlm;
   try {
     llm = await resolveRequestLlm(req.user!.id);
   } catch (err) {
+    cleanup();
     if (sendLlmConfigError(res, err)) return;
-    throw err;
+    // Express 4 does not forward async rejections: answer here, never throw.
+    console.error("[sketch] Error resolving LLM:", err);
+    res.status(500).json({ error: "Internal server error" });
+    return;
+  }
+
+  if (signal.aborted || res.writableEnded) {
+    cleanup();
+    return;
   }
 
   // SSE headers
@@ -52,9 +66,6 @@ router.post("/", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
-
-  const requestId = randomUUID();
-  const { signal, cleanup } = createRequestAbortSignal(req, res);
 
   try {
     await generateSketchStream(input_text, purpose, user_reactions, mode, {

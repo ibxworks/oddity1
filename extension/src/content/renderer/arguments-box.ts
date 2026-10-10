@@ -343,6 +343,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
     bubbleLogoImgEl.src = chrome.runtime.getURL(`${logoName}.png`);
     bubbleLogoImgEl.alt = logoName;
   }
+  // A provider switch in the popup must refresh an already-open dashboard.
+  // Skip self-writes: our own change handler already updated in-memory state.
+  const oldPrefs = (changes.preferences.oldValue ?? {}) as Record<string, unknown>;
+  if (
+    prefs.llm_provider !== oldPrefs.llm_provider &&
+    prefs.llm_provider !== (dashLlmState?.active_provider ?? dashLlmStoredProvider)
+  ) {
+    void loadDashLlmStatus();
+  }
 });
 
 // ── Button drag state ──
@@ -2211,6 +2220,7 @@ export function setPublicFigurePersonas(
 
 export function handleRemoteSignOut(): void {
   localAuthState = false;
+  clearDashLlmState();
   signOutCb?.();
   // Remove not-enabled overlay if present
   if (notEnabledPanelEl) {
@@ -2278,6 +2288,8 @@ export async function handleRemoteSignIn(user: {
   }
   // Load prefs (density, font, toggle state) without re-querying auth
   loadDashboardPrefs().catch(() => {});
+  // A different user may have signed in elsewhere: reload their LLM state.
+  void loadDashLlmStatus();
 }
 
 export function destroyArgumentsBox(): void {
@@ -2683,6 +2695,7 @@ function hideTopBar(): void {
 
 function fitDashboardHeight(): void {
   if (!dashFaceEl || !containerEl) return;
+  if (!containerEl.classList.contains("dashboard")) return;
   // Don't override height when auth overlay is showing — it sets its own height
   if (dashSignInViewEl && dashSignInViewEl.style.display !== "none") return;
   let h = 0;
@@ -2875,10 +2888,11 @@ function setDashLlmStatus(message: string, kind: "" | "ok" | "err"): void {
 }
 
 async function loadDashLlmStatus(): Promise<void> {
+  let storedPrefs: Record<string, unknown> = {};
   try {
     const stored = await chrome.storage.local.get("preferences");
-    const prefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
-    const saved = prefs["llm_provider"];
+    storedPrefs = (stored["preferences"] ?? {}) as Record<string, unknown>;
+    const saved = storedPrefs["llm_provider"];
     dashLlmStoredProvider =
       typeof saved === "string" ? (saved as LlmProvider) : null;
   } catch {
@@ -2894,9 +2908,30 @@ async function loadDashLlmStatus(): Promise<void> {
       throw new Error("Bad LLM status shape.");
     }
     dashLlmState = result;
+    // Mirror the server's active provider into the stored fallback so a
+    // later offline render (e.g. after deleting the active key) doesn't
+    // resurrect a stale selection.
+    if (dashLlmStoredProvider !== result.active_provider) {
+      dashLlmStoredProvider = result.active_provider;
+      try {
+        await chrome.storage.local.set({
+          preferences: { ...storedPrefs, llm_provider: result.active_provider },
+        });
+      } catch {
+        // Keep the in-memory fallback; storage stays stale.
+      }
+    }
   } catch {
     dashLlmState = null;
   }
+  renderDashLlmSection();
+}
+
+// Drops user-specific LLM state (keys, hints, selection) on sign-out so an
+// open dashboard never shows the previous account's provider settings.
+function clearDashLlmState(): void {
+  dashLlmState = null;
+  dashLlmStoredProvider = null;
   renderDashLlmSection();
 }
 
@@ -2915,6 +2950,7 @@ function renderDashLlmSection(): void {
       "Oddity-managed model included with your plan. No setup needed.";
     dashLlmNote.style.display = "";
     dashLlmForm.style.display = "none";
+    fitDashboardHeight();
     return;
   }
 
@@ -2924,6 +2960,7 @@ function renderDashLlmSection(): void {
     dashLlmNote.textContent = meta.note;
     dashLlmNote.style.display = "";
     dashLlmForm.style.display = "none";
+    fitDashboardHeight();
     return;
   }
 
@@ -2969,6 +3006,8 @@ function renderDashLlmSection(): void {
   } else {
     setDashLlmStatus("", "");
   }
+  // The form shows/hides here, after the dashboard height was measured.
+  fitDashboardHeight();
 }
 
 async function onDashLlmProviderChange(): Promise<void> {
@@ -2991,10 +3030,11 @@ async function onDashLlmProviderChange(): Promise<void> {
     } else {
       dashLlmState = { active_provider: provider, keys: [] };
     }
+    renderDashLlmSection();
   } catch {
+    renderDashLlmSection();
     setDashLlmStatus("Couldn't save provider.", "err");
   }
-  renderDashLlmSection();
 }
 
 async function onDashLlmSave(): Promise<void> {
@@ -3022,6 +3062,10 @@ async function onDashLlmSave(): Promise<void> {
       );
       if (index >= 0) dashLlmState.keys[index] = updated;
       else dashLlmState.keys.push(updated);
+    } else if (updated) {
+      // Status load failed or raced the save: seed local state from the
+      // save response so the saved settings stay visible.
+      dashLlmState = { active_provider: provider, keys: [updated] };
     }
     renderDashLlmSection();
     setDashLlmStatus("Saved.", "ok");
@@ -3060,8 +3104,9 @@ async function onDashLlmDelete(): Promise<void> {
       err instanceof Error ? err.message : "Couldn't remove key.",
       "err",
     );
-  } finally {
-    renderDashLlmSection();
+    // No re-render here: renderDashLlmSection would wipe the message above.
+    // (The success path already rendered via loadDashLlmStatus.)
+    if (dashLlmDeleteBtn) dashLlmDeleteBtn.disabled = false;
   }
 }
 
@@ -3428,6 +3473,7 @@ function buildDashboardFace(): HTMLDivElement {
       dashTierBadgeEl.style.cursor = "pointer";
     }
     if (dashCountEl) dashCountEl.textContent = "0";
+    clearDashLlmState();
     dashUserEmail = "";
     dashUserTier = "free";
     if (dashSignInEmailEl) dashSignInEmailEl.value = "";

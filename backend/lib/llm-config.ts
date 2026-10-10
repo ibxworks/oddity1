@@ -5,7 +5,9 @@ import {
   type UserPreferences,
 } from "@oddity/shared";
 import type { Response } from "express";
+import { createHash } from "node:crypto";
 import { decryptByokKey, isByokCryptoConfigured } from "./byok-crypto.js";
+import { assertSafeLlmEndpoint } from "./ssrf.js";
 import { serviceClient } from "./supabase.js";
 
 // ─── Per-request LLM resolution ─────────────────────────────────────────────
@@ -89,6 +91,79 @@ export function isValidLlmProvider(value: unknown): value is LlmProvider {
   );
 }
 
+/**
+ * Cache tag for read-only list routes (no key material needed, so no crypto
+ * and no failure when the user selected a provider but saved nothing yet).
+ * Returns "" for the tier default, which also matches pre-existing rows.
+ */
+export async function resolveCacheTagForRead(userId: string): Promise<string> {
+  const { data: profile, error } = await serviceClient
+    .from("profiles")
+    .select("preferences")
+    .eq("id", userId)
+    .single();
+  if (error && error.code !== "PGRST116") {
+    throw new LlmConfigError(
+      503,
+      "Could not load your provider settings. Try again.",
+    );
+  }
+  const provider = (
+    (profile?.preferences as UserPreferences | null | undefined) ?? null
+  )?.llm_provider;
+  if (!isValidLlmProvider(provider)) return "";
+  if (provider === "oddity-free") {
+    return buildLlmCacheTag({
+      provider,
+      model: ODDITY_FREE_MODEL,
+      effort: "default",
+      baseUrl: OPENROUTER_BASE_URL,
+    });
+  }
+  const { data: row, error: rowError } = await serviceClient
+    .from("user_llm_keys")
+    .select("model, base_url, reasoning_effort")
+    .eq("user_id", userId)
+    .eq("provider", provider)
+    .single();
+  // Pre-migration (or nothing saved): no variants can exist, so list tier rows.
+  if (rowError && isMissingTableError(rowError)) return "";
+  if (rowError && rowError.code !== "PGRST116") {
+    throw new LlmConfigError(503, "Could not load your saved key. Try again.");
+  }
+  if (rowError || !row) return "";
+  const record = row as {
+    model?: string | null;
+    base_url?: string | null;
+    reasoning_effort?: string | null;
+  };
+  const baseUrl = record.base_url || PROVIDER_BASE_URLS[provider];
+  return buildLlmCacheTag({
+    provider,
+    model: record.model || LLM_PROVIDER_META[provider].modelPlaceholder,
+    effort: (record.reasoning_effort || "default") as LlmReasoningEffort,
+    baseUrl,
+  });
+}
+
+/**
+ * Cache identity for an override configuration. Covers every stored setting
+ * that affects generation so changing effort or endpoint cannot serve a
+ * result generated under different settings.
+ */
+export function buildLlmCacheTag(options: {
+  provider: LlmProvider;
+  model: string;
+  effort: LlmReasoningEffort;
+  baseUrl: string;
+}): string {
+  const baseHash = createHash("sha256")
+    .update(options.baseUrl)
+    .digest("hex")
+    .slice(0, 12);
+  return `${options.provider}:${options.model}:${options.effort}:${baseHash}`;
+}
+
 type LlmKeyRow = {
   key_encrypted: string;
   model: string;
@@ -98,11 +173,20 @@ type LlmKeyRow = {
 
 /** Resolve from a user id, loading preferences. Used by LLM routes. */
 export async function resolveRequestLlm(userId: string): Promise<ResolvedLlm> {
-  const { data: profile } = await serviceClient
+  const { data: profile, error } = await serviceClient
     .from("profiles")
     .select("preferences")
     .eq("id", userId)
     .single();
+  // A missing profile means a new user with no preferences; anything else is
+  // an outage and must not silently fall back to the tier default, which
+  // would route a BYOK user's content through the managed provider.
+  if (error && error.code !== "PGRST116") {
+    throw new LlmConfigError(
+      503,
+      "Could not load your provider settings. Try again.",
+    );
+  }
   return resolveLlmForRequest({
     userId,
     preferences:
@@ -153,7 +237,12 @@ export async function resolveLlmForRequest(options: {
         effort: "default",
       },
       bypassLimits: true,
-      cacheTag: `${provider}:${ODDITY_FREE_MODEL}`,
+      cacheTag: buildLlmCacheTag({
+        provider,
+        model: ODDITY_FREE_MODEL,
+        effort: "default",
+        baseUrl: OPENROUTER_BASE_URL,
+      }),
     };
   }
 
@@ -169,6 +258,15 @@ export async function resolveLlmForRequest(options: {
     throw new LlmConfigError(
       503,
       "BYOK is unavailable right now. Try the default provider instead.",
+    );
+  }
+
+  // Only "no rows" means a missing key. Other database failures are outages:
+  // mapping them to 400 would prompt users to re-save valid keys.
+  if (error && error.code !== "PGRST116") {
+    throw new LlmConfigError(
+      503,
+      "Could not load your saved key. Try again.",
     );
   }
 
@@ -200,16 +298,30 @@ export async function resolveLlmForRequest(options: {
 
   const model = record.model || LLM_PROVIDER_META[provider].modelPlaceholder;
   const effort = (record.reasoning_effort || "default") as LlmReasoningEffort;
+  // Re-validate custom endpoints on every resolve: a saved URL that once
+  // passed can later resolve somewhere unsafe (DNS rebinding), and rows
+  // written before validation existed must not be trusted.
+  const baseUrl = record.base_url || PROVIDER_BASE_URLS[provider];
+  if (record.base_url) {
+    try {
+      await assertSafeLlmEndpoint(record.base_url);
+    } catch {
+      throw new LlmConfigError(
+        400,
+        "Your saved base URL is not allowed. Update it in AI Provider settings.",
+      );
+    }
+  }
   return {
     override: {
       provider,
       transport: provider === "anthropic" ? "anthropic-messages" : "openai-chat",
-      baseUrl: record.base_url || PROVIDER_BASE_URLS[provider],
+      baseUrl,
       apiKeys: [apiKey],
       model,
       effort,
     },
     bypassLimits: true,
-    cacheTag: `${provider}:${model}`,
+    cacheTag: buildLlmCacheTag({ provider, model, effort, baseUrl }),
   };
 }

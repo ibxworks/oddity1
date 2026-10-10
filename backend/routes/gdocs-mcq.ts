@@ -36,7 +36,10 @@ router.post("/", async (req, res) => {
     llm = await resolveRequestLlm(req.user!.id);
   } catch (err) {
     if (sendLlmConfigError(res, err)) return;
-    throw err;
+    // Express 4 does not forward async rejections: answer here, never throw.
+    console.error("[gdocs-mcq] Error resolving LLM:", err);
+    res.status(500).json({ error: "Internal server error" });
+    return;
   }
 
   try {

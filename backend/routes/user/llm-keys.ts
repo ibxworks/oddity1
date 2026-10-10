@@ -18,6 +18,7 @@ import {
   isMissingTableError,
   isValidLlmProvider,
 } from "../../lib/llm-config.js";
+import { assertSafeLlmEndpoint } from "../../lib/ssrf.js";
 import { serviceClient } from "../../lib/supabase.js";
 
 const router = Router();
@@ -34,20 +35,6 @@ const SaveKeySchema = z.object({
     .enum(["default", "none", "low", "medium", "high"])
     .optional(),
 });
-
-function validateBaseUrl(value: string): string {
-  if (value === "") return "";
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("Base URL must be a valid URL");
-  }
-  if (url.protocol !== "https:") {
-    throw new Error("Base URL must use https");
-  }
-  return value;
-}
 
 type KeyRow = {
   provider: string;
@@ -86,17 +73,18 @@ function emptyStatus(provider: LlmProvider): LlmKeyStatus {
 router.get("/", async (req, res) => {
   try {
     const userId = req.user!.id;
-    const [{ data: profile }, { data: rows, error }] = await Promise.all([
-      serviceClient
-        .from("profiles")
-        .select("preferences")
-        .eq("id", userId)
-        .single(),
-      serviceClient
-        .from("user_llm_keys")
-        .select("provider, key_hint, model, base_url, reasoning_effort, updated_at")
-        .eq("user_id", userId),
-    ]);
+    const [{ data: profile, error: profileError }, { data: rows, error }] =
+      await Promise.all([
+        serviceClient
+          .from("profiles")
+          .select("preferences")
+          .eq("id", userId)
+          .single(),
+        serviceClient
+          .from("user_llm_keys")
+          .select("provider, key_hint, model, base_url, reasoning_effort, updated_at")
+          .eq("user_id", userId),
+      ]);
 
     if (error && isMissingTableError(error)) {
       res.status(503).json({ error: "BYOK is unavailable right now." });
@@ -104,6 +92,10 @@ router.get("/", async (req, res) => {
     }
     if (error) {
       res.status(500).json({ error: error.message });
+      return;
+    }
+    if (profileError && profileError.code !== "PGRST116") {
+      res.status(500).json({ error: "Internal server error" });
       return;
     }
 
@@ -159,10 +151,9 @@ router.put("/:provider", async (req, res) => {
       return;
     }
 
-    let baseUrl: string | undefined;
-    if (parsed.data.base_url !== undefined) {
+    if (parsed.data.base_url !== undefined && parsed.data.base_url !== "") {
       try {
-        baseUrl = validateBaseUrl(parsed.data.base_url);
+        await assertSafeLlmEndpoint(parsed.data.base_url);
       } catch (err) {
         res
           .status(400)
@@ -187,48 +178,90 @@ router.put("/:provider", async (req, res) => {
       return;
     }
 
-    let keyEncrypted = existing?.key_encrypted as string | undefined;
-    let hint = existing?.key_hint as string | undefined;
-    if (parsed.data.api_key !== undefined) {
-      if (!isByokCryptoConfigured()) {
-        res.status(503).json({ error: "BYOK is unavailable right now." });
-        return;
-      }
-      keyEncrypted = encryptByokKey(parsed.data.api_key);
-      hint = keyHint(parsed.data.api_key);
+    const hasNewKey = parsed.data.api_key !== undefined;
+    if (hasNewKey && !isByokCryptoConfigured()) {
+      res.status(503).json({ error: "BYOK is unavailable right now." });
+      return;
     }
-    if (!keyEncrypted) {
+    if (!hasNewKey && !existing?.key_encrypted) {
       res.status(400).json({ error: "An API key is required" });
       return;
     }
 
-    const { data: saved, error: saveError } = await serviceClient
-      .from("user_llm_keys")
-      .upsert(
-        {
-          user_id: req.user!.id,
-          provider,
+    const now = new Date().toISOString();
+    // Writes touch only supplied columns: a settings save racing a key
+    // rotation cannot clobber the fresh ciphertext, and concurrent settings
+    // saves cannot lose each other's columns.
+    if (hasNewKey) {
+      const keyEncrypted = encryptByokKey(parsed.data.api_key!);
+      const hint = keyHint(parsed.data.api_key!);
+      if (existing) {
+        const patch: Record<string, string> = {
           key_encrypted: keyEncrypted,
-          key_hint: hint ?? "",
-          model: parsed.data.model ?? existing?.model ?? "",
-          base_url: baseUrl ?? existing?.base_url ?? "",
-          reasoning_effort:
-            parsed.data.reasoning_effort ??
-            existing?.reasoning_effort ??
-            "default",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,provider" },
-      )
-      .select("provider, key_hint, model, base_url, reasoning_effort, updated_at")
-      .single();
-
-    if (saveError) {
-      res.status(500).json({ error: saveError.message });
+          key_hint: hint,
+          updated_at: now,
+        };
+        if (parsed.data.model !== undefined) patch.model = parsed.data.model;
+        if (parsed.data.base_url !== undefined)
+          patch.base_url = parsed.data.base_url;
+        if (parsed.data.reasoning_effort !== undefined)
+          patch.reasoning_effort = parsed.data.reasoning_effort;
+        const { data: updated, error: updateError } = await serviceClient
+          .from("user_llm_keys")
+          .update(patch)
+          .eq("user_id", req.user!.id)
+          .eq("provider", provider)
+          .select("provider, key_hint, model, base_url, reasoning_effort, updated_at")
+          .single();
+        if (updateError) {
+          res.status(500).json({ error: updateError.message });
+          return;
+        }
+        res.json(rowToStatus(updated as KeyRow));
+        return;
+      }
+      const { data: inserted, error: insertError } = await serviceClient
+        .from("user_llm_keys")
+        .upsert(
+          {
+            user_id: req.user!.id,
+            provider,
+            key_encrypted: keyEncrypted,
+            key_hint: hint,
+            model: parsed.data.model ?? "",
+            base_url: parsed.data.base_url ?? "",
+            reasoning_effort: parsed.data.reasoning_effort ?? "default",
+            updated_at: now,
+          },
+          { onConflict: "user_id,provider" },
+        )
+        .select("provider, key_hint, model, base_url, reasoning_effort, updated_at")
+        .single();
+      if (insertError) {
+        res.status(500).json({ error: insertError.message });
+        return;
+      }
+      res.json(rowToStatus(inserted as KeyRow));
       return;
     }
 
-    res.json(rowToStatus(saved as KeyRow));
+    const patch: Record<string, string> = { updated_at: now };
+    if (parsed.data.model !== undefined) patch.model = parsed.data.model;
+    if (parsed.data.base_url !== undefined) patch.base_url = parsed.data.base_url;
+    if (parsed.data.reasoning_effort !== undefined)
+      patch.reasoning_effort = parsed.data.reasoning_effort;
+    const { data: updated, error: updateError } = await serviceClient
+      .from("user_llm_keys")
+      .update(patch)
+      .eq("user_id", req.user!.id)
+      .eq("provider", provider)
+      .select("provider, key_hint, model, base_url, reasoning_effort, updated_at")
+      .single();
+    if (updateError) {
+      res.status(500).json({ error: updateError.message });
+      return;
+    }
+    res.json(rowToStatus(updated as KeyRow));
   } catch (err) {
     console.error("[llm-keys PUT] Error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -260,17 +293,30 @@ router.delete("/:provider", async (req, res) => {
     }
 
     // If the deleted key was active, fall back to the tier default.
-    const { data: profile } = await serviceClient
+    const { data: profile, error: profileError } = await serviceClient
       .from("profiles")
       .select("preferences")
       .eq("id", req.user!.id)
       .single();
+    if (profileError && profileError.code !== "PGRST116") {
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
     const preferences = (profile?.preferences ?? {}) as Record<string, unknown>;
     if (preferences.llm_provider === provider) {
-      await serviceClient
-        .from("profiles")
-        .update({ preferences: { ...preferences, llm_provider: null } })
-        .eq("id", req.user!.id);
+      // Atomic single-key merge: never rewrites unrelated preferences from
+      // a stale read, and failures propagate instead of reporting success.
+      const { error: prefError } = await serviceClient.rpc("merge_preferences", {
+        user_id_param: req.user!.id,
+        new_prefs: { llm_provider: null },
+      });
+      if (prefError) {
+        res.status(500).json({
+          error:
+            "Key removed but the active provider could not be reset. Reselect your provider.",
+        });
+        return;
+      }
     }
 
     res.json({ deleted: true });

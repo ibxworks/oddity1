@@ -25,7 +25,9 @@
         letter-spacing: -0.01em;
         position: relative;
         border-radius: 16px;
-        overflow: hidden;
+        max-height: 600px;
+        overflow-x: hidden;
+        overflow-y: auto;
       }
 
       /* ── Header ── */
@@ -1092,7 +1094,7 @@
         <div class="section-title">AI Provider</div>
         <div class="style-controls">
           <div class="style-row">
-            <span class="style-label">Provider</span>
+            <label class="style-label" for="llm-provider-select">Provider</label>
             <select class="style-select" id="llm-provider-select">
               <option value="">Oddity (default)</option>
               <option value="oddity-free">Oddity Free</option>
@@ -1111,7 +1113,7 @@
           <div id="llm-key-form" style="display: none">
             <div class="style-controls">
               <div class="style-row">
-                <span class="style-label">API key</span>
+                <label class="style-label" for="llm-key-input">API key</label>
                 <input
                   class="style-input"
                   id="llm-key-input"
@@ -1123,7 +1125,7 @@
                 />
               </div>
               <div class="style-row">
-                <span class="style-label">Model</span>
+                <label class="style-label" for="llm-model-input">Model</label>
                 <input
                   class="style-input"
                   id="llm-model-input"
@@ -1134,7 +1136,7 @@
                 />
               </div>
               <div class="style-row">
-                <span class="style-label">Effort</span>
+                <label class="style-label" for="llm-effort-select">Effort</label>
                 <select class="style-select" id="llm-effort-select">
                   <option value="default">Default</option>
                   <option value="none">None</option>
@@ -1144,7 +1146,7 @@
                 </select>
               </div>
               <div class="style-row">
-                <span class="style-label">Base URL</span>
+                <label class="style-label" for="llm-baseurl-input">Base URL</label>
                 <input
                   class="style-input"
                   id="llm-baseurl-input"

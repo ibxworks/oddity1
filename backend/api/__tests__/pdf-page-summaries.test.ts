@@ -5,17 +5,16 @@ import type { Router } from "express";
 const mockGeneratePdfPageSummary = vi.fn();
 const mockRpc = vi.fn();
 const mockCreateUserClient = vi.fn();
+const mockResolveRequestLlm = vi.fn();
+const mockResolveCacheTagForRead = vi.fn();
 
 vi.mock("../../lib/llm.js", () => ({
   generatePdfPageSummary: mockGeneratePdfPageSummary,
 }));
 
 vi.mock("../../lib/llm-config.js", () => ({
-  resolveRequestLlm: vi.fn(async () => ({
-    override: null,
-    bypassLimits: false,
-    cacheTag: null,
-  })),
+  resolveRequestLlm: (userId: string) => mockResolveRequestLlm(userId),
+  resolveCacheTagForRead: (userId: string) => mockResolveCacheTagForRead(userId),
   sendLlmConfigError: vi.fn(() => false),
 }));
 
@@ -128,6 +127,14 @@ describe("pdf page summaries route", () => {
     mockGeneratePdfPageSummary.mockReset();
     mockRpc.mockReset();
     mockCreateUserClient.mockReset();
+    mockResolveRequestLlm.mockReset();
+    mockResolveRequestLlm.mockResolvedValue({
+      override: null,
+      bypassLimits: false,
+      cacheTag: null,
+    });
+    mockResolveCacheTagForRead.mockReset();
+    mockResolveCacheTagForRead.mockResolvedValue("");
   });
 
   afterEach(() => {
@@ -168,6 +175,8 @@ describe("pdf page summaries route", () => {
     expect(payload.summary).toEqual(existingSummary);
     expect(mockGeneratePdfPageSummary).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
+    // Tier default reads only its own ("") variant.
+    expect(existingBuilder.eq).toHaveBeenCalledWith("model_version", "");
   });
 
   it("generates and saves a new page summary when none exists", async () => {
@@ -217,6 +226,7 @@ describe("pdf page summaries route", () => {
     expect(mockGeneratePdfPageSummary).toHaveBeenCalledWith(
       "Page text",
       expect.objectContaining({
+        override: null,
         logContext: expect.objectContaining({
           route: "pdf-page-summary",
           contentHash: "sha256:page-2",
@@ -228,5 +238,77 @@ describe("pdf page summaries route", () => {
       p_url: "https://example.com/file.pdf#pdf-page-summary:sha256:doc:2",
       p_limit: 2000,
     });
+    expect(existingBuilder.eq).toHaveBeenCalledWith("model_version", "");
+    expect(insertBuilder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ model_version: "" }),
+    );
+  });
+
+  it("threads the BYOK override through and skips usage counting", async () => {
+    const cacheTag = "openai:gpt-5:default:abc123def456";
+    const override = {
+      provider: "openai",
+      transport: "openai-chat",
+      baseUrl: "https://api.openai.com/v1",
+      apiKeys: ["user-key"],
+      model: "gpt-5",
+      effort: "default",
+    };
+    mockResolveRequestLlm.mockResolvedValue({
+      override,
+      bypassLimits: true,
+      cacheTag,
+    });
+    const existingBuilder = createMaybeSingleBuilder({
+      data: null,
+      error: null,
+    });
+    const insertedSummary = {
+      id: "summary_3",
+      url: "https://example.com/file.pdf",
+      document_hash: "sha256:doc",
+      page_no: "3",
+      page_text_hash: "sha256:page-3",
+      summary: "BYOK page summary.",
+      page_title: "Example PDF",
+      created_at: "2026-04-06T00:00:00.000Z",
+      updated_at: "2026-04-06T00:00:00.000Z",
+    };
+    const insertBuilder = createInsertBuilder({
+      data: insertedSummary,
+      error: null,
+    });
+    mockCreateUserClient.mockReturnValue({
+      from: vi
+        .fn()
+        .mockImplementationOnce(() => existingBuilder)
+        .mockImplementationOnce(() => insertBuilder),
+    });
+    mockGeneratePdfPageSummary.mockResolvedValue("BYOK page summary.");
+
+    const { default: router } = await import("../../routes/pdf-page-summaries.js");
+    const payload = (await invokeRouter(router, {
+      url: "https://example.com/file.pdf",
+      document_hash: "sha256:doc",
+      page_no: "3",
+      page_text_hash: "sha256:page-3",
+      text: "Page text",
+      page_title: "Example PDF",
+    })) as Record<string, unknown>;
+
+    expect(payload.cached).toBe(false);
+    expect(payload.summary).toEqual(insertedSummary);
+    expect(mockGeneratePdfPageSummary).toHaveBeenCalledWith(
+      "Page text",
+      expect.objectContaining({ override }),
+    );
+    expect(mockRpc).not.toHaveBeenCalledWith(
+      "check_and_record_usage",
+      expect.anything(),
+    );
+    expect(existingBuilder.eq).toHaveBeenCalledWith("model_version", cacheTag);
+    expect(insertBuilder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ model_version: cacheTag }),
+    );
   });
 });

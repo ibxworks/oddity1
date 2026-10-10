@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Router } from "express";
 
 const mockFrom = vi.fn();
+const mockRpc = vi.fn(async () => ({ data: null, error: null }));
 
 vi.mock("../../lib/supabase.js", () => ({
-  serviceClient: { from: mockFrom },
+  serviceClient: { from: mockFrom, rpc: mockRpc },
 }));
 
 const TEST_KEY = "0123456789abcdef".repeat(4);
@@ -98,8 +99,10 @@ async function invokeRouter(
 function createKeysTableStub(config: {
   fetchResult: unknown;
   upsertResult: unknown;
+  updateResult?: unknown;
   deleteResult?: unknown;
   onUpsert?: (row: unknown) => void;
+  onUpdate?: (patch: unknown) => void;
 }) {
   const fetchBuilder = {
     select: vi.fn(() => fetchBuilder),
@@ -113,6 +116,11 @@ function createKeysTableStub(config: {
     select: vi.fn(() => upsertBuilder),
     single: vi.fn(async () => config.upsertResult),
   };
+  const updateBuilder = {
+    eq: vi.fn(() => updateBuilder),
+    select: vi.fn(() => updateBuilder),
+    single: vi.fn(async () => config.updateResult ?? config.upsertResult),
+  };
   const deleteBuilder = {
     eq: vi.fn(() => deleteBuilder),
     then: (resolve: (value: unknown) => unknown) =>
@@ -124,6 +132,10 @@ function createKeysTableStub(config: {
     upsert: vi.fn((row: unknown) => {
       config.onUpsert?.(row);
       return upsertBuilder;
+    }),
+    update: vi.fn((patch: unknown) => {
+      config.onUpdate?.(patch);
+      return updateBuilder;
     }),
     delete: vi.fn(() => deleteBuilder),
   };
@@ -154,6 +166,8 @@ describe("llm-keys routes", () => {
   beforeEach(() => {
     vi.resetModules();
     mockFrom.mockReset();
+    mockRpc.mockReset();
+    mockRpc.mockResolvedValue({ data: null, error: null });
     savedCrypto = process.env.BYOK_ENCRYPTION_KEY;
     savedOpenRouter = process.env.OPENROUTER_API_KEY;
     process.env.BYOK_ENCRYPTION_KEY = TEST_KEY;
@@ -292,6 +306,8 @@ describe("llm-keys routes", () => {
   });
 
   it("updates settings without re-entering the key", async () => {
+    let updated: Record<string, unknown> = {};
+    let upserted: unknown = null;
     mockFrom.mockImplementation((table: string) => {
       if (table === "user_llm_keys") {
         return createKeysTableStub({
@@ -305,7 +321,8 @@ describe("llm-keys routes", () => {
             },
             error: null,
           },
-          upsertResult: {
+          upsertResult: { data: null, error: null },
+          updateResult: {
             data: {
               provider: "openai",
               key_hint: "****0000",
@@ -315,6 +332,12 @@ describe("llm-keys routes", () => {
               updated_at: "2026-10-09T00:00:00Z",
             },
             error: null,
+          },
+          onUpsert: (row) => {
+            upserted = row;
+          },
+          onUpdate: (patch) => {
+            updated = patch as Record<string, unknown>;
           },
         });
       }
@@ -328,6 +351,78 @@ describe("llm-keys routes", () => {
 
     expect(status).toBe(200);
     expect(payload).toMatchObject({ model: "gpt-5", key_hint: "****0000" });
+    // Scoped write: only the supplied column (plus timestamp) is touched,
+    // so the stored key and unsupplied settings survive concurrent saves.
+    expect(upserted).toBeNull();
+    expect(updated).toMatchObject({ model: "gpt-5" });
+    expect(updated).not.toHaveProperty("key_encrypted");
+    expect(updated).not.toHaveProperty("base_url");
+    expect(updated).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("rotates the key without clobbering unsupplied settings", async () => {
+    let updated: Record<string, unknown> = {};
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "user_llm_keys") {
+        return createKeysTableStub({
+          fetchResult: {
+            data: {
+              key_encrypted: "v1.existing.cipher.text",
+              key_hint: "****0000",
+              model: "gpt-5-mini",
+              base_url: "",
+              reasoning_effort: "low",
+            },
+            error: null,
+          },
+          upsertResult: { data: null, error: null },
+          updateResult: {
+            data: {
+              provider: "openai",
+              key_hint: "****9999",
+              model: "gpt-5-mini",
+              base_url: "",
+              reasoning_effort: "low",
+              updated_at: "2026-10-09T00:00:00Z",
+            },
+            error: null,
+          },
+          onUpdate: (patch) => {
+            updated = patch as Record<string, unknown>;
+          },
+        });
+      }
+      return createProfilesTableStub({ data: null, error: null });
+    });
+
+    const { default: llmKeysRouter } = await import("../user/llm-keys.js");
+    const { status } = await invokeRouter(llmKeysRouter, "PUT", "/openai", {
+      api_key: "sk-new-rotated-key",
+    });
+
+    expect(status).toBe(200);
+    expect(updated.key_encrypted).toBeDefined();
+    expect(updated).not.toHaveProperty("model");
+    expect(updated).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("returns 503 when saving a key with crypto unconfigured", async () => {
+    delete process.env.BYOK_ENCRYPTION_KEY;
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "user_llm_keys") {
+        return createKeysTableStub({
+          fetchResult: { data: null, error: { code: "PGRST116" } },
+          upsertResult: { data: null, error: null },
+        });
+      }
+      return createProfilesTableStub({ data: null, error: null });
+    });
+
+    const { default: llmKeysRouter } = await import("../user/llm-keys.js");
+    const { status } = await invokeRouter(llmKeysRouter, "PUT", "/openai", {
+      api_key: "sk-new-key",
+    });
+    expect(status).toBe(503);
   });
 
   it("rejects invalid providers, missing keys, and non-https URLs", async () => {
@@ -369,7 +464,6 @@ describe("llm-keys routes", () => {
   });
 
   it("deletes a key and clears it when active", async () => {
-    let clearedPatch: unknown = null;
     mockFrom.mockImplementation((table: string) => {
       if (table === "user_llm_keys") {
         return createKeysTableStub({
@@ -377,12 +471,10 @@ describe("llm-keys routes", () => {
           upsertResult: { data: null, error: null },
         });
       }
-      return createProfilesTableStub(
-        { data: { preferences: { llm_provider: "gemini" } }, error: null },
-        (patch) => {
-          clearedPatch = patch;
-        },
-      );
+      return createProfilesTableStub({
+        data: { preferences: { llm_provider: "gemini" } },
+        error: null,
+      });
     });
 
     const { default: llmKeysRouter } = await import("../user/llm-keys.js");
@@ -395,8 +487,63 @@ describe("llm-keys routes", () => {
 
     expect(status).toBe(200);
     expect(payload).toEqual({ deleted: true });
-    expect(clearedPatch).toMatchObject({
-      preferences: { llm_provider: null },
+    expect(mockRpc).toHaveBeenCalledWith("merge_preferences", {
+      user_id_param: "user_1",
+      new_prefs: { llm_provider: null },
     });
+  });
+
+  it("keeps the active provider when deleting an inactive key", async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "user_llm_keys") {
+        return createKeysTableStub({
+          fetchResult: { data: null, error: null },
+          upsertResult: { data: null, error: null },
+        });
+      }
+      return createProfilesTableStub({
+        data: { preferences: { llm_provider: "openai" } },
+        error: null,
+      });
+    });
+
+    const { default: llmKeysRouter } = await import("../user/llm-keys.js");
+    const { status, payload } = await invokeRouter(
+      llmKeysRouter,
+      "DELETE",
+      "/gemini",
+      {},
+    );
+
+    expect(status).toBe(200);
+    expect(payload).toEqual({ deleted: true });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("reports when the provider fallback fails after delete", async () => {
+    mockRpc.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "user_llm_keys") {
+        return createKeysTableStub({
+          fetchResult: { data: null, error: null },
+          upsertResult: { data: null, error: null },
+        });
+      }
+      return createProfilesTableStub({
+        data: { preferences: { llm_provider: "gemini" } },
+        error: null,
+      });
+    });
+
+    const { default: llmKeysRouter } = await import("../user/llm-keys.js");
+    const { status, payload } = await invokeRouter(
+      llmKeysRouter,
+      "DELETE",
+      "/gemini",
+      {},
+    );
+
+    expect(status).toBe(500);
+    expect(JSON.stringify(payload)).toContain("could not be reset");
   });
 });

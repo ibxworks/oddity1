@@ -53,13 +53,17 @@ export function decryptByokKey(payload: string): string {
     throw new Error("[byok-crypto] Unrecognized key payload");
   }
   const [, ivB64, ctB64, tagB64] = parts as [string, string, string, string];
+  const tag = Buffer.from(tagB64, "base64");
+  // Require the full 16-byte tag: without authTagLength, truncated tags are
+  // accepted and authentication degrades as low as 32 bits.
+  if (tag.length !== 16) {
+    throw new Error("[byok-crypto] Failed to decrypt key");
+  }
   try {
-    const decipher = createDecipheriv(
-      "aes-256-gcm",
-      key,
-      Buffer.from(ivB64, "base64"),
-    );
-    decipher.setAuthTag(Buffer.from(tagB64, "base64"));
+    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivB64, "base64"), {
+      authTagLength: 16,
+    });
+    decipher.setAuthTag(tag);
     const plaintext = Buffer.concat([
       decipher.update(Buffer.from(ctB64, "base64")),
       decipher.final(),

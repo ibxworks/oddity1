@@ -47,6 +47,8 @@ export default function AccountPage() {
     reasoning_effort: "default",
   });
   const [llmSaving, setLlmSaving] = useState(false);
+  const [llmStatusState, setLlmStatusState] = useState("loading");
+  const [llmStatusError, setLlmStatusError] = useState("");
 
   const tier = profile?.tier || "free";
   const displayName =
@@ -112,22 +114,43 @@ export default function AccountPage() {
       .catch(() => showToast("Subscription activated! Welcome to Standard."));
   }, []);
 
-  const activeLlmProvider = preferences.llm_provider ?? null;
+  // Ignore persisted values we don't recognize: indexing provider metadata
+  // with one would crash Settings.
+  const rawLlmProvider = preferences.llm_provider ?? null;
+  const activeLlmProvider =
+    rawLlmProvider !== null && LLM_PROVIDER_META[rawLlmProvider]
+      ? rawLlmProvider
+      : null;
   const llmKeyStatus = activeLlmProvider
     ? (llmStatus?.keys || []).find((k) => k.provider === activeLlmProvider)
     : undefined;
 
-  // Fetch AI provider statuses
+  // Fetch AI provider statuses. Failures (e.g. BYOK unavailable server-side)
+  // surface as an error state instead of a silently empty form.
   useEffect(() => {
     if (!session?.access_token) return;
+    setLlmStatusState("loading");
+    setLlmStatusError("");
     fetch(`${BACKEND_URL}/api/user/llm-keys`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data) setLlmStatus(data);
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(
+            data.error || `Provider status request failed (${res.status})`,
+          );
+        }
+        return res.json();
       })
-      .catch(() => {});
+      .then((data) => {
+        setLlmStatus(data);
+        setLlmStatusState("ready");
+      })
+      .catch((err) => {
+        setLlmStatusError(err.message || "Couldn't load provider status.");
+        setLlmStatusState("error");
+      });
   }, [session?.access_token]);
 
   // Prefill the key form when the selection or statuses change
@@ -146,6 +169,7 @@ export default function AccountPage() {
 
   async function handleLlmSave() {
     if (!activeLlmProvider || activeLlmProvider === "oddity-free") return;
+    if (llmStatusState !== "ready") return;
     setLlmSaving(true);
     try {
       const body = {
@@ -193,6 +217,7 @@ export default function AccountPage() {
 
   async function handleLlmDelete() {
     if (!activeLlmProvider || activeLlmProvider === "oddity-free") return;
+    if (llmStatusState !== "ready") return;
     const label = LLM_PROVIDER_META[activeLlmProvider].label;
     if (!window.confirm(`Remove your saved ${label} key?`)) return;
     try {
@@ -573,10 +598,19 @@ export default function AccountPage() {
                     </a>
                   )}
                 </p>
+                {llmStatusState === "loading" && (
+                  <p className="field-hint">Loading provider status…</p>
+                )}
+                {llmStatusState === "error" && (
+                  <p className="field-hint llm-note-warn">
+                    Provider key management is unavailable: {llmStatusError}
+                  </p>
+                )}
                 <div className="field">
                   <span className="field-label">API key</span>
                   <input
                     type="password"
+                    disabled={llmStatusState !== "ready"}
                     value={llmForm.api_key}
                     onChange={(e) =>
                       setLlmForm((prev) => ({ ...prev, api_key: e.target.value }))
@@ -594,6 +628,7 @@ export default function AccountPage() {
                   <span className="field-label">Model</span>
                   <input
                     type="text"
+                    disabled={llmStatusState !== "ready"}
                     value={llmForm.model}
                     onChange={(e) =>
                       setLlmForm((prev) => ({ ...prev, model: e.target.value }))
@@ -609,6 +644,7 @@ export default function AccountPage() {
                 <div className="field">
                   <span className="field-label">Reasoning effort</span>
                   <select
+                    disabled={llmStatusState !== "ready"}
                     value={llmForm.reasoning_effort}
                     onChange={(e) =>
                       setLlmForm((prev) => ({
@@ -628,6 +664,7 @@ export default function AccountPage() {
                   <span className="field-label">Base URL (optional)</span>
                   <input
                     type="text"
+                    disabled={llmStatusState !== "ready"}
                     value={llmForm.base_url}
                     onChange={(e) =>
                       setLlmForm((prev) => ({
@@ -650,14 +687,16 @@ export default function AccountPage() {
                   <button
                     className="btn btn-sm btn-primary"
                     onClick={handleLlmSave}
-                    disabled={llmSaving}
+                    disabled={llmSaving || llmStatusState !== "ready"}
                   >
                     {llmSaving ? "Saving..." : "Save"}
                   </button>
                   <button
                     className="btn btn-sm btn-danger"
                     onClick={handleLlmDelete}
-                    disabled={!llmKeyStatus?.configured}
+                    disabled={
+                      !llmKeyStatus?.configured || llmStatusState !== "ready"
+                    }
                   >
                     Remove
                   </button>

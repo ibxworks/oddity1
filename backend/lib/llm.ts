@@ -199,12 +199,6 @@ function logLlmEvent(
   );
 }
 
-function ensureKeysConfigured(): void {
-  if (apiKeyEntries.length === 0) {
-    throw new Error("No OpenRouter API keys configured");
-  }
-}
-
 function buildSystemPrompt(
   mode: AnnotationMode,
   personality?: DepthPersonality,
@@ -325,7 +319,7 @@ type ChatCompletionRequest = {
   max_tokens?: number;
   max_completion_tokens?: number;
   stream?: boolean;
-  reasoning?: { effort: string };
+  reasoning?: { effort?: string; enabled?: boolean };
   reasoning_effort?: string;
 };
 
@@ -359,9 +353,23 @@ function buildChatBody(
     delete body.max_tokens;
   }
 
-  // Reasoning is omitted for tiny structured outputs (e.g. the mode router):
+  // Reasoning is disabled for tiny structured outputs (e.g. the mode router):
   // thinking tokens share the output budget and would starve the answer.
+  // Omitting the parameter is not enough — thinking models reason by
+  // default — so each provider gets its explicit off switch.
   if (options.reasoning === false) {
+    if (
+      provider === null ||
+      provider === "openrouter" ||
+      provider === "oddity-free"
+    ) {
+      body.reasoning = { enabled: false };
+    } else if (provider === "openai" && isOpenAiReasoningModel(model)) {
+      // o-series has no off switch; "low" is the minimum.
+      body.reasoning_effort = model.startsWith("gpt-5") ? "none" : "low";
+    }
+    // Anthropic never thinks unless a thinking block is attached (see
+    // buildAnthropicBody); gemini/muse expose no off switch on this transport.
     return body;
   }
 
@@ -566,6 +574,9 @@ async function postChatCompletion(
     },
     body: JSON.stringify(body),
     signal: buildRequestSignal(signal),
+    // Fail closed on redirects: the SSRF check validated this endpoint, and
+    // a redirect target was never validated.
+    redirect: "error",
   });
 
   if (!response.ok) {
@@ -599,6 +610,9 @@ async function streamChatCompletion(
     },
     body: JSON.stringify({ ...body, stream: true }),
     signal: buildRequestSignal(signal),
+    // Fail closed on redirects: the SSRF check validated this endpoint, and
+    // a redirect target was never validated.
+    redirect: "error",
   });
 
   if (!response.ok) {
@@ -707,13 +721,16 @@ function buildAnthropicBody(
     body.system = systemParts.join("\n\n");
   }
 
-  // Thinking budget must fit inside max_tokens; skip it when it cannot.
-  // Thinking also forces temperature 1 — other values are rejected.
+  // Thinking consumes the same max_tokens budget as visible output, so the
+  // requested output budget is reserved separately when thinking is enabled
+  // (capped at the API's documented ceiling). Skip thinking when even the
+  // minimum budget cannot fit. Thinking also forces temperature 1.
   const wanted = ANTHROPIC_THINKING_BUDGET[options.effort];
   if (wanted !== undefined) {
     const budget = Math.min(wanted, options.maxTokens - 1024);
     if (budget >= 1024) {
       body.thinking = { type: "enabled", budget_tokens: budget };
+      body.max_tokens = Math.min(options.maxTokens + budget, 64000);
       body.temperature = 1;
     }
   }
@@ -745,6 +762,9 @@ async function postAnthropicMessages(
     },
     body: JSON.stringify(body),
     signal: buildRequestSignal(signal),
+    // Fail closed on redirects: the SSRF check validated this endpoint, and
+    // a redirect target was never validated.
+    redirect: "error",
   });
 
   if (!response.ok) {
@@ -774,6 +794,9 @@ async function streamAnthropicMessages(
     },
     body: JSON.stringify({ ...body, stream: true }),
     signal: buildRequestSignal(signal),
+    // Fail closed on redirects: the SSRF check validated this endpoint, and
+    // a redirect target was never validated.
+    redirect: "error",
   });
 
   if (!response.ok) {
@@ -849,18 +872,6 @@ async function streamAnthropicMessages(
   } finally {
     reader.releaseLock();
   }
-}
-
-function firstEntryFor(options: LlmRequestOptions): KeyEntry {
-  const overrideKeys = options.override?.apiKeys;
-  if (overrideKeys) {
-    if (overrideKeys.length === 0) {
-      throw new Error("No API keys for the selected provider");
-    }
-    return { apiKey: overrideKeys[0]!, keyIndex: 1 };
-  }
-  ensureKeysConfigured();
-  return apiKeyEntries[0]!;
 }
 
 type CallContext = {
@@ -1735,15 +1746,19 @@ export async function generateAllMcqQuestions(
     .replace("{prompt}", prompt);
 
   try {
-    const entry = firstEntryFor(options);
     const ctx = resolveCallContext(options, modelName);
     const text = (
-      await postTextCompletion(
-        entry,
-        ctx,
-        [{ role: "user", content: filledPrompt }],
-        { temperature: 0.8, maxTokens: 1536 },
-        options.signal,
+      await runWithRetryPlan(
+        "generate_mcq",
+        (entry) =>
+          postTextCompletion(
+            entry,
+            ctx,
+            [{ role: "user", content: filledPrompt }],
+            { temperature: 0.8, maxTokens: 1536 },
+            options.signal,
+          ),
+        options,
       )
     ).trim();
     const cleaned = text
@@ -1929,7 +1944,6 @@ export async function generateGDocsRoute(
   const userMessage = `User request: ${prompt}${docText ? `\n\nDocument:\n${docText.slice(0, 4000)}` : ""}`;
 
   try {
-    const entry = firstEntryFor(options);
     const ctx = resolveCallContext(options, routerModelName);
     const messages: ChatMessage[] = [
       { role: "system", content: routerSystemPrompt },
@@ -1938,12 +1952,17 @@ export async function generateGDocsRoute(
 
     // Stage 1: quick classification (no reasoning: the 150-token budget
     // would be consumed by thinking tokens before the answer is emitted)
-    const stage1Text = await postTextCompletion(
-      entry,
-      ctx,
-      messages,
-      { temperature: 0.1, maxTokens: 150, reasoning: false },
-      options.signal,
+    const stage1Text = await runWithRetryPlan(
+      "generate_gdocs_route",
+      (entry) =>
+        postTextCompletion(
+          entry,
+          ctx,
+          messages,
+          { temperature: 0.1, maxTokens: 150, reasoning: false },
+          options.signal,
+        ),
+      options,
     );
 
     const stage1 = parseRouteResult(stage1Text.trim());
@@ -1951,15 +1970,20 @@ export async function generateGDocsRoute(
     // Stage 2: deeper reasoning for uncertain cases
     if (stage1.confidence === "low") {
       try {
-        const stage2Text = await postTextCompletion(
-          entry,
-          ctx,
-          [
-            { role: "system", content: routerDeepSystemPrompt },
-            { role: "user", content: userMessage },
-          ],
-          { temperature: 0.3, maxTokens: 256, reasoning: false },
-          options.signal,
+        const stage2Text = await runWithRetryPlan(
+          "generate_gdocs_route_deep",
+          (entry) =>
+            postTextCompletion(
+              entry,
+              ctx,
+              [
+                { role: "system", content: routerDeepSystemPrompt },
+                { role: "user", content: userMessage },
+              ],
+              { temperature: 0.3, maxTokens: 256, reasoning: false },
+              options.signal,
+            ),
+          options,
         );
         return parseRouteResult(stage2Text.trim());
       } catch {

@@ -184,7 +184,7 @@ async function init(): Promise<void> {
       enabled: prefs.enabled ?? true,
       annotation_mode: prefs.annotation_mode ?? "overview",
       depth_personality: personality,
-      visible_types: [],
+      visible_types: prefs.visible_types ?? [],
       enabled_sites: prefs.enabled_sites ?? [],
       annotation_font: prefs.annotation_font ?? "fraunces",
       annotation_font_size: prefs.annotation_font_size ?? "default",
@@ -246,6 +246,17 @@ function applyPrefsToUI(): void {
 
 async function savePrefs(): Promise<void> {
   await chrome.storage.local.set({ preferences: currentPrefs });
+}
+
+// The popup never owns visible_types (the in-page panel writes those), so
+// provider syncs merge just llm_provider into the stored object instead of
+// persisting the popup's possibly stale copy of unrelated fields.
+async function saveLlmProviderPref(provider: LlmProvider | null): Promise<void> {
+  const stored = await chrome.storage.local.get("preferences");
+  const prefs = (stored["preferences"] ?? {}) as Partial<UserPreferences>;
+  await chrome.storage.local.set({
+    preferences: { ...prefs, llm_provider: provider },
+  });
 }
 
 // ─── Auth ───
@@ -335,7 +346,7 @@ async function loadLlmStatus(): Promise<void> {
     if (!Array.isArray(result.keys)) throw new Error("Bad LLM status shape.");
     llmStatus = result;
     currentPrefs.llm_provider = llmStatus.active_provider;
-    await savePrefs();
+    await saveLlmProviderPref(llmStatus.active_provider);
   } catch {
     llmStatus = null;
   }
@@ -409,12 +420,13 @@ llmProviderSelect.addEventListener("change", async () => {
     });
     throwIfLlmError(result, "Couldn't save provider.");
     currentPrefs.llm_provider = provider;
-    await savePrefs();
+    await saveLlmProviderPref(provider);
     if (llmStatus) llmStatus.active_provider = provider;
+    renderLlmSection();
   } catch {
+    renderLlmSection();
     setLlmStatus("Couldn't save provider.", "err");
   }
-  renderLlmSection();
 });
 
 llmSaveBtn.addEventListener("click", async () => {
@@ -440,6 +452,10 @@ llmSaveBtn.addEventListener("click", async () => {
       const index = llmStatus.keys.findIndex((key) => key.provider === provider);
       if (index >= 0) llmStatus.keys[index] = updated;
       else llmStatus.keys.push(updated);
+    } else {
+      // Status load failed or raced the save: seed local state from the
+      // save response so the saved settings stay visible.
+      llmStatus = { active_provider: provider, keys: [updated] };
     }
     renderLlmSection();
     setLlmStatus("Saved.", "ok");
@@ -474,8 +490,9 @@ llmDeleteBtn.addEventListener("click", async () => {
       err instanceof Error ? err.message : "Couldn't remove key.",
       "err",
     );
-  } finally {
-    renderLlmSection();
+    // No re-render here: renderLlmSection would wipe the message above.
+    // (The success path already rendered via loadLlmStatus.)
+    llmDeleteBtn.disabled = false;
   }
 });
 

@@ -140,6 +140,10 @@ describe("generateAnnotationsStream", () => {
     process.env.OPENROUTER_API_KEY = "key1";
     delete process.env.OPENROUTER_API_KEY_BACKUP1;
     delete process.env.OPENROUTER_API_KEY_BACKUP2;
+    // Attempt/retry counts affect call-count assertions — pin to defaults.
+    delete process.env.OPENROUTER_ATTEMPTS_PER_KEY;
+    delete process.env.OPENROUTER_RETRY_BASE_DELAY_MS;
+    delete process.env.OPENROUTER_RETRY_MAX_DELAY_MS;
   });
 
   afterEach(() => {
@@ -272,6 +276,10 @@ describe("generateSketchStream", () => {
     process.env.OPENROUTER_API_KEY = "key1";
     delete process.env.OPENROUTER_API_KEY_BACKUP1;
     delete process.env.OPENROUTER_API_KEY_BACKUP2;
+    // Attempt/retry counts affect call-count assertions — pin to defaults.
+    delete process.env.OPENROUTER_ATTEMPTS_PER_KEY;
+    delete process.env.OPENROUTER_RETRY_BASE_DELAY_MS;
+    delete process.env.OPENROUTER_RETRY_MAX_DELAY_MS;
   });
 
   afterEach(() => {
@@ -364,6 +372,10 @@ describe("BYOK overrides", () => {
     process.env.OPENROUTER_API_KEY = "key1";
     delete process.env.OPENROUTER_API_KEY_BACKUP1;
     delete process.env.OPENROUTER_API_KEY_BACKUP2;
+    // Attempt/retry counts affect call-count assertions — pin to defaults.
+    delete process.env.OPENROUTER_ATTEMPTS_PER_KEY;
+    delete process.env.OPENROUTER_RETRY_BASE_DELAY_MS;
+    delete process.env.OPENROUTER_RETRY_MAX_DELAY_MS;
   });
 
   afterEach(() => {
@@ -404,7 +416,7 @@ describe("BYOK overrides", () => {
     expect(body.temperature).toBe(1);
   });
 
-  it("omits Anthropic thinking when the budget cannot fit", async () => {
+  it("omits Anthropic thinking for default effort", async () => {
     fetchQueue = [() => streamResponse([anthropicSse("ok")])];
 
     const { generateSketchStream } = await import("../llm.js");
@@ -414,13 +426,14 @@ describe("BYOK overrides", () => {
         transport: "anthropic-messages",
         baseUrl: "https://api.anthropic.com",
         apiKeys: ["sk-ant-test"],
-        model: "claude-sonnet-4.5",
+        model: "claude-sonnet-4-5",
         effort: "default",
       },
     });
 
     const body = requestBody(0);
     expect(body.thinking).toBeUndefined();
+    expect(body.max_tokens).toBe(2048);
   });
 
   it("uses completion tokens and effort for OpenAI reasoning models", async () => {
@@ -494,4 +507,17 @@ describe("BYOK overrides", () => {
     expect(authHeader(1)).toBe("Bearer user-or-key");
     expect(requestBody(0).reasoning).toEqual({ effort: "low" });
   });
+
+  it("fails closed on redirects instead of following them", async () => {
+    fetchQueue = [() => streamResponse([sseData("done"), "data: [DONE]\n\n"])];
+
+    const { generateSketchStream } = await import("../llm.js");
+    await generateSketchStream("source", "purpose", "", "sketch");
+
+    const init = mockFetch.mock.calls[0]?.[1] as
+      | { redirect?: string }
+      | undefined;
+    expect(init?.redirect).toBe("error");
+  });
+
 });
