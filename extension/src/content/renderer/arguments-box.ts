@@ -2820,9 +2820,19 @@ function buildDashLlmSection(): HTMLDivElement {
   dashLlmKeyInput = dashLlmMakeInput("password", "Paste API key");
   dashLlmForm.appendChild(dashLlmMakeRow("API key", dashLlmKeyInput));
 
+  // Model, effort, and endpoint live behind an "Advanced settings"
+  // disclosure so the default view is just the API key + Save.
+  const advanced = document.createElement("details");
+  advanced.className = "args-dash-llm-advanced";
+  const advancedSummary = document.createElement("summary");
+  advancedSummary.textContent = "Advanced settings";
+  advanced.appendChild(advancedSummary);
+  // Expanding/collapsing changes the dashboard height measured at open.
+  advanced.addEventListener("toggle", () => fitDashboardHeight());
+
   dashLlmModelInput = dashLlmMakeInput("text", "Default model");
   dashLlmModelInput.addEventListener("input", () => updateDashLlmEffortState());
-  dashLlmForm.appendChild(dashLlmMakeRow("Model", dashLlmModelInput));
+  advanced.appendChild(dashLlmMakeRow("Model", dashLlmModelInput));
 
   dashLlmEffortSelect = document.createElement("select");
   dashLlmEffortSelect.className = "args-dash-select";
@@ -2838,10 +2848,11 @@ function buildDashLlmSection(): HTMLDivElement {
     opt.textContent = text;
     dashLlmEffortSelect.appendChild(opt);
   }
-  dashLlmForm.appendChild(dashLlmMakeRow("Effort", dashLlmEffortSelect));
+  advanced.appendChild(dashLlmMakeRow("Effort", dashLlmEffortSelect));
 
   dashLlmBaseUrlInput = dashLlmMakeInput("text", "Default endpoint");
-  dashLlmForm.appendChild(dashLlmMakeRow("Base URL", dashLlmBaseUrlInput));
+  advanced.appendChild(dashLlmMakeRow("Base URL", dashLlmBaseUrlInput));
+  dashLlmForm.appendChild(advanced);
 
   const actions = document.createElement("div");
   actions.className = "args-dash-llm-actions";
@@ -8446,6 +8457,31 @@ const ARGUMENTS_BOX_CSS = `
   .args-dash-llm-note.warn { color: #92600f; }
 
   .args-dash-llm-note a { color: #374151; }
+
+  .args-dash-llm-advanced summary {
+    font-size: 11px;
+    font-weight: 500;
+    color: #9ca3af;
+    cursor: pointer;
+    padding: 0 2px;
+    list-style: none;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .args-dash-llm-advanced summary::-webkit-details-marker { display: none; }
+
+  .args-dash-llm-advanced summary::before {
+    content: "›";
+    display: inline-block;
+    margin-right: 5px;
+    transition: transform 0.15s;
+  }
+
+  .args-dash-llm-advanced[open] summary::before { transform: rotate(90deg); }
+
+  .args-dash-llm-advanced summary:hover { color: #374151; }
+
+  .args-dash-llm-advanced .args-dash-row { margin-top: 8px; }
 
   .args-dash-llm-actions {
     display: flex;

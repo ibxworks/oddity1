@@ -308,6 +308,32 @@
       .llm-note a {
         color: #3a3a36;
       }
+      .llm-advanced summary {
+        font-size: 11px;
+        font-weight: 500;
+        color: #8a8a80;
+        cursor: pointer;
+        padding: 2px;
+        list-style: none;
+      }
+      .llm-advanced summary::-webkit-details-marker {
+        display: none;
+      }
+      .llm-advanced summary::before {
+        content: "›";
+        display: inline-block;
+        margin-right: 5px;
+        transition: transform 0.15s;
+      }
+      .llm-advanced[open] summary::before {
+        transform: rotate(90deg);
+      }
+      .llm-advanced summary:hover {
+        color: #3a3a36;
+      }
+      .llm-advanced .style-row {
+        margin-top: 10px;
+      }
       .llm-actions {
         display: flex;
         gap: 8px;
@@ -1124,39 +1150,42 @@
                   spellcheck="false"
                 />
               </div>
-              <div class="style-row">
-                <label class="style-label" for="llm-model-input">Model</label>
-                <input
-                  class="style-input"
-                  id="llm-model-input"
-                  type="text"
-                  autocomplete="off"
-                  autocapitalize="off"
-                  spellcheck="false"
-                />
-              </div>
-              <div class="style-row">
-                <label class="style-label" for="llm-effort-select">Effort</label>
-                <select class="style-select" id="llm-effort-select">
-                  <option value="default">Default</option>
-                  <option value="none">None</option>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-              </div>
-              <div class="style-row">
-                <label class="style-label" for="llm-baseurl-input">Base URL</label>
-                <input
-                  class="style-input"
-                  id="llm-baseurl-input"
-                  type="text"
-                  placeholder="Default endpoint"
-                  autocomplete="off"
-                  autocapitalize="off"
-                  spellcheck="false"
-                />
-              </div>
+              <details class="llm-advanced">
+                <summary>Advanced settings</summary>
+                <div class="style-row">
+                  <label class="style-label" for="llm-model-input">Model</label>
+                  <input
+                    class="style-input"
+                    id="llm-model-input"
+                    type="text"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                  />
+                </div>
+                <div class="style-row">
+                  <label class="style-label" for="llm-effort-select">Effort</label>
+                  <select class="style-select" id="llm-effort-select">
+                    <option value="default">Default</option>
+                    <option value="none">None</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+                <div class="style-row">
+                  <label class="style-label" for="llm-baseurl-input">Base URL</label>
+                  <input
+                    class="style-input"
+                    id="llm-baseurl-input"
+                    type="text"
+                    placeholder="Default endpoint"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                  />
+                </div>
+              </details>
               <div class="llm-actions">
                 <button
                   class="llm-btn llm-btn-primary"

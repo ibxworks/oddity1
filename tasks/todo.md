@@ -192,3 +192,27 @@ On SPA sites (Claude, ChatGPT), switching between conversations or navigating wi
 
 ### Files Modified
 - `extension/src/content/index.ts` — all changes above
+
+## BYOK Provider Settings UX Redesign (2026-10-10)
+
+### Plan
+- [x] Replace dashboard provider radio strip with a provider list (name + status subtitle + Active pill)
+- [x] Move key entry to a Connect/Manage modal (API key first, Model/Effort/Base URL under Advanced)
+- [x] Connect activates the provider; Manage edits settings in place
+- [x] Collapse Model/Effort/Base URL behind Advanced disclosure in popup + in-page panel (no logic changes)
+- [x] Verify: dashboard build, extension build + type-check + tests (45 passed), lint (no new issues)
+
+### Review
+- Preserved: oddity-free instability warning, effort model-gating + tooltips, status loading/error gating,
+  unknown-provider normalization, delete confirm + profile refetch, key-hint display.
+- Behavior change: saving a first key for a provider also activates it (stated in the modal).
+- Follow-up: `docs/byok/*.png` screenshots show the old UI; re-capture from the running app.
+- No new tests: dashboard has no harness and extension LLM UI logic is unexported presentational code;
+  change is covered by builds + existing suites.
+
+### Files Modified
+- `Oddity1Dashboard/src/pages/AccountPage.jsx` — provider list + modal
+- `Oddity1Dashboard/src/pages/AccountPage.css` — list/modal styles
+- `Oddity1Dashboard/src/utils/annotationConstants.js` — `platform` labels, removed orphaned `short`
+- `extension/src/popup/index.html` — Advanced disclosure (markup + CSS only)
+- `extension/src/content/renderer/arguments-box.ts` — Advanced disclosure + height refit on toggle
