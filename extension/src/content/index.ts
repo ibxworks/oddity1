@@ -2619,8 +2619,14 @@ function collectRegionHtml(): string {
 
   if (elements.size === 0) return "";
 
+  // Drop regions nested inside another region — otherwise titles and
+  // paragraphs repeat in the export.
+  const roots = [...elements].filter(
+    (el) => ![...elements].some((other) => other !== el && other.contains(el)),
+  );
+
   const parts: string[] = [];
-  for (const el of elements) {
+  for (const el of roots) {
     const clone = el.cloneNode(true) as Element;
 
     // Unwrap Oddity anchor spans to restore original text flow
