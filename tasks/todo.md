@@ -192,3 +192,25 @@ On SPA sites (Claude, ChatGPT), switching between conversations or navigating wi
 
 ### Files Modified
 - `extension/src/content/index.ts` — all changes above
+
+## PDF Export Redesign — Editorial Minimal (Oct 2026)
+
+Goal: make export PDF a headline feature. Minimal, aesthetic, readable.
+
+### Diagnosis (3 parallel audits, 40+ root causes)
+- [x] Layout: `@page` landscape vs portrait dialog, 152px gutters, divider lines print, floats clip, `clear:both` cascades, `break-inside:avoid` on all paragraphs → blank pages
+- [x] Content: `← Posts` nav junk survives, duplicate H1, single-text-node case-sensitive matcher, prefix/suffix ignored, raw `**` markdown
+- [x] Aesthetic: yellow 1.3:1 labels on white, 9 types with `style="undefined"`, zigzag sidenotes, 15 chars/line, shadow blobs, vacuous font gate
+
+### Redesign (portrait, single column, numbered endnotes)
+- [x] Rewrite `export-pdf.ts`: endnotes instead of float sidenotes (no floats, no gutters)
+- [x] Reuse `resolveSelector` (normalized, multi-node, prefix/suffix, fuzzy) for anchor matching
+- [x] Extraction: strip header/footer/aside/nav, back-links, title-duplicate H1, nested-region dedupe
+- [x] Notes: escaped + mini-markdown rendering, title-case labels, print-safe ink palette, one accent
+- [x] Print CSS: margins-only `@page`, page counters, `widows/orphans`, proper font gate, hidden iframe print
+- [x] Tests: `export-pdf.test.ts` (sanitize, title dedupe, matcher, markdown escape/render, doc structure)
+- [x] Before/after screenshots + page counts, PR via writing-pr skill
+
+### Review
+- 63/63 extension tests pass, `tsc --noEmit` clean, `vite build` clean (needs `ODDITY_GOOGLE_OAUTH_CLIENT_ID` env, pre-existing)
+- Fixture: anchors placed 3/6 → 5/6 (only the truly nonexistent anchor stays unlinked); XL print 5 → 4 pages
