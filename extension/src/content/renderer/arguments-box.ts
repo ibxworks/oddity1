@@ -9,7 +9,11 @@ import type {
   LlmStatusResponse,
   SaveLlmKeyBody,
 } from "@oddity/shared";
-import { getAnnotationColor, LLM_PROVIDER_META } from "@oddity/shared";
+import {
+  getAnnotationColor,
+  LLM_PROVIDER_META,
+  modelSupportsEffort,
+} from "@oddity/shared";
 
 import {
   getChatbotBuildPromptLabel,
@@ -2817,6 +2821,7 @@ function buildDashLlmSection(): HTMLDivElement {
   dashLlmForm.appendChild(dashLlmMakeRow("API key", dashLlmKeyInput));
 
   dashLlmModelInput = dashLlmMakeInput("text", "Default model");
+  dashLlmModelInput.addEventListener("input", () => updateDashLlmEffortState());
   dashLlmForm.appendChild(dashLlmMakeRow("Model", dashLlmModelInput));
 
   dashLlmEffortSelect = document.createElement("select");
@@ -2914,8 +2919,15 @@ async function loadDashLlmStatus(): Promise<void> {
     if (dashLlmStoredProvider !== result.active_provider) {
       dashLlmStoredProvider = result.active_provider;
       try {
+        // Re-read: storedPrefs predates the network round-trip and may have
+        // gone stale while getLlmStatus was pending.
+        const fresh = await chrome.storage.local.get("preferences");
+        const freshPrefs = (fresh["preferences"] ?? {}) as Record<
+          string,
+          unknown
+        >;
         await chrome.storage.local.set({
-          preferences: { ...storedPrefs, llm_provider: result.active_provider },
+          preferences: { ...freshPrefs, llm_provider: result.active_provider },
         });
       } catch {
         // Keep the in-memory fallback; storage stays stale.
@@ -2933,6 +2945,23 @@ function clearDashLlmState(): void {
   dashLlmState = null;
   dashLlmStoredProvider = null;
   renderDashLlmSection();
+}
+
+// The effort control is only meaningful when the transport honors it, which
+// for OpenAI depends on the model being edited — not just the provider.
+function updateDashLlmEffortState(): void {
+  if (!dashLlmEffortSelect) return;
+  const selected = (dashLlmSelect?.value || null) as LlmProvider | null;
+  const meta = selected ? LLM_PROVIDER_META[selected] : null;
+  const model =
+    dashLlmModelInput?.value.trim() || meta?.modelPlaceholder || "";
+  const supported = selected !== null && modelSupportsEffort(selected, model);
+  dashLlmEffortSelect.disabled = !supported;
+  dashLlmEffortSelect.title = supported
+    ? ""
+    : selected === "openai"
+      ? "Reasoning effort applies to OpenAI o-series and gpt-5 models only."
+      : "Reasoning effort is not supported for this provider.";
 }
 
 function renderDashLlmSection(): void {
@@ -2994,10 +3023,7 @@ function renderDashLlmSection(): void {
   }
   if (dashLlmEffortSelect) {
     dashLlmEffortSelect.value = status?.reasoning_effort ?? "default";
-    dashLlmEffortSelect.disabled = !meta.effortSupported;
-    dashLlmEffortSelect.title = meta.effortSupported
-      ? ""
-      : "Reasoning effort is not supported for this provider.";
+    updateDashLlmEffortState();
   }
   if (dashLlmBaseUrlInput) {
     dashLlmBaseUrlInput.value = status?.base_url ?? "";

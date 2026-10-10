@@ -12,6 +12,7 @@ import {
   LLM_EFFORT_OPTIONS,
   LLM_PROVIDERS,
   LLM_PROVIDER_META,
+  modelSupportsEffort,
 } from "../utils/annotationConstants";
 import "./AccountPage.css";
 
@@ -124,6 +125,18 @@ export default function AccountPage() {
   const llmKeyStatus = activeLlmProvider
     ? (llmStatus?.keys || []).find((k) => k.provider === activeLlmProvider)
     : undefined;
+  // The effort control follows the model being edited: for OpenAI only
+  // o-series/gpt-5 models honor it. An empty field falls back to the
+  // placeholder server-side, so the placeholder is the effective model.
+  const llmEffortModel =
+    activeLlmProvider !== null && activeLlmProvider !== "oddity-free"
+      ? llmForm.model.trim() ||
+        LLM_PROVIDER_META[activeLlmProvider].modelPlaceholder
+      : "";
+  const llmEffortSupported =
+    activeLlmProvider !== null &&
+    activeLlmProvider !== "oddity-free" &&
+    modelSupportsEffort(activeLlmProvider, llmEffortModel);
 
   // Fetch AI provider statuses. Failures (e.g. BYOK unavailable server-side)
   // surface as an error state instead of a silently empty form.
@@ -644,14 +657,13 @@ export default function AccountPage() {
                 <div className="field">
                   <span className="field-label">Reasoning effort</span>
                   <select
-                    disabled={
-                      llmStatusState !== "ready" ||
-                      !LLM_PROVIDER_META[activeLlmProvider].effortSupported
-                    }
+                    disabled={llmStatusState !== "ready" || !llmEffortSupported}
                     title={
-                      LLM_PROVIDER_META[activeLlmProvider].effortSupported
+                      llmEffortSupported
                         ? undefined
-                        : "Reasoning effort is not supported for this provider."
+                        : activeLlmProvider === "openai"
+                          ? "Reasoning effort applies to OpenAI o-series and gpt-5 models only."
+                          : "Reasoning effort is not supported for this provider."
                     }
                     value={llmForm.reasoning_effort}
                     onChange={(e) =>

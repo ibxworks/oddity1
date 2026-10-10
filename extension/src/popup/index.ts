@@ -10,7 +10,11 @@ import type {
   UserPreferences,
   UserTier,
 } from "@oddity/shared";
-import { isBlockedDomain, LLM_PROVIDER_META } from "@oddity/shared";
+import {
+  isBlockedDomain,
+  LLM_PROVIDER_META,
+  modelSupportsEffort,
+} from "@oddity/shared";
 import { sendMessage } from "../shared/messaging.js";
 
 // ─── DOM refs ───
@@ -401,10 +405,7 @@ function renderLlmSection(): void {
   llmModelInput.value = status?.model ?? "";
   llmModelInput.placeholder = meta.modelPlaceholder || "Default model";
   llmEffortSelect.value = status?.reasoning_effort ?? "default";
-  llmEffortSelect.disabled = !meta.effortSupported;
-  llmEffortSelect.title = meta.effortSupported
-    ? ""
-    : "Reasoning effort is not supported for this provider.";
+  updateLlmEffortState();
   llmBaseUrlInput.value = status?.base_url ?? "";
   llmDeleteBtn.disabled = !status?.configured;
   if (status && !status.configured) {
@@ -413,6 +414,23 @@ function renderLlmSection(): void {
     setLlmStatus("", "");
   }
 }
+
+// The effort control is only meaningful when the transport honors it, which
+// for OpenAI depends on the model being edited — not just the provider.
+function updateLlmEffortState(): void {
+  const selected = (llmProviderSelect.value || null) as LlmProvider | null;
+  const meta = selected ? LLM_PROVIDER_META[selected] : null;
+  const model = llmModelInput.value.trim() || meta?.modelPlaceholder || "";
+  const supported = selected !== null && modelSupportsEffort(selected, model);
+  llmEffortSelect.disabled = !supported;
+  llmEffortSelect.title = supported
+    ? ""
+    : selected === "openai"
+      ? "Reasoning effort applies to OpenAI o-series and gpt-5 models only."
+      : "Reasoning effort is not supported for this provider.";
+}
+
+llmModelInput.addEventListener("input", () => updateLlmEffortState());
 
 llmProviderSelect.addEventListener("change", async () => {
   const provider = (llmProviderSelect.value || null) as LlmProvider | null;

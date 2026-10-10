@@ -22,5 +22,5 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-CREATE INDEX IF NOT EXISTS idx_pdf_page_summaries_model_lookup
-  ON pdf_page_summaries (user_id, url, document_hash, page_no, model_version);
+-- No separate lookup index: the UNIQUE constraint above already creates a
+-- btree on exactly these columns, which serves the route's equality filters.

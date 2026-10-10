@@ -5,6 +5,7 @@ import type {
   LlmProvider,
   LlmReasoningEffort,
 } from "@oddity/shared";
+import { isOpenAiReasoningModel } from "@oddity/shared";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import promptsConfig from "../config/prompts.json" with { type: "json" };
@@ -322,10 +323,6 @@ type ChatCompletionRequest = {
   reasoning?: { effort?: string; enabled?: boolean };
   reasoning_effort?: string;
 };
-
-function isOpenAiReasoningModel(model: string): boolean {
-  return /^(o\d|gpt-5)/.test(model);
-}
 
 function buildChatBody(
   model: string,

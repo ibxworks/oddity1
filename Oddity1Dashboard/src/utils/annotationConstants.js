@@ -176,3 +176,17 @@ export const LLM_PROVIDER_META = {
     effortSupported: false,
   },
 };
+
+// Whether an OpenAI model accepts the reasoning-effort parameter.
+// Mirrors isOpenAiReasoningModel in packages/shared.
+export function isOpenAiReasoningModel(model) {
+  return /^(o\d|gpt-5)/.test(model.trim());
+}
+
+// Whether the effort setting has any effect for a provider+model pair.
+// Mirrors modelSupportsEffort in packages/shared.
+export function modelSupportsEffort(provider, model) {
+  if (!LLM_PROVIDER_META[provider].effortSupported) return false;
+  if (provider === "openai") return isOpenAiReasoningModel(model);
+  return true;
+}

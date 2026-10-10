@@ -156,6 +156,29 @@ export const LLM_PROVIDER_META: Record<LlmProvider, LlmProviderMeta> = {
   },
 };
 
+/**
+ * Whether an OpenAI model accepts the reasoning-effort parameter.
+ * Single source of truth shared by the transport (which omits the parameter
+ * otherwise) and the settings UIs (which disable the control otherwise).
+ */
+export function isOpenAiReasoningModel(model: string): boolean {
+  return /^(o\d|gpt-5)/.test(model.trim());
+}
+
+/**
+ * Whether the reasoning-effort setting has any effect for a provider+model
+ * pair. `model` is the effective model: the form value, or the provider's
+ * placeholder when the field is empty and the backend falls back to it.
+ */
+export function modelSupportsEffort(
+  provider: LlmProvider,
+  model: string,
+): boolean {
+  if (!LLM_PROVIDER_META[provider].effortSupported) return false;
+  if (provider === "openai") return isOpenAiReasoningModel(model);
+  return true;
+}
+
 // ─── Request Limits ───
 
 export const MAX_TEXT_LENGTH = 100_000; // ~100KB
